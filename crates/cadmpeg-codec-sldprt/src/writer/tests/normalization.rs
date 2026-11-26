@@ -21,25 +21,30 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
         base_color: None,
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings = vec![
         AppearanceBinding {
             id: AppearanceBindingId::mint("sldprt:test:binding#a-face").unwrap(),
             target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
             appearance: appearance.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: Some(true),
             channels: BTreeMap::new(),
+            native_ref: None,
         },
         AppearanceBinding {
             id: AppearanceBindingId::mint("sldprt:test:binding#b-body").unwrap(),
             target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
             appearance,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: Some(false),
             channels: BTreeMap::new(),
+            native_ref: None,
         },
     ];
     let before = ir.model.appearance_bindings.clone();

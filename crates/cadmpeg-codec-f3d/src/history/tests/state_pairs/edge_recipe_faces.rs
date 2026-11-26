@@ -2,8 +2,9 @@
 //! Scope history binding through the faces of a scope's edge recipes.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::bind_scope_histories;
+use crate::history::scope_histories::bind_scope_histories;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use cadmpeg_core::serde_erase::json;
 #[test]
 fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {
     use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
@@ -70,7 +71,7 @@ fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {
             offset: 0,
         }),
     };
-    let operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
+    let operand: DesignEdgeOperand = json::from_value(cadmpeg_core::json!({
         "id": format!("{stream}:design-edge-operand#0"),
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,

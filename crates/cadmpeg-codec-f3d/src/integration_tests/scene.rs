@@ -3,6 +3,7 @@
 
 use crate::scene::SceneBinding;
 use crate::test_support::scene::{override_row, with_world};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
@@ -68,7 +69,41 @@ fn scene_archive_reads_root_rows_and_excludes_member_rows() {
         SceneBinding::Unbound {}
     ));
     assert_eq!(
-        serde_json::to_value(&native.display_poses[0].path).unwrap(),
-        serde_json::json!([3, 17])
+        json::to_value(&native.display_poses[0].path).unwrap(),
+        cadmpeg_core::json!([3, 17])
+    );
+}
+
+#[test]
+fn scene_fully_tagged_local_paths_bind_without_changing_stored_placements() {
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
+    let bytes = crate::test_support::body_map_test::f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let original = super::decode(bytes.clone());
+    let mut world = crate::test_support::scene::override_row_tagged(&[100, 401], 0);
+    world.extend(crate::test_support::scene::override_row_tagged(
+        &[100, 401, 200, 402],
+        0,
+    ));
+    let displayed = super::decode(with_world(bytes, &world));
+    let native = crate::test_support::native_test::f3d_native(displayed.ir());
+    assert_eq!(native.display_poses.len(), 2);
+    for row in &native.display_poses {
+        assert_eq!(row.tagged_from, Some(0));
+        assert!(matches!(row.binding, SceneBinding::Bound { .. }));
+    }
+    assert_eq!(
+        original.ir().model.occurrences,
+        displayed.ir().model.occurrences
+    );
+    assert_eq!(
+        original.ir().model.assembly_joints,
+        displayed.ir().model.assembly_joints
     );
 }

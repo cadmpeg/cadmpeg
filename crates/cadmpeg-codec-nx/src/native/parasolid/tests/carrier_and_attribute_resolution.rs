@@ -14,11 +14,12 @@ use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::surface_curve_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 use crate::NxCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::geometry::BlendCrossSection;
-use cadmpeg_ir::geometry::BlendRadiusLaw;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::blends::BlendCrossSection;
+use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::report::loss::LossCategory;
@@ -413,7 +414,7 @@ fn decode_emits_charted_surface_intersection_construction() {
         .expect("required invariant");
     assert_eq!(terms.len(), 2);
     assert_eq!(terms[0].form.count(), 1);
-    assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
+    assert_eq!(json::to_value(terms[0].form).unwrap(), "L?");
     assert_eq!(terms[0].data.point().get(), [0.0, 0.0, 0.0]);
     assert_eq!(terms[1].data.point().get(), [10.0, 0.0, 0.0]);
     assert!(terms
@@ -453,7 +454,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(charts[0].data.count(), 2);
     assert_eq!(charts[0].preamble.base_parameter(), 0.0);
     assert_eq!(charts[0].preamble.base_scale(), 1.0);
-    assert_eq!(serde_json::to_value(&charts[0]).unwrap()["chart_count"], 2);
+    assert_eq!(json::to_value(&charts[0]).unwrap()["chart_count"], 2);
     assert_eq!(charts[0].preamble.chordal_error().get(), 0.000_01);
     assert_eq!(charts[0].preamble.angular_error(), 0.001);
     assert_eq!(
@@ -494,11 +495,13 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.01)
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = procedural.definition()
     else {
         panic!("typed surface intersection");
     };
@@ -541,8 +544,10 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         crate::intersection::BlendBoundFraming::PartitionDirect
     );
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -588,7 +593,7 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
 fn offset_surface_record_wire_retains_flags_and_checked_state() {
     let wire = r#"{"id":"offset","stream_ordinal":0,"xmt":2,"discriminator":"V","true_offset":false,"support_xmt":6,"distance":-0.0,"inflated_offset":8}"#;
     let record: ParasolidOffsetSurfaceRecord = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    assert_eq!(json::to_string(&record).unwrap(), wire);
     let invalid = wire.replace("\"support_xmt\":6", "\"support_xmt\":1");
     assert!(serde_json::from_str::<ParasolidOffsetSurfaceRecord>(&invalid).is_err());
 }

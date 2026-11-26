@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod free_analytic;
 mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
@@ -45,6 +46,17 @@ use crate::test_support::test_surface_fixtures::{
 use crate::writer::same_float;
 use crate::{IgesCodec, IgesVersion};
 
+/// Asserts that `plan` charges `code` with a message that contains `text`.
+fn assert_charged(plan: &cadmpeg_ir::codec::write::ExportPlan, code: &str, text: &str) {
+    let losses = &plan.report().losses;
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(text)),
+        "{code} with {text:?}: {losses:#?}"
+    );
+}
+
 #[test]
 fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
@@ -78,13 +90,18 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
-        }));
+        assert!(round_trip
+            .ir()
+            .native
+            .namespace("iges")
+            .is_some_and(|namespace| {
+                namespace.arenas()["entities"].iter().any(|record| {
+                    record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                        && record.field("label").is_some_and(|label| {
+                            crate::test_support::native_bytes(&label).starts_with(b"COMPOSIT")
+                        })
+                })
+            }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
                 .expect("validate the neutral model");
@@ -159,7 +176,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -193,7 +210,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -291,7 +308,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 }
 
 #[test]
-fn encode_rejects_open_shells_before_iges_5_3() {
+fn encode_writes_open_shells_before_iges_5_3_as_unjoined_trimmed_surfaces() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
@@ -299,15 +316,71 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = plan_at(version, decoded.ir(), None)
-            .expect_err("legacy target must reject an open shell");
-        assert!(
-            error
-                .to_string()
-                .contains("does not define emitted entity Type 514 Form 2"),
-            "{version:?}: {error}"
+        let plan = plan_at(version, decoded.ir(), None)
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert_charged(
+            &plan,
+            "iges/writer.open-shell-unjoined",
+            "defines no open shell (Type 514 Form 2)",
         );
+        let losses = &plan.report().losses;
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
+            "{version:?}: {losses:#?}"
+        );
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+        let read = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(read.ir().geometry.faces.len(), 3, "{version:?}");
     }
+}
+
+#[test]
+fn encode_drops_only_the_open_shell_faces_before_iges_5_3_beside_a_solid() {
+    struct Unchanged;
+    impl cadmpeg_ir::document::EntityRewrite for Unchanged {
+        type Error = std::convert::Infallible;
+        fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+            &mut self,
+            entity: T,
+        ) -> Result<T, Self::Error> {
+            Ok(entity)
+        }
+    }
+    let mut ir = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir()
+        .clone();
+    let cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cube_body = cube.geometry.bodies[0].id.to_string();
+    ir.geometry
+        .extend_rewritten(cube.geometry, &mut Unchanged)
+        .unwrap();
+    ir.finalize();
+    let plan = plan_at(IgesVersion::V5_1, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "does not define emitted entity Type 514 Form 2",
+    );
+    let losses = &plan.report().losses;
+    assert!(
+        !losses.iter().any(|loss| {
+            let code = loss.code.to_string();
+            code == "iges/writer.open-shell-unjoined"
+                || code == "export/output.empty"
+                || (code == "iges/writer.body-omitted" && loss.message.contains(&cube_body))
+        }),
+        "{losses:#?}"
+    );
 }
 
 #[test]
@@ -345,7 +418,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#1").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -390,7 +463,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     let (mut ir, _, fidelity) = decoded.into_parts();
     let moved = ir.geometry.points[0].position().get();
     ir.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -404,10 +477,26 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     ));
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
+    let omitted = report
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        omitted,
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `cards` that are Start \
+             section cards, whose text the semantic writer replaces with its own: \
+             iges:physical:card#1",
+            "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that \
+             are Directory line font, level, view, or line weight fields the semantic writer \
+             writes with its own values: iges:presentation:display-attributes#D1",
+            "the IGES write omits 1 native record(s) of `iges` arena \
+             `product_occurrence_expansion` which the bounded semantic writer does not \
+             regenerate: iges:product:occurrence-expansion#state",
+        ]
+    );
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -424,38 +513,45 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
 }
 
 #[test]
-fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
+fn encode_omits_unsupported_curve_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("unsupported curve geometry was accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("does not encode this curve geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.free-geometry-omitted",
+        "does not encode this curve geometry",
     );
 }
 
 #[test]
-fn encode_refuses_an_empty_source_less_model() {
+fn encode_writes_an_empty_source_less_model_as_the_empty_file() {
     let ir = CadIr::empty();
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("empty semantic output was accepted")
-    };
-    assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(&plan, "export/output.empty", "holds no entity");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let sections = bytes
+        .chunks(81)
+        .filter_map(|card| card.get(72).copied())
+        .collect::<Vec<_>>();
+    assert!(sections.contains(&b'S'));
+    assert!(sections.contains(&b'G'));
+    assert!(sections.contains(&b'T'));
+    assert!(!sections.contains(&b'D'));
+    assert!(!sections.contains(&b'P'));
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().geometry.bodies.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_curve_without_neutral_geometry() {
+fn encode_omits_a_native_curve_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
@@ -468,19 +564,16 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.geometry.regions.clear();
     ir.geometry.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native curve was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native curve entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
 #[test]
-fn encode_refuses_a_native_point_without_neutral_geometry() {
+fn encode_omits_a_native_point_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -491,33 +584,27 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.geometry.regions.clear();
     ir.geometry.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native point was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native point entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
 #[test]
-fn encode_refuses_a_native_surface_without_neutral_geometry() {
+fn encode_omits_a_native_surface_without_neutral_geometry_and_names_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.geometry.surfaces.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native surface was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native surface entity D1 without neutral geometry"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "export/native.records-omitted",
+        "whose entity has no neutral geometry for the semantic writer to encode: iges:",
     );
 }
 
@@ -734,116 +821,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 }
 
 #[test]
-fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
-    let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(1.0, 2.0, 3.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    Point3::new(-1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                    1.0,
-                    std::f64::consts::FRAC_PI_6,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(0.0, 4.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    3.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    Point3::new(0.0, 0.0, 5.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    4.0,
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-    ]);
-
-    let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("standalone pointer-defined analytic surface must be refused");
-    assert!(
-        error.to_string().contains(
-            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
-        ),
-        "{error}"
-    );
-}
-
-#[test]
-fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_tetrahedron_solid_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().geometry.surfaces.push(Surface {
-        id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(10.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-        native_ref: None,
-    });
-
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("free analytic surface must not inherit B-rep eligibility");
-    assert!(
-        error
-            .to_string()
-            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
-        "{error}"
-    );
-}
-
-#[test]
-fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
+fn encode_drops_a_cylindrical_face_with_only_a_repeated_seam() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_cylinder_seam_file()),
@@ -851,13 +829,11 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("a cylindrical face without axial bounds must be refused");
-    assert!(
-        error
-            .to_string()
-            .contains("boundary loop that repeats one seam edge without axial bounds"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "boundary loop that repeats one seam edge without axial bounds",
     );
 }
 
@@ -922,7 +898,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     for (index, position) in positions.into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -1064,12 +1040,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, body_id.clone(), vec![shell_id]));
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -1078,6 +1051,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let reversed_order = [
@@ -1284,7 +1258,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 }
 
 #[test]
-fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
+fn encode_drops_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametrically_bounded_plane_file()),
@@ -1309,14 +1283,11 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             .unwrap();
     }
 
-    let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
-        panic!("disagreeing pcurve endpoints were accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("pcurve chain endpoints disagree with its directed support edge"),
-        "{error}"
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "pcurve chain endpoints disagree with its directed support edge",
     );
 }
 
@@ -1442,10 +1413,15 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind()));
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/native.records-omitted"
+                && (loss.message.contains("arena `directions`")
+                    || loss.message.contains("native topology"))
+        }),
+        "{:#?}",
+        report.losses
+    );
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)
@@ -1555,7 +1531,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .faces
         .iter()
         .find(|face| {
-            face.loops.iter().any(|loop_id| {
+            face.loops.stated().any(|loop_id| {
                 decoded
                     .ir()
                     .geometry
@@ -1669,7 +1645,11 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
     let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
-        let ids = ir.geometry.faces[0].loops.to_vec();
+        let ids = ir.geometry.faces[0]
+            .loops
+            .stated()
+            .cloned()
+            .collect::<Vec<_>>();
         ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
     }
 
@@ -1708,7 +1688,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.25).expect("positive finite tolerance"));
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
@@ -1770,9 +1750,16 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[0])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
         .unwrap();
-    assert_eq!(round_trip.ir().geometry.shell_faces(&shell.id).count(), 3);
+    assert_eq!(
+        round_trip
+            .ir()
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .count(),
+        3
+    );
     let shared_edge = round_trip
         .ir()
         .geometry
@@ -1848,7 +1835,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    let shell_id = region.shells[0].clone();
+    let shell_id = region.stated_shells().cloned().collect::<Vec<_>>()[0].clone();
     let shell = decoded
         .ir()
         .geometry
@@ -1859,7 +1846,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     let shell_faces = decoded
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     let target_face_id = shell_faces[0].clone();
@@ -1872,7 +1859,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == target_face_id)
         .unwrap()
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
@@ -1884,7 +1871,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == moved_face_id)
         .unwrap()
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
@@ -1921,7 +1908,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.stated().cloned())
         .collect::<Vec<_>>();
     let outer_loop_index = emitted_loop_ids
         .iter()

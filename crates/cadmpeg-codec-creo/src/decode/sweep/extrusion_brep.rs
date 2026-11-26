@@ -426,13 +426,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         extrusion_id!(PointId, "point:{}:{}:{}", profile_index, index, &side_key);
                     let vertex_id =
                         extrusion_id!(VertexId, "vertex:{}:{}:{}", profile_index, index, &side_key);
-                    let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                        position[0] + offset * transform.normal()[0],
-                        position[1] + offset * transform.normal()[1],
-                        position[2] + offset * transform.normal()[2],
-                    ))
-                    .ok_or(Point::NON_FINITE_POSITION)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    let finite_position =
+                        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            position[0] + offset * transform.normal()[0],
+                            position[1] + offset * transform.normal()[1],
+                            position[2] + offset * transform.normal()[2],
+                        ))
+                        .ok_or(Point::NON_FINITE_POSITION)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                     ctx.charge_entities(1, "admit Creo model points")?;
                     source_carriers
                         .admit_point(ir, Point::new(copy_id!(point_id), finite_position, None))?;
@@ -968,12 +969,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ctx.charge_entities(1, "admit Creo model shells")?;
         ir.geometry.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: copy_id!(region_id),
-            body: copy_id!(body_id),
-            shells: vec![shell_id],
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            copy_id!(region_id),
+            copy_id!(body_id),
+            vec![shell_id],
+        ));
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
@@ -985,6 +985,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         transferred += 1;

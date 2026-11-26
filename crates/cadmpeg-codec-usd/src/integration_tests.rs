@@ -63,19 +63,19 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
         let tessellated = model
             .tessellations
             .iter()
-            .any(|tessellation| tessellation.body.as_ref() == Some(&body.id));
+            .any(|tessellation| tessellation.of.body() == Some(&body.id));
         !tessellated
             && geometry
                 .shells
                 .iter()
                 .filter(|shell| {
                     geometry
-                        .body_regions(&body.id)
+                        .stated_body_regions(&body.id)
                         .any(|region| region.id == shell.region)
                 })
-                .flat_map(|shell| geometry.shell_faces(&shell.id))
+                .flat_map(|shell| geometry.stated_shell_faces(&shell.id))
                 .any(|face| {
-                    !face.loops.is_empty()
+                    face.loops.stated().next().is_some()
                         || !geometry.surfaces.iter().any(|surface| {
                             surface.id == face.surface
                                 && matches!(
@@ -316,7 +316,9 @@ fn the_encoder_targets_each_usda_version_a_package_and_a_crate_layer() {
 mod intrinsics;
 mod layers;
 mod losses;
+mod patches;
 mod physics;
+mod scene;
 mod subsets;
 mod textures;
 mod usdc;

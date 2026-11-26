@@ -14,11 +14,13 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document, Row,
 };
-use cadmpeg_ir::features::{
-    ConfigurationEvaluation, DesignParameter as NeutralParameter, Feature, FeatureDefinition,
-    FeatureId, FeatureOperation,
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, DesignParameter as NeutralParameter,
 };
-use serde_json::{json, Value};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 const ENTRY: &str =
@@ -66,7 +68,7 @@ fn parameter(index: u32, name: &str) -> DesignParameter {
 }
 
 fn owner(stream: &str, index: u32, parameter: u32) -> DesignParameterOwner {
-    serde_json::from_value(json!({
+    json::from_value(json!({
         "id": format!("{stream}:design-parameter-owner#{index}"),
         "byte_offset": 2000,
         "frame_length": 104,
@@ -102,7 +104,7 @@ fn neutral_parameter(native: &DesignParameter) -> NeutralParameter {
         expression: "10 mm".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -121,7 +123,7 @@ fn neutral_feature(scope: &DesignParameterScope, dependency: &str) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Extrude".into(),
                 parameters: BTreeMap::new(),
@@ -477,10 +479,12 @@ fn configuration_roots_attach_only_when_one_root_names_a_table_document() {
 
 #[test]
 fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
-    let row = |evaluation, feature: &Feature| cadmpeg_ir::features::ConfigurationFeatureState {
-        evaluation,
-        dependencies: feature.dependencies.clone(),
-        definition: feature.evaluation.definition().clone(),
+    let row = |evaluation, feature: &Feature| {
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState {
+            evaluation,
+            dependencies: feature.dependencies.clone(),
+            definition: feature.evaluation.definition().clone(),
+        }
     };
     let mut unlisted = neutral_feature(&scope(1), "f3d:test:feature#a");
     unlisted.suppressed = Some(true);
@@ -488,7 +492,7 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     unstated.suppressed = None;
     let mut stored = neutral_feature(&scope(3), "f3d:test:feature#c");
     stored.suppressed = Some(false);
-    let configuration = cadmpeg_ir::features::DesignConfiguration {
+    let configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(ENTRY, "active"),
         ordinal: 0,
         active: true,
@@ -534,7 +538,7 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
 fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved() {
     let mut feature = neutral_feature(&scope(1), "f3d:test:feature#a");
     feature.suppressed = Some(true);
-    let mut configuration = cadmpeg_ir::features::DesignConfiguration {
+    let mut configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(ENTRY, "active"),
         ordinal: 0,
         active: true,
@@ -559,4 +563,54 @@ fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved
         .evaluation
         .is_suppressed());
     assert_eq!(inferred_configuration_suppression_count(&configurations), 1);
+}
+
+#[test]
+fn unreadable_configuration_document_keeps_its_sibling_document() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::io::{Cursor, Write};
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let bad = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.bad.dsgcfg";
+    zip.start_file(bad, stored).unwrap();
+    zip.write_all(b"[").unwrap();
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&json::to_vec(&document()).unwrap()).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut losses = Vec::new();
+    let mut given_up = Vec::new();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut losses, &mut given_up).unwrap();
+    assert_eq!(decoded.documents.len(), 1);
+    assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()]
+    );
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(given_up[0].kind(), crate::container::ENTRY_PART);
+    assert_eq!(given_up[0].name(), Some(bad));
+    let unreadable = given_up[0].loss();
+    assert_eq!(
+        unreadable.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        unreadable
+            .message
+            .starts_with(&format!("part archive-entry {bad:?} stream=\"\" offset=")),
+        "{}",
+        unreadable.message
+    );
+    assert!(
+        unreadable
+            .message
+            .contains(&format!("record={}: ", given_up[0].id())),
+        "{}",
+        unreadable.message
+    );
 }

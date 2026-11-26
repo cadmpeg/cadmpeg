@@ -2,13 +2,10 @@
 //! Solid-loft source operands and generated-result validation.
 
 use cadmpeg_core::decode::unique_index;
-use cadmpeg_ir::{
-    features::{
-        FeatureDefinition, FeatureOperation, LoftSection, ParameterValue, PlanarProfileRef,
-        ProfileRef,
-    },
-    CadIr,
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::CadIr;
 use std::collections::HashMap;
 
 use super::{controls, projection::evidence};
@@ -63,6 +60,7 @@ impl<'a> ValidationIndex<'a> {
         definition: &FeatureDefinition,
         property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
         parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+        history_bound: bool,
     ) -> bool {
         if !controls::validates(source, definition, property, parameter) {
             return false;
@@ -105,22 +103,21 @@ impl<'a> ValidationIndex<'a> {
         let [first, last] = selected.as_slice() else {
             return false;
         };
-        evidence::loft_result(
+        let sections = [first.0.header.source_index, last.0.header.source_index];
+        let curves = |section: usize| {
+            selected
+                .get(section)
+                .map_or_else(Vec::new, |(raw, sketch, profile)| {
+                    self.profiles
+                        .curve_names(token, raw.identity.record_ordinal, sketch, profile)
+                })
+        };
+        evidence::loft_final_proof(
             self.ir,
             source.header.source_index,
-            [first.0.header.source_index, last.0.header.source_index],
-            |section| {
-                selected
-                    .get(section)
-                    .map_or_else(Vec::new, |(raw, sketch, profile)| {
-                        self.profiles.curve_names(
-                            token,
-                            raw.identity.record_ordinal,
-                            sketch,
-                            profile,
-                        )
-                    })
-            },
+            sections,
+            curves,
+            history_bound,
         )
         .is_some()
     }

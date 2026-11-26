@@ -8,11 +8,25 @@ use crate::scalar::{FiniteReal, NonZeroReal};
 /// A non-finite input, and a sum outside the finite range, leave the dot
 /// product non-finite; it then carries the plain left-to-right sum of the
 /// products.
+#[inline]
 pub(crate) fn finite_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
 ) -> Result<FiniteReal, f64> {
     let products = std::array::from_fn(|index| coefficients[index] * components[index]);
+    if let Some(value) = fast_dot(coefficients, components, products) {
+        return Ok(value);
+    }
+    finite_dot_slow(coefficients, components, products)
+}
+
+#[cold]
+#[inline(never)]
+fn finite_dot_slow<const N: usize>(
+    coefficients: [f64; N],
+    components: [f64; N],
+    products: [f64; N],
+) -> Result<FiniteReal, f64> {
     let plain = || {
         products
             .into_iter()
@@ -25,9 +39,6 @@ pub(crate) fn finite_dot<const N: usize>(
         .any(|value| !value.is_finite())
     {
         return Err(plain());
-    }
-    if let Some(value) = fast_dot(coefficients, components, products) {
-        return Ok(value);
     }
     let mut sum = ExactSignedSum::default();
     for (coefficient, component) in coefficients.into_iter().zip(components) {
@@ -47,12 +58,59 @@ const MIN_SIGNIFICAND_EXPONENT: i32 = -1074;
 const EXACT_PRODUCT_EXPONENT: i32 = 4 * MIN_SIGNIFICAND_EXPONENT - 64;
 const EXACT_SUM_WORDS: usize = 138;
 const EXACT_SUM_WORDS_I32: i32 = 138;
+const SMALL_SUM_WORDS: usize = 8;
 const SUBNORMAL_UNIT_BIT: usize = 3286;
 
 #[derive(Clone)]
-pub(crate) struct ExactSignedSum {
+struct WideWords {
     positive: [u64; EXACT_SUM_WORDS],
     negative: [u64; EXACT_SUM_WORDS],
+}
+
+#[derive(Clone)]
+enum Accumulator {
+    Empty,
+    Small {
+        base: usize,
+        positive: [u64; SMALL_SUM_WORDS],
+        negative: [u64; SMALL_SUM_WORDS],
+    },
+    Wide(Box<WideWords>),
+}
+
+/// Borrowed word window over either the inline or wide accumulator storage.
+#[derive(Clone, Copy)]
+struct Words<'a> {
+    base: usize,
+    slice: &'a [u64],
+}
+
+impl Words<'_> {
+    const EMPTY: Self = Self {
+        base: 0,
+        slice: &[],
+    };
+
+    #[cfg(test)]
+    fn full(words: &[u64; EXACT_SUM_WORDS]) -> Words<'_> {
+        Words {
+            base: 0,
+            slice: words,
+        }
+    }
+
+    fn get(self, index: usize) -> u64 {
+        index
+            .checked_sub(self.base)
+            .and_then(|offset| self.slice.get(offset))
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ExactSignedSum {
+    storage: Accumulator,
     window: Window,
     invalid: bool,
 }
@@ -60,8 +118,7 @@ pub(crate) struct ExactSignedSum {
 impl Default for ExactSignedSum {
     fn default() -> Self {
         Self {
-            positive: [0; EXACT_SUM_WORDS],
-            negative: [0; EXACT_SUM_WORDS],
+            storage: Accumulator::Empty,
             window: Window::EMPTY,
             invalid: false,
         }
@@ -297,11 +354,7 @@ impl ScaledValue {
         let negative = factors
             .iter()
             .fold(false, |negative, factor| negative ^ (factor.get() < 0.0));
-        let magnitude = if negative {
-            &sum.negative
-        } else {
-            &sum.positive
-        };
+        let magnitude = sum.side(negative);
         rounded_magnitude(
             negative,
             magnitude,
@@ -318,11 +371,19 @@ impl ScaledValue {
 /// accumulator is a `u16`. `checked_ilog2` answers `None` for a zero word,
 /// which `rposition` has already excluded; the `?` states that rather than
 /// asserting it.
-fn highest_bit(magnitude: &[u64; EXACT_SUM_WORDS], window: Window) -> Option<u16> {
+fn highest_bit(magnitude: Words<'_>, window: Window) -> Option<u16> {
     let words = window.words();
-    let word = words.start + magnitude[words].iter().rposition(|value| *value != 0)?;
+    let start = (words.start.max(magnitude.base) - magnitude.base).min(magnitude.slice.len());
+    let end = (words.end.max(magnitude.base) - magnitude.base).min(magnitude.slice.len());
+    let offset = magnitude.slice[start..end]
+        .iter()
+        .rposition(|value| *value != 0)?;
+    let word = magnitude.base + start + offset;
     u16::try_from(
-        word * 64 + cadmpeg_core::decode::index_from_u32(magnitude[word].checked_ilog2()?),
+        word * 64
+            + cadmpeg_core::decode::index_from_u32(
+                magnitude.slice[start + offset].checked_ilog2()?,
+            ),
     )
     .ok()
 }
@@ -352,8 +413,13 @@ fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
 
 /// Add `value` at word `index`, carrying upwards, and widen `window` over every
 /// word written.
-fn add_word(words: &mut [u64; EXACT_SUM_WORDS], window: &mut Window, index: usize, value: u64) {
-    let low = index;
+fn add_word_wide(
+    words: &mut [u64; EXACT_SUM_WORDS],
+    window: &mut Window,
+    low: usize,
+    index: usize,
+    value: u64,
+) {
     let (sum, mut carry) = words[index].overflowing_add(value);
     words[index] = sum;
     let mut index = index + 1;
@@ -366,33 +432,150 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], window: &mut Window, index: usiz
     window.include(low, index);
 }
 
-fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], window: &mut Window, value: u128, shift: usize) {
-    let bytes = value.to_le_bytes();
-    // endian-exception: reconstructed-scalar
-    let low = u64::from_le_bytes([
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-    ]);
-    // endian-exception: reconstructed-scalar
-    let high = u64::from_le_bytes([
-        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-    ]);
-    for (limb_index, limb) in [low, high].into_iter().enumerate() {
-        if limb == 0 {
-            continue;
-        }
-        let bit = shift + limb_index * 64;
-        let word = bit / 64;
-        let remainder = bit % 64;
-        if remainder == 0 {
-            add_word(words, window, word, limb);
-        } else {
-            add_word(words, window, word, limb << remainder);
-            add_word(words, window, word + 1, limb >> (64 - remainder));
+impl ExactSignedSum {
+    #[cfg(test)]
+    fn from_positive(positive: &[u64; EXACT_SUM_WORDS], window: Window) -> Self {
+        Self {
+            storage: Accumulator::Wide(Box::new(WideWords {
+                positive: *positive,
+                negative: [0; EXACT_SUM_WORDS],
+            })),
+            window,
+            invalid: false,
         }
     }
-}
 
-impl ExactSignedSum {
+    #[cfg(test)]
+    fn word_pair(&self, index: usize) -> (u64, u64) {
+        (self.side(false).get(index), self.side(true).get(index))
+    }
+
+    fn side(&self, negative: bool) -> Words<'_> {
+        match &self.storage {
+            Accumulator::Empty => Words::EMPTY,
+            Accumulator::Small {
+                base,
+                positive,
+                negative: neg,
+            } => Words {
+                base: *base,
+                slice: if negative { neg } else { positive },
+            },
+            Accumulator::Wide(wide) => Words {
+                base: 0,
+                slice: if negative {
+                    &wide.negative
+                } else {
+                    &wide.positive
+                },
+            },
+        }
+    }
+
+    fn promote_to_wide(&mut self) {
+        if let Accumulator::Small {
+            base,
+            positive,
+            negative,
+        } = self.storage
+        {
+            let mut wide = Box::new(WideWords {
+                positive: [0; EXACT_SUM_WORDS],
+                negative: [0; EXACT_SUM_WORDS],
+            });
+            wide.positive[base..base + SMALL_SUM_WORDS].copy_from_slice(&positive);
+            wide.negative[base..base + SMALL_SUM_WORDS].copy_from_slice(&negative);
+            self.storage = Accumulator::Wide(wide);
+        }
+    }
+
+    fn add_word(&mut self, negative: bool, index: usize, value: u64) {
+        if value == 0 {
+            return;
+        }
+        if matches!(self.storage, Accumulator::Empty) {
+            let base = (index.max(2) - 2).min(EXACT_SUM_WORDS - SMALL_SUM_WORDS);
+            self.storage = Accumulator::Small {
+                base,
+                positive: [0; SMALL_SUM_WORDS],
+                negative: [0; SMALL_SUM_WORDS],
+            };
+        }
+        if let Accumulator::Small { base, .. } = self.storage {
+            if index < base || index >= base + SMALL_SUM_WORDS {
+                self.promote_to_wide();
+            }
+        }
+        match &mut self.storage {
+            Accumulator::Empty => {}
+            Accumulator::Small {
+                base,
+                positive,
+                negative: neg,
+            } => {
+                let base = *base;
+                let target = if negative { neg } else { positive };
+                let mut cursor = index - base;
+                let (sum, mut carry) = target[cursor].overflowing_add(value);
+                target[cursor] = sum;
+                cursor += 1;
+                while carry && cursor < SMALL_SUM_WORDS {
+                    let (sum, next) = target[cursor].overflowing_add(1);
+                    target[cursor] = sum;
+                    carry = next;
+                    cursor += 1;
+                }
+                if !carry {
+                    self.window.include(index, base + cursor);
+                    return;
+                }
+                self.promote_to_wide();
+                if let Accumulator::Wide(wide) = &mut self.storage {
+                    let target = if negative {
+                        &mut wide.negative
+                    } else {
+                        &mut wide.positive
+                    };
+                    add_word_wide(target, &mut self.window, index, base + SMALL_SUM_WORDS, 1);
+                }
+            }
+            Accumulator::Wide(wide) => {
+                let target = if negative {
+                    &mut wide.negative
+                } else {
+                    &mut wide.positive
+                };
+                add_word_wide(target, &mut self.window, index, index, value);
+            }
+        }
+    }
+
+    fn add_shifted(&mut self, negative: bool, value: u128, shift: usize) {
+        let bytes = value.to_le_bytes();
+        // endian-exception: reconstructed-scalar
+        let low = u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]);
+        // endian-exception: reconstructed-scalar
+        let high = u64::from_le_bytes([
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        ]);
+        for (limb_index, limb) in [low, high].into_iter().enumerate() {
+            if limb == 0 {
+                continue;
+            }
+            let bit = shift + limb_index * 64;
+            let word = bit / 64;
+            let remainder = bit % 64;
+            if remainder == 0 {
+                self.add_word(negative, word, limb);
+            } else {
+                self.add_word(negative, word, limb << remainder);
+                self.add_word(negative, word + 1, limb >> (64 - remainder));
+            }
+        }
+    }
+
     pub(crate) fn add_product(&mut self, left: f64, right: f64) {
         self.add_factors([left, right]);
     }
@@ -424,20 +607,13 @@ impl ExactSignedSum {
             self.invalid = true;
             return;
         };
-        let target = if negative {
-            &mut self.negative
-        } else {
-            &mut self.positive
-        };
-        add_shifted(
-            target,
-            &mut self.window,
+        self.add_shifted(
+            negative,
             u128::from(product[0]) | (u128::from(product[1]) << 64),
             shift,
         );
-        add_shifted(
-            target,
-            &mut self.window,
+        self.add_shifted(
+            negative,
             u128::from(product[2]) | (u128::from(product[3]) << 64),
             shift + 128,
         );
@@ -473,12 +649,7 @@ impl ExactSignedSum {
         if shift + 128 >= EXACT_SUM_WORDS * 64 {
             return None;
         }
-        let target = if negative ^ factor_negative {
-            &mut self.negative
-        } else {
-            &mut self.positive
-        };
-        add_shifted(target, &mut self.window, product, shift);
+        self.add_shifted(negative ^ factor_negative, product, shift);
         Some(())
     }
 
@@ -542,11 +713,24 @@ impl ExactSignedSum {
     /// loop cannot leave a borrow in the highest word. Splitting the
     /// comparison from the subtraction would state that relation as an
     /// assertion instead of holding it.
-    fn signed_difference(&mut self) -> Option<(bool, &[u64; EXACT_SUM_WORDS])> {
+    fn signed_difference(&mut self) -> Option<(bool, Words<'_>)> {
         let words = self.window.words();
-        let is_negative = self.positive[words.clone()]
+        if words.is_empty() {
+            return None;
+        }
+        let (base, positive, negative): (usize, &mut [u64], &mut [u64]) = match &mut self.storage {
+            Accumulator::Empty => return None,
+            Accumulator::Small {
+                base,
+                positive,
+                negative,
+            } => (*base, positive, negative),
+            Accumulator::Wide(wide) => (0, &mut wide.positive, &mut wide.negative),
+        };
+        let range = (words.start - base)..(words.end - base);
+        let is_negative = positive[range.clone()]
             .iter()
-            .zip(&self.negative[words.clone()])
+            .zip(&negative[range.clone()])
             .rev()
             .find_map(|(left, right)| match left.cmp(right) {
                 std::cmp::Ordering::Greater => Some(false),
@@ -554,32 +738,38 @@ impl ExactSignedSum {
                 std::cmp::Ordering::Equal => None,
             })?;
         let (larger, smaller) = if is_negative {
-            (&mut self.negative, &self.positive)
+            (negative, &*positive)
         } else {
-            (&mut self.positive, &self.negative)
+            (positive, &*negative)
         };
         let mut borrow = false;
-        for index in words {
+        for index in range {
             let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
             let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
             larger[index] = difference;
             borrow = first_borrow || second_borrow;
         }
-        Some((is_negative, larger))
+        Some((
+            is_negative,
+            Words {
+                base,
+                slice: larger,
+            },
+        ))
     }
 }
 
-fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
-    words[bit / 64] & (1_u64 << (bit % 64)) != 0
+fn bit_is_set(words: Words<'_>, bit: usize) -> bool {
+    words.get(bit / 64) & (1_u64 << (bit % 64)) != 0
 }
 
 /// The `count` bits of `words` from bit `low` upwards, `count` at most 64,
 /// with bit `low` as the least significant.
-fn bit_field(words: &[u64; EXACT_SUM_WORDS], low: usize, count: usize) -> u64 {
+fn bit_field(words: Words<'_>, low: usize, count: usize) -> u64 {
     let (word, offset) = (low / 64, low % 64);
-    let mut field = words[word] >> offset;
+    let mut field = words.get(word) >> offset;
     if offset != 0 && word + 1 < EXACT_SUM_WORDS {
-        field |= words[word + 1] << (64 - offset);
+        field |= words.get(word + 1) << (64 - offset);
     }
     if count < 64 {
         field & ((1_u64 << count) - 1)
@@ -590,10 +780,13 @@ fn bit_field(words: &[u64; EXACT_SUM_WORDS], low: usize, count: usize) -> u64 {
 
 /// Whether any bit of `words` below `bit` is set, when every word below word
 /// `low` is zero.
-fn any_bit_below(words: &[u64; EXACT_SUM_WORDS], low: usize, bit: usize) -> bool {
+fn any_bit_below(words: Words<'_>, low: usize, bit: usize) -> bool {
     let (word, offset) = (bit / 64, bit % 64);
-    words[low.min(word)..word].iter().any(|value| *value != 0)
-        || words[word] & ((1_u64 << offset) - 1) != 0
+    let scan_low = low.min(word);
+    let start = (scan_low.max(words.base) - words.base).min(words.slice.len());
+    let end = (word.max(words.base) - words.base).min(words.slice.len());
+    words.slice[start..end].iter().any(|value| *value != 0)
+        || words.get(word) & ((1_u64 << offset) - 1) != 0
 }
 
 /// The scaled form of an accumulator magnitude whose highest set bit is
@@ -601,7 +794,7 @@ fn any_bit_below(words: &[u64; EXACT_SUM_WORDS], low: usize, bit: usize) -> bool
 /// sign. Every word below word `low` is zero.
 fn rounded_magnitude(
     negative: bool,
-    magnitude: &[u64; EXACT_SUM_WORDS],
+    magnitude: Words<'_>,
     low: usize,
     highest_bit: u16,
 ) -> Option<ScaledValue> {
@@ -718,35 +911,128 @@ fn normal_ratio_products<const N: usize>(
     Some(products)
 }
 
+#[inline]
+fn two_sum(x: f64, y: f64) -> (f64, f64) {
+    let sum = x + y;
+    let b_virtual = sum - x;
+    let err = (x - (sum - b_virtual)) + (y - b_virtual);
+    (sum, err)
+}
+
+/// Exact error-free dot product via FMA `two_prod` and Shewchuk expansion for
+/// up to three normal-range products when plain binary64 cancels. Returns
+/// `None` on subnormal/overflow risk or tie-breaking boundaries.
+#[inline]
+fn exact_small_dot<const N: usize>(
+    coefficients: [f64; N],
+    components: [f64; N],
+    products: [f64; N],
+) -> Option<FiniteReal> {
+    const SAFE_LOW: f64 = 1.0e-288;
+    const SAFE_HIGH: f64 = 1.0e288;
+    if N > 3 {
+        return None;
+    }
+    let mut exp = [0.0_f64; 6];
+    let mut len = 0_usize;
+    let mut push = |term: f64| -> bool {
+        if term == 0.0 {
+            return true;
+        }
+        if !term.is_normal() || term.abs() > SAFE_HIGH {
+            return false;
+        }
+        let mut q = term;
+        let mut write = 0_usize;
+        for idx in 0..len {
+            let (s, e) = two_sum(q, exp[idx]);
+            if !s.is_finite() || (e != 0.0 && !e.is_normal()) {
+                return false;
+            }
+            q = s;
+            if e != 0.0 {
+                exp[write] = e;
+                write += 1;
+            }
+        }
+        if q != 0.0 {
+            if !q.is_normal() {
+                return false;
+            }
+            exp[write] = q;
+            write += 1;
+        }
+        len = write;
+        true
+    };
+    for index in 0..N {
+        let a = coefficients[index];
+        let b = components[index];
+        if a == 0.0 || b == 0.0 {
+            continue;
+        }
+        let p = products[index];
+        let abs_p = p.abs();
+        if !(SAFE_LOW..=SAFE_HIGH).contains(&abs_p) {
+            return None;
+        }
+        let e = a.mul_add(b, -p);
+        if !push(p) || !push(e) {
+            return None;
+        }
+    }
+    if len == 0 {
+        return Some(FiniteReal::ZERO);
+    }
+    let hi = exp[len - 1];
+    if !hi.is_normal() {
+        return None;
+    }
+    if len == 1 {
+        return FiniteReal::new(hi);
+    }
+    let mut tail_abs = 0.0_f64;
+    for &term in &exp[..len - 1] {
+        tail_abs += term.abs();
+    }
+    // Strictly below a quarter ULP of `hi`, so rounding cannot cross a midpoint.
+    if tail_abs < hi.abs() * (f64::EPSILON * 0.25) {
+        FiniteReal::new(hi)
+    } else {
+        None
+    }
+}
+
+#[inline]
 pub(crate) fn fast_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
     products: [f64; N],
 ) -> Option<FiniteReal> {
-    if products.iter().any(|product| !product.is_finite()) {
+    let mut sum = 0.0_f64;
+    let mut scale = 0.0_f64;
+    for index in 0..N {
+        let product = products[index];
+        let abs = product.abs();
+        // A product below the normal range may have rounded before it reached
+        // this check, even when it is nonzero. Recompute every such column from
+        // the exact significands.
+        if abs < f64::MIN_POSITIVE && coefficients[index] != 0.0 && components[index] != 0.0 {
+            return None;
+        }
+        scale = scale.max(abs);
+        sum += product;
+    }
+    if !sum.is_finite() {
         return None;
     }
-    if coefficients.into_iter().zip(components).zip(products).any(
-        |((coefficient, component), product)| {
-            // A product below the normal range may have rounded before it
-            // reached this check, even when it is nonzero. Recompute every
-            // such column from the exact significands.
-            coefficient != 0.0 && component != 0.0 && product.abs() < f64::MIN_POSITIVE
-        },
-    ) {
-        return None;
-    }
-    let scale = products
-        .iter()
-        .fold(0.0_f64, |scale, product| scale.max(product.abs()));
     if scale == 0.0 {
         return Some(FiniteReal::ZERO);
     }
-    let sum = FiniteReal::new(products.into_iter().sum::<f64>())?;
-    if sum.get().abs() / scale < f64::EPSILON {
-        return None;
+    if sum.abs() < scale * f64::EPSILON {
+        return exact_small_dot(coefficients, components, products);
     }
-    Some(sum)
+    FiniteReal::new(sum)
 }
 
 /// The outcome of [`product_sum`].
@@ -842,15 +1128,22 @@ impl<const LANES: usize> LaneProductSums<LANES> {
         shared: [f64; SHARED],
         lanes: [f64; LANES],
     ) -> Option<()> {
-        if shared.iter().chain(&lanes).any(|value| !value.is_finite()) {
-            return None;
+        for value in shared {
+            if !value.is_finite() {
+                return None;
+            }
         }
-        if shared.contains(&0.0) {
-            return Some(());
+        for value in lanes {
+            if !value.is_finite() {
+                return None;
+            }
         }
         let mut product = 1.0_f64;
         let mut exact = false;
         for factor in shared {
+            if factor == 0.0 {
+                return Some(());
+            }
             product *= factor;
             exact |= !product.is_normal();
         }

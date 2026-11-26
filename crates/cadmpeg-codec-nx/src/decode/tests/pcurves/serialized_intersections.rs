@@ -49,7 +49,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ir.geometry.procedural_curves.push(ProceduralCurve::new(
             procedural,
             ProceduralCurveDefinition::TolerantIntersection {
-                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                construction: cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                     surfaces.clone(),
                     [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     0.01,
@@ -70,7 +70,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         for index in 0..2 {
             ir.geometry.points.push(Point::new(
                 points[index].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     0.005
                         + 9.99
                             * cadmpeg_core::convert::f64_from_index(index)
@@ -97,7 +97,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 vertices[1].clone(),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
+                cadmpeg_ir::scalar::PositiveLength::new(0.03).expect("positive finite tolerance"),
             ),
             native_ref: None,
         });
@@ -134,7 +134,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                             .expect("finite fixture range"),
                     ),
                     Some(
-                        cadmpeg_ir::geometry::FitTolerance::try_new(0.02)
+                        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.02)
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
@@ -149,7 +149,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 name: None,
                 color: None,
                 tolerance: Some(
-                    cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
+                    cadmpeg_ir::scalar::PositiveLength::new(0.03)
+                        .expect("positive finite tolerance"),
                 ),
                 native_ref: None,
             });
@@ -172,7 +173,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                     pcurve: pcurves[index].clone(),
                     isoparametric: None,
                     parameter_range: Some(
-                        cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 10.0]).unwrap(),
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                            0.0, 10.0,
+                        ])
+                        .unwrap(),
                     ),
                 }],
                 use_curve: None,
@@ -212,7 +216,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 panic!("fixture uses general pcurve metadata")
             };
             metadata.set_fit_tolerance(Some(
-                cadmpeg_ir::geometry::FitTolerance::try_new(0.01).unwrap(),
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.01).unwrap(),
             ));
         }
         complete_tolerant_intersection_pcurves_from_serialized_branches(
@@ -324,7 +328,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         });
         for (point, position) in ir.geometry.points.iter_mut().zip(endpoints) {
             point.set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
         }
@@ -339,7 +343,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             };
             let supports = intersection.supports();
             let tolerance = intersection.tolerance().get();
-            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            *intersection = cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
                 endpoints,
                 tolerance,
@@ -349,8 +353,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         });
         ir.geometry.edges[0].set_param_range(None);
         for coedge in &mut ir.geometry.coedges {
-            coedge.pcurves[0].parameter_range =
-                Some(cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap());
+            coedge.pcurves[0].parameter_range = Some(
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range)
+                    .unwrap(),
+            );
         }
         for pcurve in &mut ir.geometry.pcurves {
             let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
@@ -416,9 +422,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             };
             let supports = intersection.supports();
             let endpoints = intersection.endpoints();
-            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            *intersection = cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
-                (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                (*endpoints).map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 10.0,
             )
             .unwrap();

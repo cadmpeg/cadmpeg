@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs};
+use crate::history::body_selections::{
+    bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs,
+};
 
 #[test]
 fn form33_without_unique_body_proof_remains_unresolved() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
@@ -17,21 +19,20 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
     let bodies = [body(1), body(2)];
     let regions = [
-        Region {
-            id: RegionId::mint("test:model:region#1").expect("identity grammar"),
-            body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
-            native_ref: None,
-        },
-        Region {
-            id: RegionId::mint("test:model:region#2").expect("identity grammar"),
-            body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
-            native_ref: None,
-        },
+        Region::new(
+            RegionId::mint("test:model:region#1").expect("identity grammar"),
+            bodies[0].id.clone(),
+            vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+        ),
+        Region::new(
+            RegionId::mint("test:model:region#2").expect("identity grammar"),
+            bodies[1].id.clone(),
+            vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
+        ),
     ];
     let shells = [
         Shell::new(
@@ -139,6 +140,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies: &bodies,
         regions: &regions,
         shells: &shells,

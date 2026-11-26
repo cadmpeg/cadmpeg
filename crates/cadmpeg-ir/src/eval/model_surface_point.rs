@@ -15,7 +15,7 @@ use super::model_native_revolution_point;
 use super::model_ruled_surface_jet;
 use super::model_sum_surface_jet;
 use super::model_surface_jet_by_id;
-use super::model_surface_point_in_index;
+use super::model_surface_point;
 use super::offset;
 use super::placed_reach;
 use super::placed_vectors;
@@ -24,6 +24,7 @@ use super::refusal_of;
 use super::revision_surface_tail_has_current_cache;
 use super::rolling_ball_jet_point;
 use super::scale_vector;
+use super::spine_rolling_ball::spine_rolling_ball_point;
 use super::subset_support_parameters_with_derivatives;
 use super::surface_first_order;
 use super::sweep_has_current_cache;
@@ -33,8 +34,9 @@ use super::EvaluationFailure;
 use super::ModelEvaluationDepthGuard;
 use super::ModelEvaluationIdentity;
 use super::UNREACHED_POINT;
-use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 
 pub(super) fn model_surface_point_by_id_inner(
@@ -555,6 +557,14 @@ pub(super) fn model_surface_point_by_id_inner(
                                 .flatten(),
                         ),
                     }
+                } else if surface.geometry.solved().is_none() {
+                    point_evaluation(spine_rolling_ball_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        u,
+                        v,
+                    ))
                 } else {
                     direct_evaluation(admission, &surface.geometry, u, v, normal)
                 }
@@ -619,9 +629,9 @@ pub(super) fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
                 let support = definition_payload.support();
-                let parameter_ranges = definition_payload
-                    .parameter_ranges()
-                    .map(crate::geometry::DirectedParameterRange::finite_endpoints);
+                let parameter_ranges = definition_payload.parameter_ranges().map(
+                    crate::geometry::procedural_curves::DirectedParameterRange::finite_endpoints,
+                );
                 let u_sense = definition_payload.u_sense();
                 let v_sense = definition_payload.v_sense();
                 {
@@ -692,7 +702,7 @@ pub(super) fn model_surface_point_by_id_inner(
             _ if procedural.is_some() => {
                 // A non-finite point enters the evaluation as a finite one
                 // does.
-                point_evaluation(model_surface_point_in_index(
+                point_evaluation(model_surface_point(
                     admission,
                     index,
                     &surface.geometry,

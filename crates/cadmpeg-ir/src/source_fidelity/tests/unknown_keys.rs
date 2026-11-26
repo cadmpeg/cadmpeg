@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::source_fidelity::DecodeSidecar;
 
@@ -13,6 +15,7 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
     "/fidelity/file_digests",
+    "/fidelity/codec_digests",
     "/fidelity/retained_records",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
@@ -54,6 +57,8 @@ fn fixture() -> Value {
         "fidelity": {
             "decode_digest": DIGEST,
             "file_digests": {"synthetic:document:definition#component": DIGEST},
+            "content_digest": DIGEST,
+            "codec_digests": {"synthetic_lane": DIGEST},
             "unrepresented": ["model"],
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
@@ -153,7 +158,7 @@ fn complete_sidecar_refuses_repeated_retained_keys_before_replacement() {
     let fixture = fixture();
     let text = fixture.to_string();
     let record = &fixture["fidelity"]["retained_records"][FIRST];
-    let member = format!("{}:{record}", serde_json::to_string(FIRST).unwrap());
+    let member = format!("{}:{record}", json::to_string(FIRST).unwrap());
     assert_eq!(text.matches(&member).count(), 1);
     let repeated = text.replace(&member, &format!("{member},{member}"));
     let error = DecodeSidecar::from_json(&repeated).unwrap_err();

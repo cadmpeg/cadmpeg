@@ -158,6 +158,18 @@ pub(crate) struct Configuration {
     pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
+impl Configuration {
+    /// The configuration's index `N`, which names its `Config-N` streams: the
+    /// stored `SourceIndex`, else the decimal Keywords `id` (`sldprt.md` §2).
+    pub(crate) fn partition_index(&self) -> Option<u32> {
+        self.source_index.or_else(|| {
+            self.properties
+                .get("id")
+                .and_then(|value| value.parse().ok())
+        })
+    }
+}
+
 fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
@@ -327,7 +339,141 @@ impl Feature {
     pub(crate) fn source_value(&self) -> Option<u32> {
         self.source_id.and_then(FeatureSource::value)
     }
+
+    /// Whether the record states any of the properties `keys`.
+    pub(crate) fn states_any(&self, keys: &[&str]) -> bool {
+        keys.iter().any(|key| self.properties.contains_key(*key))
+    }
 }
+
+/// The revolution axis, filled from the feature-input lane.
+pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDirection"];
+/// The reverse byte the decoder read with a revolution's axis, `Stored` or
+/// `Reversed`. Its presence states that `AxisDirection` gives the turn: the
+/// decoder writes `AxisDirection` already reversed for `Reversed`.
+pub(crate) const TURN_SENSE_PROPERTY: &str = "TurnSense";
+/// What the decoder fills from the feature-input lane while a revolution's
+/// record states none of its axis: the axis and its turn sense.
+pub(crate) const REVOLUTION_AXIS_DERIVED_PROPERTIES: [&str; 3] =
+    ["AxisOrigin", "AxisDirection", TURN_SENSE_PROPERTY];
+/// The frame of a coordinate system, filled from the feature-input lane.
+pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "YAxis", "ZAxis"];
+/// The frame of a reference plane, filled from the feature-input lane.
+pub(crate) const REFERENCE_PLANE_FRAME_PROPERTIES: [&str; 3] = ["Origin", "Normal", "UAxis"];
+/// Where a reference plane's sketch U axis comes from, filled with its frame.
+pub(crate) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+/// The U-axis source of a reference plane whose record stores its normal and
+/// distance only, so that the decoder constructs its in-plane frame.
+pub(crate) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
+/// What the decoder fills from the feature-input lane while a reference
+/// plane's record states none of its frame: the frame, its U-axis source, and
+/// the plane's reference.
+pub(crate) const REFERENCE_PLANE_DERIVED_PROPERTIES: [&str; 10] = [
+    "Origin",
+    "Normal",
+    "UAxis",
+    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    "Reference",
+    "ReferenceFaceNative",
+    "ReferenceFaceFeature",
+    "ReferenceFaceOrigin",
+    "ReferenceFaceNormal",
+    "ReferenceFaceUAxis",
+];
+/// The frame of a reference axis, filled from its two construction planes.
+pub(crate) const REFERENCE_AXIS_FRAME_PROPERTIES: [&str; 2] = ["Origin", "Direction"];
+/// The translation of a move-face feature, filled from the feature-input lane.
+pub(crate) const MOVE_FACE_PROPERTIES: [&str; 2] = ["Mode", "Direction"];
+/// The end condition whose absence makes the decoder fill an extrusion's
+/// termination from the feature-input lane.
+pub(crate) const EXTRUSION_TERMINATION_GATE: [&str; 1] = ["EndCondition"];
+/// The end conditions of an extrusion that the decoder fills from the lane.
+pub(crate) const EXTRUSION_TERMINATION_PROPERTIES: [&str; 4] =
+    ["EndCondition", "EndCondition2", "Vertex", "Face"];
+/// The depths of an extrusion that the decoder fills from the lane, each
+/// under the first of its two names when the record states neither.
+pub(crate) const EXTRUSION_DEPTH_PARAMETERS: [&str; 4] = ["D1", "Depth", "D2", "Depth2"];
+/// The two directions of a linear pattern, which the decoder fills from the
+/// lane while the projected definition states neither.
+pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", "Direction2"];
+
+/// The record fields of a circular pattern the decoder fills from its walked
+/// object: the axis, the seed's source id, and the names of the dimensions
+/// that hold the count and the angle.
+pub(crate) const CIRCULAR_PATTERN_WALKED_PROPERTIES: [&str; 5] = [
+    "AxisOrigin",
+    "AxisDirection",
+    CIRCULAR_PATTERN_SEED_SOURCES,
+    CIRCULAR_PATTERN_COUNT_DIMENSION,
+    CIRCULAR_PATTERN_ANGLE_DIMENSION,
+];
+
+/// The source ids of a walked circular pattern's seeds.
+pub(crate) const CIRCULAR_PATTERN_SEED_SOURCES: &str = "SeedSources";
+
+/// The name of the dimension that holds a walked circular pattern's count.
+pub(crate) const CIRCULAR_PATTERN_COUNT_DIMENSION: &str = "CountDimension";
+
+/// The name of the dimension that holds a walked circular pattern's angle.
+pub(crate) const CIRCULAR_PATTERN_ANGLE_DIMENSION: &str = "AngleDimension";
+
+/// Record fields the decoder fills from the feature-input lane together, and
+/// only while the record states none of the group's gate. A record that states
+/// a gate key is read for the whole group.
+pub(crate) struct LaneDerivedGroup {
+    /// The properties whose absence lets the decoder fill the group.
+    pub(crate) gate: &'static [&'static str],
+    /// The properties the decoder fills, the gate among them.
+    pub(crate) properties: &'static [&'static str],
+    /// The parameters the decoder fills with them.
+    pub(crate) parameters: &'static [&'static str],
+}
+
+/// Every lane-derived group. The decoder guards read the gate constants above;
+/// the linear-pattern guard reads the projected definition, whose two
+/// directions come from these two properties.
+pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 8] = [
+    LaneDerivedGroup {
+        gate: &REVOLUTION_AXIS_PROPERTIES,
+        properties: &REVOLUTION_AXIS_DERIVED_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &COORDINATE_SYSTEM_PROPERTIES,
+        properties: &COORDINATE_SYSTEM_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_PLANE_FRAME_PROPERTIES,
+        properties: &REFERENCE_PLANE_DERIVED_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        properties: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &MOVE_FACE_PROPERTIES,
+        properties: &MOVE_FACE_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &EXTRUSION_TERMINATION_GATE,
+        properties: &EXTRUSION_TERMINATION_PROPERTIES,
+        parameters: &EXTRUSION_DEPTH_PARAMETERS,
+    },
+    LaneDerivedGroup {
+        gate: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        properties: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
+        properties: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
+        parameters: &[],
+    },
+];
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -408,6 +554,32 @@ pub(crate) enum HistoryContent {
     /// Native top-level feature record id.
     Feature(String),
     /// Non-whitespace root text content.
+    Text(String),
+    /// A root child element that is neither a configuration nor a feature: an
+    /// `Application` element with its `Keyword` children.
+    Element(HistoryElement),
+}
+
+/// One XML element of a Keywords root and its subtree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HistoryElement {
+    /// Element name.
+    pub(crate) tag: String,
+    /// Source attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attributes: BTreeMap<NonBlankString, String>,
+    /// Child elements and non-whitespace text, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) content: Vec<HistoryElementContent>,
+}
+
+/// One ordered item inside a [`HistoryElement`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum HistoryElementContent {
+    /// Child element.
+    Element(HistoryElement),
+    /// Non-whitespace text content.
     Text(String),
 }
 
@@ -580,14 +752,8 @@ impl FeatureInputLaneWire {
             .into_iter()
             .map(FeatureInputRelationInstanceWire::admit)
             .collect::<Result<Vec<_>, _>>()?;
-        let entities = self
-            .sketch_entities
-            .into_iter()
-            .map(|entity| {
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let entities = sketch_entities_from_wire(self.sketch_entities, &self.native_payload)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -610,11 +776,8 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
-        let sketch_entities = wire
-            .sketch_entities
-            .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
-            .collect::<Result<Vec<_>, _>>()?;
+        let sketch_entities =
+            sketch_entities_from_wire(wire.sketch_entities, &wire.native_payload)?;
         let relation_instances = wire
             .relation_instances
             .into_iter()
@@ -665,7 +828,7 @@ pub(crate) struct FeatureInputBodySelection {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mode"
     )]
-    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
@@ -701,6 +864,10 @@ pub(crate) struct FeatureInputEdgeSelection {
         deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
+    /// Whether the vector lies inside a `moPMarkRecord_c`, where it is one of
+    /// the record's edge references and not an operand of the feature.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) mark_reference: bool,
 }
 
 /// One compact feature-local surface-component selection.
@@ -1084,6 +1251,7 @@ cadmpeg_core::named_optional_field!(
     ArchiveParameterClass,
     "archive_class"
 );
+cadmpeg_core::named_optional_field!(deserialize_archive_object_id, u32, "archive_object_id");
 
 /// One named scalar serialized in native SI units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1122,6 +1290,15 @@ pub(crate) struct FeatureInputScalar {
         deserialize_with = "deserialize_archive_class"
     )]
     pub(crate) archive_class: Option<ArchiveParameterClass>,
+    /// Object identifier of the parameter object whose value this scalar is,
+    /// as the exact archive walk read it after the trailer's zero byte and
+    /// tolerance pointer (§2.3); `None` where the walk read no identifier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_archive_object_id"
+    )]
+    pub(crate) archive_object_id: Option<u32>,
 }
 
 /// The class of a named parameter object in the native archive.
@@ -1379,15 +1556,53 @@ pub(crate) struct SketchInputEntity {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
+    /// The stored kind a list-curve reading replaced (DI-77).
+    #[serde(skip)]
+    pub(crate) listed_curve: Option<ListedCurveOverride>,
     /// Little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record (`docs/formats/sldprt.md` §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     pub(crate) links: Option<SketchInputLinks>,
+}
+
+/// The side words of a 92-byte profile line record that join the side faces of
+/// an extruded polygon to its lines (`docs/formats/sldprt.md` §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LineSides {
+    /// The u32 at marker +80; zero in the records whose +84 names a side face.
+    pub(crate) state: u32,
+    /// The u32 at marker +84: the local identifier of the side face that the
+    /// next line record sweeps. `None` where the record is the direct form of
+    /// section 2 (u32 `1` at +84 with a nonzero, non-null identity at +88),
+    /// whose +84 is a selector.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_next_side"
+    )]
+    pub(crate) next_side: Option<u32>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_next_side, u32, "next_side");
+
+/// A marker whose record a `sgSketch` curve list reads as a curve, and the
+/// kind its +17 code selects without that reading (DI-77).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListedCurveOverride {
+    /// Curve form the list reading gives the record: `line`, `circle` or `arc`.
+    pub(crate) form: &'static str,
+    /// The +17 code.
+    pub(crate) code: u32,
+    /// The kind the code selects without the list reading.
+    pub(crate) stored: SketchInputKind,
 }
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
@@ -1438,9 +1653,36 @@ pub(crate) struct SketchInputEntityWire {
         deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record.
+    #[serde(default, deserialize_with = "deserialize_line_sides")]
+    line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
+}
+
+// The optional key names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_line_sides, LineSides, "line_sides");
+
+fn sketch_entities_from_wire(
+    wire: Vec<SketchInputEntityWire>,
+    payload: &[u8],
+) -> Result<Vec<SketchInputEntity>, String> {
+    let Some(parent) = wire.first().map(|entity| entity.parent.as_str()) else {
+        return Ok(Vec::new());
+    };
+    let listed = crate::resolved_features::markers::admit_sketch_input_entities(payload, parent)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|entity| entity.listed_curve.map(|listed| (entity.offset(), listed)))
+        .collect::<HashMap<_, _>>();
+    wire.into_iter()
+        .map(|entity| {
+            let mut entity = SketchInputEntity::try_from_wire(entity, payload)?;
+            entity.listed_curve = listed.get(&entity.offset()).copied();
+            Ok(entity)
+        })
+        .collect()
 }
 
 /// A selector paired with a nonempty collection of resolved marker links.
@@ -1534,6 +1776,12 @@ impl SketchInputEntity {
         self.kind
     }
 
+    /// The kind the marker's +17 code selects before a list-curve reading
+    /// replaces it (DI-77).
+    pub(crate) fn stored_kind(&self) -> SketchInputKind {
+        self.listed_curve.map_or(self.kind, |listed| listed.stored)
+    }
+
     /// Reclassifies this marker once its payload neighbourhood identifies a
     /// narrower entity family than the marker prefix alone.
     pub(crate) fn reclassify(&mut self, kind: SketchInputKind) {
@@ -1568,6 +1816,11 @@ impl SketchInputEntity {
     /// Returns the feature-local object identifier.
     pub(crate) fn local_id(&self) -> Option<u32> {
         self.local_id
+    }
+
+    /// The side words of this marker when it is a 92-byte record.
+    pub(crate) fn line_sides(&self) -> Option<LineSides> {
+        self.line_sides
     }
 
     #[cfg(test)]
@@ -1609,6 +1862,11 @@ impl SketchInputEntity {
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
+        if wire.line_sides != entity.line_sides {
+            return Err(
+                "SolidWorks feature-input line side words do not match its native payload".into(),
+            );
+        }
         entity.links = wire.links;
         Ok(entity)
     }
@@ -1636,8 +1894,10 @@ impl SketchInputEntity {
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
             local_id: crate::resolved_features::markers::marker_local_id(payload, position),
             kind,
+            listed_curve: None,
             state_value: None,
             coordinates_m: None,
+            line_sides: crate::resolved_features::markers::marker_line_sides(payload, position),
             links: None,
         })
     }
@@ -1665,6 +1925,9 @@ impl SketchInputEntity {
                 "SolidWorks feature-input local object id does not match its native payload",
             );
         }
+        if self.line_sides != expected.line_sides {
+            return Err("SolidWorks feature-input line side words do not match its native payload");
+        }
         Ok(())
     }
 
@@ -1677,7 +1940,7 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = cadmpeg_test_support::service_decode_context()
+        let mut payload = cadmpeg_core::decode::test_support::service_decode_context()
             .alloc_filled(
                 position.checked_add(39).unwrap(),
                 0,
@@ -2194,6 +2457,7 @@ impl SketchRelationKind {
 #[cfg(test)]
 mod tests {
     use super::PmiDimension;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
@@ -2269,8 +2533,8 @@ mod tests {
         ] {
             let owned = String::from(source);
             assert_eq!(
-                serde_json::to_vec(&source).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&source).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -2298,22 +2562,22 @@ mod tests {
             .set_arena(&service, arena_name, std::slice::from_ref(&record))
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+            json::to_value(&record).unwrap()
         );
     }
 
     #[test]
     fn native_operand_wire_rejects_reserved_tags() {
         for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
-            assert!(serde_json::from_value::<super::FeatureInputOperandKind>(
-                serde_json::json!({"native": tag})
+            assert!(json::from_value::<super::FeatureInputOperandKind>(
+                cadmpeg_core::json!({"native": tag})
             )
             .is_err());
         }
-        let wire = serde_json::json!({"native": 0x812a});
-        let kind: super::FeatureInputOperandKind = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+        let wire = cadmpeg_core::json!({"native": 0x812a});
+        let kind: super::FeatureInputOperandKind = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(kind).unwrap(), wire);
     }
 
     #[test]
@@ -2324,10 +2588,10 @@ mod tests {
             kind: super::FeatureInputSurfaceSelectionKind,
         }
         for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"endpoint_selector": 0}),
+            cadmpeg_core::json!({}),
+            cadmpeg_core::json!({"endpoint_selector": 0}),
         ] {
-            let selection: Selection = serde_json::from_value(wire.clone()).unwrap();
+            let selection: Selection = json::from_value(wire.clone()).unwrap();
             assert_eq!(
                 matches!(
                     selection.kind,
@@ -2335,7 +2599,7 @@ mod tests {
                 ),
                 wire.get("endpoint_selector").is_some(),
             );
-            assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+            assert_eq!(json::to_value(selection).unwrap(), wire);
         }
     }
 
@@ -2346,16 +2610,16 @@ mod tests {
             #[serde(flatten, with = "super::pmi_display_text_wire")]
             value: Option<(String, u64)>,
         }
-        let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
-        let display: Display = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(display).unwrap(), wire);
+        let wire = cadmpeg_core::json!({"display_text": "25 mm", "display_text_offset": 17});
+        let display: Display = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(display).unwrap(), wire);
         for field in ["display_text", "display_text_offset"] {
             let mut split = wire.clone();
             split.as_object_mut().unwrap().remove(field);
-            assert!(serde_json::from_value::<Display>(split).is_err());
+            assert!(json::from_value::<Display>(split).is_err());
         }
-        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+        let absent: Display = json::from_value(cadmpeg_core::json!({})).unwrap();
+        assert_eq!(json::to_value(absent).unwrap(), cadmpeg_core::json!({}));
     }
 
     #[test]
@@ -2366,16 +2630,13 @@ mod tests {
             value: Option<(String, u64)>,
         }
         for wire in [
-            serde_json::json!({"display_text": null, "display_text_offset": null}),
-            serde_json::json!({"display_text": null, "display_text_offset": 17}),
-            serde_json::json!({"display_text": "25 mm", "display_text_offset": null}),
+            cadmpeg_core::json!({"display_text": null, "display_text_offset": null}),
+            cadmpeg_core::json!({"display_text": null, "display_text_offset": 17}),
+            cadmpeg_core::json!({"display_text": "25 mm", "display_text_offset": null}),
         ] {
-            assert!(
-                serde_json::from_value::<Display>(wire.clone()).is_err(),
-                "{wire}"
-            );
+            assert!(json::from_value::<Display>(wire.clone()).is_err(), "{wire}");
         }
-        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Display = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.value.is_none());
     }
 
@@ -2387,16 +2648,13 @@ mod tests {
             parent: Option<super::TreeParent>,
         }
         for wire in [
-            serde_json::json!({"tree_parent": null}),
-            serde_json::json!({"parent_source_id": null}),
-            serde_json::json!({"tree_parent": "record", "parent_source_id": null}),
+            cadmpeg_core::json!({"tree_parent": null}),
+            cadmpeg_core::json!({"parent_source_id": null}),
+            cadmpeg_core::json!({"tree_parent": "record", "parent_source_id": null}),
         ] {
-            assert!(
-                serde_json::from_value::<Parent>(wire.clone()).is_err(),
-                "{wire}"
-            );
+            assert!(json::from_value::<Parent>(wire.clone()).is_err(), "{wire}");
         }
-        let absent: Parent = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Parent = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.parent.is_none());
     }
 
@@ -2407,11 +2665,11 @@ mod tests {
             #[serde(flatten, with = "super::surface_selection_kind_wire")]
             kind: super::FeatureInputSurfaceSelectionKind,
         }
-        assert!(serde_json::from_value::<Selection>(
-            serde_json::json!({"endpoint_selector": null})
-        )
-        .is_err());
-        let absent: Selection = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(
+            json::from_value::<Selection>(cadmpeg_core::json!({"endpoint_selector": null}))
+                .is_err()
+        );
+        let absent: Selection = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert_eq!(
             absent.kind,
             super::FeatureInputSurfaceSelectionKind::Component
@@ -2426,10 +2684,9 @@ mod tests {
             operands: Vec<super::FeatureInputOperand>,
         }
         assert!(
-            serde_json::from_value::<Operands>(serde_json::json!({"entity_indices": null}))
-                .is_err()
+            json::from_value::<Operands>(cadmpeg_core::json!({"entity_indices": null})).is_err()
         );
-        let absent: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Operands = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.operands.is_empty());
     }
 
@@ -2440,12 +2697,11 @@ mod tests {
             #[serde(flatten, with = "super::feature_class_wire")]
             name: String,
         }
-        assert!(serde_json::from_value::<Class>(
-            serde_json::json!({"name": "sgEntHandle", "role": null})
+        assert!(json::from_value::<Class>(
+            cadmpeg_core::json!({"name": "sgEntHandle", "role": null})
         )
         .is_err());
-        let absent: Class =
-            serde_json::from_value(serde_json::json!({"name": "sgEntHandle"})).unwrap();
+        let absent: Class = json::from_value(cadmpeg_core::json!({"name": "sgEntHandle"})).unwrap();
         assert_eq!(absent.name, "sgEntHandle");
     }
 
@@ -2456,26 +2712,26 @@ mod tests {
             #[serde(flatten, with = "super::sketch_input_links_wire")]
             links: Option<super::SketchInputLinks>,
         }
-        assert!(serde_json::from_value::<Links>(
-            serde_json::json!({"links": [], "link_selector": null})
+        assert!(json::from_value::<Links>(
+            cadmpeg_core::json!({"links": [], "link_selector": null})
         )
         .is_err());
-        let absent: Links = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Links = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.links.is_none());
     }
 
     #[test]
     fn class_role_wire_is_derived_from_name() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
             "name": "sgEntHandle", "role": "sketch_entity"
         });
-        let class: super::FeatureInputClass = serde_json::from_value(wire.clone()).unwrap();
+        let class: super::FeatureInputClass = json::from_value(wire.clone()).unwrap();
         assert_eq!(class.role(), super::FeatureInputClassRole::SketchEntity);
-        assert_eq!(serde_json::to_value(class).unwrap(), wire);
+        assert_eq!(json::to_value(class).unwrap(), wire);
         let mut inconsistent = wire;
-        inconsistent["role"] = serde_json::json!("feature");
-        assert!(serde_json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
+        inconsistent["role"] = cadmpeg_core::json!("feature");
+        assert!(json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
     }
 
     #[test]
@@ -2485,20 +2741,20 @@ mod tests {
             #[serde(flatten, with = "super::scalar_operands_wire")]
             operands: Vec<super::FeatureInputOperand>,
         }
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "entity_indices": [7],
             "operands": [
                 {"offset": 0, "reference_ref": "a", "kind": "d6", "entity_index": 7},
                 {"offset": 12, "reference_ref": "b", "kind": "e1", "entity_index": 9}
             ]
         });
-        let operands: Operands = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(operands).unwrap(), wire);
+        let operands: Operands = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(operands).unwrap(), wire);
         let mut inconsistent = wire;
-        inconsistent["entity_indices"] = serde_json::json!([7, 9]);
-        assert!(serde_json::from_value::<Operands>(inconsistent).is_err());
-        let empty: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(serde_json::to_value(empty).unwrap(), serde_json::json!({}));
+        inconsistent["entity_indices"] = cadmpeg_core::json!([7, 9]);
+        assert!(json::from_value::<Operands>(inconsistent).is_err());
+        let empty: Operands = json::from_value(cadmpeg_core::json!({})).unwrap();
+        assert_eq!(json::to_value(empty).unwrap(), cadmpeg_core::json!({}));
     }
 
     #[test]
@@ -2509,17 +2765,17 @@ mod tests {
             parent: Option<super::TreeParent>,
         }
         for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"tree_parent": "record"}),
-            serde_json::json!({"parent_source_id": "7"}),
-            serde_json::json!({"tree_parent": "record", "parent_source_id": "7"}),
+            cadmpeg_core::json!({}),
+            cadmpeg_core::json!({"tree_parent": "record"}),
+            cadmpeg_core::json!({"parent_source_id": "7"}),
+            cadmpeg_core::json!({"tree_parent": "record", "parent_source_id": "7"}),
         ] {
-            let parent: Parent = serde_json::from_value(wire.clone()).unwrap();
+            let parent: Parent = json::from_value(wire.clone()).unwrap();
             assert_eq!(
                 parent.parent.is_none(),
                 wire.as_object().unwrap().is_empty()
             );
-            assert_eq!(serde_json::to_value(parent).unwrap(), wire);
+            assert_eq!(json::to_value(parent).unwrap(), wire);
         }
     }
 
@@ -2564,9 +2820,9 @@ mod tests {
             references: Vec::new(),
             sketch_entities: vec![entity],
         };
-        let wire = serde_json::to_value(&lane).expect("lane JSON");
+        let wire = json::to_value(&lane).expect("lane JSON");
         assert_eq!(
-            serde_json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
+            json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
             lane
         );
         assert_eq!(wire["sketch_entities"][0]["link_selector"], 3);
@@ -2576,15 +2832,15 @@ mod tests {
                 .as_object_mut()
                 .expect("entity object")
                 .remove(missing);
-            let error = serde_json::from_value::<FeatureInputLane>(split).unwrap_err();
+            let error = json::from_value::<FeatureInputLane>(split).unwrap_err();
             assert!(error.to_string().contains("links and link_selector"));
         }
         let mut empty = wire.clone();
-        empty["sketch_entities"][0]["links"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<FeatureInputLane>(empty).is_err());
+        empty["sketch_entities"][0]["links"] = cadmpeg_core::json!([]);
+        assert!(json::from_value::<FeatureInputLane>(empty).is_err());
         let mut moved = wire.clone();
-        moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
-        let error = serde_json::from_value::<FeatureInputLane>(moved).unwrap_err();
+        moved["sketch_entities"][0]["offset"] = cadmpeg_core::json!(3);
+        let error = json::from_value::<FeatureInputLane>(moved).unwrap_err();
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
@@ -2595,17 +2851,17 @@ mod tests {
         entity.remove("links");
         entity.remove("link_selector");
         let restored: FeatureInputLane =
-            serde_json::from_value(absent.clone()).expect("linkless round trip");
+            json::from_value(absent.clone()).expect("linkless round trip");
         assert!(restored.sketch_entities[0].links.is_none());
         assert_eq!(
-            serde_json::to_value(&restored).expect("lane JSON"),
+            json::to_value(&restored).expect("lane JSON"),
             absent,
             "an entity with no links round-trips with both keys absent"
         );
 
         let mut renamed = wire;
-        renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
-        let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
+        renamed["sketch_entities"][0]["local_id"] = cadmpeg_core::json!(4_242);
+        let error = json::from_value::<FeatureInputLane>(renamed).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
@@ -2644,18 +2900,18 @@ mod tests {
             references: Vec::new(),
             sketch_entities: vec![entity],
         };
-        let mut wire = serde_json::to_value(&lane).expect("native JSON");
+        let mut wire = json::to_value(&lane).expect("native JSON");
         let record = &wire["sketch_entities"][0];
-        assert_eq!(record["coordinates_m"], serde_json::json!([1.25, -2.5]));
+        assert_eq!(record["coordinates_m"], cadmpeg_core::json!([1.25, -2.5]));
         assert_eq!(
             record.to_string(),
             r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","offset":0,"ordinal":0,"parent":"lane"}"#
         );
         let restored: FeatureInputLane =
-            serde_json::from_value(wire.clone()).expect("native JSON round trip");
-        assert_eq!(serde_json::to_value(restored).expect("native JSON"), wire);
-        wire["sketch_entities"][0]["coordinates_m"] = serde_json::json!([1.25, "bad"]);
-        let refusal = serde_json::from_value::<FeatureInputLane>(wire)
+            json::from_value(wire.clone()).expect("native JSON round trip");
+        assert_eq!(json::to_value(restored).expect("native JSON"), wire);
+        wire["sketch_entities"][0]["coordinates_m"] = cadmpeg_core::json!([1.25, "bad"]);
+        let refusal = json::from_value::<FeatureInputLane>(wire)
             .expect_err("invalid coordinate")
             .to_string();
         assert_eq!(
@@ -2674,12 +2930,9 @@ mod tests {
             assert_ne!(geometry, handle);
             assert!(matches!(handle, SketchInputKind::NativeHandle(_)));
             assert_eq!(handle.native_code(), code);
-            let wire = serde_json::json!({"native": code});
-            assert_eq!(serde_json::to_value(handle).unwrap(), wire);
-            assert_eq!(
-                serde_json::from_value::<SketchInputKind>(wire).unwrap(),
-                handle
-            );
+            let wire = cadmpeg_core::json!({"native": code});
+            assert_eq!(json::to_value(handle).unwrap(), wire);
+            assert_eq!(json::from_value::<SketchInputKind>(wire).unwrap(), handle);
         }
     }
 
@@ -2830,17 +3083,17 @@ mod tests {
             reference_only: false,
             reference_only_offset: 0,
         };
-        let wire = serde_json::to_value(&dimension).unwrap();
+        let wire = json::to_value(&dimension).unwrap();
         assert!(wire.get("item_count").is_none());
-        let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: PmiDimension = json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, dimension);
         let mut explicit = wire.clone();
-        explicit["item_count"] = serde_json::json!(1);
-        let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        explicit["item_count"] = cadmpeg_core::json!(1);
+        let decoded: PmiDimension = json::from_value(explicit).unwrap();
+        assert_eq!(json::to_value(decoded).unwrap(), wire);
         let mut zero = wire;
-        zero["item_count"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
+        zero["item_count"] = cadmpeg_core::json!(0);
+        assert!(json::from_value::<PmiDimension>(zero).is_err());
     }
 }
 
@@ -2854,7 +3107,7 @@ cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
 cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
 cadmpeg_core::named_optional_field!(
     deserialize_mode,
-    cadmpeg_ir::features::BodyRetentionMode,
+    cadmpeg_ir::features::operation_settings::BodyRetentionMode,
     "mode"
 );
 cadmpeg_core::named_optional_field!(

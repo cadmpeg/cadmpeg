@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use std::rc::Rc;
 
 fn model() -> CadIr {
     let mut partial = json!({
@@ -29,13 +31,13 @@ fn model() -> CadIr {
     let partial = partial.as_object_mut().expect("partial model");
     let attributes = partial.remove("attributes").expect("attributes");
     let mut ir = CadIr::empty();
-    let mut geometry = serde_json::to_value(&ir.geometry).expect("empty topology");
+    let mut geometry = json::to_value(&ir.geometry).expect("empty topology");
     geometry
         .as_object_mut()
         .expect("topology object")
         .extend(partial.clone());
-    ir.geometry = serde_json::from_value(geometry).expect("synthetic owned solid");
-    ir.model.attributes = serde_json::from_value(attributes).expect("synthetic attributes");
+    ir.geometry = json::from_value(geometry).expect("synthetic owned solid");
+    ir.model.attributes = json::from_value(attributes).expect("synthetic attributes");
     ir
 }
 
@@ -189,7 +191,7 @@ fn a_span_without_a_joined_curve_keeps_only_the_radius_check() {
 fn loft_result_requires_two_positional_sections_without_support_or_guidance() {
     let base = loft_payload();
     let admitted = |value| {
-        serde_json::from_value::<cadmpeg_ir::geometry::surface_payloads::LoftSurfacePayload>(value)
+        json::from_value::<cadmpeg_ir::geometry::surface_payloads::LoftSurfacePayload>(value)
             .expect("synthetic loft payload")
     };
     assert!(unconstrained_loft(&admitted(base.clone())));
@@ -241,10 +243,12 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
                 vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 4, 1],
             ),
         };
-        attribute.values[5] = AttributeValue::String(family.into());
-        attribute
-            .values
-            .extend(values.into_iter().map(AttributeValue::Integer));
+        attribute.values[5] = Some(AttributeValue::String(family.into()));
+        attribute.values.extend(
+            values
+                .into_iter()
+                .map(|value| Some(AttributeValue::Integer(value))),
+        );
     }
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let poles = NurbsPoleGrid::from_lanes(
@@ -258,7 +262,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     let nurbs = NurbsSurface::new(axis(), axis(), poles, false).expect("surface");
     let id = cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:procedural-surface#loft")
         .expect("id");
-    let payload = serde_json::from_value(loft_payload()).expect("payload");
+    let payload = json::from_value(loft_payload()).expect("payload");
     model
         .geometry
         .procedural_surfaces
@@ -281,7 +285,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         .contains(&(section, name)))
     .is_none());
     let mut different_last_curve = model.clone();
-    different_last_curve.model.attributes[2].values[17] = AttributeValue::Integer(5);
+    different_last_curve.model.attributes[2].values[17] = Some(AttributeValue::Integer(5));
     assert!(loft(&different_last_curve, 17, [19, 23], |section, name| [
         (0, 8),
         (1, 5)
@@ -300,7 +304,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
             .iter_mut()
             .zip(values)
         {
-            *slot = AttributeValue::Integer(value);
+            *slot = Some(AttributeValue::Integer(value));
         }
         swapped
     };
@@ -328,13 +332,13 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         );
     }
     let mut wrong_curve = model.clone();
-    wrong_curve.model.attributes[2].values[12] = AttributeValue::Integer(99);
+    wrong_curve.model.attributes[2].values[12] = Some(AttributeValue::Integer(99));
     assert!(
         loft(&wrong_curve, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
             .contains(&(section, name)))
         .is_none()
     );
-    model.model.attributes[2].values[21] = AttributeValue::Integer(2);
+    model.model.attributes[2].values[21] = Some(AttributeValue::Integer(2));
     assert!(loft(&model, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
         .contains(&(section, name)))
     .is_none());
@@ -349,13 +353,13 @@ const SIDE_CLASS: &str =
 /// by a later generator 99.
 fn legacy_model() -> CadIr {
     let mut model = model();
-    model.geometry.surfaces[2].geometry = serde_json::from_value(json!({"kind":"solved","value":{
+    model.geometry.surfaces[2].geometry = json::from_value(json!({"kind":"solved","value":{
         "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
         "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
     }}))
     .expect("plane");
     let mut later = model.geometry.faces[2].clone();
-    later.id = serde_json::from_value(json!("test:model:face#f3")).expect("id");
+    later.id = json::from_value(json!("test:model:face#f3")).expect("id");
     model.geometry.faces.push(later);
     model
         .model
@@ -363,7 +367,7 @@ fn legacy_model() -> CadIr {
         .push(model.model.attributes[2].clone());
     let face = |i: usize| {
         AttributeTarget::Face(
-            serde_json::from_value(json!(format!("test:model:face#f{i}"))).expect("face id"),
+            json::from_value(json!(format!("test:model:face#f{i}"))).expect("face id"),
         )
     };
     let attributes = [
@@ -392,7 +396,7 @@ fn legacy_model() -> CadIr {
             [38, 1, generator, -1]
                 .into_iter()
                 .chain(tail)
-                .map(AttributeValue::Integer),
+                .map(|value| Some(AttributeValue::Integer(value))),
         );
     }
     model
@@ -437,37 +441,36 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     missing_cap.model.attributes.remove(1);
     assert!(check(&missing_cap).is_none());
     let mut duplicate_cap = base.clone();
-    duplicate_cap.model.attributes[1].values[11] = AttributeValue::Integer(19);
+    duplicate_cap.model.attributes[1].values[11] = Some(AttributeValue::Integer(19));
     assert!(check(&duplicate_cap).is_none());
     let mut foreign_cap = base.clone();
-    foreign_cap.model.attributes[1].values[11] = AttributeValue::Integer(40);
+    foreign_cap.model.attributes[1].values[11] = Some(AttributeValue::Integer(40));
     assert!(check(&foreign_cap).is_none());
     // The side tail carries no member index; a member tail is the other carrier's form.
     let mut member = base.clone();
-    member.model.attributes[2].values[18] = AttributeValue::Integer(4);
-    member.model.attributes[2].values[19] = AttributeValue::Integer(1);
+    member.model.attributes[2].values[18] = Some(AttributeValue::Integer(4));
+    member.model.attributes[2].values[19] = Some(AttributeValue::Integer(1));
     assert!(check(&member).is_none());
     let mut curve_tail = base.clone();
-    curve_tail.model.attributes[2].values[14] = AttributeValue::Integer(257);
+    curve_tail.model.attributes[2].values[14] = Some(AttributeValue::Integer(257));
     assert!(check(&curve_tail).is_none());
     let mut duplicate_side = base.clone();
     let mut side = duplicate_side.model.attributes[2].clone();
-    side.target = AttributeTarget::Face(
-        serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
-    )
-    .into();
-    side.values[7] = AttributeValue::Integer(17);
+    side.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
+    side.values[7] = Some(AttributeValue::Integer(17));
     duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());
     // Two names on one face: the face is not solely the generator's.
     let mut shared = base.clone();
-    shared.model.attributes[2].values[6] = AttributeValue::Integer(2);
+    shared.model.attributes[2].values[6] = Some(AttributeValue::Integer(2));
     shared.model.attributes[2]
         .values
-        .insert(9, AttributeValue::Integer(5));
+        .insert(9, Some(AttributeValue::Integer(5)));
     shared.model.attributes[2]
         .values
-        .insert(10, AttributeValue::Integer(-1));
+        .insert(10, Some(AttributeValue::Integer(-1)));
     assert!(check(&shared).is_none());
     // A side face on a non-planar surface.
     let mut curved = base.clone();
@@ -476,18 +479,306 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     // The generator names a face on a second body.
     let mut other_body = base.clone();
     let mut body = other_body.geometry.bodies[0].clone();
-    body.id = serde_json::from_value(json!("test:model:body#b2")).expect("id");
+    body.id = json::from_value(json!("test:model:body#b2")).expect("id");
     let mut region = other_body.geometry.regions[0].clone();
-    region.id = serde_json::from_value(json!("test:model:region#r2")).expect("id");
+    region.id = json::from_value(json!("test:model:region#r2")).expect("id");
     region.body = body.id.clone();
     let mut shell = other_body.geometry.shells[0].clone();
-    shell.id = serde_json::from_value(json!("test:model:shell#s2")).expect("id");
+    shell.id = json::from_value(json!("test:model:shell#s2")).expect("id");
     shell.region = region.id.clone();
     other_body.geometry.faces[3].shell = shell.id.clone();
-    other_body.model.attributes[3].values[7] = AttributeValue::Integer(17);
-    other_body.model.attributes[3].values[11] = AttributeValue::Integer(0);
+    other_body.model.attributes[3].values[7] = Some(AttributeValue::Integer(17));
+    other_body.model.attributes[3].values[11] = Some(AttributeValue::Integer(0));
     other_body.geometry.bodies.push(body);
     other_body.geometry.regions.push(region);
     other_body.geometry.shells.push(shell);
     assert!(check(&other_body).is_none());
+}
+
+/// A source of history-state models that answers every request with one
+/// fixed outcome and records the source indices it was asked for.
+struct FixedStates {
+    outcome: fn(&CadIr) -> StateModel,
+    model: CadIr,
+    asked: std::cell::RefCell<Vec<u32>>,
+}
+
+impl FixedStates {
+    fn new(model: CadIr, outcome: fn(&CadIr) -> StateModel) -> Self {
+        Self {
+            outcome,
+            model,
+            asked: std::cell::RefCell::default(),
+        }
+    }
+
+    fn holding(model: CadIr) -> Self {
+        Self::new(model, |model| StateModel::Model(Box::new(model.clone())))
+    }
+}
+
+impl ResultStates for FixedStates {
+    fn after(
+        &self,
+        _: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        self.asked.borrow_mut().push(source_index);
+        Ok(Rc::new((self.outcome)(&self.model)))
+    }
+}
+
+fn proof(final_model: Option<&CadIr>, states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    loft_proof(&ctx, final_model, states, 17, [19, 23], legacy_curves)
+}
+
+/// The legacy loft of `legacy_model` after a later feature consumed the cap
+/// of the first section: no face carries that cap name.
+fn consumed_cap() -> CadIr {
+    let mut model = legacy_model();
+    model.model.attributes.remove(0);
+    model
+}
+
+/// The legacy loft after a later feature copied its first cap: a second face
+/// carries the name of the cap.
+fn copied_cap() -> CadIr {
+    let mut model = legacy_model();
+    let mut copy = model.model.attributes[0].clone();
+    copy.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
+    model.model.attributes[3] = copy;
+    model
+}
+
+#[test]
+fn a_complete_final_model_proves_the_loft_without_a_state() {
+    let complete = legacy_model();
+    assert!(proof(Some(&complete), None).is_ok());
+    let states = FixedStates::new(CadIr::empty(), |_| StateModel::Unavailable);
+    assert!(proof(Some(&complete), Some(&states)).is_ok());
+    assert!(states.asked.borrow().is_empty());
+}
+
+#[test]
+fn a_loft_whose_cap_a_later_feature_consumed_or_copied_is_proved_by_its_state() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(loft_result(&later, 17, [19, 23], legacy_curves).is_none());
+        assert!(matches!(proof(Some(&later), None), Err(Unproved::Result)));
+        assert!(matches!(proof(None, None), Err(Unproved::Result)));
+        let states = FixedStates::holding(legacy_model());
+        assert!(proof(Some(&later), Some(&states)).is_ok());
+        assert!(proof(None, Some(&states)).is_ok());
+        assert_eq!(*states.asked.borrow(), [17, 17]);
+    }
+}
+
+#[test]
+fn the_state_must_hold_the_complete_result_itself() {
+    let later = consumed_cap();
+    let incomplete = FixedStates::holding(consumed_cap());
+    assert!(matches!(
+        proof(Some(&later), Some(&incomplete)),
+        Err(Unproved::Result)
+    ));
+    let unavailable = FixedStates::new(CadIr::empty(), |_| StateModel::Unavailable);
+    assert!(matches!(
+        proof(Some(&later), Some(&unavailable)),
+        Err(Unproved::Result)
+    ));
+}
+
+#[test]
+fn a_state_view_over_its_work_cap_keeps_the_loft_unproved_as_bounded() {
+    let later = consumed_cap();
+    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded);
+    assert!(matches!(
+        proof(Some(&later), Some(&bounded)),
+        Err(Unproved::Bounded)
+    ));
+    // A final model that proves the loft never reads the state.
+    assert!(proof(Some(&legacy_model()), Some(&bounded)).is_ok());
+}
+
+#[test]
+fn a_failed_state_is_its_own_refusal() {
+    let later = consumed_cap();
+    let failed = FixedStates::new(CadIr::empty(), |_| StateModel::Failed);
+    assert!(matches!(
+        proof(Some(&later), Some(&failed)),
+        Err(Unproved::StateFailed)
+    ));
+}
+
+fn final_proof(model: &CadIr, bound: bool) -> bool {
+    loft_final_proof(model, 17, [19, 23], legacy_curves, bound).is_some()
+}
+
+#[test]
+fn a_bound_state_proves_a_loft_whose_cap_a_later_feature_consumed_or_copied() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(loft_result(&later, 17, [19, 23], legacy_curves).is_none());
+        assert!(final_proof(&later, true));
+    }
+    // A complete final model needs no state.
+    assert!(final_proof(&legacy_model(), false));
+}
+
+#[test]
+fn a_loft_without_a_bound_state_needs_the_final_model_to_prove_it() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(!final_proof(&later, false));
+    }
+}
+
+#[test]
+fn a_bound_state_does_not_admit_an_owned_face_that_contradicts_the_loft() {
+    let check = |edit: &dyn Fn(&mut CadIr)| {
+        let mut model = consumed_cap();
+        edit(&mut model);
+        assert!(!final_proof(&model, true));
+    };
+    // A cap of a section that the loft does not use.
+    check(&|model| model.model.attributes[0].values[10] = Some(AttributeValue::Integer(40)));
+    // A side face whose last section differs from the loft.
+    check(&|model| model.model.attributes[1].values[16] = Some(AttributeValue::Integer(40)));
+    // A side face whose curve is not on the section boundary.
+    check(&|model| model.model.attributes[1].values[10] = Some(AttributeValue::Integer(99)));
+    // A cap in a form that no loft writes.
+    check(&|model| model.model.attributes[0].values[11] = Some(AttributeValue::Integer(261)));
+    // A name of another family on a face of the generator.
+    let sweep = self::model();
+    assert!(loft_final_proof(&sweep, 17, [19, 23], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_bound_state_admits_a_final_model_that_holds_no_face_of_the_loft() {
+    // Generator 18 names no face: every face of the loft is gone.
+    assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, true).is_some());
+    assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, false).is_none());
+    assert!(loft_final_proof(&legacy_model(), 17, [19, 19], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_bound_state_admits_a_face_that_a_later_feature_re_surfaced() {
+    // The projector proves the surface of each face on the state after the
+    // loft. The final model can hold another surface under the same name.
+    let cylinder = || self::model().geometry.surfaces[2].geometry.clone();
+    let mut cap = consumed_cap();
+    cap.geometry.surfaces[1].geometry = cylinder();
+    assert!(final_proof(&cap, true));
+    assert!(!final_proof(&cap, false));
+    // The side face of the legacy form.
+    let mut side = consumed_cap();
+    side.geometry.surfaces[2].geometry = cylinder();
+    assert!(final_proof(&side, true));
+    // The caps and the side face of the schema-44 form, with the side face
+    // on a surface that is no loft surface.
+    let mut modern = self::model();
+    for (i, attribute) in modern.model.attributes.iter_mut().enumerate() {
+        attribute.values.truncate(11);
+        let (family, values) = match i {
+            0 => ("INV_NMX_GEN_TAG", vec![0, 19, 260]),
+            1 => ("INV_NMX_GEN_TAG", vec![0, 23, 260]),
+            _ => (
+                "INV_NMX_ORDERED_GEN_TAG",
+                vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 4, 1],
+            ),
+        };
+        attribute.values[5] = Some(AttributeValue::String(family.into()));
+        attribute.values.extend(
+            values
+                .into_iter()
+                .map(|value| Some(AttributeValue::Integer(value))),
+        );
+    }
+    modern.geometry.surfaces[0].geometry = cylinder();
+    assert!(loft_result(&modern, 17, [19, 23], legacy_curves).is_none());
+    assert!(final_proof(&modern, true));
+    // A name that no loft writes is still a contradiction.
+    modern.model.attributes[2].values[21] = Some(AttributeValue::Integer(0));
+    assert!(!final_proof(&modern, true));
+}
+
+#[test]
+fn a_legacy_attribute_that_the_projector_refuses_refuses_the_screen() {
+    // `legacy_owned_faces` refuses the whole loft for these forms, whichever
+    // generator the attribute names, and so does the screen.
+    let refused = |edit: &dyn Fn(&mut CadIr)| {
+        let mut model = consumed_cap();
+        edit(&mut model);
+        assert!(legacy_loft(&model, 17, [19, 23], legacy_curves).is_none());
+        assert!(!final_proof(&model, true));
+    };
+    // The attribute of the later generator, count 0.
+    refused(&|model| model.model.attributes[2].values[6] = Some(AttributeValue::Integer(0)));
+    // The attribute of the loft itself, count 0 and a negative count.
+    refused(&|model| model.model.attributes[1].values[6] = Some(AttributeValue::Integer(0)));
+    refused(&|model| model.model.attributes[1].values[6] = Some(AttributeValue::Integer(-1)));
+    // A count that the pairs do not fit.
+    refused(&|model| model.model.attributes[2].values[6] = Some(AttributeValue::Integer(40)));
+    // A tail that holds a value other than an integer.
+    refused(&|model| model.model.attributes[2].values[10] = None);
+    // A record too short to hold the count.
+    refused(&|model| model.model.attributes[2].values.truncate(6));
+}
+
+#[test]
+fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index() {
+    use crate::feature::history_states::{
+        frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
+    };
+    use crate::feature::history_views::StateViews;
+    use crate::kernel::parse_carrier;
+    use crate::test_support::history_carrier::{
+        framed_carrier, lofted_carrier_bytes, LATER_GENERATOR, LOFT_CURVES, LOFT_GENERATOR,
+        LOFT_SECTIONS,
+    };
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight));
+    let arena = DecodeArena::new();
+    let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
+        .expect("carrier fits policy");
+    let carrier =
+        parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 1, 0, 18).expect("carrier parses");
+    let header = carrier.header.as_ref().expect("header parses");
+    let window = carrier.bytes.window();
+    let Framing::Framed(framed) = frame_chain(&ctx, window, header.width).expect("frame") else {
+        panic!("the chain frames");
+    };
+    let Prepared::Ready(chain) = prepare(&ctx, &framed, window, header.width).expect("prepare")
+    else {
+        panic!("the chain closes");
+    };
+    let Reading::Read(index) = index_chain(&chain, carrier.schema, 1 << 20) else {
+        panic!("the chain reads");
+    };
+    // The index comes from the tags of the stream: the older state holds the
+    // tags of the loft, and only the head state holds the later tag.
+    let loft_source = u32::try_from(LOFT_GENERATOR).expect("source");
+    let later_source = u32::try_from(LATER_GENERATOR).expect("source");
+    assert_eq!(index.first.get(&loft_source), Some(&0));
+    assert_eq!(index.first.get(&later_source), Some(&1));
+    let closed = Closed::new(*chain, index);
+    let views = StateViews::new(&carrier, &closed, 1 << 20);
+    let curves = |section: usize| vec![LOFT_CURVES[section]];
+    // The head state is the final model of the part; the loft is proved from
+    // the state after it alone.
+    assert!(loft_proof(&ctx, None, Some(&views), loft_source, LOFT_SECTIONS, curves).is_ok());
+    // The tag of the later feature names one cap only, and no state names a
+    // source that no tag lists.
+    for source in [later_source, 99] {
+        assert!(matches!(
+            loft_proof(&ctx, None, Some(&views), source, LOFT_SECTIONS, curves),
+            Err(Unproved::Result)
+        ));
+    }
+    // The sections must be the ones that the tags name.
+    assert!(matches!(
+        loft_proof(&ctx, None, Some(&views), loft_source, [23, 19], curves),
+        Err(Unproved::Result)
+    ));
 }

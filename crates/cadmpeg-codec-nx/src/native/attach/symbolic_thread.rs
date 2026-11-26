@@ -5,7 +5,8 @@ use crate::native::features::holes::FeatureSymbolicThread;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, ShellId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
@@ -106,7 +107,10 @@ fn face_interval(
         interval = Some(interval.map_or([t, t], |[lo, hi]| [lo.min(t), hi.max(t)]));
         Ok(true)
     };
-    for identity in &face.loops {
+    let Some(face_loops) = face.loops.boundary() else {
+        return Ok(None);
+    };
+    for identity in face_loops {
         let Some(boundary) = index.loops(identity.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             return Ok(None);
@@ -180,7 +184,7 @@ fn cylinder_groups(
         else {
             continue;
         };
-        if region.shells.iter().filter(|id| **id == shell.id).count() != 1 {
+        if region.stated_shells().filter(|id| **id == shell.id).count() != 1 {
             continue;
         }
         let Some(body) = index.bodies(region.body.as_str(), cadmpeg_ir::index::StandardIndex)

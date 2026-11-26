@@ -86,7 +86,7 @@ pub(crate) fn patch_partition(
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     )?;
-    let colors = crate::writer::face_colors(ir)?;
+    let colors = crate::writer::face_colors(ir);
     if native
         .faces
         .iter()
@@ -186,7 +186,7 @@ fn annotation_offset(
     section: &str,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
@@ -205,7 +205,7 @@ fn raw_annotation_offset(
     id: impl std::fmt::Display,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
@@ -256,8 +256,22 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .geometry
             .regions
             .iter()
-            .map(|v| (&v.id, &v.body, &v.shells))
-            .eq(native.regions.iter().map(|v| (&v.id, &v.body, &v.shells)))
+            .map(|v| {
+                (
+                    &v.id,
+                    &v.body,
+                    &v.unstated,
+                    v.stated_shells().collect::<Vec<_>>(),
+                )
+            })
+            .eq(native.regions.iter().map(|v| {
+                (
+                    &v.id,
+                    &v.body,
+                    &v.unstated,
+                    v.stated_shells().collect::<Vec<_>>(),
+                )
+            }))
         && ir
             .geometry
             .shells

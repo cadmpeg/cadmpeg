@@ -50,7 +50,7 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
             })
             .collect();
         let entries = super::entry_records(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &properties,
         )
@@ -513,24 +513,24 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().entity_count(), 1);
+    assert_eq!(decoded.ir().entity_count(), 2);
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 2;
     let error = FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
-        .expect_err("one document object plus one model entity require a limit of two");
+        .expect_err("one document object plus two model entities require a limit of three");
     assert!(
         matches!(
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit FCStd entities"
+                    && limit.operation == "root product definition"
         ),
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 2;
+    options.policy.limits.max_entities = 3;
     FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
         .expect("the exact additive entity limit must admit the fixture");
@@ -631,9 +631,9 @@ fn retains_every_reference_to_a_shared_side_entry() {
     );
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "entries",
             &corrupted_entries,
         )

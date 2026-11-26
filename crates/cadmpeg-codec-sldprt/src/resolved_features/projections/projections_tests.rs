@@ -12,18 +12,15 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputSurfaceSelection,
 };
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::edge_treatments::{RadiusSpec, VariableRadius};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::topology::{Face, Sense};
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{RadiusSpec, VariableRadius},
-        BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureOperation, UnresolvedFamily,
-    },
-    scalar::Length,
-};
 use std::collections::BTreeMap;
 
 mod compact_selections;
@@ -198,15 +195,15 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
-                    frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                    frame: cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
                         Point3::new(0.0, 0.0, 5.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -273,12 +270,12 @@ fn generic_native_offset_plane_support_stays_native() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
                     face: FaceSelection::Native(native.into()),
@@ -341,12 +338,14 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -355,7 +354,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             "producer-native",
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::BaseFeature {
-                    bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                    bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
                 },
             ),
         ),
@@ -364,7 +363,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             "thread-native",
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::CosmeticThread {
-                    face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    face: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                     diameter: None,
                     extent: None,
                     standard: None,
@@ -440,9 +439,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     };
     assert!(matches!(
         face,
-        cadmpeg_ir::features::FaceSelection::Generated { faces, native }
+        cadmpeg_ir::features::selections::FaceSelection::Generated { faces, native }
             if faces.as_slice()
-                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "7".into(),
                 )
@@ -486,7 +485,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         else {
             panic!("expected cosmetic thread");
         };
-        *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+        *face = cadmpeg_ir::features::selections::FaceSelection::Unresolved;
         *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
     });
     with_projection_context(|ctx| {
@@ -503,7 +502,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::CosmeticThread {
-            face: cadmpeg_ir::features::FaceSelection::Faces(faces),
+            face: cadmpeg_ir::features::selections::FaceSelection::Faces(faces),
             ..
         }) if faces == std::slice::from_ref(&topology_face.id)
     ));
@@ -545,12 +544,14 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -637,7 +638,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        }) if faces.as_slice() == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -651,12 +652,12 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
                 distance: None,
@@ -714,12 +715,14 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -734,9 +737,9 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             "synthetic:test:id#fillet",
             "fillet-native",
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
-                        edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                        edges: cadmpeg_ir::features::selections::EdgeSelection::Unresolved,
                         radius: RadiusSpec::Unresolved { form: None },
                         tangency_weight: None,
                     },
@@ -801,7 +804,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
             if faces.as_slice()
-                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "2".into(),
                 )
@@ -835,12 +838,14 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -936,12 +941,12 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(matches!(
         targets,
         BodySelection::Generated { bodies, native }
-            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
+            if bodies.as_slice() == [cadmpeg_ir::features::selections::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
     ));
     assert!(matches!(
         tools,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
+            if faces.as_slice() == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
@@ -961,12 +966,14 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -1088,12 +1095,14 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -1102,7 +1111,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             "producer-native",
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::BaseFeature {
-                    bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                    bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
                 },
             ),
         ),
@@ -1111,7 +1120,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             "thread-native",
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::CosmeticThread {
-                    face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    face: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                     diameter: None,
                     extent: None,
                     standard: None,
@@ -1178,9 +1187,9 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     };
     assert!(matches!(
         face,
-        cadmpeg_ir::features::FaceSelection::Generated { faces, native }
+        cadmpeg_ir::features::selections::FaceSelection::Generated { faces, native }
             if faces.as_slice()
-                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "7".into(),
                 )
@@ -1196,7 +1205,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         else {
             panic!("expected cosmetic thread");
         };
-        *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+        *face = cadmpeg_ir::features::selections::FaceSelection::Unresolved;
     });
     let mut conflicting = selection("conflicting", first_signature.into());
     conflicting.components[0].local_id = Some(8);
@@ -1213,7 +1222,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
-                face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                face: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                 ..
             }
         )
@@ -1257,12 +1266,14 @@ fn split_face_collects_distinct_generated_target_faces() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -1270,14 +1281,14 @@ fn split_face_collects_distinct_generated_target_faces() {
             "synthetic:test:id#producer-a",
             "producer-a-native",
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
             }),
         ),
         neutral_feature(
             "synthetic:test:id#producer-b",
             "producer-b-native",
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
             }),
         ),
         neutral_feature(
@@ -1285,8 +1296,8 @@ fn split_face_collects_distinct_generated_target_faces() {
             "split-native",
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 targets: FaceSelection::Unresolved,
-                tool: cadmpeg_ir::features::SplitFaceTool::Path(
-                    cadmpeg_ir::features::PathRef::Native("tool".into()),
+                tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Path(
+                    cadmpeg_ir::features::profiles::PathRef::Native("tool".into()),
                 ),
                 method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
             }),
@@ -1353,8 +1364,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         targets,
         FaceSelection::Generated { faces, native }
             if faces.as_slice() == [
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into()).unwrap(),
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into()).unwrap(),
+                cadmpeg_ir::features::selections::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into()).unwrap(),
+                cadmpeg_ir::features::selections::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into()).unwrap(),
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(
@@ -1498,6 +1509,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(
@@ -1527,16 +1539,18 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
-                        edges: cadmpeg_ir::features::EdgeSelection::Native("native-edges".into()),
+                        edges: cadmpeg_ir::features::selections::EdgeSelection::Native(
+                            "native-edges".into(),
+                        ),
                         radius: RadiusSpec::Unresolved { form: None },
                         tangency_weight: None,
                     },
@@ -1556,7 +1570,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups.as_slice(),
                 [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::Native(native),
+                    edges: cadmpeg_ir::features::selections::EdgeSelection::Native(native),
                     radius: RadiusSpec::Variable { .. },
                     ..
                 }] if native == "native-edges")
@@ -1692,6 +1706,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(
@@ -1764,6 +1779,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(

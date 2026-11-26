@@ -47,10 +47,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "POINT",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
@@ -91,37 +88,68 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#point.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "POINT"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
-      "product_definitions": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D1"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
+      "product_definitions": [
+        {
+          "bodies": [
+            "iges:model:body#free-geometry"
+          ],
+          "bom_properties": {},
+          "id": "iges:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -306,8 +334,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -343,13 +369,20 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "author": "author",
+        "drafting_standard": "0",
+        "iges_version_flag": "11",
+        "model_scale": "1",
         "native_file_name": "part.igs",
+        "native_system_id": "cadmpeg",
         "native_units": "MM",
+        "organization": "org",
         "parameter_delimiter": ",",
+        "preprocessor_version": "0.1",
         "record_delimiter": ";",
         "representation": "fixed-ascii",
-        "sender_product": "product"
+        "sender_product": "product",
+        "units_flag": "2"
       },
       "identity": {
         "dialects": {
@@ -429,6 +462,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "830703ba85dfc7e1148a1a179dd67e2075fc294dd37f1e726448ef420048ed39",
     "file_digests": {},
     "retained_records": {

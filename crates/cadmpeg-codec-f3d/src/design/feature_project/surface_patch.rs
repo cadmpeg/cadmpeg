@@ -22,9 +22,9 @@ pub(super) fn project_surface_patch(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use crate::records::feature::surface_ops::DesignSurfacePatchNormalState;
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-    };
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
         return Ok(None);
@@ -99,8 +99,10 @@ pub(super) fn project_surface_patch(
                     ctx,
                 )?),
                 support_faces: FaceSelection::Faces(Vec::new()),
-                continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-                    cadmpeg_ir::features::SurfaceContinuity::Contact,
+                continuity: Some(
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one(
+                        cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact,
+                    ),
                 ),
                 merge_result: Some(false),
                 interior_constraints: Vec::new(),
@@ -190,13 +192,13 @@ pub(super) fn project_surface_patch(
         FeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
+            continuity: cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
                 surface_patch_boundary_conditions(scope),
             )
-            .map_or_else(
-                |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
-                cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary,
-            ),
+            .ok()
+            .map(|conditions| {
+                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity { conditions }
+            }),
             merge_result: Some(false),
             interior_constraints,
             reverse_normal,
@@ -332,8 +334,8 @@ fn resolved_surface_patch_path(
     scope: &DesignParameterScope,
     recipe: SurfacePatchRecipe<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
-    use cadmpeg_ir::features::PathRef;
+) -> Result<cadmpeg_ir::features::profiles::PathRef, CodecError> {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     let mut paths = Vec::new();
     for group in groups {
@@ -392,7 +394,7 @@ fn resolved_surface_patch_path(
                     edges.extend_from_slice(group_edges);
                 }
             }
-            let members = cadmpeg_ir::features::SelectionMembers::try_from(edges);
+            let members = cadmpeg_ir::features::selections::SelectionMembers::try_from(edges);
             let native = scope.id.clone();
             return Ok(match members {
                 Ok(edges) => PathRef::HistoricalEdges {
@@ -423,9 +425,9 @@ fn resolved_surface_patch_path(
 /// condition vector unresolved; native settings retain their source values.
 pub(super) fn surface_patch_boundary_conditions(
     scope: &DesignParameterScope,
-) -> Vec<cadmpeg_ir::features::FilledSurfaceBoundaryCondition> {
+) -> Vec<cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition> {
     use crate::records::feature::surface_ops::DesignPatchContinuity;
-    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+    use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
 
     const DEFAULT_WEIGHT: f64 = 0.5;
     const DEFAULT_WEIGHT_SENTINEL: f64 = -1.0;

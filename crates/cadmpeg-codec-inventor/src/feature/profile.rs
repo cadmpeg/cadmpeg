@@ -9,9 +9,12 @@ use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -43,7 +46,7 @@ const BLOCK_INSTANCE_LINK_ENTITY_TYPE: u32 = 0x0800_0000;
 const BLOCK_CURVE_FIRST_ID_OFFSET: i64 = 2;
 /// Largest distance, in millimetres, between a profile wire vertex and the
 /// sketch-curve end or plane it lies on: one kernel linear tolerance.
-const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
+pub(crate) const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
 
 /// The sketch curve that a profile wire edge is generated from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +187,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         if let AttributeTarget::Edge(edge) = &attribute.target.entity {
             let naming = attribute.name == NAMING_ATTRIBUTE
                 || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
-                    && matches!(attribute.values.get(5), Some(AttributeValue::String(family))
+                    && matches!(attribute.values.get(5), Some(Some(AttributeValue::String(family)))
                         if family == CUSTOM_NAMING_FAMILY));
             if !naming {
                 continue;
@@ -315,7 +318,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
+fn edge_name(attribute: &str, values: &[Option<AttributeValue>]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
     };
@@ -323,14 +326,14 @@ fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
         (NAMING_ATTRIBUTE, rest) => rest,
         (
             CUSTOM_NAMING_ATTRIBUTE,
-            [AttributeValue::String(family), AttributeValue::Integer(1), rest @ ..],
+            [Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), rest @ ..],
         ) if family == CUSTOM_NAMING_FAMILY => rest,
         _ => return None,
     };
     let integers = rest
         .iter()
         .map(|value| match value {
-            AttributeValue::Integer(value) => Some(*value),
+            Some(AttributeValue::Integer(value)) => Some(*value),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

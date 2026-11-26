@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted partial-curve selections bind trimmed neutral Extrude regions.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
-use cadmpeg_ir::features::{Feature, PlanarProfileRef, ProfileRef, SketchProfileRegion};
+use cadmpeg_core::json;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchPlacement};
-use serde_json::json;
 
 use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::{
@@ -82,7 +84,7 @@ fn fixture_with_flags(
         entities.push(SketchEntity::new(
             crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
             sketch_id.clone(),
-            serde_json::from_value::<SketchGeometry>(geometry).unwrap(),
+            json::from_value::<SketchGeometry>(geometry).unwrap(),
         ));
         curves.push(SketchCurveIdentity {
             id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
@@ -120,7 +122,7 @@ fn fixture_with_flags(
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: serde_json::from_value(json!(profiles)).unwrap(),
+        profiles: json::from_value(json!(profiles)).unwrap(),
         native_ref: None,
     };
     let members = members
@@ -134,7 +136,7 @@ fn fixture_with_flags(
             })
         })
         .collect::<Vec<_>>();
-    let operand: DesignSketchProfileOperand = serde_json::from_value(json!({
+    let operand: DesignSketchProfileOperand = json::from_value(json!({
         "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 10,
         "class_tag": "301", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
         "asset_id_offset": 20, "entity_id": "0_42", "entity_suffix": 42,
@@ -182,7 +184,7 @@ fn bound_fixture_with_losses(
     ),
 ) -> (ProfileRef, Vec<LossNote>) {
     let work = ProfileGeometryWork::new();
-    let mut feature: Feature = serde_json::from_value(json!({
+    let mut feature: Feature = json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
         "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
@@ -428,7 +430,7 @@ fn a_selection_beside_a_full_ellipse_reports_the_island_absence_assumption() {
         json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
         json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
         json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
-        serde_json::to_value(ellipse).unwrap(),
+        json::to_value(ellipse).unwrap(),
     ];
     let (profile, losses) =
         bound_fixture_with_losses(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 1, 2, 3, 4]));
@@ -561,4 +563,97 @@ fn a_counted_member_flag_states_a_traversal_against_the_curve_direction() {
         bound_fixture(fixture_with_flags(geometry, loops, &members(false))),
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
+}
+
+#[test]
+fn same_sketch_profile_group_composes_merged_regions_and_charges_union_assumption() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 4.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 0.0}, "end": {"u": 4.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 3.0}, "end": {"u": 0.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 3.0}, "end": {"u": 0.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 3.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3]];
+    let right_members = [(1, false), (2, false), (3, false), (5, true)];
+    let left_members = [(3, false), (4, false), (5, false)];
+    let (sketch, entities, curves, right_scope) =
+        fixture_with_flags(geometry.clone(), loops, &right_members);
+    let (_, _, _, left_scope) = fixture_with_flags(geometry, loops, &left_members);
+    let first = right_scope.extrude_profile().unwrap().clone();
+    let mut second = left_scope.extrude_profile().unwrap().clone();
+    second.scope_reference_ordinal = 1;
+    second.record_index = 110;
+    assert!(
+        crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
+            first.clone(),
+            second.clone(),
+        ])
+    );
+
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#10",
+        DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_native_profiles: Some(vec![first.clone(), second.clone()]),
+            ..DesignExtrudeScope::default()
+        })),
+        10,
+    );
+    let (profile, losses) =
+        bound_fixture_with_losses((sketch.clone(), entities.clone(), curves.clone(), scope));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("expected merged SketchRegions, got {profile:?}");
+    };
+    assert_eq!(regions.len(), 2);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.kind()));
+    assert!(!losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupNative.kind()));
+
+    // A mixed group (missing region selection or different sketch) is not composable.
+    let mut no_region = second.clone();
+    no_region.region_selection = None;
+    assert!(
+        !crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
+            first.clone(),
+            no_region,
+        ])
+    );
+    let mut other_sketch = second;
+    other_sketch.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 99);
+    assert!(
+        !crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
+            first.clone(),
+            other_sketch,
+        ])
+    );
+
+    // A same-sketch group where one operand fails to resolve stays Native and charges group-native.
+    let (_, _, _, bad_scope) = fixture_with_flags(square_and_circles(), &[&[0]], &[(99, false)]);
+    let mut bad_operand = bad_scope.extrude_profile().unwrap().clone();
+    bad_operand.scope_reference_ordinal = 1;
+    bad_operand.record_index = 120;
+    let failing_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#11",
+        DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_native_profiles: Some(vec![first, bad_operand]),
+            ..DesignExtrudeScope::default()
+        })),
+        11,
+    );
+    let failing_id = failing_scope.id.clone();
+    let (failed_profile, failed_losses) =
+        bound_fixture_with_losses((sketch, entities, curves, failing_scope));
+    assert!(matches!(
+        failed_profile,
+        ProfileRef::Planar(PlanarProfileRef::Native(ref id)) if id == &failing_id
+    ));
+    assert!(failed_losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupNative.kind()));
+    assert!(!failed_losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.kind()));
 }

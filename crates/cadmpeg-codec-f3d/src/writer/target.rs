@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
+    ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -20,10 +20,10 @@ use crate::{ids, F3dCodec, PreservedWritePath};
 /// `Inherit` asks for preservation instead: a valid retained baseline
 /// replays or patches whatever dialect the source is, the F3Z
 /// multi-document row and the recovery row included, which the generator
-/// could never synthesize. Where the baseline is not usable, `Inherit`
-/// synthesizes the source's own dialect, and refuses when that dialect is
-/// not a target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// could never synthesize. Where the baseline is not usable, or the patch
+/// cannot carry an edit, the document is synthesized; an off-catalog source
+/// is then written as the catalog default, and the sealed encoder charges
+/// the displacement.
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
@@ -34,34 +34,21 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    if target.entry().is_none() {
-        return match preserve(input)? {
-            Preservation::Written {
+    let off_catalog = target.entry().is_none();
+    if off_catalog || target.preserves_source() {
+        let cause = match preserve(input) {
+            Ok(Preservation::Written {
                 bytes,
                 write_path,
                 notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::SourceImageUnavailable => Err(target.unavailable(
-                "its retained source image is unavailable for preservation and the generator \
-                 cannot synthesize it",
-            )),
+            }) => return Ok(preserved_body(input, write_path, bytes, notes)),
+            Ok(Preservation::SourceImageUnavailable) => SynthesisCause::SourceImageUnavailable,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error) => SynthesisCause::PatchDeclined(error.to_string()),
         };
+        return synthesized_body(input, cause);
     }
-    if target.preserves_source() {
-        return match preserve(input)? {
-            Preservation::Written {
-                bytes,
-                write_path,
-                notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::SourceImageUnavailable => {
-                synthesized_body(input, SynthesisCause::SourceImageUnavailable)
-            }
-        };
-    }
-    let cause = if let Some(message) = target.displacement_message() {
-        SynthesisCause::Displaced(message)
-    } else if target.source_preservation_eligible()
+    let cause = if target.source_preservation_eligible()
         && input
             .fidelity
             .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
@@ -80,25 +67,25 @@ enum Preservation {
         write_path: PreservedWritePath,
         notes: Vec<String>,
     },
-    /// The only reason preservation is ever declined.
+    /// No retained source image, or one without bytes.
     SourceImageUnavailable,
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
-    let Some(record) = input
-        .fidelity
-        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-    else {
+    let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
+        sidecar
+            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
+            .map(|record| (sidecar, record))
+    }) else {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
-        return Err(CodecError::Malformed(
-            "retained F3D source image has no bytes".into(),
-        ));
+        return Ok(Preservation::SourceImageUnavailable);
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes, &mut notes)?;
+    let write_path =
+        F3dCodec::write_preserved_bytes(input.ir, fidelity, data, &mut bytes, &mut notes)?;
     Ok(Preservation::Written {
         bytes,
         write_path,
@@ -107,7 +94,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
 }
 
 fn preserved_body(
-    ir: &CadIr,
+    input: EncodeInput<'_>,
     write_path: PreservedWritePath,
     bytes: Vec<u8>,
     notes: Vec<String>,
@@ -120,26 +107,35 @@ fn preserved_body(
     };
     // Replay runs only while the document digest matches its decode baseline,
     // and the patcher refuses unless the patched baseline digests equal to the
-    // target document, so every arena is carried.
-    let mut body = body(ir, write_path, ArenaCoverage::Complete, Vec::new(), bytes);
+    // target document, so every arena is carried. Bytes the decode kept
+    // without decoding are carried too, and reported.
+    let losses = carried_source_losses(input.fidelity, &write_path);
+    let mut native = NativeDispositions::dropped("which the F3D writer does not write");
+    native.namespace("f3d", NativeDisposition::Written);
+    let mut body = body(
+        input.ir,
+        write_path,
+        ArenaCoverage::Complete,
+        native,
+        losses,
+        bytes,
+    );
     body.notes.extend(notes);
     body
 }
 
 enum SynthesisCause {
     Fresh,
-    Displaced(String),
     SourceImageUnavailable,
+    /// The retained source could not carry the document; the reason names
+    /// the edit or the missing baseline.
+    PatchDeclined(String),
 }
 
 impl SynthesisCause {
     fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
-            Self::Displaced(message) => (
-                Consumption::NotConsumed,
-                Some(F3dLossCode::SourceDialectDisplaced.note(message)),
-            ),
             Self::SourceImageUnavailable => (
                 Consumption::Degraded {
                     reason: "preserved F3D source image is unavailable".into(),
@@ -148,6 +144,15 @@ impl SynthesisCause {
                     F3dLossCode::SourcePreservedImageUnavailable
                         .note("preserved F3D source image is unavailable; regenerated from IR"),
                 ),
+            ),
+            Self::PatchDeclined(reason) => (
+                Consumption::Degraded {
+                    reason: format!("patch declined: {reason}"),
+                },
+                Some(F3dLossCode::WriterPatchDeclined.note(format!(
+                    "the retained F3D source could not carry the document ({reason}); the file \
+                     was regenerated from the document"
+                ))),
             ),
         }
     }
@@ -158,9 +163,11 @@ fn synthesized_body(
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let coverage = super::generate::write_new(input.ir, &mut bytes)?;
+    let generated = super::generate::write_new(input.ir, input.missing_states, &mut bytes)?;
+    let geometry_true = generated.geometry_true;
     let (consumption, loss) = cause.into_fidelity();
     let mut losses: Vec<_> = loss.into_iter().collect();
+    losses.extend(generated.losses);
     for appearance in &input.ir.model.appearances {
         let written: &[&str] = match appearance.schema.as_deref().unwrap_or("GenericSchema") {
             "GenericSchema" => &["reflectivity_at_0deg", "refraction_index"],
@@ -186,19 +193,31 @@ fn synthesized_body(
                 )));
         }
     }
-    Ok(body(
-        input.ir,
+    // The generator writes no cage, so the census counts no cage body (§5.6).
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let mut body = body(
+        cageless.as_ref().unwrap_or(input.ir),
         WritePath::Synthesized { consumption },
-        ArenaCoverage::Declared(coverage),
+        ArenaCoverage::Declared(generated.coverage),
+        generated.native,
         losses,
         bytes,
-    ))
+    );
+    if geometry_true {
+        body.notes.push(
+            "the F3D writer writes no design timeline, so the file holds the current geometry \
+             in the geometry-true form and not the history-true form the request names"
+                .to_owned(),
+        );
+    }
+    Ok(body)
 }
 
 fn body(
     ir: &CadIr,
     write_path: WritePath,
     coverage: ArenaCoverage,
+    native: NativeDispositions,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
@@ -215,10 +234,13 @@ fn body(
         },
         write_path,
         coverage,
+        native,
         losses,
         notes: vec![
             path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
+        written_row: None,
+        annotations: None,
     }
 }

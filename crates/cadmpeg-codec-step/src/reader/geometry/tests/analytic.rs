@@ -104,22 +104,22 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     )
     .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
-    assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
-    assert!(!text.contains("GEOMETRIC_SET"));
-    assert!(report.losses.iter().any(|loss| loss
+    assert!(text.contains("CURVE_BOUNDED_SURFACE"));
+    assert!(text.contains("GEOMETRIC_SET"));
+    assert!(!report.losses.iter().any(|loss| loss
         .message
         .contains("geometry carrier(s) were not written")));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written curve-bounded surface");
-    assert!(!decoded
+    assert!(decoded
         .ir()
         .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
 }
 
@@ -189,7 +189,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             10.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -330,7 +330,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
             5.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(5.0, 0.0, 0.0))
     );
     let partials = model_surface_partials_by_id(
@@ -374,7 +374,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
                 5.0,
                 0.0
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(5.0, 0.0, 0.0))
         );
         let partials = model_surface_partials_by_id(
@@ -429,7 +429,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             0.0,
             10.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
@@ -516,7 +516,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
     assert!(end.x.abs() < 1.0e-12);
     assert!((end.y - 6.0).abs() < 1.0e-12);
     assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
-        match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if curve.id.as_str() == "step:construction:trimmed_curve#6"
+        match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if curve.id.as_str() == "step:construction:trimmed_curve#6"
                 && (*start + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
                 && end.abs() < 1.0e-12), _ => false }
     }));
@@ -585,7 +585,9 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
             .find(|curve| curve.id == construction_id)
             .expect("trimmed ellipse construction");
         assert!(match construction.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                matched_payload,
+            ) =>
                 matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if parameter_range
                 .iter()
                 .zip(expected_range.iter())
@@ -693,6 +695,51 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
     assert!(result.report().losses.iter().all(|loss| !loss
         .message
         .contains("CONICAL_SURFACE #5 has invalid geometry")));
+}
+
+#[test]
+fn a_bare_cone_in_a_geometric_set_is_a_partial_face_with_no_loop() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,2.,0.5);
+#6=GEOMETRIC_SET('',(#5));
+#7=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#6),#8);
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    let face = &faces[0];
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let face_id = face.id.as_str();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyFaceBoundaryUnstated.kind()
+            && loss.message.contains("a cone with no boundary")
+            && loss
+                .message
+                .split(|c: char| c.is_whitespace())
+                .any(|token| token == face_id)
+    }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        validation.findings.iter().all(|finding| !finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "findings: {:?}",
+        validation.findings
+    );
+    assert!(validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::TopologyPartial
+            && finding.entity.as_deref() == Some(face_id)
+    }));
 }
 
 #[test]
@@ -824,9 +871,12 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .source_object
         .as_ref()
         .expect("geometric-set owner");
-    assert_eq!(source.format, cadmpeg_ir::CodecFormat::Step);
+    assert_eq!(source.format, cadmpeg_ir::codec_id!("step"));
     assert_eq!(source.object_id, "#9");
-    assert_eq!(source.name, None);
+    assert_eq!(
+        crate::test_support::carrier_name(result.ir(), composite.id.as_str()),
+        None
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -870,10 +920,10 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
 
     assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().geometry.points[0]
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(
+            decoded.ir(),
+            decoded.ir().geometry.points[0].id.as_str()
+        ),
         Some("free point")
     );
     assert!(!decoded
@@ -974,10 +1024,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("named APLL point");
     assert_eq!(
-        named_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), named_point.id.as_str()),
         Some("leader")
     );
     let complex_point = decoded
@@ -993,10 +1040,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("complex APLL point");
     assert_eq!(
-        complex_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), complex_point.id.as_str()),
         Some("complex leader")
     );
     let unknowns = decoded
@@ -1087,10 +1131,7 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
         Some("#4")
     );
     assert_eq!(
-        first
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), first.id.as_str()),
         Some("display curve")
     );
     assert!(!decoded

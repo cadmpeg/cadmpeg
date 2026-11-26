@@ -60,19 +60,19 @@ fn decode_extracts_parametric_history() {
     assert!(matches!(
         neutral.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(profile)),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
+            profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(profile)),
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                         length: actual_length,
                     },
                     draft: None,
                     ..
                 }
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             ..
         }) if (profile == &history.features[0].id) && actual_length.get() == 12.5
     ));
@@ -123,7 +123,8 @@ fn decode_prefers_explicit_feature_input_lanes_over_plain_config_streams() {
 
 #[test]
 fn decode_types_non_modeling_feature_tree_nodes() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -208,7 +209,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -253,9 +254,8 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -290,7 +290,8 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
 
 #[test]
 fn decode_binds_duplicate_feature_names_by_native_object_id() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -525,7 +526,7 @@ fn keywords_root_id_does_not_create_feature_parentage() {
         FeatureSource::from_value(1)
     );
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()

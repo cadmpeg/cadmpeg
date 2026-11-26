@@ -389,13 +389,15 @@ fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
             loss.code == StepLossCode::TopologyRootRejected.kind()
                 && loss.message.contains("implicit face plane")
         }));
-        let unknown_ids = decoded
+        let (stubs, unknown_ids): (BTreeSet<_>, BTreeSet<_>) = decoded
             .ir()
             .native_unknowns("step")
             .expect("STEP native namespace")
             .iter()
             .map(|record| record.id.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
+            .partition(|id| id.starts_with("step:source:part#"));
+        // The rejected root is given up as one part.
+        assert_eq!(stubs.len(), 1);
         assert_eq!(
             unknown_ids,
             BTreeSet::from([
@@ -639,7 +641,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         },
         native_ref: None,
     });
-    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
+    let outer = ir.geometry.faces[0].loops.stated().next().unwrap().clone();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let output = export(&ir);
     let (exchange, diagnostics) =
@@ -701,7 +703,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .expect("decoded face");
     assert_eq!(
         face.loops
-            .iter()
+            .stated()
             .next()
             .expect("a decoded face states a loop")
             .as_str(),

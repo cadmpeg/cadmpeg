@@ -77,13 +77,13 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 return Err(CodecError::InvalidInput(format!(
                     "cacheless procedural curve {} carries a cache-fit tolerance",
                     procedural.id
-                )))
+                )));
             }
             Some(_) => {
                 return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
-                procedural.id, curve.id
-            )))
+                    "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
+                    procedural.id, curve.id
+                )));
             }
         }
     }
@@ -422,7 +422,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D sketch curve {} has no writable geometry",
                     curve.id
-                )))
+                )));
             }
         };
         if !design_type_matches(curve_type, expected_type) {
@@ -968,7 +968,7 @@ pub(super) fn validate_source_less_design_links(
         bodies,
         "body-visibility",
         [id()],
-        |visibility, (ordinal, body)| {
+        |visibility, (_, body)| {
             if body.visible != Some(visibility.visible) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} conflicts with body {} visibility",
@@ -976,7 +976,7 @@ pub(super) fn validate_source_less_design_links(
                     visibility.body
                 )));
             }
-            let emitted_key = source_less_body_key(attributes, body, ordinal)?;
+            let emitted_key = source_less_body_key(attributes, body)?;
             if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} uses an ASM key different from body {}",
@@ -1084,6 +1084,22 @@ pub(super) fn validate_source_less_design_links(
 pub(super) fn validate_source_less_body_kinds(
     geometry: &cadmpeg_ir::document::Topology,
 ) -> Result<(), CodecError> {
+    for (body, derived) in geometry.bodies.iter().zip(derived_body_kinds(geometry)) {
+        if body.kind != derived {
+            return Err(CodecError::InvalidInput(format!(
+                "body {} declares {:?} but its incidence graph is {:?}",
+                body.id, body.kind, derived
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The kind each body's incidence graph derives, in body order: the kind a
+/// decoder reads back from the written body.
+pub(super) fn derived_body_kinds(
+    geometry: &cadmpeg_ir::document::Topology,
+) -> Vec<cadmpeg_ir::topology::BodyKind> {
     let edges = geometry
         .edges
         .iter()
@@ -1111,12 +1127,12 @@ pub(super) fn validate_source_less_body_kinds(
                 })
         })
     };
-    for body in &geometry.bodies {
+    let derive = |body: &cadmpeg_ir::topology::Body| {
         let shell_ids = geometry
             .regions
             .iter()
             .filter(|region| region.body == body.id)
-            .flat_map(|region| &region.shells)
+            .flat_map(cadmpeg_ir::topology::Region::stated_shells)
             .collect::<BTreeSet<_>>();
         let face_ids = geometry
             .faces
@@ -1135,7 +1151,7 @@ pub(super) fn validate_source_less_body_kinds(
             .faces
             .iter()
             .filter(|face| face_ids.contains(&face.id))
-            .flat_map(|face| &face.loops)
+            .flat_map(|face| face.loops.stated())
             .collect::<BTreeSet<_>>();
         let coedge_ids = geometry
             .loops
@@ -1143,7 +1159,7 @@ pub(super) fn validate_source_less_body_kinds(
             .filter(|loop_| loop_ids.contains(&loop_.id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .collect::<BTreeSet<_>>();
-        let derived = if face_ids.is_empty() {
+        if face_ids.is_empty() {
             cadmpeg_ir::topology::BodyKind::Wire
         } else if has_wires {
             cadmpeg_ir::topology::BodyKind::General
@@ -1156,15 +1172,9 @@ pub(super) fn validate_source_less_body_kinds(
                     .map(|coedge| (&coedge.edge, coedge.sense)),
                 collapsed,
             )
-        };
-        if body.kind != derived {
-            return Err(CodecError::InvalidInput(format!(
-                "body {} declares {:?} but its incidence graph is {:?}",
-                body.id, body.kind, derived
-            )));
         }
-    }
-    Ok(())
+    };
+    geometry.bodies.iter().map(derive).collect()
 }
 
 /// Resolved wire-ownership ordinals of one body.
@@ -1234,6 +1244,8 @@ pub(super) fn validate_source_less_wire_ownership(
     };
     let shell_ordinal =
         |id: &cadmpeg_ir::ids::ShellId| geometry.shells.iter().position(|shell| shell.id == *id);
+    let lists = geometry.child_lists();
+    let complete_shells = |region| lists.complete_shells(region).ok_or_else(inconsistent);
 
     let mut regions = Vec::new();
     for region in &geometry.regions {
@@ -1242,8 +1254,10 @@ pub(super) fn validate_source_less_wire_ownership(
             .iter()
             .position(|body| body.id == region.body)
             .ok_or_else(inconsistent)?;
-        let siblings = geometry
-            .body_regions(&region.body)
+        let siblings = lists
+            .complete_body_regions(&region.body)
+            .ok_or_else(inconsistent)?
+            .iter()
             .map(|sibling| &sibling.id)
             .collect::<Vec<_>>();
         let position = siblings
@@ -1254,12 +1268,12 @@ pub(super) fn validate_source_less_wire_ownership(
             .get(position + 1)
             .map(|id| region_ordinal(id).ok_or_else(inconsistent))
             .transpose()?;
-        let first_shell = region
-            .shells
+        let region_shells = complete_shells(region)?;
+        let first_shell = region_shells
             .first()
             .and_then(&shell_ordinal)
             .ok_or_else(inconsistent)?;
-        if region.shells.iter().any(|id| {
+        if region_shells.iter().any(|id| {
             !geometry
                 .shells
                 .iter()
@@ -1276,9 +1290,10 @@ pub(super) fn validate_source_less_wire_ownership(
 
     let mut bodies = Vec::new();
     for body in &geometry.bodies {
-        let first_region = geometry
-            .body_regions(&body.id)
-            .next()
+        let first_region = lists
+            .complete_body_regions(&body.id)
+            .ok_or_else(inconsistent)?
+            .first()
             .and_then(|region| region_ordinal(&region.id))
             .ok_or_else(inconsistent)?;
         bodies.push(WireBodyOwnership {
@@ -1298,14 +1313,12 @@ pub(super) fn validate_source_less_wire_ownership(
                     return None;
                 }
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .position(|id| *id == shell.id)
                     .map(|position| (ordinal, region, position))
             })
             .ok_or_else(inconsistent)?;
-        let next_shell = owner
-            .shells
+        let next_shell = complete_shells(owner)?
             .get(position + 1)
             .map(|id| shell_ordinal(id).ok_or_else(inconsistent))
             .transpose()?;
@@ -1326,12 +1339,12 @@ mod tests {
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::scalar::PositiveReal;
 
     #[test]
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
+        target.geometry.vertices[0].tolerance =
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).unwrap());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),

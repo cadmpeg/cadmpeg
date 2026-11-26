@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Generate Annex A of ``docs/cadir-v11.md`` from the CADIR JSON Schema.
+"""Generate Annexes A and B of ``docs/cadir-v11.md`` from the JSON Schemas.
 
 §2.7 of the specification: "The types this document names and does not state
 here or in its parts are listed in Annex A." This script computes that list and
@@ -16,9 +16,14 @@ type their schemas reference that is not stated either. A named type that is
 neither stated, nor in ``PROSE``, nor in the schema is an error: the
 specification names a type nothing defines.
 
-The schema is ``cadmpeg_ir::cadir_json_schema()``, printed by the
-``emit_schema`` example of ``cadmpeg-ir``. ``--schema FILE`` reads it from a
-file instead of building the example.
+The schema is ``crates/cadmpeg-ir/schema/cadir.schema.json``, the committed
+output of ``cadmpeg_ir::cadir_json_schema()``. ``--schema FILE`` reads it from
+another file.
+
+Annex B states the sidecar's types: ``SourceFidelity`` and every type its
+schema reaches in ``crates/cadmpeg-ir/schema/decode-sidecar.schema.json`` that
+is neither stated, nor in ``PROSE``, nor an id type, nor in Annex A. A type in
+both annexes' reach has one schema in both files, else the script fails.
 
 Usage:
     scripts/generate-annex-a.py [--schema FILE] --write   rewrite the annex
@@ -34,14 +39,16 @@ import argparse
 import difflib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "docs" / "cadir-v11.md"
 HEADING = "## Annex A. Record types stated by schema"
-EMIT_SCHEMA = ["cargo", "run", "-q", "-p", "cadmpeg-ir", "--features", "schema", "--example", "emit_schema"]
+SCHEMA = ROOT / "crates" / "cadmpeg-ir" / "schema" / "cadir.schema.json"
+SIDECAR_HEADING = "## Annex B. Sidecar types stated by schema"
+SIDECAR_SCHEMA = ROOT / "crates" / "cadmpeg-ir" / "schema" / "decode-sidecar.schema.json"
+SIDECAR_ROOTS = ("SourceFidelity",)
 REF = "#/$defs/"
 
 # Types the specification defines in a sentence rather than a sketch, with the
@@ -162,45 +169,64 @@ def render_body(names: list[str], defs: dict) -> str:
     return "\n".join(parts)
 
 
-def split_annex(spec: str) -> tuple[str, str]:
-    """The specification up to and including the annex's opening paragraph, and the rest."""
-    start = spec.find(f"\n{HEADING}\n")
-    if start < 0 or spec.count(f"\n{HEADING}\n") != 1:
-        raise ShapeError(f"`{HEADING}` is not one heading of the specification")
-    after_heading = start + len(HEADING) + 2
+def split_annex(spec: str, heading: str) -> tuple[str, str]:
+    """The text up to and including the annex's opening paragraph, and the rest."""
+    start = spec.find(f"\n{heading}\n")
+    if start < 0 or spec.count(f"\n{heading}\n") != 1:
+        raise ShapeError(f"`{heading}` is not one heading of the specification")
+    after_heading = start + len(heading) + 2
     paragraph = re.compile(r"\n*[^\n]+\n").match(spec, after_heading)
     if not paragraph:
-        raise ShapeError("the annex has no opening paragraph")
+        raise ShapeError(f"`{heading}` has no opening paragraph")
     return spec[: paragraph.end()], spec[paragraph.end():]
 
 
-def generate(spec: str, schema: dict) -> str:
-    defs = schema.get("$defs")
-    if not isinstance(defs, dict):
-        raise ShapeError("the schema has no `$defs` object")
-    head, _ = split_annex(spec)
-    return f"{head}\n{render_body(annex_types(spec, defs), defs)}"
+def sidecar_types(spec: str, annex_a: list[str], defs: dict, sidecar_defs: dict) -> list[str]:
+    """The sidecar roots and the types they reach that no sketch, sentence, or Annex A states."""
+    stated, _ = stated_and_named(spec)
+    outside = lambda name: name not in stated and name not in PROSE and not is_id_type(name)
+    annex, pending = set(), list(SIDECAR_ROOTS)
+    while pending:
+        name = pending.pop()
+        if name in annex:
+            continue
+        if name not in sidecar_defs:
+            raise ShapeError(f"the sidecar schema does not define `{name}`")
+        if name in annex_a:
+            if defs[name] != sidecar_defs[name]:
+                raise ShapeError(f"the two schemas define `{name}` differently")
+            continue
+        annex.add(name)
+        pending.extend(sorted(target for target in references(sidecar_defs[name]) if outside(target)))
+    return sorted(annex)
 
 
-def load_schema(path: str | None) -> dict:
-    if path:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    process = subprocess.run(EMIT_SCHEMA, cwd=ROOT, capture_output=True, text=True)
-    if process.returncode != 0:
-        raise ShapeError(f"`{' '.join(EMIT_SCHEMA)}` failed:\n{process.stderr}")
-    return json.loads(process.stdout)
+def generate(spec: str, schema: dict, sidecar: dict) -> str:
+    defs, sidecar_defs = schema.get("$defs"), sidecar.get("$defs")
+    if not isinstance(defs, dict) or not isinstance(sidecar_defs, dict):
+        raise ShapeError("a schema has no `$defs` object")
+    head, rest = split_annex(spec, HEADING)
+    sidecar_head, _ = split_annex(rest, SIDECAR_HEADING)
+    sidecar_head = sidecar_head[sidecar_head.find(f"\n{SIDECAR_HEADING}\n"):]
+    annex_a = annex_types(spec, defs)
+    return (f"{head}\n{render_body(annex_a, defs)}{sidecar_head}\n"
+            f"{render_body(sidecar_types(spec, annex_a, defs, sidecar_defs), sidecar_defs)}")
+
+
+def load_schema(path: str | Path | None) -> dict:
+    return json.loads((Path(path) if path else SCHEMA).read_text(encoding="utf-8"))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--schema", help="read the schema from FILE instead of building `emit_schema`")
+    parser.add_argument("--schema", help=f"read the schema from FILE instead of {SCHEMA.relative_to(ROOT)}")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="compare the annex with the schema (the default)")
     mode.add_argument("--write", action="store_true", help="rewrite the annex from the schema")
     args = parser.parse_args(argv)
     try:
         spec = SPEC.read_text(encoding="utf-8")
-        expected = generate(spec, load_schema(args.schema))
+        expected = generate(spec, load_schema(args.schema), load_schema(SIDECAR_SCHEMA))
     except (ShapeError, OSError, json.JSONDecodeError) as error:
         print(f"generate-annex-a: {error}", file=sys.stderr)
         return 2
@@ -213,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     diff = difflib.unified_diff(spec.splitlines(keepends=True), expected.splitlines(keepends=True),
                                 "docs/cadir-v11.md", "docs/cadir-v11.md (from the schema)", n=1)
     sys.stdout.writelines(list(diff)[:200])
-    print("generate-annex-a: Annex A differs from the schema; run scripts/generate-annex-a.py --write",
+    print("generate-annex-a: an annex differs from its schema; run scripts/generate-annex-a.py --write",
           file=sys.stderr)
     return 1
 

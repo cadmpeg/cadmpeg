@@ -59,7 +59,17 @@ fn prims_become_definitions_and_occurrences() {
         .collect();
     assert!(kinds.contains(&ProductDefinitionKind::Part));
     assert!(kinds.contains(&ProductDefinitionKind::Object));
-    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::General);
+    assert!(ir.geometry.bodies.is_empty());
+    let part = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.kind == Some(ProductDefinitionKind::Object))
+        .unwrap();
+    assert_eq!(
+        ir.model.tessellations[0].of,
+        cadmpeg_ir::tessellation::Meshed::definition(part.id.clone())
+    );
     assert!(has_loss(&result, UsdLossCode::PrimTypeNotTransferred));
     assert!(has_loss(&result, UsdLossCode::MeshSubdivisionNotApplied));
 }
@@ -145,7 +155,8 @@ fn a_patch_becomes_a_sheet_body_face() {
         ir.geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert!(ir.geometry.faces[0].loops.is_empty());
+    assert_eq!(ir.geometry.faces[0].loops.stated().count(), 1);
+    assert_eq!(ir.geometry.coedges.len(), 4);
     assert!(has_loss(&result, UsdLossCode::NurbsTrimNotTransferred));
 }
 
@@ -189,4 +200,32 @@ fn an_unparsable_mass_unit_or_up_axis_is_reported() {
         "#usda 1.0\n(\n    kilogramsPerUnit = 0.001\n    upAxis = \"Z\"\n)\ndef \"A\" {\n}\n",
     );
     assert!(!has_loss(&clean, UsdLossCode::AttributeValueMalformed));
+}
+
+#[test]
+fn a_partial_brep_face_is_a_loss_that_names_it() {
+    let reason = "/B: face#0: no loop on a plane, which no face covers whole";
+    let tallies = super::Tallies {
+        unstated_boundaries: vec![reason.to_owned()],
+        ..super::Tallies::default()
+    };
+    let metrics = super::Metrics {
+        scale: 1.0,
+        meters_per_unit: 0.001,
+        kilograms_per_unit: 1.0,
+        up_axis: "Z".to_owned(),
+        default_prim: None,
+        malformed_units: false,
+        malformed_mass_units: false,
+        malformed_up_axis: false,
+    };
+    let losses = super::tally_losses(&tallies, &crate::schema::Issues::default(), &metrics);
+    let unstated: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect();
+    let [loss] = unstated.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert!(loss.message.ends_with(reason), "{}", loss.message);
 }

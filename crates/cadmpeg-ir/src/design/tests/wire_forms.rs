@@ -2,24 +2,31 @@
 //! The stated wire forms of §2.5, checked against what the design types write
 //! and read.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::num::NonZeroI8;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
-use super::fixtures::{self, feature, id, length, parameter_ref, picked, text};
+use super::fixtures::{self, feature, id, length, parameter_ref, picked};
 use super::{read_desktop, refuses, to_value};
 use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
-use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
-use crate::design::names::{CodecId, NameTable, TopoName};
+use crate::design::expr::{self, AddOp, Expression, ExpressionDialect, MulOp, Neutral, Node};
+use crate::design::names::{NameTable, TopoName};
 use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
 use crate::design::selection::{
     Keyed, Members, Ordered, PickDomain, PickKey, PickTarget, Picked, Picks, Unordered, Witness,
 };
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
+use crate::features::geometry::FinitePoint3;
+use crate::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
+use crate::geometry::{InlineCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::math::{Point3, Vector3};
 use crate::scalar::Length;
+use crate::transform::Transform;
+use crate::units::UnitVector3;
 
 #[test]
 fn the_examples_of_section_2_5() {
@@ -42,15 +49,15 @@ fn the_examples_of_section_2_5() {
 #[test]
 fn a_neutral_expression_is_text_with_side_lists() {
     let reference = parameter_ref(1);
-    let tree = Node::Binary {
-        op: BinaryOp::Add,
-        left: Box::new(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::Reference(reference.clone())),
-            right: Box::new(fixtures::number(2.0, Unit::default())),
-        }),
-        right: Box::new(fixtures::number(10.0, fixtures::mm())),
-    };
+    let tree = Node::add(
+        Node::mul(
+            Node::Reference(reference.clone()),
+            MulOp::Multiply,
+            fixtures::number(2.0, Unit::default()),
+        ),
+        AddOp::Add,
+        fixtures::number(10.0, fixtures::mm()),
+    );
     let value = to_value(&Expression::Neutral(Neutral(tree)));
     assert_eq!(value["kind"], json!("neutral"));
     assert_eq!(value["value"]["text"], json!("$0 * 2 + 10[mm]"));
@@ -61,7 +68,7 @@ fn a_neutral_expression_is_text_with_side_lists() {
 #[test]
 fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     let mode = fixtures::source_mode();
-    let written = serde_json::to_string(&mode).unwrap();
+    let written = json::to_string(&mode).unwrap();
     assert!(
         written.contains("\"source_settings\":{}"),
         "string keys write an object: {written}"
@@ -160,12 +167,12 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
 fn negative_zero_is_never_written() {
     for zero in [0.0, -0.0] {
         assert_eq!(
-            serde_json::to_string(&Duration::new(zero).unwrap()).unwrap(),
+            json::to_string(&Duration::new(zero).unwrap()).unwrap(),
             "0.0"
         );
     }
     let read_back: Duration = read_desktop("-0.0").unwrap();
-    assert_eq!(serde_json::to_string(&read_back).unwrap(), "0.0");
+    assert_eq!(json::to_string(&read_back).unwrap(), "0.0");
 }
 
 /// "A `symbol` is the wire name of a `UnitSymbol` variant". Every variant's
@@ -234,6 +241,131 @@ fn members_are_distinct_by_identity_not_by_witness() {
         .eq(keys.iter().copied()));
 }
 
+/// A `Native` pick that carries no native name is stated by its witness, so the
+/// witness joins its identity key (§5.8) and orders it in §2.5's derived
+/// structural order: declared variant order, where a line precedes a circle
+/// although `"circle"` precedes `"line"` as written, and declared field order,
+/// where `point` precedes `direction` although `"direction"` precedes
+/// `"point"` as written.
+#[test]
+fn a_native_pick_with_no_name_is_identified_by_its_witness() {
+    let native = |witness: Witness| Picked {
+        target: PickTarget::Native { within: None },
+        witness: Some(witness),
+        ..picked(1)
+    };
+    let empty = fixtures::witnesses().remove(1);
+    let line = Witness {
+        curves: vec![InlineCurve::Line(LineCurve::new(
+            FinitePoint3::ZERO,
+            UnitVector3::X_AXIS,
+        ))],
+        ..empty.clone()
+    };
+    let circle_curve = CircleCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .unwrap();
+    let circle = Witness {
+        curves: vec![InlineCurve::Circle(circle_curve)],
+        ..empty.clone()
+    };
+    let set = Members::<Picked, Unordered>::new(vec![native(circle.clone()), native(line.clone())])
+        .unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&line));
+    assert!(Members::<Picked, Unordered>::try_from(vec![
+        native(circle.clone()),
+        native(line.clone())
+    ])
+    .is_err());
+    assert!(
+        Members::<Picked, Unordered>::new(vec![native(line.clone()), native(line.clone())])
+            .is_err()
+    );
+
+    let at_point = Witness {
+        point: Some(fixtures::point(1.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    let along = Witness {
+        direction: Some(UnitVector3::X_AXIS),
+        ..empty.clone()
+    };
+    let set =
+        Members::<Picked, Unordered>::new(vec![native(at_point.clone()), native(along.clone())])
+            .unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&along));
+
+    let at_zero = Witness {
+        point: Some(fixtures::point(0.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    let at_negative_zero = Witness {
+        point: Some(fixtures::point(-0.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    assert_eq!(
+        native(at_zero.clone()).key(),
+        native(at_negative_zero).key()
+    );
+
+    let named = |witness: Witness| Picked {
+        native: Some(fixtures::native_name()),
+        ..native(witness)
+    };
+    assert_eq!(named(line.clone()).key(), named(circle.clone()).key());
+    let entity = |witness: Witness| Picked {
+        witness: Some(witness),
+        ..picked(1)
+    };
+    assert_eq!(entity(line.clone()).key(), entity(circle.clone()).key());
+
+    let limited = |end: Picked| Picked {
+        domain: Some(PickDomain::Limits {
+            start: None,
+            end: Some(Box::new(end)),
+        }),
+        ..picked(3)
+    };
+    assert_ne!(
+        limited(native(line.clone())).key(),
+        limited(native(circle)).key()
+    );
+    assert_eq!(
+        limited(named(line.clone())).key(),
+        limited(named(at_zero)).key()
+    );
+}
+
+/// A carrier written through another form orders as written: a circle
+/// compares its `axis` before its `radius`, the order of its wire fields.
+#[test]
+fn a_witness_carrier_orders_by_its_written_fields() {
+    let circle = |axis_z: f64, radius: f64| Witness {
+        curves: vec![InlineCurve::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, axis_z),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )],
+        ..fixtures::witnesses().remove(1)
+    };
+    let native = |witness: Witness| Picked {
+        target: PickTarget::Native { within: None },
+        witness: Some(witness),
+        ..picked(1)
+    };
+    let (up, down) = (circle(1.0, 1.0), circle(-1.0, 2.0));
+    let set = Members::<Picked, Unordered>::new(vec![native(up), native(down.clone())]).unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&down));
+}
+
 /// An unordered member list sorts by `(target, context, native, domain)` and
 /// reads only in that order; an ordered one keeps source order.
 #[test]
@@ -255,14 +387,14 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let list = Members::<Picked, Ordered>::new(given.clone()).unwrap();
     assert_eq!(list.as_slice(), given.as_slice());
 
-    let written = serde_json::to_string(&Picks::<Unordered>::Named(set)).unwrap();
+    let written = json::to_string(&Picks::<Unordered>::Named(set)).unwrap();
     let back: Picks<Unordered> = read_desktop(&written).unwrap();
-    assert_eq!(serde_json::to_string(&back).unwrap(), written);
-    let unsorted = serde_json::to_string(&given).unwrap();
+    assert_eq!(json::to_string(&back).unwrap(), written);
+    let unsorted = json::to_string(&given).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&unsorted).contains("identity-key order"));
     let read_list: Members<Picked, Ordered> = read_desktop(&unsorted).unwrap();
     assert_eq!(read_list.as_slice(), given.as_slice());
-    let doubled = serde_json::to_string(&vec![first.clone(), first]).unwrap();
+    let doubled = json::to_string(&vec![first.clone(), first]).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&doubled).contains("twice"));
     assert!(refuses::<Members<Picked, Ordered>>(&doubled).contains("twice"));
 }
@@ -290,6 +422,34 @@ fn a_witness_body_is_the_document_topology() {
         .is_some());
 }
 
+/// A witness carrier names no record and has one spelling (§5.6): a leaf
+/// carrier and a placement of one read, and a degenerate curve, a composite
+/// and an opaque carrier do not.
+#[test]
+fn a_witness_carrier_is_an_inline_carrier() {
+    let line = LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS);
+    let witness = Witness {
+        curves: vec![InlineCurve::Transformed {
+            basis: Box::new(InlineCurve::Line(line)),
+            transform: Transform::default(),
+        }],
+        ..fixtures::witnesses().remove(1)
+    };
+    let value = to_value(&witness);
+    assert_eq!(value["curves"][0]["kind"], json!("transformed"));
+    assert_eq!(value["curves"][0]["basis"]["kind"], json!("line"));
+    let back: Witness = read_desktop(&value.to_string()).unwrap();
+    assert_eq!(back, witness);
+
+    let degenerate = SolvedCurveGeometry::Degenerate(DegenerateCurve::new(FinitePoint3::ZERO));
+    let mut refused = value.clone();
+    refused["curves"] = json!([to_value(&degenerate)]);
+    refuses::<Witness>(&refused.to_string());
+    let mut refused = value;
+    refused["surface"] = to_value(&SolvedSurfaceGeometry::Unknown { record: None });
+    refuses::<Witness>(&refused.to_string());
+}
+
 #[test]
 fn a_dimension_binds_a_parameter_or_its_negation() {
     let parameter = Dimension::<Length>::Parameter(id("parameter", 1));
@@ -303,5 +463,64 @@ fn a_dimension_binds_a_parameter_or_its_negation() {
         to_value(&ExpressionDialect::SolidWorks),
         json!({"kind": "solid_works"})
     );
-    assert_eq!(to_value(&CodecId::from(text("sldprt"))), json!("sldprt"));
+    assert_eq!(to_value(&crate::codec_id!("sldprt")), json!("sldprt"));
+}
+
+#[test]
+fn a_codec_id_is_lower_case_letters_and_digits() {
+    use crate::design::names::CodecId;
+    for id in ["3dm", "fcstd", "sldprt"] {
+        let read: CodecId = read_desktop(&format!("{id:?}")).unwrap();
+        assert_eq!(read.as_str(), id);
+    }
+    for id in [r#""""#, r#""Step""#, r#""st-ep""#, r#""f3d ""#] {
+        refuses::<CodecId>(id);
+    }
+}
+
+#[test]
+fn a_codec_name_is_a_codec_id_a_colon_and_a_name() {
+    use crate::design::names::CodecName;
+    for text in [
+        "fcstd:Transition",
+        "sldprt:auto_select",
+        "rhino:loft:3",
+        "f3d: a",
+    ] {
+        let read: CodecName = read_desktop(&format!("{text:?}")).unwrap();
+        assert_eq!(to_value(&read), json!(text));
+    }
+    for text in [
+        r#""thickness""#,
+        r#"":thickness""#,
+        r#""Sldprt:flag""#,
+        r#""sldprt:""#,
+        r#""sldprt: \u00a0""#,
+        r#""sld prt:flag""#,
+    ] {
+        refuses::<CodecName>(text);
+    }
+    assert_eq!(
+        CodecName::new(&crate::codec_id!("f3d"), "distance"),
+        Some(crate::codec_name!("f3d:distance"))
+    );
+    assert_eq!(CodecName::new(&crate::codec_id!("f3d"), " "), None);
+}
+
+#[test]
+fn a_native_arm_that_holds_a_codec_name_refuses_other_text() {
+    use crate::design::names::GenerationRole;
+    use crate::design::options::NativeOptions;
+    use crate::design::selection::SelectionRule;
+    refuses::<SelectionRule>(r#"{"kind": "native", "value": "tangent_curves"}"#);
+    refuses::<GenerationRole>(r#"{"kind": "other", "value": "lip"}"#);
+    refuses::<NativeOptions>(
+        r#"{"thickness": {"kind": "bool", "value": {"kind": "literal", "value": true}}}"#,
+    );
+    let rule: SelectionRule =
+        read_desktop(r#"{"kind": "native", "value": "nx:tangent_curves"}"#).unwrap();
+    assert_eq!(
+        rule,
+        SelectionRule::Native(crate::codec_name!("nx:tangent_curves"))
+    );
 }

@@ -6,6 +6,7 @@ use crate::records::identity::ReferenceRun;
 use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::{indexed_header, lp_ascii};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -76,7 +77,7 @@ fn decoded(
     let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
     let operands = crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            crate::design::decode::operands::decode_face_operands(
+            crate::design::decode::operands::face_operands::decode_face_operands(
                 ctx,
                 scan,
                 std::slice::from_ref(&scope),
@@ -130,22 +131,22 @@ fn frame_findings(
 #[test]
 fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     let (scope, recipe, operand) = decoded(true);
-    let wire = serde_json::to_value(operand.clone()).unwrap();
+    let wire = json::to_value(operand.clone()).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "record_index": 103, "primary_offset": 44, "secondary_offset": 87, "end_offset": 98,
             "next_primary_index": 104
         })
     );
-    let restored: DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
+    let restored: DesignFaceOperand = json::from_value(wire.clone()).unwrap();
     assert_eq!(restored, operand);
-    assert_eq!(serde_json::to_value(restored.clone()).unwrap(), wire);
+    assert_eq!(json::to_value(restored.clone()).unwrap(), wire);
     let rewritten = crate::test_support::with_decode_context(|ctx| {
         let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
         restored.clone().rewrite_identities(ctx, &mut map).unwrap()
     });
-    assert_eq!(serde_json::to_value(rewritten).unwrap(), wire);
+    assert_eq!(json::to_value(rewritten).unwrap(), wire);
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -211,7 +212,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     );
     let mut forged_end = wire.clone();
     forged_end["registered_recipe_frame"]["next_primary_index"] = serde_json::Value::Null;
-    let forged_end: DesignFaceOperand = serde_json::from_value(forged_end).unwrap();
+    let forged_end: DesignFaceOperand = json::from_value(forged_end).unwrap();
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -223,7 +224,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     );
     let mut forged_later = wire.clone();
     forged_later["registered_recipe_frame"]["next_primary_index"] = 105.into();
-    let forged_later: DesignFaceOperand = serde_json::from_value(forged_later).unwrap();
+    let forged_later: DesignFaceOperand = json::from_value(forged_later).unwrap();
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -238,7 +239,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
         .as_object_mut()
         .unwrap()
         .remove("registered_recipe_frame");
-    let generic: DesignFaceOperand = serde_json::from_value(generic).unwrap();
+    let generic: DesignFaceOperand = json::from_value(generic).unwrap();
     assert_eq!(
         frame_findings(
             scope,
@@ -257,17 +258,17 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     ] {
         let mut forged = wire.clone();
         forged["registered_recipe_frame"][field] = value.into();
-        assert!(serde_json::from_value::<DesignFaceOperand>(forged).is_err());
+        assert!(json::from_value::<DesignFaceOperand>(forged).is_err());
     }
     let mut forged = wire;
     forged["next_byte_offset"] = 88.into();
-    assert!(serde_json::from_value::<DesignFaceOperand>(forged).is_err());
+    assert!(json::from_value::<DesignFaceOperand>(forged).is_err());
 }
 
 #[test]
 fn decoded_secondary_recipe_frame_can_end_at_stream_end() {
     let (scope, recipe, operand) = decoded(false);
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = json::to_value(&operand).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"]["next_primary_index"],
         serde_json::Value::Null

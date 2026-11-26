@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{analytic::CircleCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
@@ -328,7 +328,8 @@ fn an_unbounded_near_full_arc_uses_endpoint_parameters() {
 
 #[test]
 fn an_unbounded_replica_uses_the_source_period() {
-    use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::ProceduralCurve;
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
     let mut source = ir.geometry.curves[0].clone();
@@ -445,4 +446,52 @@ fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
     let angle = range[0] * 0.5 + range[1] * 0.5;
     let expected = Point3::new(RADIUS * angle.cos(), RADIUS * angle.sin(), 0.0);
     assert!(point.position().get().distance(expected) <= UNCERTAINTY);
+}
+
+/// An open edge whose ends coincide, with no parameter of its curve strictly
+/// between its ends, is written as one edge and named, where the file was
+/// refused.
+#[test]
+fn an_open_edge_with_no_interior_parameter_is_written_unsplit() {
+    let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
+    let first = 1.0;
+    let last = first + f64::EPSILON;
+    for (point, x) in ir.geometry.points.iter_mut().zip([first, last]) {
+        *point = Point::new(
+            point.id.clone(),
+            FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("point"),
+            None,
+        );
+    }
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("line"),
+    ));
+    ir.geometry.edges[0].carrier =
+        EdgeCarrier::new(ir.geometry.edges[0].curve().cloned(), Some([first, last]))
+            .expect("carrier");
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("an unsplittable open edge is written whole");
+    assert_eq!(edge_count(&bytes), 1);
+    let edge = ir.geometry.edges[0].id.as_str();
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::OpenEdgeUnsplit.kind()
+                && loss.message.contains(edge)
+        }),
+        "{:?}",
+        report.losses
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read back");
 }

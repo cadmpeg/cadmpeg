@@ -12,16 +12,16 @@ use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
 use crate::records::Configuration;
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::DatumPlaneReference;
-use cadmpeg_ir::features::EdgeSelection;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::revolve::RibConstruction;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::RibConstruction;
-use cadmpeg_ir::features::SplitFaceTool;
 use std::collections::BTreeMap;
 
 #[test]
@@ -166,7 +166,7 @@ fn configuration_projection_preserves_writer_projection() {
     let projected = project_configurations(&histories).expect("configuration projection");
     assert_eq!(
         projected,
-        vec![cadmpeg_ir::features::DesignConfiguration {
+        vec![cadmpeg_ir::features::parameters::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint(
                 "sldprt:model:configuration#name%20%23%25%20µ"
             )
@@ -190,6 +190,43 @@ fn configuration_projection_preserves_writer_projection() {
     assert_eq!(
         projected[0].id.as_str(),
         "sldprt:model:configuration#name%20%23%25%20µ"
+    );
+}
+
+#[test]
+fn a_configuration_without_source_index_takes_its_keywords_id_as_index() {
+    let configuration = |ordinal: u32, source_index, id: Option<&str>| Configuration {
+        id: format!("sldprt:history:configuration#14:{ordinal}"),
+        parent: "history".into(),
+        ordinal,
+        source_index,
+        name: format!("Configuration {ordinal}"),
+        material: None,
+        properties: id
+            .map(|id| (cadmpeg_core::nonblank_literal!("id"), id.to_owned()))
+            .into_iter()
+            .collect(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: vec![
+            configuration(0, None, Some("4")),
+            configuration(1, Some(7), Some("7")),
+            configuration(2, None, Some("x")),
+            configuration(3, None, None),
+        ],
+        features: Vec::new(),
+    };
+    let projected = project_configurations(&[history]).expect("configuration projection");
+    assert_eq!(
+        projected
+            .iter()
+            .map(|configuration| configuration.source_index)
+            .collect::<Vec<_>>(),
+        [Some(4), Some(7), None, None]
     );
 }
 
@@ -255,6 +292,7 @@ fn body_modifier_uses_native_source_identity_instead_of_history_position() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
 
@@ -289,6 +327,7 @@ fn a_history_position_does_not_resolve_a_body_modifier_source() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
     assert!(projected
@@ -329,6 +368,7 @@ fn body_modifier_source_is_unresolved_when_history_is_ambiguous() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
 
@@ -474,19 +514,19 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     assert!(matches!(
         projected[7].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
             ref continuity,
             merge_result: None,
             ..
-        }) if continuity.is_unresolved()
+        }) if continuity.is_none()
     ));
     assert!(matches!(
         projected[8].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             ..
         })
     ));
@@ -495,14 +535,14 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
         })
     ));
     assert!(matches!(
         projected[10].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: FaceSelection::Unresolved,
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Unresolved,
                 pull: None,
             },

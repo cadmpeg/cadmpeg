@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, FeatureDefinition, FeatureOperation, FeatureResultMembers,
-    FeatureResultTopology,
-};
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use serde_json::Value;
 
 use super::*;
 use crate::test_support::{combine::document, test_fixtures::parse};
@@ -98,7 +99,7 @@ fn combine_validation_checks_operands_state_and_target_result() {
                 .pointer_mut(pointer)
                 .expect("native property field") = value;
             ir.native
-                .namespace_mut("inventor")
+                .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
                 .set_arena(ctx, "pm_dc_feature_properties", &changed)
                 .expect("synthetic Combine graph");
             let findings = InventorCodec
@@ -109,7 +110,7 @@ fn combine_validation_checks_operands_state_and_target_result() {
                 .contains("operands, operation, or keep-tools")));
         }
         ir.native
-            .namespace_mut("inventor")
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
             .set_arena(ctx, "pm_dc_feature_properties", &properties)
             .expect("synthetic Combine graph");
         let original = &ir.model.feature_result_topologies[0];
@@ -162,7 +163,7 @@ fn body_selector_validation_checks_decoded_member_links() {
                 changed[0]["kind"]["items"]["references"][0] =
                     json!({"index": index, "qualified": qualified});
                 ir.native
-                    .namespace_mut("inventor")
+                    .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
                     .set_arena(ctx, "pm_dc_feature_properties", &changed)
                     .expect("synthetic Combine graph");
                 let findings = InventorCodec

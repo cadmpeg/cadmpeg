@@ -5,22 +5,30 @@
 //! <id>}` on the wire, and the only other design value of that form is a
 //! parameter reference's `target`, so a record's wire form names every
 //! parameter its dimensions bind. Whether a bound parameter's kind matches
-//! the dimension's value type is checked where the record is typed here: a
-//! sketch constraint's dimensions.
+//! the dimension's value type is checked on the typed walk of each record,
+//! which knows that type.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
+use cadmpeg_core::text::NonBlankString;
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as Json;
 
 use super::records::{DesignRecords, MemberKey};
+use super::walk::BoundDimension;
+use super::Held;
 use crate::design::dimension::Dimension;
 use crate::design::ops::sketch::{RadialMeasure, SketchConstraint, SketchRelation, SketchSpace};
-use crate::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
-use crate::design::units::{Quantity, ValueKind};
-use crate::features::ParameterId;
+use crate::design::options::Hand;
+use crate::design::parameter::{ParameterDefinition, ParameterValue};
+use crate::design::units::{PositiveArea, Quantity, ValueKind};
 use crate::report::check::Finding;
-use crate::scalar::{Angle, Length, PositiveReal};
+use crate::scalar::{
+    Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
+    NonZeroReal, PositiveLength, PositiveReal, SlopeAngle,
+};
 
 /// One parameter a dimension binds, with the record that holds it.
 struct Binding<'a> {
@@ -37,7 +45,8 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             None => super::error(
                 findings,
                 binding.holder,
-                format_args!(
+                crate::rule!(
+                    "design.dimension-binds-no-parameter-design",
                     "a dimension binds {}, which is no parameter of the design",
                     binding.parameter
                 ),
@@ -48,7 +57,7 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                         super::error(
                             findings,
                             binding.holder,
-                            format_args!(
+                            crate::rule!("design.dimension-binds-parameter-not-owner-scope", 
                                 "a dimension binds {}, a parameter of {}, not of its owner's scope {scope}",
                                 binding.parameter,
                                 parameter.scope.as_str()
@@ -59,20 +68,31 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             }
         }
     }
-    let mut bound: BTreeSet<String> = bindings
-        .into_iter()
-        .map(|binding| binding.parameter)
-        .collect();
-    bound.extend(other_bindings(index));
-    for parameter in &index.ir.design.parameters {
-        if matches!(parameter.definition, ParameterDefinition::Driven)
-            && !bound.contains(parameter.id.as_str())
-        {
-            super::warning(
-                findings,
-                parameter.id.as_str(),
-                format_args!("driven parameter is bound by no dimension"),
-            );
+    let has_driven = index
+        .ir
+        .design
+        .parameters
+        .iter()
+        .any(|parameter| matches!(parameter.definition, ParameterDefinition::Driven));
+    if has_driven {
+        let mut bound: BTreeSet<String> = bindings
+            .into_iter()
+            .map(|binding| binding.parameter)
+            .collect();
+        bound.extend(other_bindings(index));
+        for parameter in &index.ir.design.parameters {
+            if matches!(parameter.definition, ParameterDefinition::Driven)
+                && !bound.contains(parameter.id.as_str())
+            {
+                super::warning(
+                    findings,
+                    parameter.id.as_str(),
+                    crate::rule!(
+                        "design.driven-parameter-bound-no-dimension",
+                        "driven parameter is bound by no dimension"
+                    ),
+                );
+            }
         }
     }
     let design = &index.ir.design;
@@ -96,6 +116,7 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
 fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
     let design = &index.ir.design;
     let mut found = Vec::new();
+    let mut scratch = Vec::new();
     let mut add = |holder: &'a str, scope: Option<&'a str>, wire: Option<Json>| {
         for parameter in wire.iter().flat_map(bound_parameters) {
             found.push(Binding {
@@ -107,18 +128,30 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
     };
     for feature in &design.features {
         let id = feature.id.as_str();
-        add(id, index.scope_of(MemberKey::Feature(id)), wire_of(feature));
+        add(
+            id,
+            index.scope_of(MemberKey::Feature(id)),
+            wire_if_bound(&mut scratch, feature),
+        );
     }
     for configuration in &design.configurations {
         let scope = Some(configuration.scope.as_str());
         for state in configuration.overrides.features.values() {
-            add(configuration.id.as_str(), scope, wire_of(state));
+            add(
+                configuration.id.as_str(),
+                scope,
+                wire_if_bound(&mut scratch, state),
+            );
         }
     }
     for arrangement in &design.arrangements {
         let scope = Some(arrangement.scope.as_str());
         for state in arrangement.overrides.features.values() {
-            add(arrangement.id.as_str(), scope, wire_of(state));
+            add(
+                arrangement.id.as_str(),
+                scope,
+                wire_if_bound(&mut scratch, state),
+            );
         }
     }
     for container in &design.containers {
@@ -126,51 +159,82 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
         add(
             id,
             index.scope_of(MemberKey::Container(id)),
-            wire_of(container),
+            wire_if_bound(&mut scratch, container),
         );
     }
     let mut owners: BTreeMap<&str, Option<&'a str>> = BTreeMap::new();
     for sketch in &design.sketches {
         let scope = index.scope_of(MemberKey::Feature(sketch.owner.as_str()));
         owners.insert(sketch.id.as_str(), scope);
-        add(sketch.id.as_str(), scope, wire_of(sketch));
+        add(
+            sketch.id.as_str(),
+            scope,
+            wire_if_bound(&mut scratch, sketch),
+        );
     }
     for sketch in &design.spatial_sketches {
         let scope = index.scope_of(MemberKey::Feature(sketch.owner.as_str()));
         owners.insert(sketch.id.as_str(), scope);
-        add(sketch.id.as_str(), scope, wire_of(sketch));
+        add(
+            sketch.id.as_str(),
+            scope,
+            wire_if_bound(&mut scratch, sketch),
+        );
     }
     let owner = |sketch: &str| owners.get(sketch).copied().flatten();
     for entity in &design.sketch_entities {
         add(
             entity.id.as_str(),
             owner(entity.sketch.as_str()),
-            wire_of(entity),
+            wire_if_bound(&mut scratch, entity),
         );
     }
     for constraint in &design.sketch_constraints {
         add(
             constraint.id.as_str(),
             owner(constraint.sketch.as_str()),
-            wire_of(constraint),
+            wire_if_bound(&mut scratch, constraint),
         );
     }
     for entity in &design.spatial_sketch_entities {
         add(
             entity.id.as_str(),
             owner(entity.sketch.as_str()),
-            wire_of(entity),
+            wire_if_bound(&mut scratch, entity),
         );
     }
     for constraint in &design.spatial_sketch_constraints {
         add(
             constraint.id.as_str(),
             owner(constraint.sketch.as_str()),
-            wire_of(constraint),
+            wire_if_bound(&mut scratch, constraint),
         );
     }
     for rule in &design.sheet_metal_rules {
-        add(rule.id.as_str(), Some(rule.scope.as_str()), wire_of(rule));
+        add(
+            rule.id.as_str(),
+            Some(rule.scope.as_str()),
+            wire_if_bound(&mut scratch, rule),
+        );
+    }
+    found
+}
+
+/// The parameters the dimensions of planar and spatial sketch constraints
+/// bind.
+pub(super) fn sketch_constraint_bindings(index: &DesignRecords<'_>) -> BTreeSet<String> {
+    let design = &index.ir.design;
+    let mut scratch = Vec::new();
+    let mut found = BTreeSet::new();
+    for constraint in &design.sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
+    }
+    for constraint in &design.spatial_sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
     }
     found
 }
@@ -180,22 +244,34 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
 fn other_bindings(index: &DesignRecords<'_>) -> Vec<String> {
     let ir = index.ir;
     let mut found = Vec::new();
+    let mut scratch = Vec::new();
     for annotation in &ir.model.pmi {
         found.extend(
-            wire_of(annotation)
+            wire_if_bound(&mut scratch, annotation)
                 .map(|wire| bound_parameters(&wire))
                 .into_iter()
                 .flatten(),
         );
     }
-    if let Ok(process) = serde_json::to_value(&ir.process) {
-        found.extend(design_targets(&process));
+    if !ir.process.is_empty() {
+        if let Some(process) = wire_if_bound(&mut scratch, &ir.process) {
+            found.extend(design_targets(&process));
+        }
     }
     found
 }
 
-fn wire_of<T: Serialize>(record: &T) -> Option<Json> {
-    serde_json::to_value(record).ok()
+/// Parses `record`'s JSON representation only when its text mentions a
+/// `"parameter"` or `"negated"` tag, skipping `serde_json::Value` allocation
+/// for records that hold only literal dimensions.
+fn wire_if_bound<T: Serialize>(scratch: &mut Vec<u8>, record: &T) -> Option<Json> {
+    scratch.clear();
+    crate::hash::finite_json::write_json_value_bytes(scratch, record).ok()?;
+    let text = std::str::from_utf8(scratch).ok()?;
+    if !text.contains("\"parameter\"") && !text.contains("\"negated\"") {
+        return None;
+    }
+    crate::native::replay::value(text).ok()
 }
 
 /// The ids a wire value binds as `{"kind": "parameter" | "negated",
@@ -252,126 +328,160 @@ fn design_targets(wire: &Json) -> Vec<String> {
 
 /// The value type of a dimension: the kind a parameter it binds has, whether
 /// `Negated` applies to it, and the values it admits.
-trait Bound {
+pub(super) trait Bound: DeserializeOwned {
+    /// The value type's name in a finding.
     const NAME: &'static str;
+    /// Whether the value type is a signed quantity, a Boolean, or an
+    /// integer, which `Negated` may bind.
     const SIGNED: bool;
+    /// The kind a bound parameter has.
     fn kind() -> ValueKind;
-    fn admits(value: &ParameterValue) -> bool;
 }
 
-impl Bound for Length {
-    const NAME: &'static str = "length";
-    const SIGNED: bool = true;
-    fn kind() -> ValueKind {
-        ValueKind::Quantity(Quantity::LENGTH)
-    }
-    fn admits(value: &ParameterValue) -> bool {
-        matches!(value, ParameterValue::Number(_))
+macro_rules! bound {
+    ($($type:ty => $name:literal, $signed:literal, $kind:expr;)*) => {$(
+        impl Bound for $type {
+            const NAME: &'static str = $name;
+            const SIGNED: bool = $signed;
+            fn kind() -> ValueKind {
+                $kind
+            }
+        }
+    )*};
+}
+
+bound! {
+    Length => "length", true, ValueKind::Quantity(Quantity::LENGTH);
+    NonZeroLength => "nonzero length", true, ValueKind::Quantity(Quantity::LENGTH);
+    PositiveLength => "positive length", false, ValueKind::Quantity(Quantity::LENGTH);
+    NonNegativeLength => "nonnegative length", false, ValueKind::Quantity(Quantity::LENGTH);
+    Angle => "angle", true, ValueKind::Quantity(Quantity::ANGLE);
+    SlopeAngle => "slope angle", true, ValueKind::Quantity(Quantity::ANGLE);
+    InteriorAngle => "interior angle", false, ValueKind::Quantity(Quantity::ANGLE);
+    FiniteReal => "real", true, ValueKind::Quantity(Quantity::REAL);
+    NonZeroReal => "nonzero real", true, ValueKind::Quantity(Quantity::REAL);
+    PositiveReal => "positive real", false, ValueKind::Quantity(Quantity::REAL);
+    Fraction => "fraction", false, ValueKind::Quantity(Quantity::REAL);
+    PositiveArea => "positive area", false, ValueKind::Quantity(Quantity::AREA);
+    bool => "Boolean", true, ValueKind::Boolean;
+    i64 => "integer", true, ValueKind::Integer;
+    u32 => "count", false, ValueKind::Integer;
+    NonZeroU32 => "nonzero count", false, ValueKind::Integer;
+    NonBlankString => "text", false, ValueKind::Text;
+    Hand => "hand", false, ValueKind::Text;
+}
+
+/// A dimension's value type, with the dimension's type parameter erased.
+pub(super) struct ValueType {
+    name: &'static str,
+    signed: bool,
+    kind: ValueKind,
+    admits: fn(&ParameterValue) -> bool,
+}
+
+/// The value type of a `Dimension<T>`.
+pub(super) fn value_type<T: Bound>() -> ValueType {
+    ValueType {
+        name: T::NAME,
+        signed: T::SIGNED,
+        kind: T::kind(),
+        admits: admits::<T>,
     }
 }
 
-impl Bound for Angle {
-    const NAME: &'static str = "angle";
-    const SIGNED: bool = true;
-    fn kind() -> ValueKind {
-        ValueKind::Quantity(Quantity::ANGLE)
-    }
-    fn admits(value: &ParameterValue) -> bool {
-        matches!(value, ParameterValue::Number(_))
-    }
+/// Whether `T` admits `value`: whether `value` deserializes as a `T`.
+fn admits<T: Bound>(value: &ParameterValue) -> bool {
+    from_cache::<T>(value, false).is_some()
 }
 
-impl Bound for PositiveReal {
-    const NAME: &'static str = "positive real";
-    const SIGNED: bool = false;
-    fn kind() -> ValueKind {
-        ValueKind::Quantity(Quantity::REAL)
-    }
-    fn admits(value: &ParameterValue) -> bool {
-        matches!(value, ParameterValue::Number(number) if number.get() > 0.0)
-    }
-}
-
-impl Bound for bool {
-    const NAME: &'static str = "Boolean";
-    const SIGNED: bool = true;
-    fn kind() -> ValueKind {
-        ValueKind::Boolean
-    }
-    fn admits(value: &ParameterValue) -> bool {
-        matches!(value, ParameterValue::Boolean(_))
-    }
-}
-
-/// The parameter a dimension binds, and the record when it exists.
-fn bound<'a, T>(
-    index: &DesignRecords<'a>,
-    dimension: &'a Dimension<T>,
-) -> Option<(&'a ParameterId, bool, Option<&'a DesignParameter>)> {
-    let (parameter, negated) = match dimension {
-        Dimension::Literal(_) => return None,
-        Dimension::Parameter(parameter) => (parameter, false),
-        Dimension::Negated(parameter) => (parameter, true),
+/// The value of a dimension of type `T` that binds a parameter whose cache is
+/// `value`, with the opposite sign or the complement where `negated` (§5.14).
+/// `None` where `T` does not admit it.
+pub(super) fn from_cache<T: Bound>(value: &ParameterValue, negated: bool) -> Option<T> {
+    let wire = match (value, negated) {
+        (ParameterValue::Number(number), false) => Json::from(number.get()),
+        (ParameterValue::Number(number), true) => Json::from(-number.get()),
+        (ParameterValue::Integer(integer), false) => Json::from(*integer),
+        (ParameterValue::Integer(integer), true) => Json::from(integer.checked_neg()?),
+        (ParameterValue::Boolean(boolean), negated) => Json::Bool(*boolean != negated),
+        (ParameterValue::Text(text), false) => Json::String(text.clone()),
+        (ParameterValue::Text(_), true) => return None,
     };
-    Some((
-        parameter,
-        negated,
-        index.parameters.get(parameter.as_str()).copied(),
-    ))
+    cadmpeg_core::serde_erase::from_json_value::<T>(&wire).ok()
 }
 
 /// A bound dimension's parameter has the kind its value type takes, a cached
-/// value it admits (Warning), and `Negated` binds only a signed quantity or
-/// a Boolean.
-fn check_bound<T: Bound>(
+/// value it admits (Warning), and `Negated` binds only a signed quantity, a
+/// Boolean, or an integer. A parameter of a `Native` kind states no kind to
+/// compare.
+pub(super) fn check_bound_dimensions(
     index: &DesignRecords<'_>,
-    holder: &str,
-    dimension: &Dimension<T>,
+    held: &[Held<'_>],
     findings: &mut Vec<Finding>,
 ) {
-    let Some((id, negated, record)) = bound(index, dimension) else {
-        return;
-    };
-    let id = id.as_str();
-    if negated && !T::SIGNED {
+    for held in held {
+        let holder = held.holder.record();
+        for dimension in &held.dimensions {
+            check_bound(index, holder, dimension, findings);
+        }
+    }
+}
+
+fn check_bound(
+    index: &DesignRecords<'_>,
+    holder: &str,
+    dimension: &BoundDimension<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let value = &dimension.value;
+    let id = dimension.parameter.as_str();
+    if dimension.negated && !value.signed {
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-negated-only-signed-quantity-boolean",
                 "a {} dimension is `negated`; only a signed quantity or a Boolean is",
-                T::NAME
+                value.name
             ),
         );
     }
-    let Some(record) = record else {
+    let Some(record) = index.parameters.get(id) else {
         return;
     };
-    if record.kind != T::kind() {
+    if matches!(record.kind, ValueKind::Native(_)) {
+        return;
+    }
+    if record.kind != value.kind {
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-binds-kind",
                 "a {} dimension binds {id}, whose kind is {:?}",
-                T::NAME,
+                value.name,
                 record.kind
             ),
         );
         return;
     }
-    if let Some(value) = &record.value {
-        if !T::admits(value) {
+    if let Some(cached) = &record.value {
+        if !(value.admits)(cached) {
             super::warning(
                 findings,
                 holder,
-                format_args!(
-                    "a {} dimension binds {id}, whose cached value {value:?} it does not admit",
-                    T::NAME
+                crate::rule!(
+                    "design.dimension-binds-cached-value-does-not",
+                    "a {} dimension binds {id}, whose cached value {cached:?} it does not admit",
+                    value.name
                 ),
             );
         }
     }
 }
 
+/// A parameter that a sketch constraint's diameter dimension binds has no
+/// `display`.
 fn check_sketch_constraints<S: SketchSpace>(
     index: &DesignRecords<'_>,
     constraints: &[SketchConstraint<S>],
@@ -379,55 +489,27 @@ fn check_sketch_constraints<S: SketchSpace>(
     findings: &mut Vec<Finding>,
 ) {
     for constraint in constraints {
-        let holder = id(&constraint.id);
-        if let Some(active) = &constraint.active {
-            check_bound(index, holder, active, findings);
-        }
-        match &constraint.relation {
-            SketchRelation::Distance { value, .. } | SketchRelation::Length { value, .. } => {
-                check_bound(index, holder, value, findings);
-            }
-            SketchRelation::Angle { value, .. } => check_bound(index, holder, value, findings),
-            SketchRelation::Radial { measure, value, .. } => {
-                check_bound(index, holder, value, findings);
-                let diameter = matches!(measure, RadialMeasure::Diameter);
-                if let (true, Some((parameter, _, Some(record)))) = (diameter, bound(index, value))
-                {
-                    if record.display.is_some() {
-                        super::error(
-                            findings,
-                            holder,
-                            format_args!(
-                                "a diameter dimension binds {}, which states a `display`",
-                                parameter.as_str()
-                            ),
-                        );
-                    }
-                }
-            }
-            SketchRelation::Weight { value, .. } => check_bound(index, holder, value, findings),
-            SketchRelation::Coincident { .. }
-            | SketchRelation::Concentric { .. }
-            | SketchRelation::Collinear { .. }
-            | SketchRelation::Parallel { .. }
-            | SketchRelation::Perpendicular { .. }
-            | SketchRelation::Tangent { .. }
-            | SketchRelation::Curvature { .. }
-            | SketchRelation::Horizontal { .. }
-            | SketchRelation::Vertical { .. }
-            | SketchRelation::Midpoint { .. }
-            | SketchRelation::Symmetric { .. }
-            | SketchRelation::Equal { .. }
-            | SketchRelation::EqualDistance { .. }
-            | SketchRelation::Fixed { .. }
-            | SketchRelation::Offset(_)
-            | SketchRelation::Pattern(_)
-            | SketchRelation::Polygon(_)
-            | SketchRelation::Slot(_)
-            | SketchRelation::Pierce { .. }
-            | SketchRelation::FixedLength { .. }
-            | SketchRelation::FixedAngle { .. }
-            | SketchRelation::Native { .. } => {}
+        let SketchRelation::Radial {
+            measure: RadialMeasure::Diameter,
+            value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+            ..
+        } = &constraint.relation
+        else {
+            continue;
+        };
+        let Some(record) = index.parameters.get(parameter.as_str()) else {
+            continue;
+        };
+        if record.display.is_some() {
+            super::error(
+                findings,
+                id(&constraint.id),
+                crate::rule!(
+                    "design.diameter-dimension-binds-states-display",
+                    "a diameter dimension binds {}, which states a `display`",
+                    parameter.as_str()
+                ),
+            );
         }
     }
 }

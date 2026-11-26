@@ -6,15 +6,12 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferForm, ChamferSpec},
-        DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureInputTopology,
-        FeatureOperation, HistoricalEdgeGeometry,
-    },
-    ids::{HistoricalEdgeId, HistoricalFaceId},
-    scalar::{Length, PositiveLength},
-};
+use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferSpec};
+use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::{HistoricalEdgeId, HistoricalFaceId};
+use cadmpeg_ir::scalar::{Length, PositiveLength};
 
 use super::Operands;
 use crate::feature::{
@@ -161,6 +158,9 @@ pub(crate) fn project<'a>(
         });
         ctx.charge_entities(3, "project Inventor oriented chamfer")?;
         states.push(FeatureInputTopology {
+            face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: state,
             input_of: feature.id.clone(),
             bodies: DistinctMembers::default(),
@@ -180,6 +180,8 @@ pub(crate) fn project<'a>(
                 faces: vec![joined.face]
                     .try_into()
                     .map_err(CodecError::malformed)?,
+                carrier: None,
+                supports: Vec::new(),
             }],
             native_ref: Some(source.id()),
         });

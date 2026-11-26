@@ -2,11 +2,13 @@
 //! Pattern-form projection.
 
 use crate::classification::NativeClassKind;
-use crate::records::Feature;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDefinition, FeatureId, FeatureOperation, PathRef,
+use crate::records::{
+    Feature, CIRCULAR_PATTERN_ANGLE_DIMENSION, CIRCULAR_PATTERN_COUNT_DIMENSION,
+    CIRCULAR_PATTERN_SEED_SOURCES,
 };
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::HashMap;
 
 use crate::history::classify::feature_input_class;
@@ -76,7 +78,11 @@ pub(super) fn project_pattern(
 ) -> FeatureDefinition {
     let form = pattern_form(feature);
     let mut seeds = Vec::new();
-    if let Some(source_seeds) = feature.properties.get("Seeds") {
+    if let Some(source_seeds) = feature
+        .properties
+        .get("Seeds")
+        .or_else(|| feature.properties.get(CIRCULAR_PATTERN_SEED_SOURCES))
+    {
         for source in source_seeds.split(',').map(str::trim) {
             let Some(id) = by_source.get(source) else {
                 seeds.clear();
@@ -139,11 +145,13 @@ pub(super) fn project_pattern(
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
                 axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-                angle: feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_positive_angle_rad(value))?,
-                count: parse_count(feature.parameters.get("Count")?)?,
+                angle: dimension(feature, "Angle", CIRCULAR_PATTERN_ANGLE_DIMENSION)
+                    .and_then(parse_positive_angle_rad)?,
+                count: parse_count(dimension(
+                    feature,
+                    "Count",
+                    CIRCULAR_PATTERN_COUNT_DIMENSION,
+                )?)?,
             })
             .ok()?,
             NativePatternClass::CurveDriven => PatternKind::new(PatternTransform::CurveDriven {
@@ -183,6 +191,21 @@ pub(super) fn project_pattern(
             Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
         });
     FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
+}
+
+/// The value of `feature`'s parameter `name`, or of the parameter its
+/// property `named_by` names.
+fn dimension<'a>(feature: &'a Feature, name: &str, named_by: &str) -> Option<&'a str> {
+    feature
+        .parameters
+        .get(name)
+        .or_else(|| {
+            feature
+                .properties
+                .get(named_by)
+                .and_then(|dimension| feature.parameters.get(dimension.as_str()))
+        })
+        .map(String::as_str)
 }
 
 pub(crate) fn parse_count(value: &str) -> Option<u32> {

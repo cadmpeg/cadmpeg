@@ -29,13 +29,15 @@ use crate::design::ids::SpatialSketchConstraintId;
 use crate::design::names::{InstanceIndex, NativeName};
 use crate::design::options::{NativeOptions, ProjectionDirection};
 use crate::design::selection::{OrderedSelection, PrincipalEntity, SetSelection};
-use crate::features::{FeatureId, FinitePoint3};
+use crate::features::geometry::FinitePoint3;
+use crate::features::FeatureId;
 use crate::geometry::pcurve::PcurveNurbs;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
+use crate::topology::IncreasingParameterInterval;
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 /// A planar sketch: entities in sketch coordinates on a placed plane.
@@ -74,7 +76,7 @@ pub struct Sketch {
 }
 
 /// The placement of a planar sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SketchPlane {
@@ -142,7 +144,7 @@ pub struct SketchSolve {
 
 /// The source's record of how far a sketch's constraints determine its
 /// geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -173,7 +175,7 @@ pub enum SolveState {
 
 /// The id, point, direction, and curve types of a sketch space. Each carries
 /// the wire traits, so every record generic over a space derives them.
-pub trait SketchSpace {
+pub trait SketchSpace: PartialEq {
     /// The id of a sketch of the space.
     type Sketch: Debug + Clone + PartialEq + Serialize + DeserializeOwned;
     /// The id of an entity of the space.
@@ -278,7 +280,7 @@ pub struct SketchEntity<S: SketchSpace> {
 
 /// An entity's curve: free geometry that the constraints position, or a
 /// defining form with its solved curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -313,7 +315,7 @@ pub enum EntityDefinition<S: SketchSpace> {
 }
 
 /// The defining form of a `Defined` entity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -373,7 +375,7 @@ pub struct EntityRole<S: SketchSpace> {
 }
 
 /// The role of a point or a helper in the entity it bounds or helps define.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -427,7 +429,7 @@ pub enum DefiningRole {
 }
 
 /// A 2D carrier in sketch coordinates.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -526,7 +528,7 @@ pub enum PlanarCurve {
 }
 
 /// A carrier in the coordinates of a spatial sketch's definition.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -537,18 +539,27 @@ pub enum PlanarCurve {
 pub enum SpatialCurve {
     /// A point.
     Point(FinitePoint3),
-    /// A curve carrier with its parameter range.
-    Bounded {
-        /// The carrier.
-        carrier: SolvedCurveGeometry,
-        /// The parameter range. `None` is the full curve.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_range"
-        )]
-        range: Option<[FiniteReal; 2]>,
-    },
+    /// A curve carrier with the interval of its parameter that the piece
+    /// uses.
+    Bounded(BoundedCurve),
+}
+
+/// A curve carrier and the interval of its own parameter that a piece uses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct BoundedCurve {
+    /// The carrier.
+    pub carrier: InlineCurve,
+    /// The interval of the carrier's parameter. `None` is the carrier's whole
+    /// domain; a piece the source bounds inside that domain, an arc
+    /// included, states it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_range"
+    )]
+    pub range: Option<IncreasingParameterInterval>,
 }
 
 /// A spline through its fit points, the point entities with `Fit(0)` to
@@ -645,7 +656,7 @@ pub struct Derivation {
 }
 
 /// How a derived entity is computed from its source.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -798,7 +809,7 @@ pub struct TextContent {
 }
 
 /// The alignment of a text against a box.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -847,7 +858,7 @@ pub enum TextVerticalBox {
 }
 
 /// A frame or a curve that a text is fitted to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -948,7 +959,7 @@ pub struct SketchConstraint<S: SketchSpace> {
 }
 
 /// An operand of a sketch relation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -972,7 +983,7 @@ pub enum Operand<S: SketchSpace> {
 }
 
 /// A geometric relation or a dimension between sketch operands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1208,7 +1219,7 @@ pub enum SketchRelation<S: SketchSpace> {
 }
 
 /// Where two tangent curves touch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1229,7 +1240,7 @@ pub enum Contact<S: SketchSpace> {
 }
 
 /// The axis a sketch distance is measured along.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1257,7 +1268,7 @@ pub enum DistanceAxis<S: SketchSpace> {
 }
 
 /// What a sketch angle is measured between.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1281,7 +1292,7 @@ pub enum AngleOperands<S: SketchSpace> {
 }
 
 /// Which angle a sketch angle's value is.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1389,7 +1400,7 @@ pub struct SketchSlot<S: SketchSpace> {
 }
 
 /// The kind of a sketch slot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1432,7 +1443,7 @@ pub struct SketchPattern<S: SketchSpace> {
 }
 
 /// The layout of a sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1497,7 +1508,7 @@ pub struct SketchPatternAxis<S: SketchSpace> {
 }
 
 /// The direction of a linear sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",

@@ -1224,7 +1224,7 @@ pub(crate) fn looks_like_legacy_nx(
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
     let probe = CompoundPrefixProbe::inspect(ctx, View::over_retained(prefix))?;
-    let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
+    let CompoundPrefixProbe::DirectoryEvidence { paths, .. } = probe else {
         return Ok(false);
     };
     for path in &paths {

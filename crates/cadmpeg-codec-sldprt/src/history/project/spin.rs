@@ -3,11 +3,15 @@
 
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, PartialRevolveConstruction,
-    PathRef, PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent,
-    RibConstruction, RibDraft, RibSide, SweepMode,
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::revolve::{
+    PartialRevolveConstruction, RevolutionAxis, RevolveConstruction, RevolveExtent,
+    RibConstruction, RibDraft, RibSide,
 };
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 
 use crate::history::classify::{feature_input_class, loft_op};
@@ -81,7 +85,7 @@ pub(super) fn project_loft(
         feature.properties.get("Profiles").map(String::as_str),
         native_by_source,
         |profile| {
-            cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::LoftSection::Profile(ProfileRef::Planar(
                 PlanarProfileRef::Native(profile),
             ))
         },
@@ -195,11 +199,11 @@ pub(super) fn project_sweep(
         Some((twist, scale))
     })()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+        shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
             mode,
             profile.map_or(
-                cadmpeg_ir::features::SweepSection::Unresolved(None),
-                cadmpeg_ir::features::SweepSection::Profile,
+                cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
+                cadmpeg_ir::features::sweeps::SweepSection::Profile,
             ),
             Vec::new(),
         ),
@@ -222,16 +226,16 @@ fn sweep_mode(op: BooleanOp) -> SweepMode {
     match op {
         BooleanOp::Unresolved => SweepMode::Unresolved {},
         BooleanOp::NewBody => SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
         },
         BooleanOp::Join => SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::Join,
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
         },
         BooleanOp::Cut => SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::Cut,
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Cut,
         },
         BooleanOp::Intersect => SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Intersect,
         },
     }
 }

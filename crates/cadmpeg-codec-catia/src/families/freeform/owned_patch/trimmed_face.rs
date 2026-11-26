@@ -12,14 +12,14 @@ use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, TrimmedPcurve};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::FinitePoint2;
 
 use crate::families::a5a8::records::{
-    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_rolling_curve_on_construction_radius,
-    a5_ruled_guides_from_records,
+    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_ruled_guides_from_records,
 };
 use crate::families::b2::records::{
     b2_circles_from_records, b2_spheres_from_records, owned_cone_charts, owned_edge_nodes,
@@ -264,8 +264,8 @@ where
                 for _ in 0..2 {
                     let target = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
                     let record = &self.records[target];
-                    if !matches!(record.class(), 0x27 | 0x29 | 0x30 | 0x38)
-                        && (record.family(), record.class()) != (Family::B, 0x2e)
+                    if !matches!(record.class(), 0x27 | 0x29 | 0x38)
+                        && (record.family(), record.class()) != (Family::B, 0x30)
                     {
                         return None;
                     }
@@ -317,11 +317,7 @@ where
                     };
                     return a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
                         .next()
-                        .and_then(build)
-                        .or_else(|| {
-                            a5_rolling_curve_on_construction_radius(self.bytes, carrier, radius)
-                                .and_then(build)
-                        });
+                        .and_then(build);
                 }
                 let (reference, class, radius) = analytic_bridge(bytes)?;
                 let carrier = self.records.get((self.resolve)(support, reference)?)?;
@@ -348,6 +344,49 @@ where
             }
             _ => None,
         }
+    }
+
+    fn extended_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
+        let mut at = 1;
+        let reference = allocation_reference(bytes, &mut at)?;
+        let record = self.records.get((self.resolve)(support, reference)?)?;
+        for classes in [
+            &[0x2e, 0x38][..],
+            &[0x27, 0x30],
+            &[0x18, 0x20],
+            &[0x18, 0x20],
+            &[0x2e, 0x37, 0x38],
+            &[0x18, 0x20],
+        ] {
+            let reference = allocation_reference(bytes, &mut at)?;
+            let target = self.records.get((self.resolve)(support, reference)?)?;
+            if target.family() != Family::B || !classes.contains(&target.class()) {
+                return None;
+            }
+        }
+        if !matches!(
+            bytes.get(at..)?,
+            [
+                0x11,
+                0x0d,
+                3 | 5,
+                3 | 5,
+                3 | 5,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                5
+            ]
+        ) {
+            return None;
+        }
+        Carrier::extended_rolling_ball(&a5_extended_rolling_curve(self.bytes, record)?)
     }
 
     fn offset_extrusion(
@@ -433,49 +472,6 @@ where
             }
         }
         None
-    }
-
-    fn extended_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
-        let mut at = 1;
-        let reference = allocation_reference(bytes, &mut at)?;
-        let record = self.records.get((self.resolve)(support, reference)?)?;
-        for classes in [
-            &[0x2e, 0x38][..],
-            &[0x27, 0x30],
-            &[0x18, 0x20],
-            &[0x18, 0x20],
-            &[0x2e, 0x37, 0x38],
-            &[0x18, 0x20],
-        ] {
-            let reference = allocation_reference(bytes, &mut at)?;
-            let target = self.records.get((self.resolve)(support, reference)?)?;
-            if target.family() != Family::B || !classes.contains(&target.class()) {
-                return None;
-            }
-        }
-        if !matches!(
-            bytes.get(at..)?,
-            [
-                0x11,
-                0x0d,
-                3 | 5,
-                3 | 5,
-                3 | 5,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                1,
-                5
-            ]
-        ) {
-            return None;
-        }
-        Carrier::extended_rolling_ball(&a5_extended_rolling_curve(self.bytes, record)?)
     }
 
     fn mapped_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
@@ -732,8 +728,7 @@ where
             0x21 => {
                 let (pcurve, range) = trim_curves::spline(payload(self.bytes, &records[0])?)?;
                 if let PcurveGeometry::Nurbs { nurbs } = &pcurve {
-                    let knots = nurbs.knots();
-                    let full = [*knots.first()?, *knots.last()?];
+                    let full = [*nurbs.knots().first()?, *nurbs.knots().last()?];
                     if full != range {
                         extended_spline_range = Some(full);
                     }
@@ -943,9 +938,8 @@ where
             }
         });
         if let Some(circle) = sphere_circle {
-            stations = stations.map(|station| station.map(|t| circle.chart_station(t)));
-            primary_stations =
-                primary_stations.map(|station| station.map(|t| circle.chart_station(t)));
+            stations = stations.map(|t| t.map(|t| circle.chart_station(t)));
+            primary_stations = primary_stations.map(|t| t.map(|t| circle.chart_station(t)));
         }
         if domain.line {
             let [lo, hi] = stations
@@ -2608,13 +2602,15 @@ fn fit_ring(
     let surface = SurfaceGeometry::Solved(solved.clone());
     let forward = member.forward != carrier.reversed();
     let flip = (area > 0.0) != forward;
+    let model = ModelIndex::new_model_only(ir);
     let mut sides = Vec::new();
     for (index, trim) in trims.iter().enumerate() {
         let evaluate = |t| {
             let [u, v] = chart(trim.uv(t)?)?;
-            let p = eval::model_surface_point(EvaluationAdmission::Standard, ir, &surface, u, v)
-                .ok()?
-                .get();
+            let p =
+                eval::model_surface_point(EvaluationAdmission::Standard, &model, &surface, u, v)
+                    .ok()?
+                    .get();
             Some([p.x, p.y, p.z])
         };
         let curve = fit_edge_with_error(trim.range, evaluate, GAP_MM / 4.0)
@@ -2775,6 +2771,7 @@ mod tests {
 
     mod carriers;
     mod recovery;
+    mod rolling_spans;
     mod roster_priority;
 
     #[test]

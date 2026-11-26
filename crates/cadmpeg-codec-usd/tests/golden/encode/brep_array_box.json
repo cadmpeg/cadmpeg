@@ -88,20 +88,7 @@
       "kind": "native",
       "target": "usd:usda-1.0"
     },
-    "losses": [
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "export.appearance-reduced",
-            "kind": "appearance_reduced",
-            "namespace": "usd"
-          }
-        },
-        "message": "6 appearance bindings to faces, edges, or carriers were not written",
-        "severity": "info"
-      }
-    ],
+    "losses": [],
     "notes": [
       "USDA 1.0 text layer, metre units"
     ],
@@ -305,6 +292,7 @@
     "        )",
     "        {",
     "            uniform token elementType = \"face\"",
+    "            uniform token familyName = \"materialBind\"",
     "            int[] indices = [0, 1, 2, 3, 4, 5]",
     "            rel material:binding = </Looks/Box_face_1_material>",
     "        }",

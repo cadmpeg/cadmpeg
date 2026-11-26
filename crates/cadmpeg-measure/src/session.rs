@@ -2,13 +2,17 @@
 //! One measurement pass over a document: selection, per-item work slices,
 //! rows and document totals.
 
+mod boxes;
 mod findings;
 
 use std::collections::{BTreeSet, HashMap};
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -24,12 +28,13 @@ use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Missing, Outcome};
 use crate::geom::Aabb;
+use crate::loss::MeasureLossCode;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
-    BodyMeasures, Caveat, DocumentMeasures, DocumentOrientation, EdgeMeasures, FaceMeasures,
-    Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, RowPlacement,
-    SurfaceMeasures, WorkReport,
+    BodyBox, BodyMeasures, Caveat, DocumentMeasures, DocumentOrientation, EdgeMeasures,
+    FaceMeasures, Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances,
+    RowPlacement, SurfaceMeasures, WorkReport,
 };
 use crate::select::Selection;
 use crate::surface::SurfaceInput;
@@ -48,13 +53,16 @@ pub struct MeasureInput<'ir> {
 }
 
 /// Options of a measurement pass.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MeasureOptions {
     /// The work profile that sets the pass allowance.
     pub work: WorkProfile,
     /// The material density of every body; body rows report mass and
     /// inertia only with one.
     pub density: Option<Density>,
+    /// The entries of the completed report on which the caller refuses the
+    /// measurement (§3.5). The default refuses none.
+    pub strictness: Strictness,
 }
 
 /// A material density in kilograms per cubic metre: finite and positive.
@@ -105,6 +113,15 @@ pub enum MeasureError {
         /// The occurrence.
         occurrence: String,
     },
+    /// The caller's [`MeasureOptions::strictness`] refused an entry of the
+    /// completed report.
+    #[error("the caller's strictness refuses the measurement at {}", code_name(&report.losses()[*entry].code))]
+    StrictRejected {
+        /// The completed report.
+        report: Box<MeasureReport>,
+        /// The index of the refused entry in the report's losses.
+        entry: usize,
+    },
 }
 
 impl From<ResourceLimit> for MeasureError {
@@ -141,6 +158,84 @@ pub fn findings(
         .map_err(CodecError::ResourceLimit)
 }
 
+/// Both orientation findings ([`findings`]) and declared-measure findings
+/// ([`crate::declared_findings`]) in a single measurement pass over `ir`.
+///
+/// Bodies referenced by `ir.model.declared_measures` are measured once with
+/// full body-row quantities and reused for orientation checks instead of
+/// running two separate passes.
+pub fn check_findings(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    options: MeasureOptions,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    if ir.model.declared_measures.is_empty() {
+        return findings(ctx, ir, options);
+    }
+    let resolved = crate::declared::resolve_declared(ir);
+    let input = MeasureInput {
+        ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    let measurer = Measurer::new(input, options);
+    if resolved.scope.is_empty() {
+        let mut all = measurer
+            .orientation_findings(ctx)
+            .map_err(CodecError::ResourceLimit)?;
+        let empty = std::collections::BTreeMap::new();
+        all.extend(crate::declared::findings_from_rows(ir, resolved, &empty));
+        return Ok(all);
+    }
+    let (mut all, body_rows) = measurer
+        .combined_findings_and_rows(ctx, &resolved.scope)
+        .map_err(CodecError::ResourceLimit)?;
+    let rows: std::collections::BTreeMap<&str, &BodyMeasures> = body_rows
+        .iter()
+        .map(|row| (row.body().as_str(), row))
+        .collect();
+    all.extend(crate::declared::findings_from_rows(ir, resolved, &rows));
+    Ok(all)
+}
+
+/// The box of each body of `ir`, in body arena order, in millimetres with
+/// the body transform applied.
+///
+/// The pass resolves edge boxes, face boundaries, regions, orientation
+/// readings and witnesses; it computes no area, volume, extent or flux. Each
+/// box is the box [`Measurer::measure`] reports for the body row, from the
+/// same face boxes, with two differences:
+///
+/// - A face on a NURBS carrier whose region does not classify has its
+///   control-hull box, which contains the whole carrier.
+/// - A sphere or torus face whose region rests on its declared orientation,
+///   and which only its area or its shell's volume sign would settle, has
+///   its declared box with the complement box as a candidate.
+///
+/// A body box under [`Reading::Declared`](crate::value::Reading::Declared)
+/// is therefore more frequent here than in a full pass. Such a box is not
+/// an outer bound of the body; [`BodyBox::bbox`] says what holds.
+///
+/// The pass runs in a session of its own under [`DecodePolicy::service`]
+/// and the [`WorkProfile::Service`] allowance. A session refusal, or an
+/// allowance that does not fit a `usize`, is the error.
+pub fn body_boxes(ir: &CadIr) -> Result<Vec<BodyBox>, MeasureError> {
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_loaded_input(&arena, &DecodePolicy::service(), 0)?;
+    let input = MeasureInput {
+        ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    let options = MeasureOptions {
+        work: WorkProfile::Service,
+        ..MeasureOptions::default()
+    };
+    let boxes = Measurer::new(input, options).boxes(&ctx)?;
+    ctx.finish_session()?;
+    Ok(boxes)
+}
+
 /// Measures the bodies, faces and edges of one document.
 pub struct Measurer<'ir> {
     input: MeasureInput<'ir>,
@@ -172,12 +267,19 @@ impl<'ir> Measurer<'ir> {
         let geometry = &self.input.ir.geometry;
         let space = match &selection.occurrence {
             None => None,
-            Some(id) => Some(crate::occurrence::space(self.input.ir, id).ok_or_else(|| {
-                MeasureError::UnknownEntity {
-                    arena: "model.occurrences",
-                    id: id.as_str().to_owned(),
-                }
-            })?),
+            Some(id) => Some(
+                crate::occurrence::space(self.input.ir, &selection.occurrence_above, id)
+                    .ok_or_else(|| MeasureError::UnknownEntity {
+                        arena: "model.occurrences",
+                        id: selection
+                            .occurrence_above
+                            .iter()
+                            .chain([id])
+                            .map(cadmpeg_ir::ids::OccurrenceId::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" / "),
+                    })?,
+            ),
         };
         let scope = self.scope(selection, space.as_ref())?;
         let face_level = selection.face_level();
@@ -229,7 +331,7 @@ impl<'ir> Measurer<'ir> {
         }
         for face in &needed_faces {
             if let Some(face) = self.owners.face(face) {
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                         for coedge in face_loop.coedges() {
                             if let Some(coedge) = self.owners.coedge(coedge.as_str()) {
@@ -241,20 +343,7 @@ impl<'ir> Measurer<'ir> {
             }
         }
 
-        let items = geometry.faces.len() + geometry.edges.len();
-        let Some(allowance) = self.options.work.pass_allowance(items) else {
-            return Err(ResourceLimit {
-                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
-                dimension: ResourceDimension::Entities,
-                reason: ResourceFailure::BudgetExceeded,
-                limit: 0,
-                used: cadmpeg_core::decode::u64_from_index(items),
-                additional: 0,
-                operation: "measurement pass allowance",
-            }
-            .into());
-        };
-        let pass = PassAllowance::new(allowance);
+        let pass = self.pass("measurement pass allowance")?;
 
         let world = |body: &str| space.as_ref().and_then(|space| space.placements.get(body));
         let mut composed: HashMap<&'ir str, Option<Transform>> = HashMap::new();
@@ -353,7 +442,11 @@ impl<'ir> Measurer<'ir> {
                 work: &slice,
             };
             let input = FaceInput {
-                work: Work::Row,
+                work: if face_rows.contains(face_id) {
+                    Work::Row
+                } else {
+                    Work::Body
+                },
                 owners: &self.owners,
                 edges: &edges,
                 fidelity: self.input.fidelity,
@@ -470,7 +563,13 @@ impl<'ir> Measurer<'ir> {
             ));
         }
         caveats.sort();
-        Ok(MeasureReport {
+        let losses = if self.input.ir.scope().model {
+            Vec::new()
+        } else {
+            vec![MeasureLossCode::OutputEmpty
+                .note("the document's scope holds no model class, so the pass measured no body")]
+        };
+        let report = MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
                 linear: self.input.ir.tolerances.linear.get(),
@@ -482,7 +581,53 @@ impl<'ir> Measurer<'ir> {
             edges: edge_out,
             surfaces: surface_out,
             document,
-        })
+            losses,
+        };
+        match self.options.strictness.first_refused(&report.losses, false) {
+            None => Ok(report),
+            Some(entry) => Err(MeasureError::StrictRejected {
+                report: Box::new(report),
+                entry,
+            }),
+        }
+    }
+
+    /// One pass allowance of the options' work profile for every face and
+    /// edge of the document; `operation` names it in the limit.
+    fn pass(&self, operation: &'static str) -> Result<PassAllowance, ResourceLimit> {
+        let geometry = &self.input.ir.geometry;
+        let items = geometry.faces.len() + geometry.edges.len();
+        let allowance = self
+            .options
+            .work
+            .pass_allowance(items)
+            .ok_or_else(|| ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
+                dimension: ResourceDimension::Entities,
+                reason: ResourceFailure::BudgetExceeded,
+                limit: 0,
+                used: cadmpeg_core::decode::u64_from_index(items),
+                additional: 0,
+                operation,
+            })?;
+        Ok(PassAllowance::new(allowance))
+    }
+
+    /// The placement of each body from its own transform.
+    fn body_placements(&self) -> Result<HashMap<&'ir str, Outcome<Placement>>, ResourceLimit> {
+        self.input
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| {
+                let placement = match body.transform {
+                    Some(transform) => settle(Placement::of(transform)),
+                    None => Ok(Ok(Placement::identity())),
+                };
+                placement.map(|placement| (body.id.as_str(), placement))
+            })
+            .collect()
     }
 
     /// The faces of the shell of a face whose region may rest on its
@@ -509,7 +654,7 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell_faces(&face.shell)
+            .stated_shell_faces(&face.shell)
             .iter()
             .map(|face| face.id.as_str())
             .collect()
@@ -823,7 +968,7 @@ fn inverted_boundary_poles(owners: &Owners<'_>, face: &cadmpeg_ir::topology::Fac
         return 0;
     }
     face.loops
-        .iter()
+        .stated()
         .filter_map(|id| owners.loop_(id.as_str()))
         .flat_map(cadmpeg_ir::topology::Loop::coedges)
         .filter_map(|id| owners.coedge(id.as_str()))

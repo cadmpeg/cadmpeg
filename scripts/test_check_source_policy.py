@@ -76,6 +76,35 @@ class MeasurementDependencyTests(TempSourceCase):
         self.manifest("cadmpeg", "[dependencies]\ncadmpeg-measure.workspace = true\n")
         self.assertEqual(self.findings("measurement_dependency"), [])
 
+    def test_fusion_codec_production_dependency_passes(self) -> None:
+        self.manifest("cadmpeg-codec-f3d", "[dependencies]\ncadmpeg-measure.workspace = true\n")
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
+    def test_fusion_codec_renamed_production_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-f3d",
+                      '[dependencies]\nmeasure = { package = "cadmpeg-measure", workspace = true }\n')
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/Cargo.toml", 5)])
+
+    def workspace_renames_measure(self) -> None:
+        self.write("Cargo.toml", '[workspace.dependencies]\n'
+                   'measure = { package = "cadmpeg-measure", path = "crates/cadmpeg-measure" }\n')
+
+    def test_workspace_renamed_codec_dependency_fails(self) -> None:
+        self.workspace_renames_measure()
+        self.manifest("cadmpeg-codec-step", "[dependencies]\nmeasure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-step/Cargo.toml", 5)])
+
+    def test_fusion_codec_workspace_renamed_dependency_fails(self) -> None:
+        self.workspace_renames_measure()
+        self.manifest("cadmpeg-codec-f3d", "[dependencies]\nmeasure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/Cargo.toml", 5)])
+
     def test_test_support_production_dependency_fails(self) -> None:
         self.manifest("cadmpeg-test-support",
                       '[dependencies]\ncadmpeg-measure = { path = "../cadmpeg-measure" }\n')
@@ -92,6 +121,26 @@ class MeasurementDependencyTests(TempSourceCase):
                       '[dependencies]\nmeasure = { package = "cadmpeg-measure", version = "0" }\n')
         self.assertEqual(len(self.findings("measurement_dependency")), 1)
 
+    def test_fusion_writer_use_passes(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/writer/generate/values.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
+
+    def test_fusion_decoder_use_fails(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/reader/body.rs",
+                   "fn f() {}\nuse cadmpeg_measure::body_boxes;\n")
+        findings = self.findings("measurement_use")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/src/reader/body.rs", 2)])
+
+    def test_codec_test_and_comment_uses_pass(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/reader.rs",
+                   "// cadmpeg_measure reads the output.\n"
+                   "#[cfg(test)]\nmod tests {\n    use cadmpeg_measure::body_boxes;\n}\n")
+        self.write("crates/cadmpeg-codec-f3d/src/integration_tests/boxes.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
+
 
 class ForeignNativeNamespaceTests(TempSourceCase):
     def codec(self, name: str = "step", format_id: str = "step") -> str:
@@ -107,6 +156,8 @@ fn f() {
     ir.native.namespace("step");
     ir.native.namespace_mut("step");
     ir.native.namespace(/* key */ r#"step"# /* own */);
+    ir.native.namespace_mut(cadmpeg_ir::codec_id!("step"));
+    ir.native.namespace_mut(codec_id!( "step" ));
 }
 ''')
         self.assertEqual(self.findings("foreign_native_namespace"), [])
@@ -114,7 +165,8 @@ fn f() {
     def test_foreign_literal_and_nonliteral_arguments_fail(self) -> None:
         root = self.codec()
         for argument in ('"iges"', 'r#"iges"#', 'format', 'FORMAT',
-                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")'):
+                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")',
+                         'cadmpeg_ir::codec_id!("iges")', 'cadmpeg_ir::codec_id!(FORMAT)'):
             for method in ("namespace", "namespace_mut"):
                 with self.subTest(argument=argument, method=method):
                     self.write(f"{root}/writer.rs",
@@ -421,6 +473,16 @@ class PatternFilters(unittest.TestCase):
                 with self.subTest(name=name, gap=gap):
                     text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
                     self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+
+    def test_loss_note_reference_returns_are_types(self) -> None:
+        for reference in ["&", "& ", "&'a ", "&mut ", "&'a mut "]:
+            for name in ["LossNote", "cadmpeg_ir::LossNote"]:
+                with self.subTest(reference=reference, name=name):
+                    text = f"fn loss(&self) -> {reference}{name} {{ &self.losses[0] }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+                    text = f"fn loss(&self) -> {reference}{name} {{ LossNote {{ message }} }}"
+                    hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                    self.assertEqual([hit.rule for hit in hits], ["loss_note_literal"])
 
     def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
         for text, expected in [
@@ -1599,6 +1661,14 @@ struct Tuple(Vec<u8>);
 """)
         self.assertEqual(len(self.findings("native_byte_array")), 7)
 
+    def test_a_tagged_reader_derive_is_checked(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+#[derive(cadmpeg_derive::DeserializeTagged)]
+#[serde(tag = "kind")]
+enum Value { Bytes { bytes: Vec<u8> } }
+""")
+        self.assertEqual(len(self.findings("native_byte_array")), 1)
+
     def test_manual_serialization_is_checked(self) -> None:
         self.write("crates/cadmpeg-codec-example/src/native.rs", """
 struct Manual { bytes: Vec<u8> }
@@ -1715,6 +1785,58 @@ class WorkerCountTests(unittest.TestCase):
                 patch.object(policy.os, "sched_getaffinity", None, create=True), \
                 patch.object(policy.os, "cpu_count", return_value=None):
             self.assertEqual(policy.worker_count(), 1)
+
+
+class JsonSecondDeserializerTests(TempSourceCase):
+    def test_value_and_slice_reads_fail_in_production_and_tests(self) -> None:
+        self.write("crates/cadmpeg-ir/src/read.rs",
+                   "fn f(v: Value) { let _: T = serde_json::from_value(v).unwrap(); }\n"
+                   "#[cfg(test)]\nmod tests {\n    use serde_json::{from_slice, Value};\n}\n")
+        self.write("crates/cadmpeg-codec-f3d/src/json.rs",
+                   "fn f(b: &[u8]) { serde_json::Deserializer::from_slice(b); }\n")
+        findings = self.findings("json_second_deserializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/src/json.rs", 1),
+                          ("crates/cadmpeg-ir/src/read.rs", 1),
+                          ("crates/cadmpeg-ir/src/read.rs", 4)])
+
+    def test_a_hub_wire_type_reads_only_from_its_deserializer(self) -> None:
+        self.write("crates/cadmpeg-test-support/src/sweep.rs",
+                   "fn f(v: &Value) { CadIr::deserialize(v); }\n"
+                   "fn g<D>(deserializer: D) { CadIr::deserialize(deserializer); }\n")
+        findings = self.findings("json_second_deserializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-test-support/src/sweep.rs", 1)])
+
+    def test_text_reads_comments_and_exempt_files_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/read.rs",
+                   "// serde_json::from_value reads a Value.\n"
+                   "fn f(t: &str) { serde_json::from_str::<T>(t); }\n")
+        self.write("crates/cadmpeg-core/src/tagged/tests.rs",
+                   "fn f(v: Value) { serde_json::from_value::<T>(v); }\n")
+        self.assertEqual(self.findings("json_second_deserializer"), [])
+
+
+class JsonSecondSerializerTests(TempSourceCase):
+    def test_value_writes_through_serde_json_fail(self) -> None:
+        self.write("crates/cadmpeg-ir/src/write.rs",
+                   "fn f(t: &T) { serde_json::to_value(t); }\n"
+                   "#[cfg(test)]\nmod tests {\n    use serde_json::{json, Value};\n"
+                   "    fn g() { serde_json::json!({\"a\": 1}); }\n}\n")
+        findings = self.findings("json_second_serializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-ir/src/write.rs", 1),
+                          ("crates/cadmpeg-ir/src/write.rs", 4),
+                          ("crates/cadmpeg-ir/src/write.rs", 5)])
+
+    def test_core_writers_comments_and_the_derive_crate_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/write.rs",
+                   "// serde_json::json! writes through Value.\n"
+                   "use cadmpeg_core::json;\nuse serde_json::Value;\n"
+                   "fn f(t: &T) { cadmpeg_core::serde_erase::json::to_value(t); json!(1); }\n")
+        self.write("crates/cadmpeg-derive/tests/name.rs",
+                   "use serde_json::json;\nfn f() { serde_json::to_value(1); }\n")
+        self.assertEqual(self.findings("json_second_serializer"), [])
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ use super::{
     a5_torus_bound_edge_stream, b2_chamfer_contact_stream, b2_chamfer_stream, b2_cylinder_stream,
     b2_edge_node_stream, b2_plane_carrier_stream,
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
@@ -88,17 +89,17 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
     assert_eq!(native.vertex_identity_ids(first), ["", ""]);
     assert_eq!(native.vertex_identity_ids(second), ["", ""]);
     assert!(native.consolidated_vertex_identities.is_empty());
-    let wire = serde_json::to_value(&native).expect("serialize native records");
+    let wire = json::to_value(&native).expect("serialize native records");
     assert_eq!(
         wire["consolidated_edge_nodes"][0]["vertices"],
-        serde_json::json!(["", ""])
+        cadmpeg_core::json!(["", ""])
     );
     assert_eq!(
         wire["consolidated_edge_nodes"][1]["vertices"],
-        serde_json::json!(["", ""])
+        cadmpeg_core::json!(["", ""])
     );
     assert_eq!(
-        serde_json::from_value::<crate::native::CatiaNative>(wire).expect("load native records"),
+        json::from_value::<crate::native::CatiaNative>(wire).expect("load native records"),
         native
     );
 }
@@ -318,7 +319,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_cylinders",
             &Vec::<crate::native::CatiaConsolidatedCylinder>::new(),
         )
@@ -388,7 +389,7 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_plane_carriers",
             &Vec::<crate::native::CatiaConsolidatedPlaneCarrier>::new(),
         )
@@ -434,7 +435,7 @@ fn native_namespace_retains_resolved_consolidated_torus_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_tori",
             &Vec::<crate::native::CatiaConsolidatedTorus>::new(),
         )
@@ -467,7 +468,7 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_spheres",
             &Vec::<crate::native::CatiaConsolidatedSphere>::new(),
         )
@@ -495,13 +496,13 @@ fn chamfer_followed_by_spanning_parameter_point_terminates() {
 fn a_loaded_plane_carrier_direction_is_admitted_unit() {
     let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
     let direction3 = &native.consolidated_plane_carriers[1];
-    let mut value = serde_json::to_value(direction3).expect("plane carrier JSON");
+    let mut value = json::to_value(direction3).expect("plane carrier JSON");
     assert_eq!(
         value["payload"]["direction"],
-        serde_json::json!([1.0, 0.0, 0.0])
+        cadmpeg_core::json!([1.0, 0.0, 0.0])
     );
-    value["payload"]["direction"] = serde_json::json!([2.0, 0.0, 0.0]);
-    let error = serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(value)
+    value["payload"]["direction"] = cadmpeg_core::json!([2.0, 0.0, 0.0]);
+    let error = json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(value)
         .expect_err("a non-unit plane-carrier direction");
     assert!(
         error

@@ -6,7 +6,7 @@
 //! evaluation's state. The rules on what an `Instance` name or a hole role
 //! names apply to every name, those of picks included.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -19,7 +19,8 @@ use crate::design::names::{
 };
 use crate::design::ops::body::{PatternInstances, TransformMode};
 use crate::design::ops::shared::{
-    DimensionTable, PatternLayout, PatternRun, RunSides, Spacing, UpToFill,
+    CircularLayout, CompositeStage, DimensionTable, LinearLayout, PatternLayout, PatternRun,
+    RunSides, ScaleLayout, Spacing, UpToFill,
 };
 use crate::design::options::SymmetricMeasure;
 use crate::design::refs::{EntityRef, Evaluated};
@@ -108,15 +109,32 @@ pub(super) fn derived_kinds(name: &TopoName) -> BTreeSet<NameKind> {
 }
 
 /// Checks the name tables and every name the design states.
-pub(super) fn check(
+pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
-    index: &DesignIndex<'_>,
-    states: &States<'_>,
-    held: &[Held<'_>],
+    index: &DesignIndex<'a>,
+    states: &States<'a>,
+    held: &[Held<'a>],
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("IR design name validation")?;
     let ir = index.records.ir;
+    let extent_features: Vec<_> = states
+        .extents
+        .iter()
+        .map(|extent| index.state_features(StateAt::Position(&extent.state.at)))
+        .collect();
+    let instance_features: Vec<(&HashSet<&str>, Vec<&str>)> = states
+        .instances
+        .iter()
+        .map(|instance| {
+            let placed = index
+                .path_prototypes(instance.path)
+                .into_iter()
+                .flat_map(|definition| index.scope_features(definition))
+                .collect();
+            (&instance.records, placed)
+        })
+        .collect();
     for (entity, entry) in ir.design.names.entries() {
         let holds = states.geometry_holds(entity);
         check_entry(
@@ -127,13 +145,22 @@ pub(super) fn check(
             entity.id(),
             findings,
         );
-        for extent in states
-            .extents
+        let placed: Vec<&str> = instance_features
             .iter()
-            .filter(|extent| extent.records.contains(entity.id()))
-        {
-            if let Some(features) = index.state_features(StateAt::Position(&extent.state.at)) {
-                check_order(entry, &features, entity.id(), findings);
+            .filter(|(records, _)| records.contains(entity.id()))
+            .flat_map(|(_, placed)| placed.iter().copied())
+            .collect();
+        for (extent, features) in states.extents.iter().zip(&extent_features) {
+            if extent.records.contains(entity.id()) {
+                if let Some(features) = features {
+                    if placed.is_empty() {
+                        check_order(entry, features, entity.id(), findings);
+                    } else {
+                        let mut features = (**features).clone();
+                        features.extend(placed.iter().copied());
+                        check_order(entry, &features, entity.id(), findings);
+                    }
+                }
             }
         }
     }
@@ -208,9 +235,9 @@ fn evaluation_features<'a>(
     index: &DesignIndex<'a>,
     states: &States<'a>,
     evaluation: &'a Evaluation,
-) -> Option<BTreeSet<&'a str>> {
+) -> Option<HashSet<&'a str>> {
     let mut features = match &evaluation.of {
-        Evaluated::State(position) => index.state_features(StateAt::Position(position))?,
+        Evaluated::State(position) => (*index.state_features(StateAt::Position(position))?).clone(),
         Evaluated::Tool(feature) => index.tool_features(feature.as_str())?,
     };
     for path in states.instance_paths(evaluation.id.as_str()) {
@@ -233,7 +260,8 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.name-entry-names-entity-does-not",
                 "name entry for {} names an entity that {state} does not hold",
                 entity.id()
             ),
@@ -243,7 +271,8 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.name-entry-holds-neither-name-nor",
                 "name entry for {} holds neither a name nor a native name",
                 entity.id()
             ),
@@ -257,14 +286,19 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!("name of {} merges entities of different kinds", entity.id()),
+            crate::rule!(
+                "design.name-merges-entities-different-kinds",
+                "name of {} merges entities of different kinds",
+                entity.id()
+            ),
         );
     } else if let Some(kind) = kinds.first() {
         if Arena::of_entity(entity).0.name_kind() != Some(*kind) {
             super::error(
                 findings,
                 at,
-                format_args!(
+                crate::rule!(
+                    "design.name-derives-kind-not-entity-kind",
                     "name of {} derives kind {kind:?}, which is not the entity's kind",
                     entity.id()
                 ),
@@ -273,12 +307,7 @@ fn check_entry(
     }
 }
 
-fn check_order(
-    entry: &NameEntry,
-    features: &BTreeSet<&str>,
-    at: &str,
-    findings: &mut Vec<Finding>,
-) {
+fn check_order(entry: &NameEntry, features: &HashSet<&str>, at: &str, findings: &mut Vec<Finding>) {
     let Some(name) = &entry.name else {
         return;
     };
@@ -287,7 +316,8 @@ fn check_order(
             super::error(
                 findings,
                 at,
-                format_args!(
+                crate::rule!(
+                    "design.name-mentions-feature-named-state-does",
                     "name mentions feature {}, which the named state does not depend on",
                     feature.as_str()
                 ),
@@ -332,7 +362,8 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.instance-name-feature-names-no-implicit",
                 "instance name {:?} of feature {} names no implicit copy of that feature",
                 instance.0,
                 feature.as_str()
@@ -369,6 +400,30 @@ fn valid_pattern_index(layout: &PatternLayout, instance: &InstanceIndex) -> Opti
         coordinates[first] == 0 || coordinates.get(first + 1).is_some_and(|value| *value == 0)
     });
     Some(in_range && seed_only)
+}
+
+/// Whether an instance index of `layout` that has one coordinate per run
+/// lies in each run's coordinate range, and whether, under a literal
+/// `seed_only: true` of a two-run `Linear` layout or stage, it has a zero
+/// coordinate there (§6.5, part 10 "Patterns"). `None` where the layout does
+/// not state its runs or the index has another number of coordinates.
+pub(super) fn index_in_runs(
+    layout: &PatternLayout,
+    instance: &InstanceIndex,
+) -> Option<(bool, bool)> {
+    let coordinates = &instance.0;
+    let index = layout_coordinates(layout)?;
+    if coordinates.len() != index.coordinates.len() {
+        return None;
+    }
+    let in_range = coordinates
+        .iter()
+        .zip(&index.coordinates)
+        .all(|(value, coordinate)| coordinate.admits(i64::from(*value)));
+    let seed_only = index.seed_only.iter().all(|&first| {
+        coordinates[first] == 0 || coordinates.get(first + 1).is_some_and(|value| *value == 0)
+    });
+    Some((in_range, seed_only))
 }
 
 /// The coordinates an instance index of a layout has.
@@ -409,6 +464,42 @@ impl Coordinate<'_> {
     }
 }
 
+impl LayoutCoordinates<'_> {
+    fn linear(&mut self, layout: &LinearLayout) {
+        if layout.second.is_some() && matches!(layout.seed_only, Some(Dimension::Literal(true))) {
+            self.seed_only.push(self.coordinates.len());
+        }
+        self.coordinates
+            .push(run_coordinate(&layout.first.run, false));
+        self.coordinates.extend(
+            layout
+                .second
+                .iter()
+                .map(|second| run_coordinate(&second.run, false)),
+        );
+    }
+
+    fn circular(&mut self, layout: &CircularLayout) {
+        self.coordinates
+            .push(run_coordinate(&layout.angular, false));
+        self.coordinates.extend(
+            layout
+                .radial
+                .iter()
+                .map(|radial| run_coordinate(radial, false)),
+        );
+    }
+
+    fn mirror(&mut self) {
+        self.coordinates.push(Coordinate::between(0, 1));
+    }
+
+    fn scale(&mut self, layout: &ScaleLayout) {
+        let last = literal(&layout.count).map(|count| i64::from(count) - 1);
+        self.coordinates.push(Coordinate::Range(Some(0), last));
+    }
+}
+
 /// The coordinates of an instance index of `layout`, in declaration order.
 /// `None` where the layout does not state its runs.
 fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
@@ -416,69 +507,83 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
         coordinates: Vec::new(),
         seed_only: Vec::new(),
     };
-    let mut stack = vec![layout];
-    while let Some(layout) = stack.pop() {
-        let coordinates = &mut found.coordinates;
-        match layout {
-            PatternLayout::Linear {
-                first,
-                second,
-                seed_only,
-            } => {
-                if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
-                    found.seed_only.push(coordinates.len());
+    match layout {
+        PatternLayout::Linear(linear) => found.linear(linear),
+        PatternLayout::Circular(circular) => found.circular(circular),
+        PatternLayout::Path { run, .. } => found.coordinates.push(run_coordinate(run, true)),
+        PatternLayout::Points { points, .. } => {
+            let last = match &points.picks {
+                Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
+                _ => None,
+            };
+            found.coordinates.push(Coordinate::Range(Some(1), last));
+        }
+        PatternLayout::Dimensions(runs) => {
+            found.coordinates.extend(runs.iter().map(|run| {
+                literal(&run.count).map_or(Coordinate::ANY, |count| {
+                    Coordinate::between(0, i64::from(count) - 1)
+                })
+            }));
+        }
+        PatternLayout::Table(table) => found.coordinates.push(Coordinate::Row(table)),
+        PatternLayout::Mirror(_) => found.mirror(),
+        PatternLayout::Scale(scale) => found.scale(scale),
+        PatternLayout::Composite(stages) => {
+            for stage in stages {
+                match stage {
+                    CompositeStage::Linear(linear) => found.linear(linear),
+                    CompositeStage::Circular(circular) => found.circular(circular),
+                    CompositeStage::Mirror(_) => found.mirror(),
+                    CompositeStage::Scale(scale) => found.scale(scale),
+                    CompositeStage::Native(_) => return None,
                 }
-                coordinates.push(run_coordinate(&first.run));
-                coordinates.extend(second.iter().map(|second| run_coordinate(&second.run)));
             }
-            PatternLayout::Circular {
-                angular, radial, ..
-            } => {
-                coordinates.push(run_coordinate(angular));
-                coordinates.extend(radial.iter().map(run_coordinate));
-            }
-            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
-            PatternLayout::Points { points, .. } => {
-                let last = match &points.picks {
-                    Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
-                    _ => None,
-                };
-                coordinates.push(Coordinate::Range(Some(1), last));
-            }
-            PatternLayout::Dimensions(runs) => {
-                coordinates.extend(runs.iter().map(|run| {
-                    literal(&run.count).map_or(Coordinate::ANY, |count| {
-                        Coordinate::between(0, i64::from(count) - 1)
-                    })
-                }));
-            }
-            PatternLayout::Table(table) => coordinates.push(Coordinate::Row(table)),
-            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::between(1, 1)),
-            PatternLayout::Scale { count, .. } => {
-                let last = literal(count).map(|count| i64::from(count) - 1);
-                coordinates.push(Coordinate::Range(Some(1), last));
-            }
-            PatternLayout::Composite(stages) => stack.extend(stages.iter().rev()),
-            PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
-                return None
-            }
+        }
+        PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
+            return None
         }
     }
     Some(found)
 }
 
 /// The coordinate range of a run whose count, and seed where `sides` reads
-/// it, are literal. A run whose `sides` is not stated may lie on either side
-/// of the seed.
-fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
-    let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
-        return Coordinate::ANY;
-    };
+/// it, are literal (§6.5, Coordinate range). A run whose `sides` is not
+/// stated reaches at most `last` and has no lower bound: an unread side may
+/// be a `Reverse` arm whose count the run does not state. In a `Path` run
+/// (`on_path`) an unread side may also be `Against`, which reaches the seed,
+/// so the bound is the greater of `last` and the seed, and there is none for
+/// a seed that is not literal. That carve-out is interim, gap
+/// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
+fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
     let seed = match &run.seed {
         None => Some(0),
         Some(seed) => literal(seed).map(i64::from),
     };
-    match &run.sides {
+    sided_coordinate(&run.spacing, run.sides.as_ref(), seed, on_path)
+}
+
+/// Whether `value` lies in the coordinate range of a run with its seed first,
+/// as a sketch pattern's runs are (§6.5, Coordinate range).
+pub(super) fn seed_first_run_admits<Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    value: i64,
+) -> bool {
+    sided_coordinate(spacing, sides, Some(0), false).admits(value)
+}
+
+/// The coordinate range of a run of `spacing` and `sides`, with the seed at
+/// step `seed` where it is literal.
+fn sided_coordinate<'a, Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    seed: Option<i64>,
+    on_path: bool,
+) -> Coordinate<'a> {
+    let Some(last) = spacing_count(spacing).map(|count| i64::from(count) - 1) else {
+        return Coordinate::ANY;
+    };
+    match sides {
         Some(RunSides::One) => seed.map_or(Coordinate::ANY, |seed| {
             Coordinate::between(-seed, last - seed)
         }),
@@ -497,9 +602,8 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
             let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
             Coordinate::Range(low, Some(last - seed))
         }),
-        None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::between(-last.max(seed), last.max(seed))
-        }),
+        None if on_path => Coordinate::Range(None, seed.map(|seed| last.max(seed))),
+        None => Coordinate::Range(None, Some(last)),
     }
 }
 
@@ -553,10 +657,14 @@ fn check_hole_role(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.hole-role-name-feature-not-hole",
                 "hole role on a {kind:?} name of feature {}, which is not a hole's face",
                 feature.as_str()
             ),
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

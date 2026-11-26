@@ -2,6 +2,7 @@
 use super::{FieldValue, RealBits};
 use crate::records::DataType;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn every_real_payload_round_trips_without_finite_filtering() {
@@ -16,9 +17,9 @@ fn every_real_payload_round_trips_without_finite_filtering() {
         let bytes = bits.to_be_bytes();
         let value = FieldValue::read(DataType::Real, &mut View::over_retained(&bytes)).unwrap();
         assert_eq!(value, FieldValue::RealBits(RealBits(bits)));
-        let wire = serde_json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert_eq!(wire["value"], format!("{bits:016x}"));
-        assert_eq!(serde_json::from_value::<FieldValue>(wire).unwrap(), value);
+        assert_eq!(json::from_value::<FieldValue>(wire).unwrap(), value);
     }
 }
 

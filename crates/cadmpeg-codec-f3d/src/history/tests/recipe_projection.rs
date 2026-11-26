@@ -11,8 +11,10 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::{discard_projection_caches, side_one_common_edge, side_one_recipe_edge};
+use crate::history::discard_projection_caches;
+use crate::history::face_boundaries::{side_one_common_edge, side_one_recipe_edge};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn projection_caches_end_after_history_consumers() {
@@ -77,7 +79,7 @@ fn projection_caches_end_after_history_consumers() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .expect("store native history");
@@ -152,6 +154,55 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
 }
 
 #[test]
+fn side_one_single_face_boundary_resolves_without_incidence_candidates() {
+    let program = [
+        -1, -1, 2, 0, -1, 1, -1, 1, -1, 2, 1, -1, 0, -1, 0, 1, 0, 2, 1, 1, 1, 1, 1, 1, -1,
+    ];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(ctx, &program)
+    })
+    .unwrap()
+    .unwrap();
+    let context = |reference_ordinal, shared_edge_slots| {
+        crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+            reference_ordinal,
+            result_faces: Vec::new(),
+            result_face_boundary_ids: Vec::new(),
+            result_shared_edge_slots: Vec::new(),
+            preceding_faces: Vec::new(),
+            preceding_face_boundary_ids: Vec::new(),
+            preceding_support_face_slots: Vec::new(),
+            preceding_support_face_boundary_ids: Vec::new(),
+            shared_edge_slots,
+            changed_shared_edge_slots: Vec::new(),
+            changed_reference_edge_slots: Vec::new(),
+        }
+    };
+    let mut contexts = [context(0, vec![31]), context(1, vec![31, 32])];
+    let selectors = [
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clauses: vec![None],
+            incidence_matching_edge_slots: Vec::new(),
+            boundary_count_matching_edge_slots: Vec::new(),
+        },
+    ];
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[31, 32]),
+        Some(31)
+    );
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[32]),
+        None
+    );
+    contexts[0].shared_edge_slots.push(32);
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[31, 32]),
+        None
+    );
+}
+
+#[test]
 fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback() {
     let side = |header_value, scalars: Vec<i32>| {
         crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
@@ -216,12 +267,12 @@ fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback
 
 #[test]
 fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
-    let document = serde_json::json!({
+    let document = cadmpeg_core::json!({
         "id": "history",
         "byte_offset": 0,
         "states": []
     });
-    let history: AsmHistory = serde_json::from_value(document).unwrap();
+    let history: AsmHistory = json::from_value(document).unwrap();
     assert!(history.states().is_empty());
     assert!(!crate::history::projection_was_finalized(
         std::slice::from_ref(&history)

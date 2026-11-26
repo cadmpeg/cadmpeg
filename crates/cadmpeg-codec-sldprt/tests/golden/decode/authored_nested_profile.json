@@ -202,212 +202,38 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {},
-          "id": "sldprt:model:configuration#865:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#865:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "bom_properties": {},
+          "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:0"
-              },
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:2"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:0",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:0"
-              },
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:1"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:1",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:1"
-              },
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:2"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:2",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#60",
-            "0:sldprt:brep:point#61"
-          ],
-          "geometry": {
-            "end": {
-              "u": 1000.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:0",
-          "native_ref": "0:sldprt:brep:edge#40",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#61",
-            "0:sldprt:brep:point#62"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 1000.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 1000.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:1",
-          "native_ref": "0:sldprt:brep:edge#41",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#62",
-            "0:sldprt:brep:point#60"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 1000.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:2",
-          "native_ref": "0:sldprt:brep:edge#42",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        }
-      ],
-      "sketches": [
-        {
-          "configuration": "0",
-          "id": "sldprt:model:sketch#348:0:0",
-          "name": "feature input sketch",
-          "native_ref": "sldprt:feature-input:resolved-features#348",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:1",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:2",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -584,6 +410,10 @@
           {
             "id": "sldprt:feature-input:sketch-entity#348:223",
             "kind": "point",
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 1,
             "object_index": 0,
             "offset": 223,
@@ -596,6 +426,10 @@
             "kind": {
               "relation": "distance"
             },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 2,
             "object_index": 1,
             "offset": 315,
@@ -607,6 +441,10 @@
             "id": "sldprt:feature-input:sketch-entity#348:407",
             "kind": {
               "relation": "distance"
+            },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
             },
             "local_id": 3,
             "object_index": 2,
@@ -669,23 +507,10 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#865:0",
-        "sldprt_native_configuration_sha256": "fc01a955b2e9468401ab42f5d1cc661daa49d56bd0126c97872f5ac64fc5dc24",
-        "sldprt_native_history_sha256": "f4e4dc5252ee82023e9cb1312a8b8f06961193ecffeee9d133b2e426d5e427bc",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "6c1084962fa40cefeb44377c4376897f996ac07a1f329f0b4627a8350d68b5d4",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -782,8 +607,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -808,44 +632,9 @@
       "exactness": {
         "sldprt:brep:surf#10": {
           "fields": {
-            "geometry.u_axis": "derived"
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
         }
       },
       "provenance": {
@@ -998,45 +787,25 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "offset": 591,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
         }
       }
     },
-    "decode_digest": "534fe8ea834c75db386aba17007b4683a387fc6ba497eb31c41191979368013b",
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "fc01a955b2e9468401ab42f5d1cc661daa49d56bd0126c97872f5ac64fc5dc24",
+      "sldprt_native_history_sha256": "f4e4dc5252ee82023e9cb1312a8b8f06961193ecffeee9d133b2e426d5e427bc",
+      "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_sketch_sha256": "5fdabb64cba9ec3774a1a33d092aa8738d6d249515df06b7e3d461417eee7ae6",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
+    "decode_digest": "f06e2c9213f3c16a7ba73a08030eb19314260a72efc1684352a37924ff168512",
     "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
@@ -1080,7 +849,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBa2ciHFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAA09uZHVuZHN/I09uZmlnbSA9IlVjf2xmdWRmRWFkdXJ1Y3nVLLSsNAFD1J6gNttWpXgpqFC7UIiXElausLXLgoZOGySBttUaK0KeiuC3UhouBG6rcIBcFf6Af4Bf0CxzszSdvYYotnkszhnHvPDZkwpiCG8lnmsuh6hydu/sJhJEVJOiq6TlsZJ2WnlJNCpMq+2YiNczjwkEMBJoQW28UlyrRWcYBr8kqoIE9VJoLYjOvRtV8se6JD3SfPR5oROCGdnm81gRRRBd3gmurzRpWa/OZGVW1xxhagMR9AtS7LI9QoI7kS+Z3cTKEnmvXO2V3ZyiDZSPfLVv+dPdo3W/t3drxvNm/J2PRInDonXqXk6EX3quLp5XPHyxWAaXvvMGsfZy3LNKysaRqGgTX6OUJIYkCkmuG9CxMYk+Tj/eW55vpqgu5855BJIXHMi4Yp2nnZAnRYxJbkW02RwGWd7HViy4GsC3me7DViK1KOy7Zfs4MzuCV/uY+/8qc/LYa1sRnUCc8KeVshbz3kbXd4c9gc6MPPYavXOfSo2/7r3FqIMhquPCxiCMP0A4qVfk7L9zu4efoyHjekqkBVFO0uKOJLu/dZjJGhxT9Jug2ZM4y2yOtpYGh3NiYYHfXw7AOU1vflDaCIfPIHWtnIhxQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+WtnIhxQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RtFK34oAAAUAAYACAAgAAAAQuR5XBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmRSt+KAAAFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAAAAAAAAQAAAAAAUAEAADT25kdW5kc38jT25maWdtID0iVWN/bGZ1ZGZFYWR1cnVjdFK34oAAAUAAYACABCAAAAKIc340kAAABEAAAAEQAAAAAAAAABAAAAAABVAwAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAADNAwAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAQABAAXAQAAlQQAAAAA",
+          "data": "AQAAAAAAAARmWn5WFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBmWn5WFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAA09uZHVuZHN/I09uZmlnbSA9IlVjf2xmdWRmRWFkdXJ1Y3nVLLSsNAFD1J6gNttWpXgpqFC7UIiXElausLXLgoZOGySBttUaK0KeiuC3UhouBG6rcIBcFf6Af4Bf0CxzszSdvYYotnkszhnHvPDZkwpiCG8lnmsuh6hydu/sJhJEVJOiq6TlsZJ2WnlJNCpMq+2YiNczjwkEMBJoQW28UlyrRWcYBr8kqoIE9VJoLYjOvRtV8se6JD3SfPR5oROCGdnm81gRRRBd3gmurzRpWa/OZGVW1xxhagMR9AtS7LI9QoI7kS+Z3cTKEnmvXO2V3ZyiDZSPfLVv+dPdo3W/t3drxvNm/J2PRInDonXqXk6EX3quLp5XPHyxWAaXvvMGsfZy3LNKysaRqGgTX6OUJIYkCkmuG9CxMYk+Tj/eW55vpqgu5855BJIXHMi4Yp2nnZAnRYxJbkW02RwGWd7HViy4GsC3me7DViK1KOy7Zfs4MzuCV/uY+/8qc/LYa1sRnUCc8KeVshbz3kbXd4c9gc6MPPYavXOfSo2/7r3FqIMhquPCxiCMP0A4qVfk7L9zu4efoyHjekqkBVFO0uKOJLu/dZjJGhxT9Jug2ZM4y2yOtpYGh3NiYYHfXw7AOU1vflDaCIfPIHZlp+VhQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+Zlp+VhQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RuT/61HAAAUAAYACAAgAAAAQuR5XBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmk/+tRwAAFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAAAAAAAAQAAAAAAUAEAADT25kdW5kc38jT25maWdtID0iVWN/bGZ1ZGZFYWR1cnVjeT/61HAAAUAAYACABCAAAAKIc340kAAABEAAAAEQAAAAAAAAABAAAAAABVAwAANPbmR1bmRzfytFaXd/YnRjeT/61HAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAADNAwAANPbmR1bmRzfyZFYWR1cnVjcsNQcxAAAAAAQABAAXAQAAlQQAAAAA",
           "kind": "inline"
         },
         "offset": 0,

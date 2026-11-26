@@ -15,9 +15,8 @@ use crate::design::selection::OccurrencePath;
 use crate::design::units::UnitSystem;
 use crate::document::SourceMeta;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use crate::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use crate::sketches::SketchId;
-use crate::tessellation::TessellationId;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -110,9 +109,6 @@ pub struct ProductDefinition {
     pub storage: Storage,
     /// The bodies of `CadIr.geometry` the definition owns.
     pub bodies: Vec<BodyId>,
-    /// The tessellations of `CadIr.model` the definition owns that represent
-    /// no body: the meshes of a part that the source states as triangles.
-    pub tessellations: Vec<TessellationId>,
     /// The occurrences the definition owns, in source order.
     pub occurrences: Vec<OccurrenceId>,
     /// Bodies an instance below the definition shows in place of its
@@ -121,7 +117,9 @@ pub struct ProductDefinition {
     /// Named contents an occurrence can show in place of the full content.
     pub representations: Vec<Representation>,
     /// The sketches of the model's sketch arena that the definition owns.
-    /// The list names records of that arena and goes with it.
+    /// The list names records of that arena and, like it, stays out of the
+    /// CADIR wire.
+    #[serde(skip)]
     pub sketches: Vec<SketchId>,
     /// The unit system the definition's source document is authored and
     /// displayed in.
@@ -170,7 +168,6 @@ impl ProductDefinition {
             generated_from: None,
             storage,
             bodies: Vec::new(),
-            tessellations: Vec::new(),
             occurrences: Vec::new(),
             instance_bodies: Vec::new(),
             representations: Vec::new(),
@@ -200,6 +197,39 @@ impl ProductDefinition {
     pub const fn is_root(&self) -> bool {
         matches!(self.storage, Storage::File { source: None, .. })
     }
+
+    /// Whether this is a root definition that states nothing beyond its kind
+    /// and the bodies and meshes its file holds at its top: the document
+    /// itself, which a writer of one document writes as that document and not
+    /// as a component or an assembly level.
+    #[must_use]
+    pub fn is_document_root(&self) -> bool {
+        matches!(&self.storage, Storage::File { document, source: None } if *document == ExternalDocument::default())
+            && self.source_name.is_none()
+            && self.label.is_none()
+            && self.description.is_none()
+            && self.part_number.is_none()
+            && self.bom_properties.is_empty()
+            && self.generated_from.is_none()
+            && self.occurrences.is_empty()
+            && self.instance_bodies.is_empty()
+            && self.representations.is_empty()
+            && self.sketches.is_empty()
+            && self.units.is_none()
+            && self.general_tolerance.is_none()
+            && self.active.is_none()
+            && self.native_ref.is_none()
+    }
+}
+
+/// The definitions that state product structure: every one but a document
+/// root ([`ProductDefinition::is_document_root`]).
+pub fn stated_definitions(
+    definitions: &[ProductDefinition],
+) -> impl Iterator<Item = &ProductDefinition> {
+    definitions
+        .iter()
+        .filter(|definition| !definition.is_document_root())
 }
 
 /// The configuration of another definition that a definition was generated
@@ -221,7 +251,7 @@ pub struct GeneratedFrom {
 }
 
 /// Where a product definition is stored.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Storage {
@@ -396,6 +426,73 @@ impl Occurrence {
     }
 }
 
+impl crate::document::CadIr {
+    /// States the root definition (§8.1) and returns it: the first
+    /// definition stored in the root file, or else a new one with `id` and
+    /// the identities `document` the root file records about itself. The
+    /// root then owns every body that no definition owns or shows for an
+    /// instance: what the file holds at its top. A new root is charged
+    /// to `ctx` as one entity, so a decoder that admits its entity total calls
+    /// this after its last admission. A container decode holds no model
+    /// records, so it states none and returns `None`.
+    pub fn state_root_definition(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: ProductDefinitionId,
+        document: ExternalDocument,
+    ) -> Result<Option<&mut ProductDefinition>, cadmpeg_core::CodecError> {
+        if ctx.container_only() {
+            return Ok(None);
+        }
+        let definitions = &self.model.product_definitions;
+        let held: std::collections::BTreeSet<&str> = definitions
+            .iter()
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|instance| &instance.bodies),
+                )
+            })
+            .map(BodyId::as_str)
+            .collect();
+        let bodies: Vec<BodyId> = self
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.contains(body.id.as_str()))
+            .map(|body| body.id.clone())
+            .collect();
+        let index = match definitions.iter().position(ProductDefinition::is_root) {
+            Some(index) => index,
+            None => {
+                ctx.charge_entities(1, "root product definition")?;
+                self.model
+                    .product_definitions
+                    .push(ProductDefinition::root(id, document));
+                self.model.product_definitions.len() - 1
+            }
+        };
+        let root = &mut self.model.product_definitions[index];
+        root.bodies.extend(bodies);
+        Ok(Some(root))
+    }
+
+    /// States each tessellation whose role is `Unresolved` as a display of
+    /// `definition`: for a decoder whose stored meshes each display the
+    /// geometry of the one definition its file holds at its top.
+    pub fn display_unresolved_meshes(&mut self, definition: &ProductDefinitionId) {
+        for mesh in &mut self.model.tessellations {
+            if matches!(mesh.of, crate::tessellation::Meshed::Unresolved) {
+                mesh.of = crate::tessellation::Meshed::Display {
+                    definition: definition.clone(),
+                };
+            }
+        }
+    }
+}
+
 /// The definition that lists `occurrence` among the occurrences it owns.
 pub fn owner<'ir>(
     definitions: &'ir [ProductDefinition],
@@ -434,33 +531,39 @@ pub struct InstanceBodies {
 #[cfg(test)]
 mod tests {
     mod joints;
+    mod root;
     mod wire;
     use super::{ExternalDocument, JointLimits, JointOperand};
     use crate::ids::OccurrenceId;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
-        assert!(serde_json::from_value::<crate::features::SelectionMember>(
-            serde_json::json!({"kind": "face", "id": "   "})
-        )
-        .is_err());
-        assert!(serde_json::from_value::<crate::features::SelectionMember>(
-            serde_json::json!({"kind": "face", "id": " a "})
-        )
-        .is_ok());
+        assert!(
+            json::from_value::<crate::features::evaluation::SelectionMember>(
+                cadmpeg_core::json!({"kind": "face", "id": "   "})
+            )
+            .is_err()
+        );
+        assert!(
+            json::from_value::<crate::features::evaluation::SelectionMember>(
+                cadmpeg_core::json!({"kind": "face", "id": " a "})
+            )
+            .is_ok()
+        );
         let topology = |id: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:model:feature-result#1",
                 "output_of": "test:test:feature#1",
                 "members": [{"kind": "face", "id": id}],
             })
         };
         assert!(
-            serde_json::from_value::<crate::features::FeatureResultTopology>(topology("   "))
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology("   "))
                 .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(" a "))
                 .is_ok()
         );
     }
@@ -468,22 +571,22 @@ mod tests {
     #[test]
     fn a_joint_operand_states_the_container_that_owns_its_object() {
         let root = JointOperand::root("Body1", Vec::new());
-        let root_wire = serde_json::to_value(&root).unwrap();
+        let root_wire = json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
-            serde_json::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
+            cadmpeg_core::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
             root
         );
 
         let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
         let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
-        let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
+        let occurrence_wire = json::to_value(&occurrence).unwrap();
         assert_eq!(occurrence_wire["container"]["kind"], "occurrence");
         assert_eq!(
-            serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
             occurrence
         );
 
@@ -492,34 +595,34 @@ mod tests {
             "Body1",
             Vec::new(),
         );
-        let external_wire = serde_json::to_value(&external).unwrap();
+        let external_wire = json::to_value(&external).unwrap();
         assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
             external_wire["container"]["external_document"],
-            serde_json::json!({"path": "parts/widget.FCStd"})
+            cadmpeg_core::json!({"path": "parts/widget.FCStd"})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(external_wire).unwrap(),
+            json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
-        both["container"]["external_document"] = serde_json::json!({});
-        let error = serde_json::from_value::<JointOperand>(both)
+        both["container"]["external_document"] = cadmpeg_core::json!({});
+        let error = json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
         assert!(error.contains("external_document"), "{error}");
 
         let mut stray = root_wire.clone();
-        stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
-        let error = serde_json::from_value::<JointOperand>(stray)
+        stray["container"]["occurrence"] = cadmpeg_core::json!(occurrence_id.as_str());
+        let error = json::from_value::<JointOperand>(stray)
             .unwrap_err()
             .to_string();
         assert!(error.contains("occurrence"), "{error}");
 
         let mut without_object = root_wire;
         without_object.as_object_mut().unwrap().remove("object");
-        let error = serde_json::from_value::<JointOperand>(without_object)
+        let error = json::from_value::<JointOperand>(without_object)
             .unwrap_err()
             .to_string();
         assert!(error.contains("object"), "{error}");
@@ -540,8 +643,7 @@ mod tests {
         ] {
             let limits = JointLimits::new(minimum, maximum).unwrap();
             assert_eq!(
-                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
-                    .unwrap(),
+                json::from_value::<JointLimits>(json::to_value(&limits).unwrap()).unwrap(),
                 limits
             );
         }
@@ -576,17 +678,17 @@ mod tests {
             [bound(-2.0), bound(3.0)]
         );
 
-        let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
+        let wire = json::to_value(JointLimits::Range(range)).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
+            cadmpeg_core::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
         );
         assert_eq!(
-            serde_json::from_value::<JointLimits>(wire).unwrap(),
+            json::from_value::<JointLimits>(wire).unwrap(),
             JointLimits::Range(range)
         );
-        let error = serde_json::from_value::<JointLimits>(
-            serde_json::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
+        let error = json::from_value::<JointLimits>(
+            cadmpeg_core::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
         )
         .unwrap_err()
         .to_string();
@@ -598,7 +700,7 @@ mod tests {
 }
 
 /// Container that owns a joint operand object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
@@ -765,7 +867,7 @@ impl JointLimits {
 }
 
 /// The wire spelling of [`JointLimits`], before the ordered-pair mint.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -846,7 +948,7 @@ pub struct JointConnector {
 }
 
 /// Structurally complete operands and frames for an assembly joint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -923,7 +1025,7 @@ pub enum TangentContact {
 /// identity for an aligned frame sense and a half-turn about the local X axis
 /// for an opposed one. The offset and angle therefore apply on the second
 /// connector.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairedJointKind {
@@ -1072,14 +1174,15 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
-        /// Pinion rotation in radians per millimetre of rack translation, as a
-        /// magnitude: the sign follows the connector frames.
+        /// Pinion rotation in radians per millimetre of rack translation:
+        /// positive when the rack moves along its slider axis as the pinion
+        /// turns positively about its revolute axis.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_ratio"
         )]
-        ratio: Option<PositiveReal>,
+        ratio: Option<NonZeroReal>,
         /// The revolute joint of the pinion and the slider joint of the rack that
         /// the coupling acts on, in that order. Empty when the coupling acts on
         /// the connectors directly.
@@ -1111,15 +1214,16 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
-        /// Rotation of the second connector per rotation of the first, as a
-        /// magnitude: the sign follows the connector frames. For gears with
-        /// `N0` and `N1` teeth it is `N0 / N1`.
+        /// Rotation of the second gear per rotation of the first, each about its
+        /// own revolute axis: negative when the gears turn opposite ways. For
+        /// external gears with `N0` and `N1` teeth it is `-N0 / N1`, and for an
+        /// internal gear `N0 / N1`.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_ratio"
         )]
-        ratio: Option<PositiveReal>,
+        ratio: Option<NonZeroReal>,
         /// The revolute joints of the first and the second gear that the
         /// coupling acts on, in that order. Empty when the coupling acts on the
         /// connectors directly.
@@ -1287,7 +1391,7 @@ pub enum FrameAxis {
 
 /// The degree of freedom that a drive acts on, along or about an axis of
 /// the first connector frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DriveAxis {
@@ -1522,7 +1626,7 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
-cadmpeg_core::named_optional_field!(deserialize_ratio, PositiveReal, "ratio");
+cadmpeg_core::named_optional_field!(deserialize_ratio, NonZeroReal, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
 cadmpeg_core::named_optional_field!(deserialize_frame_sense, PlaneSense, "frame_sense");
 cadmpeg_core::named_optional_field!(deserialize_target_position, FiniteReal, "target_position");

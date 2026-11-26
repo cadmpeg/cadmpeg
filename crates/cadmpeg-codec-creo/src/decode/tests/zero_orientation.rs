@@ -38,9 +38,11 @@ use crate::decode::sweep::pcurves::{
 use crate::decode::sweep::surfaces::revolved_nurbs_surface;
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
-use cadmpeg_ir::features::{AngularTermination, BooleanOp, RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CurveGeometry::Solved;
 use cadmpeg_ir::geometry::SolvedCurveGeometry::Circle;
@@ -615,10 +617,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             Some(&full_turn)
         ),
         Some(RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                .expect("valid direction fixture"),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 1.0, 0.0
+            ))
+            .expect("valid direction fixture"),
             reference: None,
         })
     );
@@ -662,10 +666,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         ))
         .expect("test section solve"),
         Some(RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                .expect("valid direction fixture"),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 1.0, 0.0
+            ))
+            .expect("valid direction fixture"),
             reference: None,
         })
     );
@@ -861,6 +867,7 @@ fn named_revolve_transfers_profile_axis() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -900,6 +907,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -934,6 +942,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =
@@ -1453,7 +1462,7 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -1473,10 +1482,12 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     let surface = revolved_nurbs_surface(
         &directrix,
         &RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("finite point fixture"),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .expect("valid direction fixture"),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0,
+            ))
+            .expect("valid direction fixture"),
             reference: None,
         },
         &"revolution directrix fixture",
@@ -1521,9 +1532,12 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     )
     .expect("valid section frame");
     let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .unwrap(),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+            0.0, 1.0, 0.0,
+        ))
+        .unwrap(),
         reference: None,
     };
     let spline = SketchGeometry::nurbs(

@@ -277,13 +277,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        geometry.regions.push(Region {
-            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            body: body.clone(),
-            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-            native_ref: None,
-        });
+        geometry.regions.push(Region::new(
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body.clone(),
+            vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        ));
         geometry.shells.push(Shell::new(
             ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             RegionId::mint("test:model:entity#region").expect("identity grammar"),
@@ -363,9 +363,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),
@@ -399,9 +401,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),
@@ -459,9 +463,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),
@@ -624,12 +630,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             sheet.geometry.bodies[0].kind = BodyKind::Sheet;
             assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
             let mut disconnected = ir.clone();
-            disconnected.geometry.regions.push(Region {
-                id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-                body: disconnected.geometry.bodies[0].id.clone(),
-                shells: Vec::new(),
-                native_ref: None,
-            });
+            disconnected.geometry.regions.push(Region::new(
+                RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+                disconnected.geometry.bodies[0].id.clone(),
+                Vec::new(),
+            ));
             assert!(hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty());
             let mut shared_carrier = ir.clone();
             shared_carrier.geometry.faces.push(Face {
@@ -666,15 +671,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
-            distinct.geometry.regions.push(Region {
-                id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-                body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
-                shells: vec![
-                    ShellId::mint("test:model:entity#second-shell").expect("identity grammar")
-                ],
-                native_ref: None,
-            });
+            distinct.geometry.regions.push(Region::new(
+                RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+                BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
+                vec![ShellId::mint("test:model:entity#second-shell").expect("identity grammar")],
+            ));
             distinct.geometry.shells.push(Shell::new(
                 ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
                 RegionId::mint("test:model:entity#second-region").expect("identity grammar"),

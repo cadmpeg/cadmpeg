@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
-use crate::design::decode::operands::body_recipe_operand_end;
-use crate::design::decode::operands::body_recipe_prologue_end;
-use crate::design::decode::operands::parse_body_recipe_operand;
-use crate::design::decode::operands::unique_body_recipe;
+use crate::design::decode::operands::body_recipes::body_recipe_operand_end;
+use crate::design::decode::operands::body_recipes::body_recipe_prologue_end;
+use crate::design::decode::operands::body_recipes::parse_body_recipe_operand;
+use crate::design::decode::operands::body_recipes::unique_body_recipe;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::recipes::ConstructionRecipe;
@@ -183,7 +184,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            id: "f3d:Other/occurrence-0@design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(
                 FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
             ),
@@ -194,7 +195,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ordinal: 0,
         },
     ];
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+    crate::design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&recipe),
         &candidate_tags,
@@ -237,7 +238,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     {
         slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::Standard,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
@@ -253,6 +254,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     let mut combine_recipe = recipe.clone();
@@ -262,7 +265,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             byte_offset: 0,
         });
     let mut combine_operand = operand.clone();
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+    crate::design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut combine_operand),
         std::slice::from_ref(&combine_recipe),
         &[
@@ -318,7 +321,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
     let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let decoded = crate::design::decode::operands::decode_body_recipe_operands(
+        let decoded = crate::design::decode::operands::body_recipes::decode_body_recipe_operands(
             scan,
             &[],
             std::slice::from_ref(&group),
@@ -462,8 +465,9 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             assert_eq!(decoded.serialization_form(), Some(form));
             assert_eq!(decoded.references()[0].design_reference, 301);
             assert_eq!(decoded.nested_record_index(), 103);
-            let losses =
-                super::super::body_recipe_serialization_form_losses(std::slice::from_ref(&decoded));
+            let losses = super::super::body_recipes::body_recipe_serialization_form_losses(
+                std::slice::from_ref(&decoded),
+            );
             let codes: Vec<_> = losses.iter().map(|loss| loss.code.local_code()).collect();
             let expected: &[&str] = if form > 1 {
                 &["body-recipe.serialization-form-assumed"]
@@ -683,4 +687,86 @@ fn body_recipe_operand_without_a_successor_record_refuses_another_frame() {
     let (bytes, recipe_at, _) = member_without_successor(&[], 8, 1739);
     let recipe = member_recipe(recipe_at);
     assert_eq!(unique_body_recipe(&bytes, &header, &[&recipe]), None);
+}
+
+#[test]
+fn legacy_cut_body_recipe_closes_at_its_profile_group() {
+    use crate::design::decode::operands::body_recipes::{
+        parse_body_recipe_operand_frame_with_index, unique_body_recipe_with_index, BodyRecipeFrame,
+    };
+    use crate::records::recipes::{ConstructionRecipeDesign, ConstructionRecipeSelector};
+    use crate::records::topology::body_recipe::DesignOperandOwner;
+
+    let record = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: "311".to_owned().try_into().unwrap(),
+        record_index: 100,
+    };
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"311", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    crate::test_support::push_marked_reference(&mut bytes, 102);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-1111-1111-1111-111111111111");
+    lp_utf16(&mut bytes, "22222222-2222-2222-2222-222222222222");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let serialization_at = bytes.len();
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut bytes, *b"262", 100);
+    indexed_header(&mut bytes, *b"328", 101);
+    indexed_header(&mut bytes, *b"301", 102);
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"body_recipe_data");
+    bytes.extend_from_slice(&[0; 8]);
+    let next_at = bytes.len();
+    indexed_header(&mut bytes, *b"291", 103);
+    let recipe = ConstructionRecipe {
+        id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
+        byte_offset: u64_from_index(recipe_at),
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: "291".into(),
+                offset: u64_from_index(next_at + 4),
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 103,
+                byte_offset: u64_from_index(next_at + 7),
+            }),
+        }),
+        recipe_index: 0,
+        record_index: None,
+    };
+    let recipes = [&recipe];
+    let read = |bytes: &[u8], next_index| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let frame = BodyRecipeFrame::legacy_cut(bytes, &records, &record, next_index)?;
+        let recipe = unique_body_recipe_with_index(bytes, &records, &record, frame, &recipes)?;
+        parse_body_recipe_operand_frame_with_index(
+            bytes,
+            &records,
+            90,
+            DesignOperandOwner::Group {
+                group_record_index: 98,
+                group_member_ordinal: 0,
+            },
+            &record,
+            recipe,
+            frame,
+        )
+    };
+    let operand = read(&bytes, 103).unwrap();
+    assert_eq!(operand.nested_record_index(), 102);
+    assert_eq!(operand.next_record_index(), 103);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+    assert!(operand.references().is_empty());
+    let wire = json::to_value(&operand).unwrap();
+    let reloaded: crate::records::topology::body_recipe::DesignBodyRecipeOperand =
+        json::from_value(wire).unwrap();
+    assert_eq!(reloaded, operand);
+    assert!(read(&bytes, 104).is_none());
+    bytes[serialization_at] = 1;
+    assert!(read(&bytes, 103).is_none());
 }

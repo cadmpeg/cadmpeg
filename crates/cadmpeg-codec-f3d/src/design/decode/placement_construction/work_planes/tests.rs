@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn work_plane_binds_explicit_unmarked_and_identity_placements() {
     use crate::records::feature::scope::DesignParameterScope;
@@ -16,8 +18,8 @@ fn work_plane_binds_explicit_unmarked_and_identity_placements() {
         let losses = super::bind(std::slice::from_mut(&mut scope), &[placement]);
         assert!(losses.is_empty());
         assert_eq!(scope.work_plane_transform(), Some(expected));
-        let wire = serde_json::to_value(&scope).unwrap();
-        let restored: DesignParameterScope = serde_json::from_value(wire).unwrap();
+        let wire = json::to_value(&scope).unwrap();
+        let restored: DesignParameterScope = json::from_value(wire).unwrap();
         assert_eq!(restored, scope);
     }
 }
@@ -313,7 +315,20 @@ fn append_work_plane_frame(
 
 type WorkPlaneTestSpec<'a> = (&'a str, u64, u64, [u8; 2], u8, &'a str);
 
-fn build_work_plane_test_archive(planes: &[WorkPlaneTestSpec<'_>]) -> Vec<u8> {
+/// The property block written at offset 20 and the offset of the entity ID.
+type PlaneEntityForm = (&'static [u8], usize);
+
+const WITHOUT_PROPERTIES: PlaneEntityForm = (&[0], 130);
+const EMPTY_PROPERTIES: PlaneEntityForm = (&[1, 0, 0, 0, 0], 134);
+const ENTITY_GENESIS: PlaneEntityForm = (
+    b"\x01\x01\x00\x00\x00\x0d\x00\x00\x00EntityGenesis\x17\x00\x00\x00IntrinsicMetaTypeuint64\x00\x00\x00\x00\x00\x00\x00\x00",
+    186,
+);
+
+fn build_work_plane_test_archive(
+    planes: &[WorkPlaneTestSpec<'_>],
+    form: PlaneEntityForm,
+) -> Vec<u8> {
     use crate::test_support::lp_ascii;
     use crate::test_support::manifest_test::write_synthetic_manifests;
     use crate::test_support::streams_test::design_metastream_with_records;
@@ -343,6 +358,9 @@ fn build_work_plane_test_archive(planes: &[WorkPlaneTestSpec<'_>]) -> Vec<u8> {
             let offset = bulk.len();
             lp_ascii(&mut bulk, "256");
             bulk.extend_from_slice(&entity_id.to_le_bytes());
+            let (properties, entity_id_at) = form;
+            bulk.resize(offset + entity_id_at, 0);
+            bulk[offset + 20..offset + 20 + properties.len()].copy_from_slice(properties);
             append_work_plane_frame(
                 &mut bulk,
                 offset,
@@ -382,27 +400,63 @@ fn build_work_plane_test_archive(planes: &[WorkPlaneTestSpec<'_>]) -> Vec<u8> {
 fn work_plane_feature_name_decodes_cleanly() {
     use crate::test_support::zip_test::with_scan;
 
-    let archive = build_work_plane_test_archive(&[(
-        "FusionAssetName[Active]/Design1/BulkStream.dat",
-        405,
-        407,
-        [0, 1],
-        1,
-        "Body Split",
-    )]);
-
-    with_scan(&archive, |scan| {
-        let names = super::decode_work_plane_feature_names(scan).unwrap();
-        assert_eq!(
-            names.get(&(
-                "FusionAssetName[Active]/Design1/BulkStream.dat".to_string(),
-                407
-            )),
-            Some(&super::WorkPlaneFeatureName::Unique(Some(
-                "Body Split".to_string()
-            )))
+    for form in [WITHOUT_PROPERTIES, EMPTY_PROPERTIES, ENTITY_GENESIS] {
+        let archive = build_work_plane_test_archive(
+            &[(
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                405,
+                407,
+                [0, 1],
+                1,
+                "Body Split",
+            )],
+            form,
         );
-    });
+
+        with_scan(&archive, |scan| {
+            let names = super::decode_work_plane_feature_names(scan).unwrap();
+            assert_eq!(
+                names.get(&(
+                    "FusionAssetName[Active]/Design1/BulkStream.dat".to_string(),
+                    407
+                )),
+                Some(&super::WorkPlaneFeatureName::Unique(Some(
+                    "Body Split".to_string()
+                ))),
+                "form {form:?}"
+            );
+        });
+    }
+}
+
+#[test]
+fn work_plane_feature_name_reads_the_entity_id_after_the_property_block() {
+    use crate::test_support::zip_test::with_scan;
+
+    let misplaced: [PlaneEntityForm; 4] = [
+        (WITHOUT_PROPERTIES.0, 186),
+        (EMPTY_PROPERTIES.0, 130),
+        (ENTITY_GENESIS.0, 134),
+        (&[2], 130),
+    ];
+    for form in misplaced {
+        let archive = build_work_plane_test_archive(
+            &[(
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                405,
+                407,
+                [0, 1],
+                1,
+                "Body Split",
+            )],
+            form,
+        );
+
+        with_scan(&archive, |scan| {
+            let names = super::decode_work_plane_feature_names(scan).unwrap();
+            assert!(names.is_empty(), "form {form:?}: {names:?}");
+        });
+    }
 }
 
 #[test]
@@ -410,10 +464,13 @@ fn work_plane_feature_name_conflicts_fail_closed_and_emit_loss() {
     use crate::test_support::zip_test::with_scan;
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let archive = build_work_plane_test_archive(&[
-        (stream, 405, 407, [0, 1], 1, "Body Split"),
-        (stream, 406, 407, [0, 1], 1, "Conflicting Floor"),
-    ]);
+    let archive = build_work_plane_test_archive(
+        &[
+            (stream, 405, 407, [0, 1], 1, "Body Split"),
+            (stream, 406, 407, [0, 1], 1, "Conflicting Floor"),
+        ],
+        WITHOUT_PROPERTIES,
+    );
 
     with_scan(&archive, |scan| {
         let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
@@ -507,24 +564,27 @@ fn work_plane_feature_name_supports_typed_references_and_skips_origin_planes() {
 fn work_plane_feature_name_isolated_by_stream() {
     use crate::test_support::zip_test::with_scan;
 
-    let archive = build_work_plane_test_archive(&[
-        (
-            "FusionAssetName[Active]/Design1/BulkStream.dat",
-            405,
-            407,
-            [0, 1],
-            1,
-            "Stream1 Feature",
-        ),
-        (
-            "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat",
-            405,
-            407,
-            [0, 1],
-            1,
-            "Stream2 Feature",
-        ),
-    ]);
+    let archive = build_work_plane_test_archive(
+        &[
+            (
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                405,
+                407,
+                [0, 1],
+                1,
+                "Stream1 Feature",
+            ),
+            (
+                "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat",
+                405,
+                407,
+                [0, 1],
+                1,
+                "Stream2 Feature",
+            ),
+        ],
+        WITHOUT_PROPERTIES,
+    );
 
     with_scan(&archive, |scan| {
         let names = super::decode_work_plane_feature_names(scan).unwrap();
@@ -553,14 +613,17 @@ fn work_plane_feature_name_isolated_by_stream() {
 fn work_plane_feature_name_rejects_corrupt_marker_safely() {
     use crate::test_support::zip_test::with_scan;
 
-    let archive = build_work_plane_test_archive(&[(
-        "FusionAssetName[Active]/Design1/BulkStream.dat",
-        405,
-        407,
-        [0, 2],
-        1,
-        "Should Not Decode",
-    )]);
+    let archive = build_work_plane_test_archive(
+        &[(
+            "FusionAssetName[Active]/Design1/BulkStream.dat",
+            405,
+            407,
+            [0, 2],
+            1,
+            "Should Not Decode",
+        )],
+        WITHOUT_PROPERTIES,
+    );
 
     with_scan(&archive, |scan| {
         let names = super::decode_work_plane_feature_names(scan).unwrap();

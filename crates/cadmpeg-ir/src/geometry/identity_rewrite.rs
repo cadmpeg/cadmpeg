@@ -1,43 +1,77 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, CacheContract, CacheFirstCurveForm,
-    CacheFirstCurveParameterization, ClassicLoftProfileData, CompositeCurveSegment,
-    CompositeCurveSegments, CompositeCurveTransition, CompoundComponent, CompoundCurveConstruction,
-    CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale, CompoundLoftScaleMember,
-    CompoundLoftTail, Curve, CurveGeometry, CurveOffsetCoordinate, CurveOffsetDistanceLaw,
-    CurveOffsetLawBasis, CurveOffsetRange, DeformableCurveData, DeformableCurveSource,
-    DeformableSurfaceConstruction, DeformableSurfaceData, DeformableSurfaceFrame,
-    DeformableVectorFrame, DirectedParameterRange, EdgeOffsetDiscriminator, ExactSpline,
-    FiniteLawFormula, FitTolerance, G2BlendConstruction, G2BlendFirstShape, G2BlendFullSupport,
-    G2BlendSide, HelixCircleProfile, HelixCurveConstruction, HelixLineProfile,
-    HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
-    InlineTSplineSubtransform, IntcurveSupportContext, IntcurveSupportSide, LawCurveVersionForm,
-    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail, LegacyCache,
-    LegacyExtensionFlags, LoftBridgeToken, LoftMemberForm, LoftPath, LoftPathCurve,
-    LoftProfileMember, LoftRevisionForm, LoftSection, LoftSectionEntry, LoftSubdata,
-    LoftSubdataRow, LoftSubdataTable, NetSurfaceConstruction, OffsetExtension, OffsetSide,
-    ParametricSurfaceCurveFlags, PlacedCurve, PlacedSurface, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, ProjectionRole,
-    ProjectionTail, RecordBounds, RevisionCacheForm, RevisionCompoundLoftConstruction,
-    RevisionCompoundLoftTail, RevisionG2BlendConstruction, RevisionSurfaceForm,
-    RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
+use super::blends::{
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, G2BlendConstruction, G2BlendFirstShape,
+    G2BlendFullSupport, G2BlendSide, RollingBallConstruction, RollingBallJetDerivative,
     RollingBallJetSite, RollingBallJetStation, RollingBallJetStations, RollingBallRadiusSelector,
     RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve, RollingBallSupportSurface,
-    RollingBallThirdSide, ScaledCompoundLoftBranch, ScaledCompoundLoftConstruction,
-    ScaledCompoundLoftShape, SilhouetteKind, SkinSurfaceConstruction, SkinSurfaceLayout,
-    SkinSurfaceProfile, SolvedCurveGeometry, SolvedSurfaceGeometry, SplineSurfaceParameters,
-    SpringLayout, SpringPcurve, SpringSupport, SubtypeTableIndex, SupportPcurve, Surface,
-    SurfaceCurveCacheFirst, SurfaceCurveFamily, SurfaceCurveTail, SurfaceGeometry,
-    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, TSplineSubtransform,
-    TSplineSurfaceConstruction, TaperSurfaceKind, TolerantIntersectionConstruction,
-    TolerantIntersectionParameterization, VariableBlendBareCrossSection, VariableBlendCache,
-    VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
-    VariableBlendInterpolationPoint, VariableBlendRadii, VariableBlendRenderMode,
-    VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendTerminal,
-    VariableBlendValue, VariableBlendValuePayload, VectorOffsetRoles, VertexBlendBoundary,
-    VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
+    RollingBallThirdSide, VertexBlendBoundary, VertexBlendBoundaryGeometry,
+    VertexBlendConstruction, VertexBlendTwists,
+};
+use super::curve_offsets::{
+    CurveOffsetCoordinate, CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange,
+    OffsetSide,
+};
+use super::deformable_surfaces::{
+    DeformableSurfaceConstruction, DeformableSurfaceData, DeformableSurfaceFrame,
+    DeformableVectorFrame,
+};
+use super::helix::{
+    HelixCircleProfile, HelixCurveConstruction, HelixLineProfile, HelixPathConstruction,
+    HelixSurfaceConstruction, HelixSurfaceProfile,
+};
+use super::intersection_curves::{
+    IntcurveSupportContext, IntcurveSupportSide, LawCurveVersionForm,
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+};
+use super::laws::{
+    FiniteLawFormula, LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail,
+};
+use super::legacy_cache::{CacheContract, FitTolerance, LegacyCache};
+use super::lofts::{
+    ClassicLoftProfileData, CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale,
+    CompoundLoftScaleMember, CompoundLoftTail, LoftBridgeToken, LoftMemberForm, LoftPath,
+    LoftPathCurve, LoftProfileMember, LoftRevisionForm, LoftSection, LoftSectionEntry, LoftSubdata,
+    LoftSubdataRow, LoftSubdataTable, ScaledCompoundLoftBranch, ScaledCompoundLoftConstruction,
+    ScaledCompoundLoftShape,
+};
+use super::procedural_curves::{
+    CompoundComponent, CompoundCurveConstruction, DeformableCurveData, DeformableCurveSource,
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve, VectorOffsetRoles,
+};
+use super::procedural_surfaces::{
+    ExactSpline, ProceduralSurfaceDefinition, SplineSurfaceParameters, TaperSurfaceKind,
+};
+use super::revision_forms::{
+    RevisionCacheForm, RevisionCompoundLoftConstruction, RevisionCompoundLoftTail,
+    RevisionG2BlendConstruction, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    VariableBlendCache,
+};
+use super::skin_surfaces::{
+    NetSurfaceConstruction, SkinSurfaceConstruction, SkinSurfaceLayout, SkinSurfaceProfile,
+};
+use super::surface_curves::{
+    CacheFirstCurveForm, CacheFirstCurveParameterization, ParametricSurfaceCurveFlags,
+    ProjectionRole, ProjectionTail, SilhouetteKind, SpringLayout, SpringPcurve, SpringSupport,
+    SurfaceCurveCacheFirst, SurfaceCurveFamily, SurfaceCurveTail,
+};
+use super::sweep_surfaces::{SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout};
+use super::tsplines::{
+    InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform, TSplineSurfaceConstruction,
+};
+use super::variable_blends::{
+    EdgeOffsetDiscriminator, VariableBlendBareCrossSection, VariableBlendConstruction,
+    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendInterpolationPoint,
+    VariableBlendRadii, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendSurfaceSubtype, VariableBlendTerminal, VariableBlendValue,
+    VariableBlendValuePayload,
+};
+use super::{
+    CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve, CurveGeometry,
+    InlineCurve, InlineSurface, LegacyExtensionFlags, OffsetExtension, PlacedCurve, PlacedSurface,
+    ProceduralCurve, ProceduralSurface, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 
 rewrite_enum!(BlendCrossSection, []; {
@@ -130,6 +164,26 @@ rewrite_scalar!(HelixLineProfile);
 rewrite_scalar!(HelixPathConstruction);
 rewrite_scalar!(HelixSurfaceConstruction);
 rewrite_scalar!(HelixSurfaceProfile);
+rewrite_enum!(InlineCurve, []; {
+    Line(field0),
+    Circle(field0),
+    Ellipse(field0),
+    Parabola(field0),
+    Hyperbola(field0),
+    Nurbs(field0),
+    Polyline(field0),
+    Transformed {basis, transform},
+});
+rewrite_enum!(InlineSurface, []; {
+    Plane(field0),
+    Cylinder(field0),
+    Cone(field0),
+    Sphere(field0),
+    Torus(field0),
+    Nurbs(field0),
+    Polygonal(field0),
+    Transformed {basis, transform},
+});
 rewrite_record!(InlineTSplineSubtransform, []; {program, separator, values});
 rewrite_record!(IntcurveSupportContext, []; {sides, parameter_range, discontinuities});
 rewrite_record!(IntcurveSupportSide, []; {surface, pcurve});
@@ -447,7 +501,7 @@ impl<
         R: crate::schema::rewrite::typed::RewriteIdentities,
         V: crate::schema::rewrite::typed::RewriteIdentities,
     > crate::schema::rewrite::typed::RewriteIdentities
-    for super::CompoundLoftScales<CAPACITY, R, V>
+    for super::lofts::CompoundLoftScales<CAPACITY, R, V>
 {
     fn visit_identity_references(
         &self,
@@ -456,10 +510,10 @@ impl<
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.0.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         self.0.rewrite_identities(ctx, map).map(Self)
     }

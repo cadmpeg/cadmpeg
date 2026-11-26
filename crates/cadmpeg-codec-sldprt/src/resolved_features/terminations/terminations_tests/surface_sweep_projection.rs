@@ -6,9 +6,9 @@ use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, PathRef, SweepMode, SweepSection, SweepShape,
-};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::{SweepMode, SweepSection, SweepShape};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::io::Cursor;
 
 #[test]
@@ -55,9 +55,11 @@ fn component_reference_curve_is_a_native_sweep_path() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native =
-        crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-            .unwrap();
+    let native = crate::native::SldprtNative::load(
+        decoded.ir().native.namespace("sldprt").unwrap(),
+        decoded.ir().tolerances.linear,
+    )
+    .unwrap();
     let (lane, class) = native
         .feature_input_lanes
         .iter()
@@ -90,7 +92,7 @@ fn component_reference_curve_is_a_native_sweep_path() {
                     *path = None;
                     *shape = SweepShape::sheet_sections(
                         SweepMode::Surface {},
-                        SweepSection::Unresolved(None),
+                        SweepSection::Unresolved,
                         Vec::new(),
                     );
                 }

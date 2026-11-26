@@ -2,6 +2,7 @@
 
 use super::{parse, Tables};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -18,7 +19,7 @@ fn payloads() -> [Vec<u8>; 3] {
 }
 
 fn table() -> Result<Tables, cadmpeg_core::CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let bytes = payloads();
     let (pairs, revisions, external) = parse(
         &ctx,
@@ -39,13 +40,13 @@ fn table() -> Result<Tables, cadmpeg_core::CodecError> {
 
 #[test]
 fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let table = table()?;
     assert!(table.valid(&ctx)?);
     assert_eq!(table.pairs.len(), 1);
     assert_eq!(table.revisions.len(), 1);
     assert_eq!(table.external.len(), 1);
-    let restored: Tables = serde_json::from_value(serde_json::to_value(&table)?)?;
+    let restored: Tables = json::from_value(json::to_value(&table)?)?;
     assert_eq!(restored, table);
     assert!(restored.valid(&ctx)?);
     let target = table
@@ -63,7 +64,7 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
 
 #[test]
 fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for index in 0..3 {
         let valid = table()?;
         for extra in [false, true] {
@@ -104,7 +105,7 @@ fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResul
 
 #[test]
 fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for word in [0x0001_0000_u32, 0x0002_0000, u32::MAX] {
         let mut bytes = payloads();
         bytes[2][..4].copy_from_slice(&word.to_le_bytes());
@@ -137,7 +138,7 @@ fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestRes
 }
 
 fn cache_record() -> Result<crate::drawing::Record, serde_json::Error> {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:drawing:record#generated-0", "segment_token": "generated", "record_ordinal": 0,
         "segment_version_major": 19, "type_id": "81136d8ad111566b600038bd861c3cb0", "family": "DlSheetSmSegmentType", "payload": "",
         "fields": {"form": "cached_view", "prefix": "00".repeat(28), "view": crate::pmdc::PmDcReference::from_packed(1), "tail": {"offset": 32, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])}}
@@ -147,7 +148,7 @@ fn cache_record() -> Result<crate::drawing::Record, serde_json::Error> {
 fn view_record() -> Result<crate::drawing::Record, serde_json::Error> {
     let mut prefix = [0_u8; 30];
     prefix[4..6].copy_from_slice(&17_u16.to_le_bytes());
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:drawing:record#target-0", "segment_token": "target", "record_ordinal": 0,
         "segment_version_major": 19, "type_id": "5942cb22d111c557600037bd861c3cb0", "family": "DlSheetDcSegmentType", "payload": "",
         "fields": {"form": "view", "prefix": cadmpeg_ir::native::bytes::NativeBytes::new(prefix), "operands": {"marker": 2, "metadata": null, "references": []}, "word": 0, "values": [0, 0], "extension": null, "text": "Generated", "tail": {"offset": 0, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])}}
@@ -260,7 +261,7 @@ fn sheet_view_lists_require_unique_local_targets_of_the_exact_class() -> TestRes
         tail_prefix: [0; 14].into(),
         auxiliary_lists: Box::new([empty()?, empty()?, empty()?]),
         terminal: [0; 8].into(),
-        tail: serde_json::from_value(serde_json::json!({
+        tail: json::from_value(cadmpeg_core::json!({
             "offset": 0, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])
         }))?,
     };

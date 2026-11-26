@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameter scope every feature record carries: its feature kind, its payload, and the frames and bindings the payload states.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::align::DesignAlignEnvelope;
 use super::assembly::DesignAssemblyAlignment;
@@ -26,7 +26,9 @@ use super::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
-use super::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
+use super::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use super::fixed_parameters::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
 };
@@ -92,6 +94,22 @@ cadmpeg_core::named_optional_field!(
     "label"
 );
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
+cadmpeg_core::named_optional_field!(deserialize_tail_flags, DesignScopeTailFlags, "tail_flags");
+cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_envelope_offset,
+    u64,
+    "envelope_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_wide_state,
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+    "wide_state"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_companion_suppressed,
+    crate::records::identity::Located<bool>,
+    "companion_suppressed"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -536,6 +554,128 @@ impl ScopePayloadCompleteness for DesignCombineScope {
     }
 }
 
+/// The timeline state of a feature item tail: three state bytes and the
+/// no-result and rolled-back lane flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignScopeTailFlags {
+    /// State bytes 0 and 1, each set when it is not zero. Either byte set
+    /// marks the feature suppressed.
+    pub(crate) suppression: [bool; 2],
+    /// State byte 2, set when it is not zero.
+    pub(crate) unevaluated: bool,
+    /// The three state bytes as stored, where one of them is above `1`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_wide_state"
+    )]
+    pub(crate) wide_state: Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>>,
+    /// Byte offset of state byte 0; state bytes 1 and 2 follow it.
+    pub(crate) state_offset: u64,
+    /// The no-result flag `s0`: the stored history-state identities hold no
+    /// current result.
+    pub(crate) no_result: bool,
+    /// The feature stands after the saved rollback marker of its timeline.
+    pub(crate) rolled_back: bool,
+    /// Byte offset of the no-result flag; the rolled-back flag follows it.
+    pub(crate) no_result_offset: u64,
+    /// Byte offset of the earlier same-index envelope that stores the flags,
+    /// where this envelope stores none. The flags then lie after the start of
+    /// that envelope and before the start of this one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_envelope_offset"
+    )]
+    pub(crate) envelope_offset: Option<u64>,
+}
+
+impl DesignScopeTailFlags {
+    /// Whether state byte 0 or 1 marks the feature suppressed.
+    pub(crate) fn suppressed(&self) -> bool {
+        self.suppression.contains(&true)
+    }
+
+    /// The three state bytes as stored.
+    pub(crate) fn stored_state(&self) -> [u8; 3] {
+        self.wide_state.map_or_else(
+            || {
+                [
+                    u8::from(self.suppression[0]),
+                    u8::from(self.suppression[1]),
+                    u8::from(self.unevaluated),
+                ]
+            },
+            cadmpeg_ir::native::bytes::NativeBytes::into_inner,
+        )
+    }
+
+    /// The loss notes of the assumptions under which the feature that
+    /// `subject` names is read from these flags.
+    pub(crate) fn assumption_notes(
+        &self,
+        subject: &str,
+    ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        use crate::loss::F3dLossCode;
+        let wide = self.wide_state.map(|state| {
+            let state = state.into_inner();
+            let bytes = (0..3)
+                .filter(|byte| state[*byte] > 1)
+                .map(|byte| format!("{} at state byte {byte}", state[byte]))
+                .collect::<Vec<_>>()
+                .join(" and ");
+            F3dLossCode::FeatureStateByteAboveOne.note(format!(
+                "{subject} stores {bytes}; a state byte that is not zero is read as set (open item DR-1032)"
+            ))
+        });
+        let assumed = self.unevaluated || !self.rolled_back;
+        let active = (self.no_result && assumed && !self.suppressed()).then(|| {
+            let code = if self.unevaluated {
+                F3dLossCode::FeatureUnevaluatedStateAssumed
+            } else {
+                F3dLossCode::FeatureNoResultActiveAssumed
+            };
+            code.note(format!(
+                "{subject} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+            ))
+        });
+        wide.into_iter().chain(active).collect()
+    }
+
+    /// Whether `scope` can hold these flags: state bytes set only with the
+    /// no-result flag, stored state bytes that agree with the set bytes and
+    /// hold a byte above `1`, the state bytes before the lane flags, both in
+    /// its own tail before its paired header or, from the earlier envelope at
+    /// `envelope_offset`, after that envelope's start and before `scope`'s
+    /// start.
+    pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
+        let (Some(state_end), Some(end)) = (
+            self.state_offset.checked_add(3),
+            self.no_result_offset.checked_add(1),
+        ) else {
+            return false;
+        };
+        let consistent = self.no_result || (self.suppression == [false; 2] && !self.unevaluated);
+        let wide = self.wide_state.is_none_or(|state| {
+            let state = state.into_inner();
+            state.iter().any(|byte| *byte > 1)
+                && self.suppression == [state[0] != 0, state[1] != 0]
+                && self.unevaluated == (state[2] != 0)
+        });
+        consistent
+            && wide
+            && state_end <= self.no_result_offset
+            && match self.envelope_offset {
+                None => {
+                    self.state_offset >= scope.feature_ordinal_offset
+                        && end < scope.paired_byte_offset
+                }
+                Some(envelope) => envelope < self.state_offset && end < scope.byte_offset,
+            }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignNamedScopeReferences {
@@ -564,6 +704,16 @@ impl DesignNamedScopeReferences {
         )
     }
 
+    /// Bytes the associated references and a present middle reference add
+    /// before the preceding history-state identity.
+    fn bytes_before_previous_history_state_id(&self) -> Option<usize> {
+        let width = named_scope_tail::MIDDLE_REFERENCE - named_scope_tail::FIRST_REFERENCE;
+        self.associated
+            .len()
+            .checked_mul(width)?
+            .checked_add((width - 1) * usize::from(self.middle.is_some()))
+    }
+
     fn offsets_valid(&self, label_end: u64, paired_at: u64) -> bool {
         (|| {
             if self.associated.is_empty() && self.middle.is_none() && self.closing.is_none() {
@@ -583,7 +733,8 @@ impl DesignNamedScopeReferences {
                 (
                     &self.middle,
                     u64_from_index(
-                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                        named_scope_tail::CLOSING_REFERENCE
+                            - named_scope_tail::PREVIOUS_HISTORY_STATE_ID,
                     ),
                 ),
                 (&self.closing, 1),
@@ -728,10 +879,10 @@ macro_rules! design_feature_kinds {
                     Self::Native(name) => name.visit_identity_references(ctx, visitor),
                 }
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+            fn rewrite_identities(
                 self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native scope payload")?;
                 match self {
@@ -972,6 +1123,12 @@ pub(crate) struct DesignParameterScope {
     /// Display name bound from a companion `WorkPlane` entity record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
+    /// Timeline state bytes and lane flags of the tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_flags: Option<DesignScopeTailFlags>,
+    /// Suppression flag of the 88-byte Thread companion tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) companion_suppressed: Option<crate::records::identity::Located<bool>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1128,6 +1285,20 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_display_name"
     )]
     display_name: Option<String>,
+    /// Timeline state bytes and lane flags of the tail.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags"
+    )]
+    tail_flags: Option<DesignScopeTailFlags>,
+    /// Suppression flag of the 88-byte Thread companion tail.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_companion_suppressed"
+    )]
+    companion_suppressed: Option<crate::records::identity::Located<bool>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2716,8 +2887,31 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 ));
             }
         }
+        if wire
+            .tail_flags
+            .is_some_and(|flags| !flags.lie_within(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "tail_flags outside the scope tail".into(),
+            ));
+        }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        if wire.companion_suppressed.is_some_and(|flag| {
+            use crate::layout::thread_hole_companion_tail as companion;
+            let tail = admitted.feature_ordinal_offset;
+            admitted.kind() != DesignFeatureKind::Thread
+                || wire.tail_flags.is_some()
+                || admitted.paired_byte_offset.checked_sub(tail)
+                    != Some(u64_from_index(companion::LEN))
+                || tail.checked_add(u64_from_index(companion::FLAGS)) != Some(flag.offset)
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "companion_suppressed outside a Thread companion tail".into(),
+            ));
+        }
+        admitted.tail_flags = wire.tail_flags;
+        admitted.companion_suppressed = wire.companion_suppressed;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2767,6 +2961,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
             display_name: scope.display_name,
+            tail_flags: scope.tail_flags,
+            companion_suppressed: scope.companion_suppressed,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3126,26 +3322,60 @@ impl DesignParameterScope {
         if named_tail.is_some() && draft.label.is_none() {
             return Err(fail("named_tail/label"));
         }
+        // The reference-table stride shows the reference spelling: 11-byte
+        // plain references or 51-byte typed references.
+        // A table that fits neither width falls through to the plain checks.
+        let stride = reference_table_stride(&draft).unwrap_or(11);
+        let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+            || (draft.reference_members.is_empty()
+                && kind == "As-built"
+                && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
+        let typed_canvas =
+            typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
         let mut named_hole_history = None;
+        let mut labeled_previous_history = None;
         if let Some(label) = &draft.label {
             let units = label.value.encode_utf16().count();
+            let label_bytes = units * 2;
             if kind == "Hole" {
                 named_hole_history = crate::design::decode::scopes::parameter_scope::named_reciprocal_hole_previous_history_offset(
                     tail, units,
                 );
             }
-            let history_layout_holds = if let Some(relative) = named_hole_history {
-                draft.previous_history_state_id_offset
-                    == draft
-                        .feature_ordinal_offset
-                        .checked_add(u64_from_index(relative))
+            labeled_previous_history = named_hole_history.or_else(|| if typed {
+                tail.checked_sub(label_bytes)
+                    .and_then(|unlabeled| {
+                        crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
+                            kind, unlabeled,
+                        )
+                    })
+                    .and_then(|relative| relative.checked_add(label_bytes))
             } else {
-                draft.previous_history_state_id_offset.is_none()
-                    && named_scope_tail::LEN
-                        .checked_add(units * 2)
-                        .and_then(|base| base.checked_add(extra_bytes))
-                        == Some(tail)
-            };
+                let plain_78 = named_scope_tail::LEN
+                    .checked_add(label_bytes)
+                    .and_then(|base| base.checked_add(extra_bytes));
+                let plain_77 = (extra_bytes == 0).then_some(named_scope_tail::LEN - 1 + label_bytes);
+                (plain_78 == Some(tail) || plain_77 == Some(tail))
+                    .then(|| {
+                        named_tail
+                            .map_or(Some(0), DesignNamedScopeReferences::bytes_before_previous_history_state_id)
+                    })
+                    .flatten()
+                    .and_then(|extra| {
+                        named_scope_tail::PREVIOUS_HISTORY_STATE_ID
+                            .checked_add(label_bytes)?
+                            .checked_add(extra)
+                    })
+            });
+            let expected_offset = labeled_previous_history.and_then(|relative| {
+                draft
+                    .feature_ordinal_offset
+                    .checked_add(u64_from_index(relative))
+            });
+            let history_layout_holds = expected_offset.is_some()
+                && (draft.previous_history_state_id_offset == expected_offset
+                    || (named_hole_history.is_none()
+                        && draft.previous_history_state_id_offset.is_none()));
             if units == 0
                 || units > 256
                 || label.value.chars().any(char::is_control)
@@ -3164,16 +3394,6 @@ impl DesignParameterScope {
                 return Err(fail("label"));
             }
         }
-        // The reference-table stride shows the reference spelling: 11-byte
-        // plain references or 51-byte typed references.
-        // A table that fits neither width falls through to the plain checks.
-        let stride = reference_table_stride(&draft).unwrap_or(11);
-        let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
-            || (draft.reference_members.is_empty()
-                && kind == "As-built"
-                && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
-        let typed_canvas =
-            typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
         if matches!(draft.payload, DesignScopePayload::SilhouetteSplit(Some(_)))
             && (typed
                 || draft.reference_members.len() != 4
@@ -3184,7 +3404,10 @@ impl DesignParameterScope {
         if typed && (named_tail.is_some() || named_hole_history.is_some()) {
             return Err(fail("named_tail/reference_members"));
         }
-        let tail_valid = if typed_canvas || named_tail.is_some() {
+        let tail_valid = if typed_canvas
+            || named_tail.is_some()
+            || labeled_previous_history.is_some()
+        {
             true
         } else if typed {
             crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
@@ -3204,10 +3427,10 @@ impl DesignParameterScope {
             Some(offset) => {
                 let relatives = if typed_canvas {
                     Vec::new()
+                } else if let Some(relative) = labeled_previous_history {
+                    vec![relative]
                 } else if typed {
                     crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
-                } else if let Some(relative) = named_hole_history {
-                    vec![relative]
                 } else {
                     [false, true]
                         .into_iter()
@@ -3328,6 +3551,8 @@ impl DesignParameterScope {
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
             display_name: None,
+            tail_flags: None,
+            companion_suppressed: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
@@ -3975,6 +4200,85 @@ impl DesignParameterScope {
 
     pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
         self.extrude().and_then(|extrude| extrude.extrude_prologue)
+    }
+
+    pub(crate) fn is_legacy_class_330_symmetric_distance(&self) -> bool {
+        use crate::layout::legacy_class_330_symmetric_extrude_frame as layout;
+
+        let Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::NewBody,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets,
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_reversed: false,
+            solid_operation: true,
+            start: DesignExtrudeStart::ProfilePlane,
+            ..
+        }) = self.extrude_prologue()
+        else {
+            return false;
+        };
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && side_extent_discriminator_offsets.map(|offset| offset.checked_sub(self.byte_offset))
+                == [layout::FIRST_SIDE_EXTENT, layout::SECOND_SIDE_EXTENT]
+                    .map(|offset| Some(u64_from_index(offset)))
+    }
+
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        !indexed_along
+            && self
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+    }
+
+    pub(crate) fn is_legacy_class_330_blind_cut(&self) -> bool {
+        use crate::layout::legacy_class_330_blind_cut_extrude_frame as layout;
+
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && self.extrude_prologue().is_some_and(|prologue| {
+                DesignExtrudePrologue::legacy_class_330_blind_cut(
+                    self.byte_offset,
+                    prologue.direction_reversed(),
+                ) == Some(prologue)
+            })
+    }
+
+    pub(crate) fn legacy_class_330_body_recipe_close(
+        &self,
+        group_record: u32,
+        operand_record: u32,
+    ) -> Option<u32> {
+        if !self.is_legacy_class_330_blind_cut() {
+            return None;
+        }
+        let mut members = self.reference_members.values().copied();
+        if members.next()? != group_record || members.next()? != operand_record {
+            return None;
+        }
+        let closing = members.next()?;
+        (operand_record.checked_add(3) == Some(closing)).then_some(closing)
+    }
+
+    pub(crate) fn legacy_class_330_profile_member_ordinal(&self) -> Option<u32> {
+        if self.is_legacy_class_330_symmetric_distance() {
+            Some(1)
+        } else if self.is_legacy_class_330_blind_cut() {
+            Some(3)
+        } else {
+            None
+        }
     }
 
     #[cfg(test)]

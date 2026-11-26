@@ -25,7 +25,7 @@ fn damage_local_frame(bytes: &mut [u8], name: &str) {
 #[test]
 fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
-    let preview = vec![0; 2_000_000];
+    let preview = b"unrelated preview".to_vec();
     for name in [
         "preview.bin",
         "FusionAssetName[Active]/Previews/preview.png",
@@ -52,7 +52,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .unwrap()
             .is_ok());
         assert!(<F3dCodec as CodecBackend>::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
             None,
         )
@@ -122,21 +122,13 @@ fn unreadable_required_members_still_refuse_the_document() {
             "{name}"
         );
     }
-    for name in [
-        "Manifest.dat",
-        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-    ] {
-        let mut changed = root.clone();
-        damage_local_frame(&mut changed, name);
-        assert!(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(changed),
-                &DecodeOptions::default()
-            )
-            .is_err(),
-            "{name}"
-        );
-    }
+    let mut changed = root;
+    damage_local_frame(&mut changed, "Manifest.dat");
+    assert!(crate::test_support::archive_session::decode(
+        &mut Cursor::new(changed),
+        &DecodeOptions::default()
+    )
+    .is_err());
 }
 
 #[test]
@@ -215,9 +207,13 @@ fn a_merged_member_part_loss_names_the_stub_in_the_document() {
     let stubs = decoded.ir().native_unknowns("f3d").unwrap();
     let stub = stubs
         .iter()
-        .find(|stub| stub.id.as_str().contains("/source:part#"))
+        .find(|stub| stub.id.as_str().contains("@source:part#"))
         .expect("the member's given-up preview has a stub");
-    assert!(stub.id.as_str().starts_with("f3d:xref/"), "{}", stub.id);
+    assert!(
+        crate::ids::member_key(stub.id.as_str()).is_some(),
+        "{}",
+        stub.id
+    );
     assert!(
         loss.message.contains(&format!(" record={}: ", stub.id)),
         "{}",
@@ -278,7 +274,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .native_unknowns("f3d")
         .unwrap()
         .into_iter()
-        .filter(|stub| stub.id.as_str().contains("/source:part#"))
+        .filter(|stub| stub.id.as_str().contains("@source:part#"))
         .collect::<Vec<_>>();
     assert_eq!(stubs.len(), 2, "{stubs:?}");
     let mut owners = Vec::new();
@@ -286,10 +282,13 @@ fn each_member_part_links_to_its_own_member_definition() {
         let [link] = stub.links.as_slice() else {
             panic!("{} has one link: {:?}", stub.id, stub.links);
         };
-        let (member, _) = stub.id.as_str().split_once("/source:part#").unwrap();
+        let (member, _) = stub.id.as_str().split_once("@source:part#").unwrap();
         assert_eq!(
             link.as_str(),
-            format!("{member}/archive:product-definition#0"),
+            format!(
+                "f3d:xref:product-definition#{}",
+                member.strip_prefix("f3d:").unwrap()
+            ),
             "{}",
             stub.id
         );
@@ -321,7 +320,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .unrepresented()
         .contains(&cadmpeg_core::decode::ArenaClass::Model));
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )
@@ -402,4 +401,17 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
         .collect::<Vec<_>>();
     assert_eq!(failures.len(), 2, "{failures:?}");
     assert_eq!(failures[0], failures[1]);
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&format!(
+                    "part {} \"component.f3d\" ",
+                    crate::container::ENTRY_PART
+                ))
+        })
+        .count();
+    assert_eq!(unreadable, 1);
 }

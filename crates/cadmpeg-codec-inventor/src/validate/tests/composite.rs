@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FeatureResultMembers, FeatureResultTopology,
-};
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 
 use super::super::composite::{evaluate, valid};
@@ -12,7 +12,7 @@ use super::super::NativeData;
 use crate::feature::composite::tests::{fixture, with_context, Fixture};
 
 fn record(ordinal: u32) -> crate::native::RseRecordRecord {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "test:record",
         "token": "dc",
         "ordinal": ordinal,

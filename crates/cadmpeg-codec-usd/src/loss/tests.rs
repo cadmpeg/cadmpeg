@@ -38,6 +38,8 @@ fn code_strings_are_pinned() {
             "curves.rejected",
             "nurbs.patch-rejected",
             "nurbs.trim-not-transferred",
+            "nurbs.trim-region-assumed",
+            "nurbs.boundary-not-transferred",
             "nurbs.range-not-transferred",
             "appearance.display-color-not-transferred",
             "appearance.material-not-transferred",
@@ -45,6 +47,7 @@ fn code_strings_are_pinned() {
             "brep.rejected",
             "brep.element-not-transferred",
             "brep.subset-not-transferred",
+            "topology.face-boundary-unstated",
             "physics.joint-rejected",
             "physics.joint-property-not-transferred",
             "physics.solver-property-not-transferred",
@@ -58,9 +61,13 @@ fn code_strings_are_pinned() {
             "export.topology-tessellated",
             "export.brep-not-written",
             "export.brep-untrimmed",
+            "export.brep-pole-not-written",
             "export.carrier-not-written",
             "export.joint-not-written",
             "export.solver-property-not-written",
+            "export.design-not-written",
+            "export.physics-not-written",
+            "export.group-face-not-written",
         ]
     );
 }

@@ -2,6 +2,7 @@
 use super::*;
 use crate::feature::PmDcFeaturePropertyKind as Kind;
 use crate::test_support::sheet_metal::{feature, list, property, reference};
+use cadmpeg_core::serde_erase::json;
 
 fn fixture() -> (PmDcFeature, PmDcFeature, Vec<PmDcFeatureProperty>) {
     let mut plate_slots = [0; 17];
@@ -249,7 +250,7 @@ fn unchanged_corner_requires_one_edge_complete_names_and_the_exact_control_branc
 
 #[test]
 fn unplaced_suppressed_and_flat_pattern_features_cannot_supply_an_unchanged_proof() {
-    let mut feature: Feature = serde_json::from_value(serde_json::json!({
+    let mut feature: Feature = json::from_value(cadmpeg_core::json!({
         "id":"test:model:feature#corner", "ordinal":3,
         "suppressed":false, "definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic history feature");
@@ -286,10 +287,9 @@ fn independent_result_collections_retain_operands_but_do_not_supply_the_shared_r
 
 #[test]
 fn an_unchanged_corner_bend_selects_one_generated_or_stored_edge() {
-    use cadmpeg_ir::{
-        features::{FeatureId, GeneratedEdgeRef, SelectionReference},
-        ids::{FeatureInputTopologyId, HistoricalEdgeId, IdentityKey},
-    };
+    use cadmpeg_ir::features::selections::{GeneratedEdgeRef, SelectionReference};
+    use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId, IdentityKey};
     let named = |name: &str| GeneratedEdgeRef {
         feature: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("test", "design", "feature"),

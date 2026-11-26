@@ -79,7 +79,8 @@ fn repeated_coedge_incidence_visits_each_edge_and_vertex_once() {
             radial_next: coedge,
         });
     }
-    let bodies = super::super::bodies_intersecting(&topology, &BTreeSet::from([29])).unwrap();
+    let bodies =
+        super::super::body_closures::bodies_intersecting(&topology, &BTreeSet::from([29])).unwrap();
     assert_eq!(bodies, BTreeSet::from([1]));
 }
 
@@ -154,8 +155,11 @@ fn body_queries_over_many_bodies_find_every_owner_of_each_entity() {
     expected.push((0..BODIES).map(|body| 100 * body).collect());
     queries.push(BTreeSet::from([-1, 6, 100 * BODIES + 50]));
     expected.push(BTreeSet::new());
-    let touched =
-        super::super::bodies_touching(&topology, &queries.iter().collect::<Vec<_>>()).unwrap();
+    let touched = super::super::body_closures::bodies_touching(
+        &topology,
+        &queries.iter().collect::<Vec<_>>(),
+    )
+    .unwrap();
     assert_eq!(touched.len(), expected.len());
     for ((query, bodies), expected) in queries.iter().zip(&touched).zip(&expected) {
         assert_eq!(bodies, expected, "query {query:?}");
@@ -182,7 +186,7 @@ fn an_entity_one_body_reaches_twice_after_another_body_lists_each_body_once() {
 
     let topology = shared_point_topology(3);
     assert_eq!(
-        super::super::bodies_intersecting(&topology, &BTreeSet::from([205, 304])),
+        super::super::body_closures::bodies_intersecting(&topology, &BTreeSet::from([205, 304])),
         Some(BTreeSet::from([100, 200]))
     );
 }
@@ -210,7 +214,7 @@ fn one_closure_walk_answers_every_query() {
     let queries = queries.iter().collect::<Vec<_>>();
     let topology = shared_point_topology(4);
     assert_eq!(
-        super::super::bodies_touching(&topology, &queries),
+        super::super::body_closures::bodies_touching(&topology, &queries),
         Some(expected.to_vec())
     );
 
@@ -224,7 +228,7 @@ fn one_closure_walk_answers_every_query() {
     reversed.edge_vertices.reverse();
     reversed.vertex_points.reverse();
     assert_eq!(
-        super::super::bodies_touching(&reversed, &queries),
+        super::super::body_closures::bodies_touching(&reversed, &queries),
         Some(expected.to_vec())
     );
 
@@ -232,7 +236,10 @@ fn one_closure_walk_answers_every_query() {
         bodies: vec![1],
         ..Default::default()
     };
-    assert_eq!(super::super::bodies_touching(&incomplete, &[]), None);
+    assert_eq!(
+        super::super::body_closures::bodies_touching(&incomplete, &[]),
+        None
+    );
 }
 
 #[test]
@@ -248,12 +255,16 @@ fn the_last_row_of_a_repeated_key_binds_the_closure() {
             carrier: 30,
         },
     );
-    let touched =
-        super::super::bodies_touching(&topology, &[&BTreeSet::from([28]), &BTreeSet::from([30])]);
+    let touched = super::super::body_closures::bodies_touching(
+        &topology,
+        &[&BTreeSet::from([28]), &BTreeSet::from([30])],
+    );
     assert_eq!(touched, Some(vec![BTreeSet::new(), BTreeSet::from([1])]));
     topology.vertex_points.reverse();
-    let touched =
-        super::super::bodies_touching(&topology, &[&BTreeSet::from([28]), &BTreeSet::from([30])]);
+    let touched = super::super::body_closures::bodies_touching(
+        &topology,
+        &[&BTreeSet::from([28]), &BTreeSet::from([30])],
+    );
     assert_eq!(touched, Some(vec![BTreeSet::from([1]), BTreeSet::new()]));
 }
 
@@ -266,15 +277,15 @@ fn body_queries_validate_each_snapshot() {
         ..Default::default()
     };
     assert_eq!(
-        super::super::bodies_intersecting(&topology, &BTreeSet::from([1])),
+        super::super::body_closures::bodies_intersecting(&topology, &BTreeSet::from([1])),
         Some(BTreeSet::from([1]))
     );
     assert_eq!(
-        super::super::bodies_intersecting(&topology, &BTreeSet::from([2])),
+        super::super::body_closures::bodies_intersecting(&topology, &BTreeSet::from([2])),
         Some(BTreeSet::new())
     );
     assert_eq!(
-        super::super::bodies_intersecting(&incomplete, &BTreeSet::from([1])),
+        super::super::body_closures::bodies_intersecting(&incomplete, &BTreeSet::from([1])),
         None
     );
 }

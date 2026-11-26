@@ -7,15 +7,16 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -48,7 +49,7 @@ struct WireCurveOrientation {
 struct WireSourceProcedural {
     construction_id: ProceduralCurveId,
     definition: ProceduralCurveDefinition,
-    cache_fit_tolerance: Option<cadmpeg_ir::geometry::FitTolerance>,
+    cache_fit_tolerance: Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
 }
 
 struct ClosedWireMember<'a> {
@@ -59,10 +60,11 @@ struct ClosedWireMember<'a> {
     parameter_range: Option<[f64; 2]>,
 }
 
-const ZERO_ENTITY_WIRE_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
-    Some(tolerance) => tolerance,
-    None => panic!("zero-entity point tolerance must be positive and finite"),
-};
+const ZERO_ENTITY_WIRE_TOLERANCE: cadmpeg_ir::scalar::PositiveLength =
+    match cadmpeg_ir::scalar::PositiveLength::new(2e-3) {
+        Some(tolerance) => tolerance,
+        None => panic!("zero-entity point tolerance must be positive and finite"),
+    };
 
 fn closed_wire_loop_members<'a>(
     run: &'a crate::families::zero_entity::records::ZeroEntitySupportRun,
@@ -123,7 +125,7 @@ fn append_oriented_wire_curve(
     source_pos: usize,
     procedural: Option<(
         ProceduralCurveDefinition,
-        Option<cadmpeg_ir::geometry::FitTolerance>,
+        Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
     )>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
@@ -138,18 +140,18 @@ fn append_oriented_wire_curve(
             "oriented_support_model_curve_construction",
             Exactness::Derived,
         )?;
-        annotations.derived(&construction_id, "curve")?;
         annotations.derived(&construction_id, "definition")?;
         let mut definition = definition;
-        let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
-            Some(cache) => definition
-                .set_legacy_cache(cache)
-                .map_err(|error| error.to_string()),
-            None => {
-                definition.clear_legacy_cache();
-                Ok(())
-            }
-        };
+        let cached =
+            match cache_fit_tolerance.map(cadmpeg_ir::geometry::legacy_cache::LegacyCache::new) {
+                Some(cache) => definition
+                    .set_legacy_cache(cache)
+                    .map_err(|error| error.to_string()),
+                None => {
+                    definition.clear_legacy_cache();
+                    Ok(())
+                }
+            };
         let admitted = match cached {
             Ok(()) => Ok(ProceduralCurve::new(construction_id.clone(), definition)),
             Err(error) => Err(error),
@@ -592,7 +594,7 @@ fn transfer_closed_wire_loops(
                     "standalone_wire_edge",
                     Exactness::Derived,
                 )?;
-                annotations.derived(&edge_id, "curve")?;
+                annotations.derived(&edge_id, "carrier.curve")?;
                 annotations.derived(&edge_id, "ends.start")?;
                 annotations.derived(&edge_id, "ends.end")?;
                 admission.charge()?;
@@ -608,7 +610,7 @@ fn transfer_closed_wire_loops(
                     native_ref: None,
                 });
                 if param_range.is_some() {
-                    annotations.derived(&edge_id, "param_range")?;
+                    annotations.derived(&edge_id, "carrier.param_range")?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -626,15 +628,13 @@ fn transfer_closed_wire_loops(
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 });
                 let shells = vec![shell_id.clone()];
                 admission.charge()?;
-                ir.geometry.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id,
-                    shells,
-                    native_ref: None,
-                });
+                ir.geometry
+                    .regions
+                    .push(Region::new(region_id.clone(), body_id, shells));
                 admission.charge()?;
                 if edge_ids.is_empty() {
                     return Ok(counts);
@@ -704,15 +704,13 @@ fn transfer_closed_wire_loops(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let shells = vec![shell_id.clone()];
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region_id.clone(), body_id, shells));
         admission.charge()?;
         if owned_edge_ids.is_empty() {
             return Ok(counts);
@@ -986,7 +984,6 @@ pub(in crate::families) fn try_decode_zero_entity(
             admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
             admitted!(annotations.derived(&curve_id, "geometry").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotate(&mut annotations, &construction_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
-            admitted!(annotations.derived(&construction_id, "curve").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&construction_id, "definition").map_err(cadmpeg_core::CodecError::from));
             admitted!(admission.charge());
             ir.geometry.curves.push(Curve {
@@ -1102,7 +1099,24 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    let losses = vec![topology_loss.note(topology_message.to_string())];
+    let mut losses = vec![topology_loss.note(topology_message.to_string())];
+    if topology_counts.is_none() {
+        let face_records = support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref().map(|face| face.record_ordinal))
+            .collect::<std::collections::BTreeSet<_>>();
+        let code = topology_loss.kind();
+        losses.extend(face_records.into_iter().map(|ordinal| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+                    ordinal,
+                ),
+                format_args!("{code}: the face has no complete allocation graph or face geometry"),
+            )
+            .loss()
+        }));
+    }
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
@@ -1114,6 +1128,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()
@@ -1126,8 +1141,8 @@ mod tests {
     use crate::families::zero_entity::decode::closed_wire_loop_members;
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
         nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry,
     };
@@ -1477,7 +1492,7 @@ mod tests {
             )
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1607,7 +1622,7 @@ mod tests {
             Some([0.0, chord])
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1626,9 +1641,9 @@ mod tests {
             ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
                 .expect("identity grammar");
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1771,7 +1786,7 @@ mod tests {
             &definition
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )

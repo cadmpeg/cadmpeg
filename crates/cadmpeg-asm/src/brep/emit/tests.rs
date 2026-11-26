@@ -25,7 +25,8 @@ fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
 
 #[test]
 fn support_sides_move_pcurve_storage() {
-    use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SupportPcurve};
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::SupportPcurve;
     use cadmpeg_ir::math::Point2;
 
     let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -344,7 +345,7 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             assert_eq!(
                 out.vertices[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 tolerance
             );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
@@ -410,7 +411,8 @@ fn tolerant_vertex_refuses_nonfinite_leading_tolerance_at_read() {
 #[test]
 fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
     use crate::nurbs::proc_curve::nurbs_curve_parameter_domain;
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SpringLayout};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::SpringLayout;
 
     let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
     let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -601,8 +603,13 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             if reversed { reversed_range } else { range }
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::super::transfer::transfer_into_ir(&asm_decode_ctx, &mut ir, "f3d", out)
-            .expect("transfer the decoded curve and its support");
+        super::super::transfer::transfer_into_ir(
+            &asm_decode_ctx,
+            &mut ir,
+            cadmpeg_ir::codec_id!("f3d"),
+            out,
+        )
+        .expect("transfer the decoded curve and its support");
         let ProceduralCurveDefinition::Spring(spring) =
             ir.geometry.procedural_curves[0].definition()
         else {
@@ -675,7 +682,7 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     let (evaluated_wire, tolerance) = decode(Some(0.125));
     let (absent_wire, absent_tolerance) = decode(None);
     assert_eq!(
-        tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(1.25)
     );
     assert_eq!(absent_tolerance, None);
@@ -777,7 +784,8 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
 #[test]
 fn procedural_curve_admission_failures_keep_the_carrier() {
     use super::super::ProceduralCurveSource;
-    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::surface_curves::SilhouetteKind;
     use cadmpeg_ir::math::{Point3, Vector3};
 
     for (source, cause) in [
@@ -846,9 +854,11 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             SurfaceId::mint("f3d:brep:entity#support").unwrap(),
             Vector3::new(0.0, 0.0, 0.0),
         ),
-        Err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-            "silhouette fields are not finite or the light direction is degenerate"
-        ))
+        Err(
+            cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                "silhouette fields are not finite or the light direction is degenerate"
+            )
+        )
     ));
 }
 
@@ -1177,7 +1187,7 @@ fn legacy_tolerant_edge_tolerance_does_not_require_a_revision_field() {
             assert_eq!(
                 out.edges[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 (value > 0.0).then_some(0.2)
             );
             assert!(out.tolerant_edge_tails.is_empty());
@@ -1348,7 +1358,7 @@ fn a_tolerant_coedge_interval_off_its_knot_domain_by_noise_names_the_domain_end(
 fn a_reversed_intcurve_cache_reverses_its_support_pcurves() {
     use crate::brep::ProceduralCurveSource;
     use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::math::{Point2, Point3};
 
     for (record_reversed, edge_reversed, expected) in [
@@ -1437,7 +1447,7 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
     use crate::brep::ProceduralCurveSource;
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::eval::decode::curve_point;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, EdgeCarrier};

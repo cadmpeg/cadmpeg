@@ -11,7 +11,7 @@
 use crate::document::CadIr;
 use crate::index::identities::IdentitySet;
 use crate::report::{
-    check::{Check, Finding, ValidationReport},
+    check::{Check, Finding, Ruled, ValidationReport},
     loss::LossNote,
     Severity,
 };
@@ -22,8 +22,10 @@ use cadmpeg_core::CodecError;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
-mod carriers_parameterization;
-mod design;
+mod appearance_attributes;
+pub(crate) mod carriers_parameterization;
+mod cycles;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -34,6 +36,7 @@ mod physics;
 mod pmi;
 mod point_clouds;
 mod presentation;
+pub(crate) mod process;
 mod products;
 mod referential_integrity;
 mod semantic_annotations;
@@ -59,27 +62,33 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing,
-    check_shell_connectivity, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
+    check_partial_topology, check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
+use topology::nested::NestRules;
+use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
+
+/// Every topology rule, with procedural curves compared with their solved
+/// carriers: the rules validation runs on a history body's nest.
+const ALL_NEST_RULES: NestRules = NestRules::All { caches: true };
 
 fn record_finding(
     findings: &mut Vec<Finding>,
     check: Check,
     severity: Severity,
     entity: Option<&str>,
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
-    let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: message.rule.clone(),
         severity,
-        message,
+        message: std::fmt::format(message.message),
         entity,
     });
 }
@@ -90,12 +99,13 @@ fn record_related_finding(
     severity: Severity,
     entity: &str,
     related: &[&str],
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
     let mut finding = Finding {
         check,
+        rule: message.rule.clone(),
         severity,
-        message: std::fmt::format(message),
+        message: std::fmt::format(message.message),
         entity: Some(entity.to_owned()),
         related: Vec::new(),
     };
@@ -107,14 +117,36 @@ fn record_related_finding(
     findings.push(finding);
 }
 
-/// Validate `ir` and copy `losses` into the returned report unchanged.
+/// The refusal of a chain of state bases `depth` states long where it is
+/// past the caller's ceiling `limit`: a refusal of the session, and no
+/// finding on the document (§2.5).
+fn state_chain_refusal(limit: u64, depth: u64) -> Option<CodecError> {
+    let additional = depth
+        .checked_sub(limit)
+        .filter(|additional| *additional > 0)?;
+    Some(CodecError::ResourceLimit(
+        cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
+            dimension: cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+            limit,
+            used: limit,
+            additional,
+            operation: "CADIR state base chain depth",
+        },
+    ))
+}
+
+/// Validate `ir`, running `nests` on each history body's nest, and copy
+/// `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    validate_model_with_index(ctx, ir, losses, &index)
+    validate_model_with_index(ctx, ir, losses, &index, nests)
 }
 
 fn validate_model_with_index<'ir>(
@@ -122,6 +154,7 @@ fn validate_model_with_index<'ir>(
     ir: &'ir CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'ir>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
 
@@ -129,49 +162,93 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
+    check_procedural_owners(ir, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
-    check_coedge_pairing(ir, &mut findings)?;
-    check_child_list_reciprocity(ir, &mut findings);
-    check_closed_edges(ir, &mut findings);
-    check_shell_connectivity(ir, &mut findings);
-    check_wire_topology(ir, &mut findings);
-    if ir.fragment {
-        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
-            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
-    } else {
-        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
-    }
+    check_topology_rules(ctx, ids, ids.native_view(), true, &mut findings)?;
     check_native_links(ids.native_view(), ids, &mut findings);
-    check_parameter_domains(ctx, ir, &mut findings)?;
-    check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
-    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
-    check_pcurve_surface_consistency(ctx, ids, &evaluations, &mut findings)?;
-    check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
-    evaluations.report(&mut findings);
-    check_topology_tolerances(ir, &mut findings);
-    check_subdivision_schemes(ir, &mut findings);
-    check_tessellations(ir, &mut findings);
+    check_tessellations(ids, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
     physics::check_physics(ir, &mut findings);
     point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
+    appearance_attributes::check_appearance_attributes(ir, ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
-    history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
-    design::check_design(ctx, ir, ids, &mut findings)?;
+    history_bodies::check_history_bodies(ctx, ir, ids, nests, &mut findings)?;
+    process::check_design_and_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
         findings,
         losses,
     })
+}
+
+/// The rules of part 10 that read the records of one `Topology`: radial
+/// rings, child lists, edges with no vertex, shell connectivity, partial
+/// records, wire members, carrier reachability, parameter domains, the
+/// coincidence of an edge's curve, a coedge's use curve, and a coedge's
+/// pcurves with the vertices, topology tolerances, and subdivision schemes.
+/// `index` holds the topology as the geometry of its document; `reach` is
+/// the document whose records also reach carriers. With `caches`, each
+/// procedural curve is compared with its solved carrier (Caches, K2).
+fn check_topology_rules(
+    ctx: &DecodeContext<'_>,
+    index: &crate::index::ModelIndex<'_>,
+    reach: crate::native::view::NativeView<'_>,
+    caches: bool,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let ir = index.ir();
+    check_coedge_pairing(ir, findings)?;
+    check_child_list_reciprocity(ir, findings);
+    check_closed_edges(ir, findings);
+    check_shell_connectivity(index, findings);
+    check_loopless_faces(index, findings);
+    check_solid_edge_uses(index, findings);
+    check_partial_topology(ir, findings);
+    check_wire_topology(ir, findings);
+    if reach.ir.fragment {
+        record_finding(findings, Check::FragmentSkipped, Severity::Info, None,
+            crate::rule!("validate.skipped-carrier-reachability-document-wide-ownership", "skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
+    }
+    check_parameter_domains(ctx, ir, findings)?;
+    check_edge_endpoint_consistency(ctx, index, findings)?;
+    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
+    check_pcurve_surface_consistency(ctx, index, &evaluations, findings)?;
+    if caches {
+        check_procedural_support_consistency(ctx, index, &evaluations, findings)?;
+    }
+    evaluations.report(findings);
+    check_topology_tolerances(ir, findings);
+    check_subdivision_schemes(&ir.geometry, findings);
+    Ok(())
+}
+
+/// `finding` on a record of a topology that the record `holder` holds, as a
+/// finding of `check` on `holder`: the message names `what` and the record,
+/// which leads the related entities.
+fn nested_finding(mut finding: Finding, check: Check, holder: &str, what: &str) -> Finding {
+    finding.message = match &finding.entity {
+        Some(entity) => format!("{what}: record {entity}: {}", finding.message),
+        None => format!("{what}: {}", finding.message),
+    };
+    if let Some(entity) = finding.entity.take() {
+        finding.related.insert(0, entity);
+    }
+    finding.related.retain(|id| id != holder);
+    finding.entity = Some(holder.to_owned());
+    finding.check = check;
+    finding
 }
 
 /// Validate an application-owned document under the explicit standalone policy.
@@ -215,9 +292,10 @@ fn validate_model_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, nests)?;
     validate_annotations(
         ctx,
         &index,
@@ -236,7 +314,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
         let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-        validate_model_with_index(ctx, ir, losses, &index)
+        validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)
     })
 }
 
@@ -251,7 +329,7 @@ pub fn validate_neutral_for_decode(
     ir: &CadIr,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    validate_model(ctx, ir, losses)
+    validate_model(ctx, ir, losses, ALL_NEST_RULES)
 }
 
 /// Validate an application-owned model together with borrowed annotations.
@@ -260,7 +338,9 @@ pub fn validate_neutral_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    standalone_validation(|ctx| validate_model_with_annotations(ctx, ir, annotations, losses))
+    standalone_validation(|ctx| {
+        validate_model_with_annotations(ctx, ir, annotations, losses, ALL_NEST_RULES)
+    })
 }
 
 /// Validate an application-owned model together with its decode-time source sidecar.
@@ -282,7 +362,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)?;
     validate_annotations(
         ctx,
         &index,
@@ -293,25 +373,28 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
             .map(crate::ids::UnknownId::as_str),
         &mut report.findings,
     )?;
+    products::decode_set::check_file_digests(ir, source_fidelity, &mut report.findings);
     Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::validate_neutral;
+    use crate::features::direct_edit::{SplitBodyTool, SplitFaceTool};
+    use crate::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
+    use crate::features::selections::{BodySelection, FaceSelection};
     use crate::features::{
-        BodySelection, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane,
-        SplitBodyTool, SplitFaceTool,
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn validation_finding_keeps_absent_identity_and_formatted_message() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
             super::record_finding(
@@ -319,7 +402,7 @@ mod tests {
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
-                format_args!("unresolved reference {}", 7),
+                crate::rule!("test.unresolved-reference", "unresolved reference {}", 7),
             );
         }
         assert_eq!(findings.len(), 2);
@@ -350,13 +433,13 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -387,15 +470,15 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: Some(crate::features::DistinctMembers::default()),
+            bodies: Some(crate::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: crate::features::DistinctMembers::default(),
+                    evaluation: crate::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: crate::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     }),
@@ -420,13 +503,14 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
@@ -482,7 +566,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                serde_json::from_slice(bytes).unwrap();
+                json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -499,13 +583,13 @@ mod tests {
                     ordinal: 0,
                     name: None,
                     suppressed: Some(false),
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     source_properties: BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
                     native_ref: None,
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                    evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                         if configuration_local {
                             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                                 targets: FaceSelection::Unresolved,
@@ -527,15 +611,18 @@ mod tests {
                         material: None,
                         properties: BTreeMap::default(),
                         parameter_overrides: BTreeMap::default(),
-                        bodies: Some(crate::features::DistinctMembers::default()),
+                        bodies: Some(crate::features::selections::DistinctMembers::default()),
                         parameter_values: BTreeMap::default(),
                         feature_states: BTreeMap::from([(
                             feature_id.clone(),
                             ConfigurationFeatureState {
-                                evaluation: crate::features::ConfigurationEvaluation::Active {
-                                    outputs: crate::features::DistinctMembers::default(),
-                                },
-                                dependencies: crate::features::DistinctMembers::default(),
+                                evaluation:
+                                    crate::features::parameters::ConfigurationEvaluation::Active {
+                                        outputs:
+                                            crate::features::selections::DistinctMembers::default(),
+                                    },
+                                dependencies: crate::features::selections::DistinctMembers::default(
+                                ),
                                 definition,
                             },
                         )]),
@@ -578,12 +665,13 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
@@ -647,12 +735,13 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
@@ -686,7 +775,7 @@ mod tests {
                     FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
                         targets: BodySelection::Unresolved,
                         plane: tool,
-                        keep: crate::features::BodyTrimSide::Reverse,
+                        keep: crate::features::operation_settings::BodyTrimSide::Reverse,
                     }),
                 ),
             ];
@@ -707,14 +796,11 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = serde_json::to_value(&tool).expect("serialize tool");
-            assert_eq!(
-                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
-                tool
-            );
+            let wire = json::to_value(&tool).expect("serialize tool");
+            assert_eq!(json::from_value::<SplitBodyTool>(wire).expect("tool"), tool);
         }
-        assert!(serde_json::from_value::<SplitBodyTool>(
-            serde_json::json!({"kind": "planes", "value": []})
+        assert!(json::from_value::<SplitBodyTool>(
+            cadmpeg_core::json!({"kind": "planes", "value": []})
         )
         .is_err());
     }

@@ -48,7 +48,11 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -64,7 +68,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less torus encode");
     let round_trip = F3dCodec
@@ -87,7 +91,11 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
@@ -118,7 +126,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less NURBS surface encode");
     let round_trip = F3dCodec
@@ -144,7 +152,11 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
@@ -172,7 +184,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS surface encode");
     let round_trip = F3dCodec
@@ -199,7 +211,11 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let curve_id = CurveId::mint("generated:test:nurbs_curve#0").expect("identity grammar");
     let expected = SolvedCurveGeometry::Nurbs(
@@ -234,7 +250,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS curve encode");
     let round_trip = F3dCodec
@@ -264,13 +280,17 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = source_less.geometry.pcurves[0].clone();
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less inline pcurve encode");
     let round_trip = F3dCodec
@@ -337,7 +357,11 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let pcurve = &mut source_less.geometry.pcurves[0];
     pcurve.geometry = PcurveGeometry::Line(
@@ -367,7 +391,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line pcurve encode");
     let round_trip = F3dCodec
@@ -403,7 +427,11 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = source_less.geometry.pcurves[0].clone();
     assert!(matches!(
@@ -414,7 +442,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational pcurve encode");
     let round_trip = F3dCodec
@@ -443,7 +471,11 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected_surface = SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -476,7 +508,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less shared-edge encode");
     let round_trip = F3dCodec
@@ -536,7 +568,11 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
 
     let loop_id = LoopId::mint("generated:test:loop#1").expect("identity grammar");
@@ -550,8 +586,10 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             .points
             .push(cadmpeg_ir::topology::Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    x, y, z,
+                ))
+                .expect("a finite position is a point"),
                 None,
             ));
         let vertex_id = VertexId::mint(format!("generated:test:inner_vertex#{index}"))
@@ -613,7 +651,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     });
     let face_loops = source_less.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id))
         .collect();
@@ -621,7 +659,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multiple-loop encode");
     let round_trip = F3dCodec
@@ -629,7 +667,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         .expect("source-less multiple-loop round trip");
     assert_eq!(round_trip.ir().geometry.faces.len(), 1);
     assert_eq!(round_trip.ir().geometry.loops.len(), 2);
-    assert_eq!(round_trip.ir().geometry.faces[0].loops.len(), 2);
+    assert_eq!(round_trip.ir().geometry.faces[0].loops.stated().count(), 2);
     assert_eq!(round_trip.ir().geometry.coedges.len(), 6);
     assert_eq!(round_trip.ir().geometry.edges.len(), 6);
 }
@@ -660,7 +698,11 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
 
     let expected_surface = SolvedSurfaceGeometry::Nurbs(
@@ -724,7 +766,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face NURBS encode");
     let round_trip = F3dCodec
@@ -777,7 +819,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
         }];
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less unit cube encode");
     {
@@ -882,7 +924,11 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected_surface = SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -923,7 +969,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face torus encode");
     let round_trip = F3dCodec
@@ -960,7 +1006,11 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1008,7 +1058,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face analytic encode");
     let round_trip = F3dCodec
@@ -1028,11 +1078,17 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = source_less.geometry.procedural_surfaces[0].clone();
     let directrix_id = match expected.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload,
+        ) => {
             let directrix = definition_payload.directrix();
             {
                 directrix.clone()
@@ -1062,7 +1118,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less extrusion encode");
     let round_trip = F3dCodec
@@ -1072,8 +1128,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let actual = &round_trip.ir().geometry.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-        actual.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+        definition_payload,
+    ) = actual.definition()
     else {
         panic!("expected extrusion definition")
     };
@@ -1112,7 +1169,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         Some([0.25, 0.75])
     );
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1123,7 +1180,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
 /// has no tail and keeps writing the compact record.
 #[test]
 fn generated_source_less_writes_revision_gated_extrusion_definition() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1134,7 +1191,11 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = source_less.geometry.procedural_surfaces[0].clone();
     let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = expected.definition() else {
@@ -1142,7 +1203,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     };
     let Some(form) = definition_payload_0
         .revision_form()
-        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw)
     else {
         panic!("expected a revision-gated extrusion")
     };
@@ -1158,7 +1219,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     assert_eq!(
         expected
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
 
@@ -1181,7 +1242,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         };
         let mut revision_form = definition_payload_0
             .revision_form()
-            .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
+            .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw);
         let Some(form) = &mut revision_form else {
             unreachable!("revision-gated extrusion")
         };
@@ -1195,8 +1256,8 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
                 definition_payload_0.direction().get(),
                 definition_payload_0
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
-                cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(revision_form),
             )
             .unwrap();
     });
@@ -1218,7 +1279,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
 /// It regenerates from that parameterization, with no cache to draw on.
 #[test]
 fn generated_source_less_writes_parameterized_extrusion_definition() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1231,7 +1292,11 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = source_less.geometry.procedural_surfaces[0].clone();
     assert_eq!(expected.cache_fit_tolerance(), None);
@@ -1250,7 +1315,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     };
     let Some(form) = definition_payload_0
         .revision_form()
-        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw)
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
@@ -1264,7 +1329,8 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
 
 #[test]
 fn generated_cacheless_translational_extrusion_retains_exact_construction() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedCurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SurfaceGeometry};
 
     let decoded = F3dCodec
         .decode(
@@ -1292,7 +1358,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded
@@ -1333,7 +1399,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         .expect("extrusion surface carrier");
     let surface_point = cadmpeg_ir::eval::model_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        decoded.ir(),
+        &cadmpeg_ir::index::ModelIndex::new_model_only(decoded.ir()),
         surface_geometry,
         u,
         v,
@@ -1359,11 +1425,15 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-less extrusion encode");
     let round_trip = F3dCodec
@@ -1397,20 +1467,20 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cache-less extrusion tolerance must be rejected");
-    assert!(error
-        .to_string()
-        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "cache-less F3D extrusion cannot carry a cache-fit tolerance",
+    );
 }
 
 #[test]
 fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
-    use cadmpeg_ir::geometry::{
-        CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let decoded = F3dCodec
@@ -1422,7 +1492,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let directrix = source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
@@ -1436,11 +1510,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 Vector3::new(0.0, 0.0, -20.0),
                 definition_payload
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
-                cadmpeg_ir::geometry::CacheContract::from_form(
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                     definition_payload
                         .revision_form()
-                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
+                        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw),
                 ),
             )
             .unwrap();
@@ -1468,7 +1542,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle extrusion encode");
     let round_trip = F3dCodec
@@ -1517,10 +1591,16 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let supports = match source_less.geometry.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) => {
             let supports = definition_payload.supports();
 
             supports.each_ref().map(|support| {
@@ -1534,7 +1614,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         _ => panic!("expected rolling-ball definition"),
     };
     let spine = match source_less.geometry.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) => {
             let spine = definition_payload.spine();
 
             spine.clone().expect("rolling-ball spine")
@@ -1592,7 +1674,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
@@ -1602,8 +1684,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let actual = &round_trip.ir().geometry.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
-        actual.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+        definition_payload,
+    ) = actual.definition()
     else {
         unreachable!()
     };
@@ -1654,10 +1737,12 @@ fn subset_state(
         .procedural_curves
         .iter()
         .find_map(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) => Some((
-                ir.geometry.procedural_curve_owner(&procedural.id)?,
-                subset.parameter_range().endpoints(),
-            )),
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) => {
+                Some((
+                    ir.geometry.procedural_curve_owner(&procedural.id)?,
+                    subset.parameter_range().endpoints(),
+                ))
+            }
             _ => None,
         })
         .expect("subset construction");
@@ -1691,7 +1776,11 @@ fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let (interval, cache, ranges) = subset_state(&source_less);
     assert_eq!(interval, [-1.5, 3.5]);
@@ -1706,7 +1795,7 @@ fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less subset curve encode");
     let round_trip = F3dCodec

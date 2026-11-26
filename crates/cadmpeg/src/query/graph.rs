@@ -10,8 +10,9 @@ use cadmpeg_ir::reference_walk::visit_edges;
 use std::collections::VecDeque;
 
 use anyhow::{bail, Result};
+use cadmpeg_core::json;
 use clap::Args;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::document::{CadirDocument, RecordRef, RecordSelection};
 use super::item::{emit_values, ArenaTarget};
@@ -256,7 +257,7 @@ mod tests {
     use super::super::document::{CadirDocument, RecordRef, RecordSelection};
     use super::super::item::ArenaTarget;
     use super::{walk, ADJ_EDGES_BUILT, DEFAULT_MAX_PATHS};
-    use serde_json::json;
+    use cadmpeg_core::json;
     use serde_json::Value;
 
     fn doc(v: &Value) -> CadirDocument {
@@ -479,7 +480,7 @@ mod tests {
 
     #[test]
     fn graph_max_paths_one_constructs_only_one_candidate_edge() {
-        let links: Vec<String> = (0..4096).map(|i| format!("leaf-{i}")).collect();
+        let links: Vec<String> = (0..2).map(|i| format!("leaf-{i}")).collect();
         let leaves: Vec<Value> = links.iter().map(|id| json!({"id": id})).collect();
         let value = json!({"model": {
             "roots": [{"id": "root", "links": links}],

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Angular sense and stored end faces of CC0 recipe revolutions.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureOperation, RevolveExtent};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
@@ -43,9 +47,12 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
         let FeatureOperation::Revolve { construction, op } = operation else {
             unreachable!()
         };
-        assert_eq!(*op, BooleanOp::Join);
+        assert_eq!(*op, BooleanOp::NewBody);
         let axis = construction.axis().expect("axis");
-        assert_eq!(axis.origin, cadmpeg_ir::features::FinitePoint3::ZERO);
+        assert_eq!(
+            axis.origin,
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO
+        );
         assert!((axis.direction.z - 1.0).abs() < EPS_RECIPE_ANGLE);
         assert!(axis.reference.is_some());
         let extent = construction.extent().expect("extent");
@@ -73,10 +80,14 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
                 assert!((angle(termination) - first.to_radians()).abs() < EPS_RECIPE_ANGLE);
             }
         }
-        let ctx = cadmpeg_test_support::service_decode_context();
+        // The revolution is its Body's `Tip`: the Body's current state holds
+        // the state after it (§5.4).
+        let state = crate::test_support::state_of(ir, "Revolution", false)
+            .expect("state after the revolution");
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let measured = Measurer::new(
             MeasureInput {
-                ir,
+                ir: &state,
                 fidelity: None,
                 geometry_transferred: true,
             },
@@ -90,7 +101,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
             },
         )
         .expect("stored shape measurement");
-        let report = serde_json::to_value(measured).expect("measurement JSON");
+        let report = json::to_value(measured).expect("measurement JSON");
         let (start, end) = if symmetric {
             (-first / 2.0, first / 2.0)
         } else {
@@ -108,10 +119,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
                     .expect("faces")
                     .iter()
                     .any(|face| {
-                        if !face["face"]
-                            .as_str()
-                            .is_some_and(|id| id.contains("Revolution:Shape:"))
-                        {
+                        if face["face"].as_str().is_none() {
                             return false;
                         }
                         if face["carrier"]["kind"] != "plane"

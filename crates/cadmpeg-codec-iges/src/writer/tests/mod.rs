@@ -16,6 +16,7 @@ use super::isoparametric_flag;
 use super::number;
 use super::oriented_curve_entity;
 use super::orthonormal_pair;
+use super::records::TopologyIndex;
 use super::surface_entities;
 use super::validate_arc_sweep;
 use super::CurveSpan;
@@ -29,12 +30,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -62,13 +65,23 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod body_placement;
+mod cages;
 mod closed_edge_range;
+mod covered_uses;
+mod design_content;
 mod encode;
+mod exact_equivalents;
 mod extrusion_directrix;
+mod native_omissions;
+mod native_restatement;
+mod open_shell_restatement;
 mod ownership;
+mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
+mod revolved_restatement;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
@@ -78,6 +91,7 @@ fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTax
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 
@@ -87,11 +101,12 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
         cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
+            | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
 }
 
 #[test]
-fn rejects_mixed_unclassified_bounded_surface_representation() {
+fn completes_a_mixed_unclassified_plane_boundary_with_computed_parameter_curves() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
@@ -101,14 +116,14 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
     {
         let mut ir = decoded.ir_mut();
         for face in &mut ir.geometry.faces {
-            let ids = face.loops.to_vec();
+            let ids = face.loops.stated().cloned().collect::<Vec<_>>();
             face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir
@@ -140,47 +155,78 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .retain(|pcurve| used_pcurves.contains(&pcurve.id));
     }
 
-    let result = IgesCodec.plan(
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the representable part is written");
+    let losses = &plan.report().losses;
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
+        "{losses:#?}"
     );
-    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("the file is written");
+    let read = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let geometry = &read.ir().geometry;
+    assert_eq!(geometry.faces.len(), decoded.ir().geometry.faces.len());
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()));
+}
+
+fn line_pcurve(id: &str, direction: [f64; 2]) -> Pcurve {
+    Pcurve {
+        id: id.try_into().expect("valid identity"),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(direction[0], direction[1]),
+            )
+            .expect("valid LinePcurve fixture"),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+        native_ref: None,
+    }
 }
 
 #[test]
-fn type_508_requires_an_explicit_isoparametric_flag() {
-    let pcurve = PcurveUse {
-        pcurve: "test:model:pcurve#type-508"
-            .try_into()
-            .expect("valid identity"),
-        isoparametric: Some(false),
+fn type_508_writes_the_stated_isoparametric_flag_else_derives_it() {
+    let mut ir = CadIr::empty();
+    ir.geometry
+        .pcurves
+        .push(line_pcurve("test:model:pcurve#constant-u", [0.0, 2.0]));
+    ir.geometry
+        .pcurves
+        .push(line_pcurve("test:model:pcurve#diagonal", [1.0, 1.0]));
+    let index = TopologyIndex::new(&ir);
+    let uses = |id: &str, isoparametric| PcurveUse {
+        pcurve: id.try_into().expect("valid identity"),
+        isoparametric,
         parameter_range: None,
     };
     assert_eq!(
-        isoparametric_flag(&pcurve, "loop").expect("explicit false is supported"),
-        0
-    );
-
-    assert_eq!(
-        isoparametric_flag(
-            &PcurveUse {
-                isoparametric: Some(true),
-                ..pcurve.clone()
-            },
-            "loop"
-        )
-        .expect("explicit true is supported"),
+        isoparametric_flag(&uses("test:model:pcurve#diagonal", Some(true)), &index),
         1
     );
-
-    let pcurve = PcurveUse {
-        isoparametric: None,
-        ..pcurve
-    };
-    assert!(matches!(
-        isoparametric_flag(&pcurve, "loop"),
-        Err(CodecError::NotImplemented(_))
-    ));
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#constant-u", Some(false)), &index),
+        0
+    );
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#constant-u", None), &index),
+        1
+    );
+    assert_eq!(
+        isoparametric_flag(&uses("test:model:pcurve#diagonal", None), &index),
+        0
+    );
 }
 
 #[test]
@@ -248,13 +294,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ir.geometry.points.extend([
         Point::new(
             point_start.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             point_end.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -300,7 +346,8 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&ir).expect("compute the generated minimum resolution")
+        (generated_minimum_resolution(&TopologyIndex::new(&ir))
+            .expect("compute the generated minimum resolution")
             - expected)
             .abs()
             <= f64::EPSILON * 64.0
@@ -312,7 +359,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#global-profile").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -369,7 +416,14 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
+        let global_bytes = generated_global(
+            version,
+            timestamp,
+            real(0.001),
+            real(1000.0),
+            &crate::writer::source_global::GlobalRestatement::default(),
+            &mut Vec::new(),
+        );
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
@@ -409,7 +463,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -515,6 +569,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
+        restates: Vec::new(),
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
         let entities = emitted_forms
@@ -566,6 +621,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
+        restates: Vec::new(),
     };
     assert!(matches!(
         ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
@@ -694,7 +750,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     ];
     for (geometry, expected_type) in cases {
         let entities = surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             geometry.solved().expect("solved carrier"),
             0,
             IgesVersion::V5_3,
@@ -721,7 +777,7 @@ fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
     .expect("the IR admits a finite signed cone angle");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Cone(cone),
             0,
             IgesVersion::V5_3
@@ -741,7 +797,7 @@ fn negative_sphere_radius_is_not_implemented() {
     .expect("the IR admits a negative nonzero sphere radius");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Sphere(sphere),
             0,
             IgesVersion::V5_3
@@ -763,7 +819,7 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
         .expect("the IR admits any finite nonzero tube radius");
         assert!(matches!(
             surface_entities(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &SolvedSurfaceGeometry::Torus(torus),
                 0,
                 IgesVersion::V5_3
@@ -911,7 +967,8 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 
 #[test]
 fn generated_parameter_layout_uses_its_own_input_allowance() {
-    let payload_len = 20 * 1024 * 1024;
+    // Just over the 16 MiB retained allowance of a context with no input bytes.
+    let payload_len = 16 * 1024 * 1024 + 1;
     let mut parameter_body = format!("{payload_len}H").into_bytes();
     parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
     parameter_body.push(b';');
@@ -922,12 +979,15 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
+        restates: Vec::new(),
     };
     assert!(encode_file(
         &[entity],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,
         0.001,
+        &crate::writer::source_global::GlobalRestatement::default(),
+        &mut Vec::new(),
     )
     .is_ok());
 }
@@ -1080,7 +1140,8 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, outer_id);
 }
 
@@ -1136,7 +1197,8 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
     assert!(face_outer_loop(&face, &ordered).is_none());
 }
@@ -1220,7 +1282,7 @@ fn negative_nurbs_weights_are_not_implemented() {
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Nurbs(surface),
             0,
             IgesVersion::V5_3
@@ -1248,7 +1310,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Nurbs(surface),
             0,
             IgesVersion::V5_3

@@ -130,10 +130,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE3",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -162,10 +159,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE4",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -194,10 +188,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE5",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -226,10 +217,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE6",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -258,10 +246,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE7",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         },
         {
@@ -290,10 +275,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE1",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         },
         {
@@ -322,10 +304,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE2",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],
@@ -595,10 +574,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURFACE",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -630,37 +606,246 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D15",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D15"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE5"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D17",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D17"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE6"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D19",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D19"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE7"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
-      "product_definitions": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D37",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D31",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D33",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D37:D35",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D13",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D15",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D17",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D19",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
+      "product_definitions": [
+        {
+          "bodies": [
+            "iges:model:body#D37"
+          ],
+          "bom_properties": {},
+          "id": "iges:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -3677,8 +3862,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -3714,13 +3897,20 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "author": "author",
+        "drafting_standard": "0",
+        "iges_version_flag": "11",
+        "model_scale": "1",
         "native_file_name": "part.igs",
+        "native_system_id": "cadmpeg",
         "native_units": "MM",
+        "organization": "org",
         "parameter_delimiter": ",",
+        "preprocessor_version": "0.1",
         "record_delimiter": ";",
         "representation": "fixed-ascii",
-        "sender_product": "product"
+        "sender_product": "product",
+        "units_flag": "2"
       },
       "identity": {
         "dialects": {
@@ -3952,6 +4142,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "17bc10c0819c0351a973cca5eca4fff0e9f0c843415c6d6c8ff64e444e7d159c",
     "file_digests": {},
     "retained_records": {

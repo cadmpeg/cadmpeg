@@ -5,6 +5,7 @@ use crate::feature::tests::{
     raw_parameter, reference, reference_list, test_feature, test_property,
 };
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 
 struct Fixture {
@@ -143,12 +144,14 @@ fn definition() -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: SweepShape::Solid {
             op: SolidSweepOperation::NewBody,
-            section: SweepSection::Profile(cadmpeg_ir::features::PlanarProfileRef::native(
-                "synthetic:profile#p".into(),
-            )),
+            section: SweepSection::Profile(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::native(
+                    "synthetic:profile#p".into(),
+                ),
+            ),
             sections: Vec::new(),
         },
-        path: Some(cadmpeg_ir::features::PathRef::Native(
+        path: Some(cadmpeg_ir::features::profiles::PathRef::Native(
             "synthetic:path#p".into(),
         )),
         orientation: None,
@@ -314,9 +317,9 @@ fn projection_emits_the_first_refused_sweep_check() {
 #[test]
 fn validator_refuses_unrepresented_sweep_controls() {
     for field in ["path_tangent", "linearize"] {
-        let mut value = serde_json::to_value(definition()).expect("definition");
-        value["value"]["value"][field] = serde_json::json!(true);
-        let value = serde_json::from_value(value).expect("changed definition");
+        let mut value = json::to_value(definition()).expect("definition");
+        value["value"]["value"][field] = cadmpeg_core::json!(true);
+        let value = json::from_value(value).expect("changed definition");
         assert!(!Fixture::new().validates(&value));
     }
 }

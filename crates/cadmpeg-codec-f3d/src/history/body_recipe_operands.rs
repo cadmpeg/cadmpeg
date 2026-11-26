@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind body-recipe operands to preceding history bodies.
 
-use super::body_index::CompleteBodyIndex;
-use super::{
-    active_brep_face_matches_source, bodies_touching, effective_scope_previous_history_state_id,
-    face_changes_across_state_chain, historical_brep_source, history_state_index,
-    history_state_indexes, projection_was_finalized, selection, stable_ref,
-    unique_history_state_pair, visit_state_groups_oldest_first, BindingHistories,
+use super::binding_histories::{
+    history_state_indexes, visit_state_groups_oldest_first, BindingHistories,
 };
+use super::body_closures::{bodies_touching, stable_ref};
+use super::body_index::CompleteBodyIndex;
+use super::face_boundaries::face_changes_across_state_chain;
+use super::face_resolution::{active_brep_face_matches_source, historical_brep_source};
+use super::history_states::{
+    effective_scope_previous_history_state_id, history_state_index, unique_history_state_pair,
+};
+use super::{projection_was_finalized, selection};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use std::collections::{BTreeSet, HashMap};
 
@@ -95,6 +99,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 bodies_touching(topology, &face_slots.iter().collect::<Vec<_>>())
             }
             .map(Vec::into_iter);
+            let closures_read = body_slots.is_some();
             let mut complete_bodies = None;
             for position in bound {
                 let Some(operand) = operands.get_mut(position) else {
@@ -106,15 +111,21 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
-                // When every face clause reaches a body of this state, the
-                // body whose last persistent design link is the recipe's
-                // design pair is the selected body.
-                let clauses_reach_state = !operand.references().is_empty()
-                    && operand
-                        .references()
+                // When every face clause reaches a body of this state, or every
+                // clause has candidate faces and all of them are outside it, the
+                // body whose last persistent design link is the recipe's design
+                // pair is the selected body.
+                let references = operand.references();
+                let design_link_applies = closures_read
+                    && !references.is_empty()
+                    && (references
                         .iter()
-                        .all(|reference| !reference.preceding_body_slots.is_empty());
-                if let Some(body) = clauses_reach_state
+                        .all(|reference| !reference.preceding_body_slots.is_empty())
+                        || references.iter().all(|reference| {
+                            !reference.candidate_faces.is_empty()
+                                && reference.preceding_candidate_faces.is_empty()
+                        }));
+                if let Some(body) = design_link_applies
                     .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))
                     .flatten()
                 {
@@ -302,11 +313,13 @@ fn resolve_body_recipe_operand_preceding_body(
     }
 }
 
-fn body_recipe_operand_history_pair<'a>(
+/// The state pair of a body recipe operand, and whether the BREP of its
+/// candidate faces selects the history among several that hold the pair.
+pub(super) fn body_recipe_operand_history_pair<'a>(
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &'a [AsmHistory],
-) -> Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)> {
+) -> Option<((&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState), bool)> {
     let stream = crate::ids::native_stream(&operand.id)?;
     let mut matching_scopes = scopes.iter().filter(|scope| {
         scope.record_index == operand.scope_record_index
@@ -318,9 +331,16 @@ fn body_recipe_operand_history_pair<'a>(
     }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
-    let (history, state, previous) =
-        unique_history_state_pair(histories, state_id, previous_state_id)?;
-    Some((history, state, previous))
+    if let Some(pair) = unique_history_state_pair(histories, state_id, previous_state_id) {
+        return Some((pair, false));
+    }
+    super::linked_states::operand_brep_history_state_pair(
+        operand,
+        histories,
+        state_id,
+        previous_state_id,
+    )
+    .map(|pair| (pair, true))
 }
 
 /// History, state and previous-state indexes of a body recipe operand.
@@ -329,7 +349,8 @@ fn body_recipe_operand_state_indexes(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) -> Option<(usize, usize, usize)> {
-    let (history, state, previous) = body_recipe_operand_history_pair(operand, scopes, histories)?;
+    let ((history, state, previous), _) =
+        body_recipe_operand_history_pair(operand, scopes, histories)?;
     let (history_index, state_index) = history_state_indexes(histories, history, state)?;
     let (_, previous_index) = history_state_indexes(histories, history, previous)?;
     Some((history_index, state_index, previous_index))

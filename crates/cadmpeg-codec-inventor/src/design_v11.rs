@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
@@ -18,10 +18,11 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::CadIr;
 
+pub(crate) mod assembly;
 mod datums;
 mod operations;
 mod parameters;
-mod sheet_metal;
+pub(crate) mod sheet_metal;
 mod sketches;
 
 pub(crate) fn project(
@@ -56,25 +57,189 @@ pub(crate) fn project(
                 .map(|record| (record.id(), record.header.flags)),
         )
         .collect();
-    project_history(ctx, ir, &flags)?;
+    project_history(ctx, ir, &flags, !features.sheet_metal_styles.is_empty())?;
     parameters::project(ctx, ir, parameters, units)?;
-    sketches::project(ctx, ir)?;
+    losses.extend(sketches::project(ctx, ir)?);
     datums::project(ctx, ir)?;
     sheet_metal::project(ctx, ir, features, parameters, losses)?;
-    operations::project(ctx, ir, losses)
+    operations::project(ctx, ir, losses)?;
+    sheet_metal::attachments::project(ir, features)?;
+    losses.extend(sheet_metal::feature_reliefs(ir, features, parameters));
+    place_current_bodies(ir)?;
+    Ok(())
+}
+
+pub(crate) fn unproduced_bodies(ir: &CadIr) -> usize {
+    ir.design
+        .scopes
+        .iter()
+        .map(|scope| scope.unproduced.len())
+        .sum()
+}
+
+/// Whether a member before the rollback of `timeline` can change a state
+/// (§5.4), so that the member produces the timeline's current bodies (§5.5).
+pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool, CodecError> {
+    let Container::Ordered {
+        members, rollback, ..
+    } = timeline
+    else {
+        return Ok(false);
+    };
+    let end = match rollback {
+        None | Some(Rollback::End) => members.len(),
+        Some(Rollback::Before(member)) => members
+            .iter()
+            .position(|candidate| candidate == member)
+            .ok_or_else(|| CodecError::malformed("Inventor v11 rollback names no member"))?,
+    };
+    for member in &members[..end] {
+        let Member::Feature(id) = member else {
+            continue;
+        };
+        if !ir
+            .is_stateless(id, None)
+            .map_err(|error| CodecError::malformed(error.to_string()))?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Checks each part scope's states through the IR's checked state resolver:
+/// every current state and evaluation resolves, and the part owns every
+/// body of a current state's extent.
+pub(crate) fn validate_states(
+    ir: &CadIr,
+    limits: &cadmpeg_core::decode::ResourceLimits,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let mut findings = Vec::new();
+    let mut fail = |message: String, entity: Option<String>| {
+        findings.push(cadmpeg_ir::report::check::Finding {
+            check: cadmpeg_ir::report::check::Check::NativeLinks,
+            rule: cadmpeg_ir::rule_name!("inventor/design_v11.state-admission"),
+            severity: cadmpeg_ir::report::Severity::Error,
+            message,
+            entity,
+            related: Vec::new(),
+        });
+    };
+    for scope in &ir.design.scopes {
+        for current in &scope.current {
+            let state = match ir.resolved_current_state(&scope.definition, &current.at) {
+                Ok(state) => state,
+                Err(error) => {
+                    fail(
+                        format!("Inventor v11 current state does not resolve: {error}"),
+                        Some(scope.definition.as_str().to_owned()),
+                    );
+                    continue;
+                }
+            };
+            if state
+                .owners()
+                .values()
+                .any(|owner| owner != &scope.definition)
+            {
+                fail(
+                    "Inventor v11 current state holds a body the part does not own".into(),
+                    Some(scope.definition.as_str().to_owned()),
+                );
+            }
+        }
+        for evaluation in ir
+            .design
+            .evaluations
+            .iter()
+            .filter(|evaluation| evaluation.scope == scope.definition)
+        {
+            if let Err(error) = ir.resolved_evaluation_state(&evaluation.id, limits) {
+                fail(
+                    format!("Inventor v11 evaluation does not resolve: {error}"),
+                    Some(evaluation.id.as_str().to_owned()),
+                );
+            }
+        }
+    }
+    findings
 }
 
 pub(crate) fn validate_operations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    features: &crate::feature::FeatureInventory,
+    sketches: &crate::sketch::SketchInventory,
+    parameters: &[crate::design::PmDcParameter],
+    units: &[crate::design::PmDcUnit],
 ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-    operations::validate(ir)
+    // The projection reads the arenas the CADIR wire omits.
+    if !ir.model.omitted_arenas_held() {
+        return Ok(Vec::new());
+    }
+    let mut expected = CadIr::empty();
+    expected
+        .model
+        .product_definitions
+        .clone_from(&ir.model.product_definitions);
+    expected.model.features.clone_from(&ir.model.features);
+    expected.model.parameters.clone_from(&ir.model.parameters);
+    expected.model.sketches.clone_from(&ir.model.sketches);
+    expected
+        .model
+        .sketch_entities
+        .clone_from(&ir.model.sketch_entities);
+    expected
+        .model
+        .sketch_constraints
+        .clone_from(&ir.model.sketch_constraints);
+    expected
+        .model
+        .feature_input_topologies
+        .clone_from(&ir.model.feature_input_topologies);
+    expected.geometry.bodies.clone_from(&ir.geometry.bodies);
+    project(
+        ctx,
+        &mut expected,
+        features,
+        sketches,
+        parameters,
+        units,
+        &mut Vec::new(),
+    )?;
+    if ir.design == expected.design {
+        return Ok(Vec::new());
+    }
+    let actual = cadmpeg_core::serde_erase::to_json_value(&ir.design)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let expected = cadmpeg_core::serde_erase::to_json_value(&expected.design)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let detail = cadmpeg_ir::compare::values_agree(&actual, &expected)
+        .err()
+        .unwrap_or_else(|| "exact scalar values differ".to_owned());
+    Ok(vec![cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!(
+            "inventor/design_v11.inventor-v11-design-differs-admitted-source"
+        ),
+        check: cadmpeg_ir::report::check::Check::NativeLinks,
+        severity: cadmpeg_ir::report::Severity::Error,
+        message: format!("Inventor v11 design differs from its admitted source operands: {detail}"),
+        entity: None,
+        related: Vec::new(),
+    }])
 }
 
 fn project_history(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     flags: &BTreeMap<String, u32>,
+    has_rules: bool,
 ) -> Result<(), CodecError> {
+    // A part without features, parameters, or sheet-metal rules has no
+    // design history, so it gets no scope or timeline.
+    if ir.model.features.is_empty() && ir.model.parameters.is_empty() && !has_rules {
+        return Ok(());
+    }
     let Some(part) = ir.model.product_definitions.first() else {
         return Ok(());
     };
@@ -82,13 +247,21 @@ fn project_history(
     let owned_bodies = part.bodies.iter().collect::<BTreeSet<_>>();
     let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|feature| (feature.ordinal, &feature.id));
+    let mut owned = ir
+        .geometry
+        .bodies
+        .iter()
+        .filter(|body| owned_bodies.contains(&body.id))
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    owned.sort();
     let mut roots = Vec::new();
     let mut current = Vec::new();
     for (flat, key) in [(false, "root"), (true, "flat-pattern")] {
         let history = ordered
             .iter()
             .copied()
-            .filter(|feature| is_flat_pattern(feature) == flat)
+            .filter(|feature| is_flat_pattern(feature) == flat && !is_block_definition(feature))
             .collect::<Vec<_>>();
         if flat && history.is_empty() {
             continue;
@@ -114,13 +287,7 @@ fn project_history(
             );
             current.push(CurrentState {
                 at,
-                bodies: ir
-                    .geometry
-                    .bodies
-                    .iter()
-                    .filter(|body| owned_bodies.contains(&body.id))
-                    .map(|body| body.id.clone())
-                    .collect(),
+                bodies: Vec::new(),
                 poses: BTreeMap::default(),
                 status: EvaluationStatus::Current,
                 native_ref: None,
@@ -132,8 +299,24 @@ fn project_history(
             kind: OrderedKind::Timeline,
             members,
             folders: Vec::new(),
-            rollback,
+            rollback: Some(rollback),
             placement: None,
+        });
+    }
+    let blocks = ordered
+        .iter()
+        .filter(|feature| is_block_definition(feature))
+        .map(|feature| Member::Feature(feature.id.clone()))
+        .collect::<BTreeSet<_>>();
+    if !blocks.is_empty() {
+        ctx.charge_entities(1, "project Inventor Blocks group")?;
+        let id =
+            ContainerId::mint("inventor:document:group#blocks").map_err(CodecError::malformed)?;
+        roots.push(id.clone());
+        ir.design.containers.push(Container::Unordered {
+            id,
+            kind: UnorderedKind::Group,
+            members: blocks,
         });
     }
     for feature in ordered {
@@ -150,6 +333,7 @@ fn project_history(
                 }),
             definition: FeatureDefinition {
                 operation: operation(feature.evaluation.definition().operation())?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -162,6 +346,7 @@ fn project_history(
     ctx.charge_entities(1, "project Inventor v11 scope")?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
+    let unproduced = owned.into_iter().collect();
     ir.design.scopes.push(DesignScope {
         definition,
         roots,
@@ -169,8 +354,50 @@ fn project_history(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
+        unproduced,
     });
     Ok(())
+}
+
+/// Moves each part scope's bodies from `unproduced` to its root current
+/// state when a member of the root timeline before its rollback can change a
+/// state (§5.5). Runs after the last operation stage, because the predicate
+/// reads the final operations.
+fn place_current_bodies(ir: &mut CadIr) -> Result<(), CodecError> {
+    for index in 0..ir.design.scopes.len() {
+        let Some(at) = ir.design.scopes[index]
+            .current
+            .first()
+            .map(|state| state.at.clone())
+        else {
+            continue;
+        };
+        let timeline = match &at {
+            Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
+            Position::After(member) => ir.design.containers.iter().find(
+                |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
+            ),
+        };
+        let produces = match timeline {
+            Some(timeline) => timeline_produces(ir, timeline)?,
+            None => false,
+        };
+        if produces {
+            let scope = &mut ir.design.scopes[index];
+            let bodies = std::mem::take(&mut scope.unproduced);
+            if let Some(state) = scope.current.first_mut() {
+                state.bodies = bodies.into_iter().collect();
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_block_definition(feature: &LegacyFeature) -> bool {
+    matches!(
+        feature.evaluation.definition().operation(),
+        LegacyOperation::SketchBlockDefinition { .. }
+    )
 }
 
 fn is_flat_pattern(feature: &LegacyFeature) -> bool {
@@ -186,10 +413,17 @@ fn property(feature: &LegacyFeature, key: &str, value: &str) -> bool {
 }
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
+    native_with_options(kind, BTreeMap::default())
+}
+
+fn native_with_options(
+    kind: &str,
+    native_options: cadmpeg_ir::design::options::NativeOptions,
+) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("inventor:{kind}"))
+        kind: cadmpeg_ir::design::names::CodecName::new(&cadmpeg_ir::codec_id!("inventor"), kind)
             .ok_or_else(|| CodecError::malformed("Inventor v11 operation kind is blank"))?,
-        native_options: BTreeMap::default(),
+        native_options,
         source_settings: BTreeMap::default(),
     })
 }
@@ -339,7 +573,22 @@ fn operation(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError
             UnresolvedFamily::TopologyOptimization => return native("topology_optimization"),
             UnresolvedFamily::MoveObject => OperationFamily::TransformBodies,
         },
-        LegacyOperation::Native { kind, .. } => return native(kind.as_str()),
+        LegacyOperation::Native { kind, parameters } => {
+            if parameters.is_empty() {
+                return native(kind.as_str());
+            }
+            let text = cadmpeg_ir::hash::finite_json::to_canonical_json_string(parameters)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            let text = NonBlankString::new(text)
+                .ok_or_else(|| CodecError::malformed("Inventor native parameters are blank"))?;
+            return native_with_options(
+                kind.as_str(),
+                BTreeMap::from([(
+                    cadmpeg_ir::codec_name!("inventor:parameters"),
+                    cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(text)),
+                )]),
+            );
+        }
         LegacyOperation::Extrude { .. } => OperationFamily::Extrude,
         LegacyOperation::Loft { .. } => OperationFamily::Loft,
     };

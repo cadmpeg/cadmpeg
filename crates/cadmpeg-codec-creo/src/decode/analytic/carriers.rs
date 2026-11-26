@@ -23,7 +23,7 @@ use super::super::native::annotate;
 use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
-use super::super::uniqueness::{exactly_one, UniqueById};
+use super::super::uniqueness::{exactly_one, ExactIdPositions, UniqueById};
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -192,15 +192,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -230,6 +226,32 @@ fn topology_bound_face_points(
     points
 }
 
+/// Charges the surface carriers of the non-visible geometry namespace, whose
+/// visibility no record of the document states.
+pub(in crate::decode) fn report_non_visible_carriers(
+    ir: &CadIr,
+    transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let prefix = LegacySurfaceNamespace::NonVisible.source_prefix();
+    let count = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| surface.source_object.as_ref())
+        .filter(|source| {
+            source.format == cadmpeg_ir::codec_id!("creo")
+                && source.object_id.as_str().starts_with(prefix)
+        })
+        .count();
+    if count > 0 {
+        transfer_losses.push(
+            crate::loss::CreoLossCode::NonVisibleCarrierVisibilityNotStated.note(format!(
+                "{count} surface carrier(s) of the non-visible geometry namespace state their visibility only in their source object id"
+            )),
+        );
+    }
+}
+
 pub(in crate::decode) fn retain_unresolved_surface_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -237,6 +259,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut surface_ids = ExactIdPositions::new(
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
+    );
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
         (
@@ -250,7 +278,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
             };
             let id = crate::identity::compose_checked::<SurfaceId>(identity_namespace, row.id)?;
-            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
+            if surface_ids.contains(id.as_str()) {
                 continue;
             }
             annotate(
@@ -270,6 +298,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_ids.admit(id.as_str(), ir.geometry.surfaces.len());
             source_carriers.admit_surface(
                 ctx,
                 ir,
@@ -280,20 +309,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "{}{}",
                             namespace.source_prefix(),
                             row.id
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: if namespace.is_visible() {
-                            None
-                        } else {
-                            Some(false)
-                        },
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -301,10 +322,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
+    let mut curve_ids =
+        ExactIdPositions::new(ir.geometry.curves.iter().map(|curve| curve.id.as_str()));
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
+        if curve_ids.contains(id.as_str()) {
             continue;
         }
         annotate(
@@ -316,6 +339,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
+        curve_ids.admit(id.as_str(), ir.geometry.curves.len());
         source_carriers.admit_curve(
             ctx,
             ir,
@@ -327,15 +351,11 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

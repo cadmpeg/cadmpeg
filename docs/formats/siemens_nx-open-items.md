@@ -18,24 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Parasolid streams
 
-### PS-01. Deletion target relation
-
-**Question.** Once an enclosing deletion frame is established, which target
-relation applies when its explicit node key does not match a partition node?
-
-**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." separates byte ownership, target identity, and change state. `siemens_nx.md` §7.2 "A deletion relation requires an established node frame, exact target key," requires the owning change. A descending reference/type-map run does not establish deletions.
-
-**Need.** Establish the deletion grammar in PS-28 and the target's partition
-and pmark scope before applying any unmatched key.
-
-**Conflict.** A six-byte deletion-shaped run can be a status/reference tuple
-inside a complete FACE. That pattern does not establish a separate deletion
-or justify an alternative target join.
-
-**Note.** Complete schema-bound BODY lengths and full enclosing-record
-ownership precede target lookup. Preserve unmatched keys without assigning a
-node or family fallback.
-
 ### PS-02. Terminal procedural-intersection branches
 
 **Question.** How does a terminal type-38 procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
@@ -103,9 +85,9 @@ inverse or indistinguishable corrected branches remain unassigned.
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
+**Need.** Establish the reference-status semantics for section-owned GROUP instances. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
 
-**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. All Deltas selection is unresolved. GROUP membership remains the primary relation; no numerical BODY scope or typed-key replay applies Deltas updates.
+**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. A Deltas GROUP image is the GROUP node of the replayed state that holds it (`siemens_nx.md` §4.2 "**Main-line replay.**").
 
 **Note.** Valid pointer domains alone do not establish a Deltas record start
 or update lifetime. Preserve unsupported layouts and unassigned status roles
@@ -121,11 +103,11 @@ until their enclosing sequence is established.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what field structure and meaning do its four terminal bytes have?
+**Question.** What field structure and meaning do the four terminal bytes of a deltas reference/type map have?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. Section order does not assign a map's history edge or action. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. `siemens_nx.md` §4.2 "**Delta assignment.**" and the main-line replay rule assign each map to its mark's delta and its entries to the nodes the change into that mark creates. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
 
-**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace. Establish the preceding and succeeding state relation and the exact typed create/modify/delete key sets before applying a map to entities.
+**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -135,56 +117,13 @@ until their enclosing sequence is established.
 
 **Need.** We must know how the remaining links and the lower node-id field constrain the body and its referenced nodes to assign their semantic roles.
 
-### PS-28. Deletion frame and byte extent
+### PS-29. PMARK node counts
 
-**Question.** Which enclosing grammar establishes a deletion event, its exact
-byte extent, and its target identity?
+**Question.** What do the PMARK fields `n_new_nodes`, `n_del_nodes`, and `n_copy_mod_nodes` count?
 
-**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." excludes deletion admission from a six-byte shape alone. The map-section grammar establishes a map's physical extent but does not assign deletion actions to its entries. Opposite-aligned extended reference/type entries can form a descending apparent deletion run. A type-91 six-reference shape with a four-byte control of 2 also spans an apparent six-byte candidate; the role and admission of that control remain unestablished.
+**Known.** `siemens_nx.md` §4.2 "**Delta assignment.**" gives each mark's delta its PMARK-section images, map entries, and map-section images. In a backward main-line delta, `n_new_nodes` can be smaller or greater than the number of map entries, and `n_del_nodes` can be smaller or greater than the number of restored images. `n_copy_mod_nodes` can be smaller or greater than the number of older images. The older images of a backward delta can include an image of the kind-101 node. In a forward delta (§4.2 "**Forward deltas.**"), `n_new_nodes`, `n_del_nodes`, and `n_copy_mod_nodes` are equal to or greater than the numbers of PMARK-section images, map entries, and map-section images. The mark of a forward delta is off the main line; its `preceding` names a main-line mark or the mark of another forward delta.
 
-**Need.** Establish complete enclosing state and a discriminator for short and
-extended deletion forms. Keep bounded rival interpretations separate from a
-certified deletion grammar. Neither six-byte nor eight-byte extent follows
-from the apparent tag and XMT alone.
-
-**Note.** Shape-only deletion admission is withheld; raw history remains
-retained in the exact suffix. This refusal does not supply the missing
-deletion grammar.
-
-### PS-29. Aggregate pmark-edge selection
-
-**Question.** How does an aggregate deltas transmit bind each change's source
-and target pmarks to the owning partition's current state?
-
-**Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
-
-The NIST CTC-03 current body does not depend on this selection: its one
-partition solid equals the solid of the revision C STEP export in face
-count, surface kinds, area, volume, and vertex box, and the ten plain-stream
-sheets have no counterpart in that export.
-
-**Need.** Identify each constituent delta's complete enclosing frame, delta-key
-association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
-the selected current state, including branches, undone changes, and multiple
-bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
-
-**Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
-pairing, and repeated carrier spellings cannot select an aggregate change.
-In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
-type 90 across separate PMARK and map sections. A lookup by stream, XMT,
-and type merges those revisions. The current PMARK 5892 has delta key 2481
-and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
-map after PMARK 5898 names GROUP 2562.
-That GROUP instance precedes the PMARK section. The map key leaves the
-instance revision and the action on its members unresolved.
-The counts of map entries and typed PMARK-section instances can differ from
-the adjacent PMARK's new-node and deleted-node counts in closed sections.
-
-**Note.** The reader withholds unselected history across topology, semantic
-residuals, GROUP updates and derived appearance or operation-result bindings.
-It preserves the saved images and raw history separately. This resolves an
-unsafe replay fallback, not the unknown constituent grammar, pmark ownership,
-or regenerated current-design selection.
+**Need.** Save a part with a feature history. Roll back to an earlier feature, add a feature there, and save again with the rollback active; the Deltas stream may then hold a forward delta. Make the added feature create, delete, and modify a known set of faces, edges, and vertices. For each delta, compare the three counts with its entries and images.
 
 ### PS-33. MESH FILE chart layout
 
@@ -236,7 +175,7 @@ or regenerated current-design selection.
 
 **Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
 
-**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`, a byte of `00` or `01` precedes every reference, and a byte of `00` or `01` follows the last reference. Otherwise it reads consecutive references. A consecutive run that satisfies the prefixed form then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
 ### PS-42. Control values outside a terminated sequence
 
@@ -253,6 +192,14 @@ or regenerated current-design selection.
 **Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
 
 **Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
+### PS-44. SWEPT_SURF surface parameterization
+
+**Question.** What is the role of `scale` in the SWEPT_SURF parameterization, and what are the pcurve parameters when the section is a LINE or another analytic curve?
+
+**Known.** `siemens_nx.md` §6.2.1 defines the record and the linear sweep along `sweep × scale`. A pcurve at constant `v` across the full `u` range of a B-curve section is the section moved along the sweep. The decoder keeps pcurve parameters unchanged on this surface.
+
+**Need.** We must know the parameterization to evaluate a pcurve on every swept surface.
 
 ## 2. Object model and body composition
 
@@ -371,19 +318,20 @@ prove absence from an earlier construction state.
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md` §2 derives active state from the closed output-and-dependency graph and admits retained-history primary-body and partition-scoped body-write closure witnesses when neutral output projection cannot bind an operation to the selected body. `siemens_nx.md` §7.1 defines the feature-history journal, status rows, diagnostic messages, `m_rollForwardStates` groups, and object state-counter map. An audit-trail section has a distinct role-gated complete-row grammar and the native decoder retains its ordinal, optional selector, timestamp, tagged value, exact row bytes, and source offsets. The native decoder retains exact status codes and payloads, message values and count/severity words, group rows, and counter-map rows. The three retained Drone tables support a counter-row ordinal endpoint domain with 261 in-range uses; list positions and the counter rows' object-index values belong to separate lanes. Status code `41` with plain payload is the built, normal state. The first three common-frame state bytes remain an untyped operation-state prefix; bytes 3 through 7 are legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations. The `m_objectStateCollection` member has declaration code `78` in both UG_PART and RMFastLoad. That code is not a section-local class ordinal: the UG_PART class ordinals differ, and RMFastLoad does not declare the collection class. The product-anchored control form retains an aligned u32 value lane whose in-range values address same-store data blocks; it does not declare class references. An object record retains its object identifier and bounded bytes, but no class binding or typed field value.
+**Known.** `siemens_nx.md` §2 derives active state from the closed output-and-dependency graph and admits retained-history primary-body and partition-scoped body-write closure witnesses when neutral output projection cannot bind an operation to the selected body. `siemens_nx.md` §7.1 defines the feature-history journal, status rows, diagnostic messages, `m_rollForwardStates` groups, and object state-counter map. An audit-trail section has a distinct role-gated complete-row grammar and the native decoder retains its ordinal, optional selector, timestamp, tagged value, exact row bytes, and source offsets. The native decoder retains exact status codes and payloads, message values and count/severity words, group rows, and counter-map rows. The retained group tables and counter maps support a counter-row ordinal endpoint domain: every endpoint value is in the row-ordinal range of the following counter map; list positions and the counter rows' object-index values belong to separate lanes. Status code `41` with plain payload is the built, normal state. The first three common-frame state bytes remain an untyped operation-state prefix; bytes 3 through 7 are legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations. The `m_objectStateCollection` member has declaration code `78` in both UG_PART and RMFastLoad. That code is not a section-local class ordinal: the UG_PART class ordinals differ, and RMFastLoad does not declare the collection class. The product-anchored control form retains an aligned u32 value lane whose in-range values address same-store data blocks; it does not declare class references. An object record retains its object identifier and bounded bytes, but no class binding or typed field value.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
-**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two counter-row ordinal endpoints in the worked Drone tables, but a counter-row ordinal does not identify an operation or a typed suppression value. The operation identity, state-object identity, and typed state value require separate unique joins. The `78` member code does not supply the missing class reference. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two counter-row ordinal endpoints, but a counter-row ordinal does not identify an operation or a typed suppression value. The operation identity, state-object identity, and typed state value require separate unique joins. The `78` member code does not supply the missing class reference. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
 
-**Note.** Independent raw replay of the three worked Drone tables establishes
-38, 38, and 17 groups and 1,073, 1,109, and 1,447 counter rows, respectively.
-Their 261 endpoint uses all address the adjacent counter map. The −90° specimen
-contains a complete raw group and counter table even when those arenas emit no
-rows. An emitted zero therefore does not establish raw absence or group-census
-completeness. These tables provide no independently identified suppressed
-operation or complete operation-to-state-object join.
+**Note.** Independent raw replay of a group table and its counter map
+establishes their group and counter-row counts; tables of 17 and 38 groups
+with 1,073 to 1,447 counter rows occur. Every endpoint use addresses the
+adjacent counter map. A part can contain a complete raw group and counter table
+even when those arenas emit no rows. An emitted zero therefore does not
+establish raw absence or group-census completeness. The group and counter
+tables provide no independently identified suppressed operation or complete
+operation-to-state-object join.
 
 ### OM-11. `DELETE` construction-payload fields
 
@@ -395,7 +343,7 @@ operation or complete operation-to-state-object join.
 
 **Conflict.** Physical column boundaries split inner frames. Consecutive block ordinals and physical adjacency do not establish field boundaries. A repeated inner header does not identify operands or delimit every following field.
 
-**Note.** The worked spur-gear-housing payload repeats `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
+**Note.** A `DELETE` construction payload can repeat `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
 
 ### OM-12. Arrangement-specific component state
 
@@ -836,11 +784,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Known.** `siemens_nx.md` §7.2 "A complex part contains current body images and historical or tool bodies" names plain cached tool bodies and requires feature-history operand bindings when `RMFastLoad` membership does not select the current images. When membership selects no body, the decoder withholds the plain-stream bodies of a part that also has partition-stream bodies and charges `history.plain-images-withheld`. The terminal-lineage selector then selects among the remaining bodies; `history.sub-body-composition-unresolved` remains when it does not resolve them.
 
-In the NIST CTC-03 part, the one partition solid equals the solid of the revision C STEP export in face count, surface kinds, area, volume, and vertex box, and the ten plain-stream sheets have no counterpart in that export. Three parts with NX-written STEP exports contain one partition body and two to five plain-stream bodies; each export contains only the partition body. In ten NIST parts with same-revision STEP exports, no plain-stream body has an export body of the same kind and face count; one plain-stream plane has no vertices and is not compared.
+A part can hold one partition solid and ten plain-stream sheets; the partition solid equals the solid of its same-revision STEP export in face count, surface kinds, area, volume, and vertex box, and the plain-stream sheets have no counterpart in that export. A part with an NX-written STEP export can contain one partition body and two to five plain-stream bodies; the export contains only the partition body. No plain-stream body has a body of the same kind and face count in a same-revision STEP export. A plain-stream plane can have no vertices; that comparison excludes it.
 
 **Need.** Identify the serialized state that marks a body image as current, and the rule for parts with several partition streams.
 
-**Conflict.** The terminal-lineage statuses mark plain-stream bodies as terminal in five parts, including the three parts whose NX-written STEP exports omit them. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
+**Conflict.** The terminal-lineage statuses can mark plain-stream bodies as terminal, also in parts whose NX-written STEP exports omit those bodies. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
 
 ## 3. Assembly and material data
 
@@ -884,9 +832,9 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized relation binds a placement to its parent component and to its prototype when one placement UUID covers several prototypes, and which field selects the length unit of an assembly part?
 
-**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In the three flat assemblies with STEP exports, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. All 36 MTC placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
+**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In a flat assembly with a STEP export, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. Placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
 
-The first trailer byte descends from `0x3f` to `0x1c` in MTC placement-record order. In another assembly, the first trailer byte plus the placement's record ordinal in its record directory is 65 for all 22 placements.
+In placement-record order, the first trailer byte can descend from `0x3f` to `0x1c` across the 36 placements of an assembly. The first trailer byte plus the placement's record ordinal in its record directory can have one value for every placement of an assembly; the value 65 occurs across 22 placements.
 
 The third trailer byte has one value for all placements of one child part and distinct values for distinct child parts, also inside one UUID group. Its values increase in the order of the first placement of each child part. Most values are even. Placements whose trailer second byte is not `f0` carry other values in that position.
 

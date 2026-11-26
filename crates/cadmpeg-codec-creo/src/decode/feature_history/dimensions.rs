@@ -2,13 +2,10 @@
 //! Feature dimension parameters, relation tables, and transfer.
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{FeatureSourceContent, ParameterId};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::SketchId;
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, FeatureSourceContent, ParameterId, ParameterValue,
-    },
-    scalar::{Angle, Length},
-};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -353,7 +350,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(dimension.offset),
             "section_dimension",
@@ -407,7 +404,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 expression,
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 properties: cadmpeg_core::text::named_entries(id.as_str(), properties)?,
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),

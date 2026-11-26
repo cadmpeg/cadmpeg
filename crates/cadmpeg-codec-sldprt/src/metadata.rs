@@ -63,6 +63,24 @@ pub(crate) fn attributes(
     Ok(out)
 }
 
+/// The saved-property attributes and unit mirrors a decode reads from the
+/// saved-property owners of `scan`.
+pub(crate) fn saved_property_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SourceAttribute>, CodecError> {
+    let (mut out, mut annotations, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
+    for section in scan
+        .sections()
+        .filter(|section| is_saved_property_owner(*section))
+    {
+        scan_units_xml(ctx, section, &mut out, &mut annotations)?;
+    }
+    default_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
+    configuration_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
+    Ok(out)
+}
+
 pub(crate) fn is_saved_property_attribute(attribute: &SourceAttribute) -> bool {
     default_properties::is_attribute(attribute) || configuration_properties::is_attribute(attribute)
 }
@@ -77,10 +95,7 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    for (offset, bytes) in section.payload().windows(TOKEN.len()).enumerate() {
-        if bytes != TOKEN {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(section.payload(), TOKEN) {
         let Some(values) = transformed_enclosure(section.payload(), offset) else {
             continue;
         };
@@ -138,11 +153,7 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    for offset in payload
-        .windows(TOKEN.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
-    {
+    for offset in memchr::memmem::find_iter(payload, TOKEN) {
         let search = offset + TOKEN.len();
         let Some(marker_end) = search.checked_add(STRING_MARKER.len()) else {
             continue;
@@ -253,11 +264,11 @@ fn scan_vectors(
         all_lengths,
     } = *scan;
     let payload = section.payload();
-    for offset in payload
-        .windows(token.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == token).then_some(at))
-    {
+    let finder = memchr::memmem::Finder::new(token);
+    let mut cursor = 0;
+    while let Some(rel) = finder.find(&payload[cursor..]) {
+        let offset = cursor + rel;
+        cursor = offset + 1;
         let start = offset + token.len() + skip;
         let Some(values) = (0..count)
             .map(|index| View::f64_le_at(payload, start + index * 8))
@@ -337,7 +348,7 @@ fn attribute(
 ) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
-            &cadmpeg_ir::identity_component!("sldprt"),
+            cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT),
             &cadmpeg_ir::identity_component!("metadata"),
             name,
         ),
@@ -345,7 +356,7 @@ fn attribute(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         section.source_stream(),
         u64_from_index(offset),
         std::str::from_utf8(token).unwrap_or(name.as_str()),
@@ -355,7 +366,8 @@ fn attribute(
         id,
         target: AttributeTarget::Document.into(),
         name: name.as_str().into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     })
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::ids::neutral_sketch_id;
@@ -14,7 +15,7 @@ use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Point3;
@@ -210,7 +211,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         });
     let FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies,
-        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        center: Some(cadmpeg_ir::features::direct_edit::ScaleCenter::Point(center)),
         factors,
     }) = features[0].evaluation.definition()
     else {
@@ -218,7 +219,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     };
     assert!(matches!(
         bodies,
-        cadmpeg_ir::features::BodySelection::Unresolved
+        cadmpeg_ir::features::selections::BodySelection::Unresolved
     ));
     for (actual, expected) in [center.x, center.y, center.z]
         .into_iter()
@@ -228,7 +229,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     }
     assert!(matches!(
         factors,
-        cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
+        cadmpeg_ir::features::direct_edit::ScaleFactors::Uniform { factor: uniform }
             if (uniform.get() - 2.5).abs() < f64::EPSILON
     ));
 }
@@ -274,7 +275,7 @@ fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
         });
     let FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies,
-        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        center: Some(cadmpeg_ir::features::direct_edit::ScaleCenter::Point(center)),
         factors,
     }) = features[0].evaluation.definition()
     else {
@@ -282,7 +283,7 @@ fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
     };
     assert!(matches!(
         bodies,
-        cadmpeg_ir::features::BodySelection::Unresolved
+        cadmpeg_ir::features::selections::BodySelection::Unresolved
     ));
     for (actual, expected) in [center.x, center.y, center.z]
         .into_iter()
@@ -292,7 +293,7 @@ fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
     }
     assert!(matches!(
         factors,
-        cadmpeg_ir::features::ScaleFactors::PerAxis { factors }
+        cadmpeg_ir::features::direct_edit::ScaleFactors::PerAxis { factors }
             if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.0, 2.0, 3.0]
     ));
 }
@@ -334,7 +335,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 #[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
     use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};
-    use cadmpeg_ir::features::VertexSelection;
+    use cadmpeg_ir::features::selections::VertexSelection;
 
     let recipe = |record_index, vertex| {
         DesignVertexRecipe::try_new(
@@ -419,7 +420,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
         DesignWorkPointPlaneSelection,
     };
-    use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
+    use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
 
     let planes = [10, 20, 30].map(|record_index| {
         let id = format!("f3d:native/BulkStream.dat:parameter-scope#{record_index}");
@@ -544,7 +545,8 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
         DesignWorkPointInputCarrier,
     };
-    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+    use cadmpeg_ir::features::datums::DatumPointConstruction;
+    use cadmpeg_ir::features::selections::VertexSelection;
 
     let mut predecessor = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#10",
@@ -692,7 +694,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         },
         topology::construction::DesignConstructionOperandGroupFrame,
     };
-    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
 
     let stream = "f3d:native/BulkStream.dat";
     let group = |scope_record_index: u32,
@@ -970,6 +974,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
@@ -1070,7 +1075,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     let features = unruled.features;
     // The rule's thickness governs over the stored copy.
     let ruled: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-sheet-metal-settings#20"),
             "record_index": 103, "byte_offset": 20, "paired_byte_offset": 100,
             "mask": 240, "inputs": {"version": "v2", "slots": vec![None::<u64>; 7]},
@@ -1100,7 +1105,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
+            profile: cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(neutral_sketch_id(
+                &placement
+            )),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
             side: Some(SheetMetalThicknessSide::Forward),
         })
@@ -1135,7 +1142,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("CopyPasteBodies"),
         FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-            bodies: cadmpeg_ir::features::InsertedBodies::Native(scopes[4].id.clone()),
+            bodies: cadmpeg_ir::features::selections::InsertedBodies::Native(scopes[4].id.clone()),
         })
     );
     assert_eq!(
@@ -1197,7 +1204,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
 #[test]
 fn loft_path_preserves_complete_historical_edge_selection() {
-    use cadmpeg_ir::features::{EdgeSelection, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
     let state =
@@ -1292,7 +1300,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Form".into(),
@@ -1334,7 +1342,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
 
 #[test]
 fn merged_direct_edges_keep_source_order_and_native_fallback() {
-    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::ids::EdgeId;
 
     let scope = DesignParameterScope::empty(
@@ -1435,7 +1443,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Native {
                         kind: "Form".into(),
@@ -1508,7 +1516,7 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
         let groups = indices
             .into_iter()
             .map(|index| {
-                serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+                json::from_value::<DesignConstructionOperandGroup>(cadmpeg_core::json!({
                     "id": format!("f3d:native/BulkStream.dat:group#{index}"),
                     "scope_record_index": 12,
                     "scope_reference_ordinal": 0,
@@ -1554,7 +1562,7 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
         };
         assert_eq!(
             *bodies,
-            cadmpeg_ir::features::BodySelection::NativeSet(
+            cadmpeg_ir::features::selections::BodySelection::NativeSet(
                 vec![
                     "f3d:native/BulkStream.dat:group#54".to_owned(),
                     "f3d:native/BulkStream.dat:group#56".to_owned()

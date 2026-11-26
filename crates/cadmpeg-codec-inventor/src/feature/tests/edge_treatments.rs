@@ -10,10 +10,9 @@ use crate::feature::{
 };
 use crate::pmdc::PmDcU32List;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{
-    edge_treatments::{ChamferForm, ChamferSpec},
-    DesignParameter, FeatureDefinition, FeatureOperation, ParameterValue,
-};
+use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferSpec};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::{Angle, Length};
 
 fn index_list(values: &[u32]) -> PmDcU32List {
@@ -200,7 +199,7 @@ fn oriented_chamfers_keep_support_identity_and_require_admitted_dimensions() {
         assert!(*flip_direction);
         assert_eq!(
             groups[0].edges,
-            cadmpeg_ir::features::EdgeSelection::Native(source.id())
+            cadmpeg_ir::features::selections::EdgeSelection::Native(source.id())
         );
         let expected = if form == 1 {
             ChamferSpec::Unresolved {
@@ -334,6 +333,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
                 entities: &[],
                 profile_bodies: &[],
                 result_model: None,
+                result_states: None,
             },
         )
         .expect("feature projection");

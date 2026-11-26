@@ -174,20 +174,13 @@
         "appearance_bindings": [],
         "appearances": [],
         "articulations": [],
-        "assembly_joints": [],
         "assets": [],
         "attributes": [],
         "colliders": [],
-        "configurations": [],
         "declared_measures": [],
         "drawings": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "mass_properties": [],
         "occurrences": [],
-        "parameters": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
@@ -205,24 +198,15 @@
             "kind": "part",
             "occurrences": [],
             "representations": [],
-            "sketches": [],
             "storage": {
               "document": {},
               "kind": "file"
-            },
-            "tessellations": []
+            }
           }
         ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
         "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "tessellations": [],
         "view_presentations": []
       },
@@ -422,8 +406,7 @@
             "value": {
               "code": "source.kernel-dialect-unverified",
               "kind": "source_dialect_unverified",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
@@ -435,8 +418,7 @@
             "value": {
               "code": "source.kernel-dialect-unverified",
               "kind": "source_dialect_unverified",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The Parasolid stream at stream@360 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
@@ -586,6 +568,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "698f5a6041bdbcb8901816ce09e70ee4cee1ee378c501df58dfbe32dd0cd6d96",
       "file_digests": {},
       "retained_records": {
@@ -721,8 +705,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "strict_floor": "warning"
+            "namespace": "nx"
           }
         },
         "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
@@ -734,8 +717,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "strict_floor": "warning"
+            "namespace": "nx"
           }
         },
         "message": "The Parasolid stream at stream@360 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",

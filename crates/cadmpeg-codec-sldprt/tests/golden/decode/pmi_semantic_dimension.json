@@ -15,10 +15,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -54,7 +51,8 @@
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -89,69 +87,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#247:0",
-          "name": "Sketch1",
-          "native_ref": "sldprt:history:feature#247:0",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "source_tag": "Sketch",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "25mm",
-          "id": "sldprt:model:parameter#247:0:0",
-          "name": "D1",
-          "ordinal": 0,
-          "owner": "sldprt:model:feature#247:0",
-          "pmi": {
-            "basic": true,
-            "display_text": "25.000 mm",
-            "inspection": false,
-            "native_ref": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
-            "precision": 3,
-            "reference_only": true,
-            "subtype": {
-              "kind": "linear"
-            }
-          },
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 25.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -167,24 +109,15 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -280,21 +213,8 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "3f1b83d3007f70241ae9c82676c94e2e7c23803e4e15e09d5fab1c6aee9ff90d",
-        "sldprt_native_parameter_sha256": "0d5b01b911f52744f4cab180930fd1872c81085936a0933075ead8ea084da550",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "dialects": {
@@ -365,8 +285,7 @@
           "value": {
             "code": "geometry.parasolid-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 3 payload source(s) were enumerated, 1 carrying Parasolid streams.",
@@ -378,8 +297,7 @@
           "value": {
             "code": "topology.graph-not-transferred",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
@@ -403,8 +321,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -414,10 +331,27 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 91,
+          "stream": "Contents/Config-0-Partition"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "topology.vertex-record-unresolved",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
@@ -429,11 +363,34 @@
           "value": {
             "code": "topology.face-withheld",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketch, 0 extrude and 0 revolve features state their family without operands: the sketch feature names no planar sketch (1: sldprt:model:feature#247:0)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
         "severity": "warning"
       },
       {
@@ -499,6 +456,21 @@
         }
       }
     },
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_history_sha256": "3f1b83d3007f70241ae9c82676c94e2e7c23803e4e15e09d5fab1c6aee9ff90d",
+      "sldprt_native_parameter_sha256": "0d5b01b911f52744f4cab180930fd1872c81085936a0933075ead8ea084da550",
+      "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "241f5cb389c38cf3bd80786b48d8f29c2678a5c8c18a1a56bb5bf13d0114a13d",
     "file_digests": {},
     "retained_records": {

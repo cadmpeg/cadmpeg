@@ -2,13 +2,15 @@
 //! A sheet face whose curve-bounded surface leaves its outer boundary
 //! implicit and states one square hole.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -203,12 +205,11 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         id(ShellId::mint, "shell", "sheet"),
         id(RegionId::mint, "region", "sheet"),
     ));
-    ir.geometry.regions.push(Region {
-        id: id(RegionId::mint, "region", "sheet"),
-        body: id(BodyId::mint, "body", "sheet"),
-        shells: vec![id(ShellId::mint, "shell", "sheet")],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        id(RegionId::mint, "region", "sheet"),
+        id(BodyId::mint, "body", "sheet"),
+        vec![id(ShellId::mint, "shell", "sheet")],
+    ));
     ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "sheet"),
         kind: BodyKind::Sheet,
@@ -217,6 +218,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir

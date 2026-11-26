@@ -2,6 +2,7 @@
 //! Record-decoder tests for the `consolidated` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -482,6 +483,23 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
     let endpoints = blocks[0].endpoint_loci.expect("lifted sphere endpoints");
     assert!(endpoints[0].distance_squared(cadmpeg_ir::math::Point3::new(6.0, 2.0, 3.0)) < 1e-24);
     assert!(endpoints[1].distance_squared(cadmpeg_ir::math::Point3::new(1.0, 7.0, 3.0)) < 1e-24);
+}
+
+#[test]
+fn a5_edge_binding_reads_sphere_jets_as_radius_scaled_angles() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &crate::test_support::test_a5_bound::a5_sphere_bound_sixth_turn_stream(),
+    )
+    .expect("evaluator allocation succeeds");
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Sphere { .. }))));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted sphere endpoints");
+    let end = cadmpeg_ir::math::Point3::new(3.5, 2.0 + 2.5 * 3.0_f64.sqrt(), 3.0);
+    assert!(endpoints[1].distance(end) < 1e-6);
 }
 
 #[test]
@@ -1525,7 +1543,9 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
         .expect("transferred freeform revolution");
     assert!(match revolution.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            matched_payload,
+        ) => matches!(
             (&matched_payload
                 .parameter_interval()
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),),
@@ -1577,8 +1597,8 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 fn class23_scalar_deserialization_requires_nine_values() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
     for count in 0..=11 {
-        let wire = serde_json::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
-        let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+        let wire = cadmpeg_core::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
+        let result = json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
         assert_eq!(result.is_ok(), count == 9, "scalar23 {count}");
     }
 }

@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, HyperbolaCurve, LineCurve,
     ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
@@ -20,25 +20,29 @@ use cadmpeg_ir::geometry::nurbs::{
 use cadmpeg_ir::geometry::pcurve::{
     CirclePcurve, EllipsePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs,
 };
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::{
     AxisRevolutionSurfaceConstruction, LinearSweepSurfaceConstruction,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::tessellation::Meshed;
 use cadmpeg_ir::topology::{
-    BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse,
-    Point, Region, Sense, Shell, Vertex,
+    AnchoredVertexUse, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
+    LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 
 use crate::brep::{
     AnalyticSurface, Brep, Catalog, CurveKind, Frame, PcurveKind, Reference, SurfaceKind,
 };
 use crate::ids::brep as id;
+use crate::loss::UsdLossCode;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 /// The entities of one B-rep, in arena order.
 #[derive(Debug, Default)]
@@ -58,10 +62,17 @@ pub(crate) struct Imported {
     pub(crate) kind: Option<BodyKind>,
     /// The IR face of each `brep:face:id`.
     pub(crate) face_ids: BTreeMap<i64, FaceId>,
+    /// Each face stated partial, with the reason its boundary is not stated
+    /// in full.
+    pub(crate) unstated: Vec<String>,
 }
 
 /// Why a B-rep has no neutral form.
 type Refusal = String;
+
+/// A pole of a loop: the position of the coedge before it, when one comes
+/// before it, the pole vertex, and its pcurve with the pcurve's identity.
+type PoleUse = (Option<usize>, usize, Option<(Reference, PcurveId)>);
 
 fn vector(values: [f64; 3]) -> Vector3 {
     Vector3::new(values[0], values[1], values[2])
@@ -418,6 +429,59 @@ fn pcurve_geometry(
     }
 }
 
+/// Whether edge `edge` is degenerate (spec §17.2): its ends are one vertex
+/// and its curve, when it has one, stays within the tolerance of that vertex.
+fn degenerate(brep: &Brep, edge: usize) -> bool {
+    let Some(record) = brep.edges.get(edge) else {
+        return false;
+    };
+    let [start, end] = record.vertices;
+    if start != end {
+        return false;
+    }
+    let Some(position) = brep.vertices.get(start) else {
+        return false;
+    };
+    match record.curve {
+        None => true,
+        Some((Catalog::Nurbs, curve)) => brep.nurbs_curves.get(curve).is_some_and(|curve| {
+            curve.points.iter().all(|point| {
+                (0..3)
+                    .map(|axis| (point[axis] - position[axis]).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    <= brep.tolerance
+            })
+        }),
+        Some((Catalog::Analytic, _)) => false,
+    }
+}
+
+/// Adds pcurve `pcurve` as `pcurve_id` and returns its use.
+fn pcurve_use(
+    out: &mut Imported,
+    brep: &Brep,
+    pcurve: Reference,
+    pcurve_id: PcurveId,
+    chart: [f64; 2],
+    scale: f64,
+) -> Result<PcurveUse, Refusal> {
+    let (geometry, parameter_range) = pcurve_geometry(brep, pcurve, chart, scale)?;
+    out.pcurves.push(Pcurve {
+        id: pcurve_id.clone(),
+        geometry,
+        metadata: PcurveMetadata::General {
+            form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
+        },
+        native_ref: None,
+    });
+    Ok(PcurveUse {
+        pcurve: pcurve_id,
+        isoparametric: None,
+        parameter_range,
+    })
+}
+
 fn catalog_name(catalog: Catalog) -> &'static str {
     catalog.token()
 }
@@ -489,7 +553,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     };
     let mut used_edges = BTreeSet::new();
     for oriented in &brep.oriented_edges {
-        used_edges.insert(oriented.edge);
+        if !degenerate(brep, oriented.edge) {
+            used_edges.insert(oriented.edge);
+        }
     }
     for edge in &used_edges {
         if let Some((catalog, index)) = brep.edges[*edge].curve {
@@ -564,6 +630,12 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     }
     for loop_ in &brep.loops {
         used_vertices.extend(loop_.vertex);
+        used_vertices.extend(loop_.poles.iter().map(|pole| pole.vertex));
+    }
+    for oriented in &brep.oriented_edges {
+        if degenerate(brep, oriented.edge) {
+            used_vertices.insert(brep.edges[oriented.edge].vertices[0]);
+        }
     }
     for vertex in &used_vertices {
         let point = id::point(key, *vertex);
@@ -621,7 +693,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let tolerance = record
             .tolerance
             .filter(|tolerance| *tolerance > brep.tolerance)
-            .and_then(|tolerance| PositiveReal::new(tolerance * scale));
+            .and_then(|tolerance| cadmpeg_ir::scalar::PositiveLength::new(tolerance * scale));
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -659,28 +731,39 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let face_record = &brep.faces[face];
         let surface_chart = chart(brep, face_record.surface, scale);
         let mut coedge_ids = Vec::new();
+        let mut poles: Vec<PoleUse> = record
+            .poles
+            .iter()
+            .enumerate()
+            .map(|(position, pole)| {
+                let pcurve = pole
+                    .pcurve
+                    .map(|pcurve| (pcurve, id::pole_pcurve(key, loop_, position)));
+                (Some(pole.after), pole.vertex, pcurve)
+            })
+            .collect();
         for oriented in &record.oriented_edges {
             let use_ = &brep.oriented_edges[*oriented];
             let edge = &brep.edges[use_.edge];
+            if degenerate(brep, use_.edge) {
+                let pcurve = use_
+                    .pcurve
+                    .map(|pcurve| (pcurve, id::pcurve(key, catalog_name(pcurve.0), *oriented)));
+                poles.push((coedge_ids.len().checked_sub(1), edge.vertices[0], pcurve));
+                continue;
+            }
             let coedge_id = id::coedge(key, *oriented);
             let mut pcurves = Vec::new();
             if let Some(pcurve) = use_.pcurve {
-                let (geometry, parameter_range) =
-                    pcurve_geometry(brep, pcurve, surface_chart, scale)?;
                 let pcurve_id: PcurveId = id::pcurve(key, catalog_name(pcurve.0), *oriented);
-                out.pcurves.push(Pcurve {
-                    id: pcurve_id.clone(),
-                    geometry,
-                    metadata: PcurveMetadata::General {
-                        form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
-                    },
-                    native_ref: None,
-                });
-                pcurves.push(PcurveUse {
-                    pcurve: pcurve_id,
-                    isoparametric: None,
-                    parameter_range,
-                });
+                pcurves.push(pcurve_use(
+                    &mut out,
+                    brep,
+                    pcurve,
+                    pcurve_id,
+                    surface_chart,
+                    scale,
+                )?);
             }
             radial.entry(use_.edge).or_default().push(out.coedges.len());
             out.coedges.push(Coedge {
@@ -699,7 +782,45 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             });
             coedge_ids.push(coedge_id);
         }
-        let ring = LoopRing::new(coedge_ids, Vec::new())
+        let mut vertex_uses = Vec::new();
+        for (after, vertex, pcurve) in poles {
+            let mut pcurves = Vec::new();
+            if let Some((pcurve, pcurve_id)) = pcurve {
+                pcurves.push(pcurve_use(
+                    &mut out,
+                    brep,
+                    pcurve,
+                    pcurve_id,
+                    surface_chart,
+                    scale,
+                )?);
+            }
+            let Some(last) = coedge_ids.len().checked_sub(1) else {
+                out.loops.push(Loop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    boundary: LoopBoundary::Vertex {
+                        vertex: id::vertex(key, vertex),
+                        pcurves,
+                    },
+                    native_ref: None,
+                });
+                break;
+            };
+            let after = coedge_ids
+                .get(after.unwrap_or(last))
+                .cloned()
+                .ok_or_else(|| format!("loop {loop_} has a pole after no oriented edge"))?;
+            vertex_uses.push(AnchoredVertexUse {
+                vertex: id::vertex(key, vertex),
+                after,
+                pcurves,
+            });
+        }
+        if coedge_ids.is_empty() {
+            continue;
+        }
+        let ring = LoopRing::new(coedge_ids, vertex_uses)
             .map_err(|error| format!("loop {loop_}: {error}"))?;
         out.loops.push(Loop {
             id: loop_id,
@@ -721,21 +842,39 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     let written_loops: BTreeSet<LoopId> = out.loops.iter().map(|loop_| loop_.id.clone()).collect();
     for (face, record) in brep.faces.iter().enumerate() {
         let face_id = id::face(key, face);
+        let surface = &surface_ids[&(catalog_key(record.surface.0), record.surface.1)];
         let loops: Vec<LoopId> = record
             .loops
             .iter()
             .map(|loop_| id::loop_(key, *loop_))
             .filter(|loop_| written_loops.contains(loop_))
             .collect();
+        // A loop with no edge and no vertex, or only degenerate edges, is not
+        // written. A face left with no loop on a closed surface is whole; on
+        // a plane, cylinder, or cone it states no extent and is partial.
         let loops = match loops.split_first() {
             Some((outer, inner)) => FaceLoops::classified(outer.clone(), inner.to_vec()),
-            None => FaceLoops::unspecified(Vec::new()),
+            None => {
+                let geometry = out
+                    .surfaces
+                    .iter()
+                    .find(|candidate| &candidate.id == surface)
+                    .map(|candidate| &candidate.geometry);
+                let (loops, unbounded) = FaceLoops::unspecified_on(Vec::new(), geometry);
+                if let Some(kind) = unbounded {
+                    out.unstated.push(format!(
+                        "{face_id}: no loop with an edge or vertex on a {kind}, which no face \
+                         covers whole"
+                    ));
+                }
+                loops
+            }
         };
         let shell = face_shell[face].unwrap_or_default();
         out.faces.push(Face {
             id: face_id.clone(),
             shell: id::shell(key, shell),
-            surface: surface_ids[&(catalog_key(record.surface.0), record.surface.1)].clone(),
+            surface: surface.clone(),
             sense: if record.same_sense {
                 Sense::Forward
             } else {
@@ -758,15 +897,17 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
-        out.regions.push(Region {
-            id: id::region(key, region),
-            body: crate::ids::body(key),
-            shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            id::region(key, region),
+            crate::ids::body(key),
+            shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+        ));
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;
 
 /// The B-reps of the `BrepArray` prim `prim`.
 pub(super) fn decoded(
@@ -842,6 +983,10 @@ impl super::Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_breps
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::body(key),
+                    format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                ));
                 return Ok(Vec::new());
             }
         };
@@ -866,10 +1011,15 @@ impl super::Builder<'_, '_, '_, '_> {
                     bodies.push(body);
                     keys.insert(ordinal, body_key);
                 }
-                Err(reason) => self
-                    .tallies
-                    .rejected_breps
-                    .push(format!("{}: {reason}", prim.path)),
+                Err(reason) => {
+                    self.tallies
+                        .rejected_breps
+                        .push(format!("{}: {reason}", prim.path));
+                    self.tallies.given_up.push(GivenUpRecord::new(
+                        crate::ids::body(&body_key),
+                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                    ));
+                }
             }
         }
         self.brep_subsets(prim, key, &decoded.faces, &keys)?;
@@ -882,7 +1032,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     self.fallback_mesh(fallback, key, ordinal, body)?;
                 }
                 if fallback.api_schemas().contains("PhysicsCollisionAPI") {
-                    self.collider(fallback, key, true)?;
+                    self.collider(fallback, key, super::physics::PhysicsOwner::Body)?;
                 }
             }
         }
@@ -960,10 +1110,12 @@ impl super::Builder<'_, '_, '_, '_> {
                         id: crate::ids::subset_binding(key, &format!("{}#{ordinal}", child.path)),
                         target: target.into(),
                         appearance: appearance.clone(),
+                        precedence: None,
                         source_entity_id: Some(surface.material.clone()),
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 self.admit("usd_appearance")?;
             }
@@ -991,10 +1143,12 @@ impl super::Builder<'_, '_, '_, '_> {
                 id: crate::ids::appearance_binding(key),
                 target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()).into(),
                 appearance,
+                precedence: None,
                 source_entity_id: Some(surface.material),
                 object_type: None,
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         self.admit("usd_appearance")
     }
@@ -1008,8 +1162,17 @@ impl super::Builder<'_, '_, '_, '_> {
         ordinal: usize,
         body: &cadmpeg_ir::ids::BodyId,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        let tessellation_key = if ordinal == 0 {
+            key.to_owned()
+        } else {
+            format!("{key}/{}", prim.name)
+        };
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             self.tallies.rejected_meshes.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::tessellation(&tessellation_key),
+                UsdLossCode::MeshRejected.kind(),
+            ));
             return Ok(());
         };
         self.ctx.retain_bytes(
@@ -1019,24 +1182,26 @@ impl super::Builder<'_, '_, '_, '_> {
             ),
             super::RETAIN_MESH,
         )?;
-        let tessellation_key = if ordinal == 0 {
-            key.to_owned()
-        } else {
-            format!("{key}/{}", prim.name)
-        };
         let tessellation = match self.tessellation(&tessellation_key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::tessellation(&tessellation_key),
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                ));
                 return Ok(());
             }
         };
         self.ir
             .model
             .tessellations
-            .push(tessellation.with_body(Some(body.clone())));
+            .push(tessellation.with_of(Meshed::Body {
+                body: body.clone(),
+                faces: Vec::new(),
+            }));
         self.admit("usd_mesh")
     }
 
@@ -1067,6 +1232,7 @@ impl super::Builder<'_, '_, '_, '_> {
             regions,
             kind,
             face_ids: _,
+            unstated,
         } = imported;
         let geometry = &mut self.ir.geometry;
         geometry.points.extend(points);
@@ -1083,6 +1249,11 @@ impl super::Builder<'_, '_, '_, '_> {
         if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
+        self.tallies.unstated_boundaries.extend(
+            unstated
+                .into_iter()
+                .map(|face| format!("{}: {face}", prim.path)),
+        );
         let tolerance = records.tolerance * self.scale;
         if tolerance > self.ir.tolerances.linear.get() {
             if let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(tolerance) {

@@ -3,10 +3,11 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use cadmpeg_ir::features::{
-    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition,
-    FeatureOperation, LinearTermination,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;
@@ -45,7 +46,7 @@ pub(crate) fn bind(
         ) {
             continue;
         }
-        let Some(state) = super::face_selection_state(
+        let Some(state) = super::face_selections::face_selection_state(
             feature,
             input.scopes,
             input.scope_histories,
@@ -87,8 +88,8 @@ pub(crate) fn bind(
             let Some(operand) = operands.next() else { return };
             if operands.next().is_some() { return; }
             let referenced: BTreeSet<_> = operand.recipe_references.iter()
-                .flat_map(super::effective_faces)
-                .filter_map(|face| super::stable_ref(face.as_str()))
+                .flat_map(super::face_resolution::effective_faces)
+                .filter_map(|face| super::body_closures::stable_ref(face.as_str()))
                 .collect();
             if referenced.is_empty() { return; }
             if selection_slots(face).is_some_and(|slots| {
@@ -105,7 +106,7 @@ pub(crate) fn bind(
                     _ => None,
                 },
             };
-            let preceding: BTreeSet<_> = candidate.and_then(|face| super::stable_ref(face.as_str()))
+            let preceding: BTreeSet<_> = candidate.and_then(|face| super::body_closures::stable_ref(face.as_str()))
                 .into_iter().collect();
             let Some((before, after)) = history.topology(previous).zip(history.topology(current)) else {
                 return;
@@ -233,7 +234,7 @@ fn selection_slots(face: &FaceSelection) -> Option<Vec<i64>> {
     match face {
         FaceSelection::Resolved { faces, .. } => faces
             .iter()
-            .map(|face| super::stable_ref(face.as_str()))
+            .map(|face| super::body_closures::stable_ref(face.as_str()))
             .collect(),
         FaceSelection::Historical { faces, .. } => faces
             .iter()

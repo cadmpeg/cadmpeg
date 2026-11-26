@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::sampled::{GeometryLayoutError, PolygonalSurface};
 use crate::math::Point3;
 use crate::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 fn vertices() -> Vec<Point3> {
     vec![
@@ -23,7 +24,7 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
     let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5).expect("valid");
     ctx.finish_session().expect("one conversion per vertex");
     assert_eq!(
-        serde_json::from_str::<PolygonalSurface>(&serde_json::to_string(&raw).expect("wire"))
+        serde_json::from_str::<PolygonalSurface>(&json::to_string(&raw).expect("wire"))
             .expect("context-free serde"),
         raw
     );

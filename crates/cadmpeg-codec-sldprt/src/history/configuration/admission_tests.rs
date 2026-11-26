@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLa
 use cadmpeg_ir::geometry::sampled::PolygonalSurface;
 use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::{CodecFormat, SourceObjectAssociation};
+use cadmpeg_ir::SourceObjectAssociation;
 
 fn carrier_model() -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -37,12 +37,8 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
             geometry_role: None,
-            format: CodecFormat::Sldprt,
+            format: cadmpeg_ir::codec_id!("sldprt"),
             object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
-            name: Some("Retained surface".into()),
-            color: None,
-            visible: Some(true),
-            layer: Some("Layer".into()),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
         native_ref: None,
@@ -94,15 +90,17 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = carrier_model();
     let expected = ir.clone();
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -150,16 +148,16 @@ fn configuration_sketch_projection_carrier_runs_under_service_policy() {
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, DatumPlaneReference, Feature,
-        FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::datums::DatumPlaneReference;
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let plane = FeatureId::mint("synthetic:test:id#plane").unwrap();
     let first = FeatureId::mint("synthetic:test:id#offset-first").unwrap();
     let second = FeatureId::mint("synthetic:test:id#offset-second").unwrap();
     let definitions = [
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -198,7 +196,8 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -212,9 +211,10 @@ fn datum_model() -> cadmpeg_ir::CadIr {
         second,
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
             },
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![plane]).unwrap(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![plane])
+                .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: None,
                 distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
@@ -226,9 +226,8 @@ fn datum_model() -> cadmpeg_ir::CadIr {
 }
 
 fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::datums::DatumPlaneReference;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = datum_model();
@@ -243,7 +242,7 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
+    state.dependencies = cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
         FeatureId::mint("synthetic:test:id#plane").unwrap(),
         FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
     ])
@@ -259,10 +258,8 @@ fn configuration_datum_state_projection_refuses_nesting_limit() {
 }
 
 fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue,
-    };
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ParameterValue};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut feature = crate::history::tests::feature("feature", None, 0);
@@ -288,6 +285,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     let configuration = &ir.model.configurations[0];
     assert_eq!(
@@ -303,7 +301,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert_eq!(
         state.evaluation,
         ConfigurationEvaluation::Active {
-            outputs: cadmpeg_ir::features::DistinctMembers::default()
+            outputs: cadmpeg_ir::features::selections::DistinctMembers::default()
         }
     );
     assert!(state.dependencies.is_empty());
@@ -321,9 +319,8 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::datums::DatumPlaneReference;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = datum_model();
@@ -338,29 +335,30 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![
+    state.dependencies = cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
         FeatureId::mint("synthetic:test:id#plane").unwrap(),
         FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
     ])
     .unwrap();
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
 
 fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -388,7 +386,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -404,9 +402,9 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
             id,
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                    outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 definition,
             },
         );
@@ -426,27 +424,29 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
             sketch: Some(sketch.clone()),
         });
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
 
 fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::extents::LinearTermination;
     use cadmpeg_ir::features::holes::{
         HoleConstruction, HoleKind, HoleShape, HoleSpecification, HoleThreadDepth, ThreadHand,
     };
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let clearance = HoleSpecification::Clearance {
@@ -508,7 +508,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -520,9 +520,9 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             id,
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                    outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 definition: hole(local_specification, false),
             },
         );
@@ -536,26 +536,28 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             .unwrap()
             .definition = hole(Some(Box::new(specification)), true);
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
 
 fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, FaceSelection, Feature,
-        FeatureDefinition, FeatureDirection3, FeatureEvaluation, FeatureId, FeatureOperation,
-        FinitePoint3,
-    };
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let hole = |operands: bool| {
@@ -601,7 +603,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -614,9 +616,9 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         id.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
             },
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             definition: hole(false),
         },
     );
@@ -627,27 +629,31 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         .get_mut(&id)
         .unwrap()
         .definition = hole(true);
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
 
 fn profile_termination_operands() -> (
-    Vec<cadmpeg_ir::features::PlanarProfileRef>,
-    Vec<cadmpeg_ir::features::LinearTermination>,
+    Vec<cadmpeg_ir::features::profiles::PlanarProfileRef>,
+    Vec<cadmpeg_ir::features::extents::LinearTermination>,
 ) {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureId, GeneratedCurveRef, GeneratedVertexRef, LinearTermination,
-        PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion, VertexSelection,
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::profiles::{
+        GeneratedCurveRef, PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
     };
+    use cadmpeg_ir::features::selections::{FaceSelection, GeneratedVertexRef, VertexSelection};
+    use cadmpeg_ir::features::FeatureId;
     use cadmpeg_ir::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId, HistoricalVertexId};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
     let sketch = SketchId::mint("synthetic:test:id#profile-sketch").unwrap();
@@ -657,7 +663,10 @@ fn profile_termination_operands() -> (
     let faces = vec![FaceId::mint("synthetic:test:id#profile-face").unwrap()];
     let boundary = SketchProfileBoundaryUse {
         entity: entity.clone(),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            1.0, 0.0,
+        ])
+        .unwrap(),
         reversed: true,
     };
     let planar = vec![
@@ -770,11 +779,10 @@ fn profile_termination_operands() -> (
 }
 
 fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape};
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let (profiles, terminations) = profile_termination_operands();
@@ -802,7 +810,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             ordinal: u64::try_from(index).unwrap(),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -817,9 +825,9 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             id,
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                    outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 definition: hole(None, None),
             },
         );
@@ -833,23 +841,26 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             .unwrap()
             .definition = feature.evaluation.definition().clone();
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
 
 fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DesignParameter, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+    use cadmpeg_ir::features::parameters::{
+        DesignParameter, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
+    use cadmpeg_ir::features::ParameterId;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -864,12 +875,11 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             display: None,
             value: (index != 1).then(|| ParameterValue::String(format!("original value {index}"))),
             dependencies: if index == 0 {
-                cadmpeg_ir::features::DistinctMembers::default()
+                cadmpeg_ir::features::selections::DistinctMembers::default()
             } else {
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![ParameterId::mint(
-                    "synthetic:test:id#parameter-0",
-                )
-                .unwrap()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                    ParameterId::mint("synthetic:test:id#parameter-0").unwrap(),
+                ])
                 .unwrap()
             },
             properties: std::collections::BTreeMap::from([(
@@ -932,10 +942,12 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
         ],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     );
     assert_eq!(ir.model.parameters, expected.model.parameters);
-    let losses = result?;
+    let (losses, relation_points) = result?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -1043,6 +1055,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         histories: &histories,
         lanes: &lanes,
         pmi_dimensions: &[],
+        length_unit: None,
     };
 
     let mut uncapped = base.clone();

@@ -34,7 +34,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     ];
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("encode two timestamp carriers");
     let decoded = F3dCodec
@@ -61,13 +61,11 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     let mut unordered = target.clone();
     unordered
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("creation_timestamps")
         .unwrap()
         .reverse();
-    let unordered: cadmpeg_ir::CadIr =
-        serde_json::from_value(serde_json::to_value(&unordered).unwrap()).unwrap();
     assert!(
         cadmpeg_ir::validate::validate_neutral(&unordered, Vec::new())
             .expect("validate the neutral model")
@@ -75,19 +73,19 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
     );
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&unordered, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("timestamp patch rejects the unsorted arena");
-    assert!(error.to_string().contains("unchanged timestamp-id set"));
+    crate::test_support::assert_written_with_loss(
+        &unordered,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "unchanged timestamp-id set",
+    );
     let mut patched = Vec::new();
     let report = F3dCodec
         .plan(
             EncodeInput::new(&target, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch timestamps after record-list reordering");

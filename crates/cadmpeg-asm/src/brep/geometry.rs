@@ -10,7 +10,7 @@ use crate::nurbs::proc_surface::{
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder};
 use crate::sab::{Record, Token};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, LineCurve,
     PlaneSurface, SphereSurface, TorusSurface,
@@ -554,9 +554,11 @@ pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
 }
 
 pub(super) fn reverse_procedural_curve_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    definition: &mut cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition,
 ) -> Result<(), &'static str> {
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
+    if let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix) =
+        definition
+    {
         helix.try_reverse_parameterization()?;
     }
     let _unreversed = definition.reverse_support_contexts();
@@ -611,11 +613,11 @@ pub(super) fn procedural_surface_definition_is_exact_carrier(
         DecodedProceduralSurfaceDefinition::Sweep(construction) => matches!(
             &construction.layout,
             crate::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision { form, .. }
-                if matches!(form.cache, cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_))
+                if matches!(form.cache, cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(_))
         ),
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
+            cadmpeg_ir::geometry::laws::LawSurfaceTail::Full { .. }
         ),
         DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
             construction.shape,
@@ -628,13 +630,13 @@ pub(super) fn procedural_surface_definition_is_exact_carrier(
             ..
         } => matches!(
             construction.cache,
-            cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+            cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(_)
         ),
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
             matches!(
                 construction.cache,
-                cadmpeg_ir::geometry::VariableBlendCache::Parameterization { .. }
-                    | cadmpeg_ir::geometry::VariableBlendCache::Stale {}
+                cadmpeg_ir::geometry::revision_forms::VariableBlendCache::Parameterization { .. }
+                    | cadmpeg_ir::geometry::revision_forms::VariableBlendCache::Stale {}
             )
         }
         _ => false,
@@ -668,7 +670,7 @@ pub(super) fn analytic_procedural_surface(
             supports,
             spine: Some(spine),
             radius_offsets: [signed_radius, end_offset],
-            cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+            cross_section: cadmpeg_ir::geometry::blends::BlendCrossSection::Circular,
             native,
         } if signed_radius == end_offset => {
             analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius)
@@ -1219,7 +1221,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
 pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
-        for shell in &region.shells {
+        for shell in region.stated_shells() {
             shell_bodies.insert(shell, &region.body);
         }
     }
@@ -1242,8 +1244,11 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         face_bodies.insert(&face.id, body);
     }
     // A single-sided face without loops covers a whole closed surface (a
-    // full sphere or torus), so it bounds a volume by itself. A body bounded
-    // only by such faces is a solid; any other face needs its edges closed.
+    // full sphere or torus), so it bounds a volume by itself. On a plane,
+    // cylinder, or cone it is stated partial, and its sidedness is still the
+    // source's only statement about the volume: it has no edge to close. A
+    // body bounded only by such faces is a solid; any other face needs its
+    // edges closed.
     let double_sided = out
         .face_sidedness
         .iter()
@@ -1256,10 +1261,11 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
-        if !face.loops.is_empty() || double_sided.contains(&face.id) {
+        let loopless = face.loops.stated().next().is_none();
+        if !loopless || double_sided.contains(&face.id) {
             body_has_bounded_faces.insert(body);
         }
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             loop_bodies.insert(loop_id, body);
         }
     }

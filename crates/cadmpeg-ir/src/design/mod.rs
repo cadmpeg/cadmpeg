@@ -9,8 +9,9 @@
 //! dimensions, units, and the shared option types of the feature vocabulary.
 //!
 //! Each type has the wire form of §2.5 of the CADIR v11 specification. Read a
-//! document that holds them through [`read::from_str`], which enforces the
-//! nesting ceilings of [`cadmpeg_core::decode::ResourceLimits`].
+//! document that holds them through [`read::from_str`], which reads a
+//! document as deep as the bounds of §2.5 admit and walks each chain of state
+//! bases under [`cadmpeg_core::decode::ResourceLimits`].
 
 pub mod configuration;
 pub mod construction;
@@ -23,10 +24,12 @@ pub mod feature;
 mod identity_rewrite;
 pub mod ids;
 pub mod names;
+pub(crate) mod normalize;
 pub mod ops;
 pub mod options;
 pub mod parameter;
 pub mod program;
+pub mod projection;
 pub mod read;
 pub mod refs;
 pub mod scope;

@@ -3,31 +3,38 @@ use crate::native::history::BodyWriterHistory;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::features::holes::{HoleForm, HoleKind, HolePlacement};
+use cadmpeg_ir::features::operation_settings::{BodyTrimSide, BooleanOp};
+use cadmpeg_ir::features::patterns::PatternKind;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::revolve::{RibConstruction, RibDraft};
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::{
+    CurveProjectionDirection, CurveProjectionDirectionState, SurfaceExtension, TrimRegion,
+};
+use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, UnresolvedFamily,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, FaceLoops, Region, Sense, Shell};
+use cadmpeg_ir::scalar::{FiniteReal, Length, NonZeroLength, PositiveLength};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Region, Sense, Shell,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Tolerances;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{HoleForm, HoleKind, HolePlacement},
-        patterns::PatternKind,
-        BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
-        CurveProjectionDirectionState, EdgeSelection, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, PathRef,
-        RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
-        UnresolvedFamily,
-    },
-    scalar::{FiniteReal, Length, NonZeroLength, PositiveLength},
-};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The first body, region, shell and face of each owner-qualified identity.
@@ -87,7 +94,7 @@ impl<'a> SolidBodyIndex<'a> {
         let body = self.bodies.get(body_id)?;
         let mut faces = Vec::new();
         for region in self.body_regions.get(&body.id).into_iter().flatten() {
-            for shell_id in &region.shells {
+            for shell_id in region.stated_shells() {
                 let shell = self.shells.get(&(shell_id, &region.id))?;
                 faces.extend(self.shell_faces(shell));
             }
@@ -103,11 +110,17 @@ impl<'a> SolidBodyIndex<'a> {
         let [region] = self.body_regions.get(&body.id)?.as_slice() else {
             return None;
         };
-        let [shell_id] = region.shells.as_slice() else {
+        if body.unstated.is_some() || region.unstated.is_some() {
+            return None;
+        }
+        let mut shells = region.stated_shells();
+        let (Some(shell_id), None) = (shells.next(), shells.next()) else {
             return None;
         };
         let shell = self.shells.get(&(shell_id, &region.id))?;
-        Some(self.shell_faces(shell))
+        let faces = self.shell_faces(shell);
+        (shell.unstated.is_none() && faces.iter().all(|face| !face.loops.is_partial()))
+            .then_some(faces)
     }
 }
 
@@ -530,7 +543,7 @@ pub(super) fn support_face_projection(
     supports: &[SurfaceId],
     native: String,
 ) -> (
-    cadmpeg_ir::features::FaceSelection,
+    cadmpeg_ir::features::selections::FaceSelection,
     std::option::Option<std::vec::Vec<cadmpeg_ir::topology::Sense>>,
 ) {
     let mut selected = Vec::new();
@@ -832,7 +845,7 @@ pub(super) fn sphere_body_projection(
     outputs: &[BodyId],
 ) -> Option<(
     BodyId,
-    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::features::geometry::FinitePoint3,
     cadmpeg_ir::scalar::PositiveLength,
 )> {
     let solid_bodies = &index.solid_bodies;
@@ -945,7 +958,7 @@ pub(super) fn body_writing_unresolved_feature_definition(
             family: UnresolvedFamily::Sphere,
         })),
         "BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Unresolved { form: None },
@@ -1080,14 +1093,15 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
     ) {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some([length, width, height]),
-            placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
+            placement: block_placement
+                .and_then(cadmpeg_ir::features::geometry::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
         }));
     }
     if let Some(op) = match kind {
-        "UNITE" => Some(cadmpeg_ir::features::BooleanKind::Join),
-        "SUBTRACT" => Some(cadmpeg_ir::features::BooleanKind::Cut),
-        "INTERSECT" => Some(cadmpeg_ir::features::BooleanKind::Intersect),
+        "UNITE" => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Join),
+        "SUBTRACT" => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Cut),
+        "INTERSECT" => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Intersect),
         _ => None,
     } {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -1100,7 +1114,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             op,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }));
     }
     Ok(match kind {
@@ -1185,7 +1199,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "EXTEND_SHEET" => FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
         }),
         "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE" => {
             let measured_chamfer = hole.chamfer;
@@ -1226,7 +1240,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                     };
                     let extent = match extent {
                         crate::native::features::holes::SimpleHoleExtent::Through => {
-                            Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
+                            Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {})
                         }
                         crate::native::features::holes::SimpleHoleExtent::Blind => None,
                     };
@@ -1319,7 +1333,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 
             extent: hole
                 .grouped_simple_through
-                .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+                .then_some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,
@@ -1337,7 +1351,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "SHELL" => shell_feature_definition(),
         "ENLARGE" => enlarge_feature_definition(),
         "CHAMFER" => FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Unresolved { form: None },
@@ -1346,7 +1360,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             flip_direction: false,
         }),
         "BLEND" => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Unresolved { form: None },
@@ -2066,8 +2080,8 @@ pub(super) fn counterbore_axis_placements_for_operations(
             return Ok(BTreeMap::new());
         };
         let (Some(point), Some(direction)) = (
-            cadmpeg_ir::features::FinitePoint3::new(witness.line_origin),
-            cadmpeg_ir::features::FeatureDirection3::new(witness.axis),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(witness.line_origin),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(witness.axis),
         ) else {
             return Ok(BTreeMap::new());
         };
@@ -2110,8 +2124,8 @@ pub(super) fn blind_hole_axis_placements_for_operations(
             return BTreeMap::new();
         };
         let (Some(point), Some(direction)) = (
-            cadmpeg_ir::features::FinitePoint3::new(witness.position),
-            cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(witness.position),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(witness.direction),
         ) else {
             return BTreeMap::new();
         };
@@ -2162,8 +2176,8 @@ pub(super) fn hole_axis_placements_for_body(
             origin.z - axial_offset * axis.z,
         );
         let (Some(origin), Some(axis)) = (
-            cadmpeg_ir::features::FinitePoint3::new(origin),
-            cadmpeg_ir::features::FeatureDirection3::new(axis),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(origin),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(axis),
         ) else {
             return Vec::new();
         };
@@ -2229,15 +2243,15 @@ pub(super) fn canonical_axis(
 }
 
 pub(super) fn face_two_loops(face: &Face) -> Option<[&LoopId; 2]> {
-    match &face.loops {
-        FaceLoops::Unspecified { loops } => {
-            let [first, second] = loops.as_slice() else {
+    match face.loops.boundary()? {
+        FaceBoundary::Unspecified(loops) => {
+            let [first, second] = loops else {
                 return None;
             };
             Some([first, second])
         }
-        FaceLoops::Classified { outer, inner } => {
-            let [second] = inner.as_slice() else {
+        FaceBoundary::Classified { outer, inner } => {
+            let [second] = inner else {
                 return None;
             };
             Some([outer, second])
@@ -2246,15 +2260,15 @@ pub(super) fn face_two_loops(face: &Face) -> Option<[&LoopId; 2]> {
 }
 
 pub(super) fn face_one_loop(face: &Face) -> Option<&LoopId> {
-    match &face.loops {
-        FaceLoops::Unspecified { loops } => {
-            let [only] = loops.as_slice() else {
+    match face.loops.boundary()? {
+        FaceBoundary::Unspecified(loops) => {
+            let [only] = loops else {
                 return None;
             };
             Some(only)
         }
-        FaceLoops::Classified { outer, inner } if inner.is_empty() => Some(outer),
-        FaceLoops::Classified { .. } => None,
+        FaceBoundary::Classified { outer, inner: [] } => Some(outer),
+        FaceBoundary::Classified { .. } => None,
     }
 }
 
@@ -2323,11 +2337,9 @@ pub(super) fn cylindrical_face_witnesses(
     let angular_tolerance = ir.tolerances.angular.get();
     let mut witnesses = Vec::new();
 
-    for face in body_faces
-        .iter()
-        .copied()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-    {
+    for face in body_faces.iter().copied().filter(|face| {
+        face.sense == Sense::Reversed && face.loops.boundary().is_some_and(|loops| loops.len() == 2)
+    }) {
         let Some(surface) = carriers.surface(&face.surface) else {
             continue;
         };
@@ -2409,7 +2421,7 @@ pub(super) fn plane_annulus_witness(
     let mut matches = 0;
 
     for face in body_faces {
-        if face.loops.len() != 2 {
+        if face.loops.boundary().is_none_or(|loops| loops.len() != 2) {
             continue;
         }
 
@@ -2810,10 +2822,10 @@ pub(super) fn simple_hole_chamfers(
             ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
-        for face in body_faces
-            .iter()
-            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        {
+        for face in body_faces.iter().filter(|face| {
+            face.sense == Sense::Reversed
+                && face.loops.boundary().is_some_and(|loops| loops.len() == 2)
+        }) {
             let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) = carriers
                 .surface(&face.surface)
                 .map(|surface| &surface.geometry)

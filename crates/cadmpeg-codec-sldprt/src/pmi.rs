@@ -31,8 +31,8 @@ fn exact_count(value: f64) -> Option<i64> {
 fn dimension_subtype(
     record: &PmiDimension,
     empty_subtype_is_count: bool,
-) -> cadmpeg_ir::features::PmiDimensionSubtype {
-    use cadmpeg_ir::features::PmiDimensionSubtype;
+) -> cadmpeg_ir::features::parameters::PmiDimensionSubtype {
+    use cadmpeg_ir::features::parameters::PmiDimensionSubtype;
 
     match record.subtype.as_str() {
         "Linear" => PmiDimensionSubtype::Linear,
@@ -50,11 +50,11 @@ fn dimension_subtype(
 fn neutral_parameter_is_count(
     feature: &cadmpeg_ir::features::Feature,
     name: &str,
-    value: Option<&cadmpeg_ir::features::ParameterValue>,
+    value: Option<&cadmpeg_ir::features::parameters::ParameterValue>,
 ) -> bool {
-    use cadmpeg_ir::features::{
-        patterns::PatternTransform, FeatureDefinition, FeatureOperation, ParameterValue,
-    };
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     matches!(value, Some(ParameterValue::Integer(_)))
         || (matches!(name, "D1" | "D2")
@@ -174,31 +174,33 @@ pub(crate) fn enrich_history_parameters_with_features(
                 crate::history::parameters::parse_native_parameter_literal(
                     feature, name, expression
                 ),
-                Some(cadmpeg_ir::features::ParameterValue::Integer(_))
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(_))
             )
         }) || neutral_features.iter().any(|neutral| {
             neutral.native_ref.as_deref() == Some(feature.id.as_str())
                 && neutral_parameter_is_count(neutral, name, None)
         });
         let expression = match dimension_subtype(record, empty_subtype_is_count) {
-            cadmpeg_ir::features::PmiDimensionSubtype::Linear
-            | cadmpeg_ir::features::PmiDimensionSubtype::Ordinate => {
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Linear
+            | cadmpeg_ir::features::parameters::PmiDimensionSubtype::Ordinate => {
                 format!("{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Angle => record.value.get().to_string(),
-            cadmpeg_ir::features::PmiDimensionSubtype::Diameter => {
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Angle => {
+                record.value.get().to_string()
+            }
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Diameter => {
                 format!("<MOD-DIAM>{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Radial => {
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Radial => {
                 format!("R{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Count => {
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Count => {
                 match exact_count(record.value.get()) {
                     Some(count) => count.to_string(),
                     None => continue,
                 }
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
+            cadmpeg_ir::features::parameters::PmiDimensionSubtype::Native(_) => continue,
         };
         let parameters = &mut histories[*history_index].features[*feature_index].parameters;
         if parameters.contains_key(name) {
@@ -211,18 +213,35 @@ pub(crate) fn enrich_history_parameters_with_features(
     }
 }
 
+/// Writes the PMI dimension records of block `block_id` from the parameters
+/// that bind them; a record of a parameter that is not `edited` keeps its
+/// stored bytes. Returns one loss per edited record that keeps its stored
+/// value or display text because the record cannot state the edit.
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{ParameterValue, PmiDimensionSubtype};
+    edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
-    let Some(namespace) = ir.native.namespace("sldprt") else {
-        return Ok(());
+    let mut kept = Vec::new();
+    let mut keep = |parameter: &cadmpeg_ir::features::parameters::DesignParameter,
+                    record: &str,
+                    reason: &str| {
+        kept.push(cadmpeg_ir::codec::write::edit_dropped_note(
+            cadmpeg_ir::schema::EntityKind::Parameter,
+            format!(
+                "PMI dimension record {record} of parameter {} keeps its stored {reason}.",
+                parameter.id.as_str()
+            ),
+        ));
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let Some(namespace) = ir.native.namespace("sldprt") else {
+        return Ok(kept);
+    };
+    let native = crate::native::SldprtNative::load(namespace, ir.tolerances.linear)
+        .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -253,13 +272,18 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
+        if !edited(&parameter.id) {
+            continue;
+        }
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT PMI record {} changes dimension subtype",
-                record.id
-            )));
+            keep(
+                parameter,
+                &record.id,
+                "value and dimension subtype; the record cannot change its subtype",
+            );
+            continue;
         }
         let native_value = match (&subtype, &parameter.value) {
             (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.get(),
@@ -271,18 +295,23 @@ pub(crate) fn patch_payload(
                 Some(ParameterValue::Length(length)),
             ) => length.get() / 1000.0,
             (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => {
-                f64_from_i64(*count).ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(format!(
-                        "SLDPRT PMI record {} has a count beyond exact float range",
-                        record.id
-                    ))
-                })?
+                let Some(count) = f64_from_i64(*count) else {
+                    keep(
+                        parameter,
+                        &record.id,
+                        "value; the edited count is beyond exact float range",
+                    );
+                    continue;
+                };
+                count
             }
             _ => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "value; the edited value is not of the record's dimension subtype",
+                );
+                continue;
             }
         };
         FloatPatchSlot::read(payload, record.offset)?.write(native_value);
@@ -301,21 +330,25 @@ pub(crate) fn patch_payload(
                 record.display_text.as_ref(),
                 semantic.display_text.as_deref(),
             ) else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes optional display text",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "display text; the record cannot add or remove its optional display text",
+                );
+                continue;
             };
             if text.len() != previous.len() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes display-text width",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "display text; the record cannot change the display-text width",
+                );
+                continue;
             }
             patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
         }
     }
-    Ok(())
+    Ok(kept)
 }
 
 fn patch_bytes(
@@ -345,19 +378,32 @@ fn patch_bytes(
     Ok(())
 }
 
+/// A parameter whose bare Keywords number `apply_to_parameters` typed as a
+/// length: the number and the millimetres in the unit it is displayed in.
+#[derive(Debug, Clone)]
+pub(crate) struct RefinedLength {
+    pub(crate) parameter: cadmpeg_ir::features::ParameterId,
+    pub(crate) displayed: crate::design_v11::DisplayedLength,
+}
+
+/// Bind the agreed PMI records to parameters. Returns the parameters whose
+/// bare Keywords number became a length, for the configurations that hold
+/// that parameter's other values. `length_unit` and `length_places` are the
+/// document's.
 pub(crate) fn apply_to_parameters(
-    parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
+    parameters: &mut Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::{
-        features::{
-            DesignParameter, DimensionDisplay, ParameterId, ParameterPmi, ParameterValue,
-            PmiDimensionSubtype,
-        },
-        scalar::Length,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_places: Option<u32>,
+) -> Result<Vec<RefinedLength>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::parameters::{
+        DesignParameter, DimensionDisplay, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::scalar::Length;
 
+    let mut refined = Vec::new();
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
@@ -457,7 +503,32 @@ pub(crate) fn apply_to_parameters(
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
             // supplied this parameter. PMI still contributes its semantic
-            // annotation and source identity.
+            // annotation and source identity. A bare number Keywords shows
+            // for a length is the record's value in the document's unit, so
+            // the record supplies the length.
+            if matches!(
+                semantic.subtype,
+                PmiDimensionSubtype::Linear | PmiDimensionSubtype::Ordinate
+            ) && matches!(
+                parameter.value,
+                None | Some(ParameterValue::Real(_) | ParameterValue::Integer(_))
+            ) {
+                if let Some((displayed, length)) = crate::design_v11::displayed_length(
+                    &parameter.expression,
+                    record.value.get(),
+                    length_unit,
+                    length_places,
+                )
+                .zip(Length::new(millimetres))
+                {
+                    parameter.expression = crate::history::literals::format_length_mm(length);
+                    parameter.value = Some(ParameterValue::Length(length));
+                    refined.push(RefinedLength {
+                        parameter: parameter.id.clone(),
+                        displayed,
+                    });
+                }
+            }
             parameter.pmi = Some(semantic);
             continue;
         }
@@ -495,13 +566,13 @@ pub(crate) fn apply_to_parameters(
             expression,
             display,
             value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: Some(semantic),
             native_ref: None,
         });
     }
-    Ok(())
+    Ok(refined)
 }
 
 /// Parse work one `PMISemanticDataDB` section may spend per payload byte. One
@@ -684,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",
@@ -694,9 +765,18 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    cadmpeg_ir::ids::Identity::new(format!("sldprt:pmi:dimension#{normalized}"))?,
+                    SldprtLossCode::PmiSemanticRecordMalformed
+                        .note(format!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ))
+                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                            "sldprt",
+                            stream.clone(),
+                            u64_from_index(offset),
+                        )),
+                ));
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;
@@ -884,42 +964,45 @@ fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
     let mut encoded = Vec::with_capacity(key.len() + 1);
     encoded.push(0xa0 | key_len);
     encoded.extend_from_slice(key.as_bytes());
-    window
-        .windows(encoded.len())
-        .any(|candidate| candidate == encoded)
+    memchr::memmem::find(window, &encoded).is_some()
 }
 
 /// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
 fn candidate_maps(payload: &[u8]) -> impl Iterator<Item = (&str, usize)> {
-    payload
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(offset, marker)| {
-            if matches!(
-                Marker::from_u8(marker),
-                Marker::FixMap(_) | Marker::Map16 | Marker::Map32
-            ) {
-                guid_before(payload, offset).map(|guid| (guid, offset))
-            } else {
-                None
-            }
-        })
+    let scan = if payload.len() > 36 {
+        &payload[23..payload.len() - 13]
+    } else {
+        &[][..]
+    };
+    memchr::memchr_iter(b'-', scan).filter_map(move |rel| {
+        let offset = rel + 36;
+        let marker = *payload.get(offset)?;
+        if matches!(
+            Marker::from_u8(marker),
+            Marker::FixMap(_) | Marker::Map16 | Marker::Map32
+        ) {
+            guid_before(payload, offset).map(|guid| (guid, offset))
+        } else {
+            None
+        }
+    })
 }
 
 fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
     let start = offset.checked_sub(36)?;
-    let guid = std::str::from_utf8(payload.get(start..offset)?).ok()?;
-    let bytes = guid.as_bytes();
-    (bytes.get(8) == Some(&b'-')
-        && bytes.get(13) == Some(&b'-')
-        && bytes.get(18) == Some(&b'-')
-        && bytes.get(23) == Some(&b'-')
-        && bytes
+    let bytes = payload.get(start..offset)?;
+    if bytes.get(8) != Some(&b'-')
+        || bytes.get(13) != Some(&b'-')
+        || bytes.get(18) != Some(&b'-')
+        || bytes.get(23) != Some(&b'-')
+        || !bytes
             .iter()
             .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
-    .then_some(guid)
+            .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
 }
 
 /// `Ok(None)` rejects the value, including when `parse.work` runs out; the

@@ -280,7 +280,7 @@ pub(crate) fn classify(
         Chart::Cylinder(_) | Chart::Cone(_) => {
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
-        Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, input),
+        Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, v_tolerance, input),
         Chart::Extrusion(extrusion) if extrusion.period().is_some() => {
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
@@ -402,7 +402,9 @@ fn degenerate(shape: &LoopShape) -> bool {
 /// The computed outer loop against the stored classification.
 fn classification(face: &Face, resolved: &ResolvedFace<'_>, outer: usize) -> Classification {
     match &face.loops {
-        FaceLoops::Unspecified { .. } => Classification::Unspecified,
+        FaceLoops::Unspecified { .. }
+        | FaceLoops::PartialUnspecified { .. }
+        | FaceLoops::PartialClassified { .. } => Classification::Unspecified,
         FaceLoops::Classified { outer: stored, .. } => {
             let computed: Option<&LoopResolution<'_>> = resolved.loops.get(outer);
             if computed.is_some_and(|computed| computed.face_loop.id == *stored) {

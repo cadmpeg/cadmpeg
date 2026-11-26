@@ -190,7 +190,7 @@ fn project(
             );
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                &id,
                 owner.source_stream(),
                 0,
                 &tag,
@@ -200,7 +200,8 @@ fn project(
                 id,
                 target: AttributeTarget::Document.into(),
                 name: alias.name.clone(),
-                values: value.cloned().into_iter().collect(),
+                values: value.cloned().into_iter().map(Some).collect(),
+                native_ref: None,
             });
         } else {
             unusable[unusable_count] = alias.pid;

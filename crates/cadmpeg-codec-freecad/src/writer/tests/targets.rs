@@ -2,40 +2,41 @@
 //! Resolution of a write request against the source: the synthesis catalog,
 //! preservation, and the refusals.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::native::DocumentFacts;
 use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
+use crate::writer::target::UNCARRIED_DIGEST;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::codec::write::{EncodeError, Encoder};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
+use std::sync::LazyLock;
+
+/// The full decode of `CORE_DESIGN_PRODUCT`, shared by the tests that only
+/// read it or edit a clone of it.
+static CORE_DESIGN: LazyLock<cadmpeg_ir::DecodeResult> =
+    LazyLock::new(|| decode_at(DecodeDepth::Full));
 
 #[test]
 pub(crate) fn write_target_and_source_requirements_are_explicit() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let unsupported = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("fcstd:schema-3"),
+            TargetRequest::Explicit("fcstd:schema-9"),
         )
-        .expect_err("unsupported target must fail");
-    let CodecError::UnsupportedTarget(refusal) = &unsupported else {
+        .expect_err("a target that names no catalog or replay row is refused");
+    let EncodeError::UnsupportedTarget(refusal) = &unsupported else {
         panic!("expected a target refusal, got {unsupported}");
     };
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            let wire = json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -43,13 +44,16 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
                 .map(str::to_owned)
         })
         .as_deref(),
-        Some("fcstd:schema-3")
+        Some("fcstd:schema-9")
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal")["refusal"]
+            ["kind"],
+        "unknown_explicit"
     );
 
-    // A STEP document has no retained FCStd graph this writer can patch.
-    // The catalog intentionally has no cross-format default, so `plan`
-    // refuses without pretending schema 4 was requested and then naming it
-    // as both requested and available.
+    // A STEP document with no retained FCStd graph gives this writer, which
+    // has no synthesis path, nothing to write.
     let mut step_source = cadmpeg_ir::CadIr::empty();
     step_source.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
@@ -61,17 +65,45 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
-    let CodecError::UnsupportedTarget(refusal) = &missing_graph else {
+    let EncodeError::UnsupportedTarget(refusal) = &missing_graph else {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "value": "step"}})
+        json::to_value(refusal).expect("serialize refusal")["refusal"],
+        cadmpeg_core::json!({
+            "kind": "default_unavailable",
+            "target": "fcstd:schema-4",
+            "source": {"kind": "foreign_format", "value": "step"},
+            "reason": "the document holds no FCStd archive entry with a readable Document.xml, \
+                       and this writer regenerates no Document.xml, so the target cannot be \
+                       written",
+        })
     );
     assert_eq!(refusal.format(), "fcstd");
+
+    // An explicit replay row that the document cannot reach is refused
+    // naming that row.
+    let replay = FcstdCodec
+        .plan(
+            EncodeInput::new(&step_source, None),
+            TargetRequest::Explicit("fcstd:schema-2"),
+        )
+        .expect_err("a replay row with no retained Document.xml is refused");
+    let EncodeError::UnsupportedTarget(refusal) = &replay else {
+        panic!("expected a target refusal, got {replay}");
+    };
+    let wire = cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal");
     assert_eq!(
-        missing_graph.to_string(),
-        "fcstd cannot inherit a write target from source format step: this encoder declares no cross-format default; available targets: fcstd:schema-4"
+        (
+            &wire["refusal"]["kind"],
+            &wire["refusal"]["target"],
+            &wire["refusal"]["requested"],
+        ),
+        (
+            &cadmpeg_core::json!("explicit_unavailable"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
+        )
     );
 }
 
@@ -87,10 +119,13 @@ fn schema_two_archive() -> Vec<u8> {
     )
 }
 
-fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+fn inherit(
+    ir: &CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     Encoder::plan(
         &FcstdCodec,
-        EncodeInput::new(ir, None),
+        EncodeInput::new(ir, fidelity),
         TargetRequest::Inherit,
     )
 }
@@ -116,13 +151,9 @@ fn entry_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>>
 /// This is the catalog dialect, and the report states it.
 #[test]
 fn inherit_preserves_a_schema_four_source_entry_for_entry() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
-    let plan = inherit(decoded.ir()).expect("schema 4 is preserved");
+    let decoded = &*CORE_DESIGN;
+    let plan =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect("schema 4 is preserved");
 
     assert!(matches!(
         plan.report().write_path(),
@@ -176,7 +207,8 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
         "schema 2 is preserved, never synthesized"
     );
 
-    let plan = inherit(decoded.ir()).expect("schema 2 is preserved");
+    let plan =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect("schema 2 is preserved");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -229,7 +261,8 @@ fn inherit_preserves_an_unknown_schema_declaration_exactly() {
         "04"
     );
 
-    let plan = inherit(decoded.ir()).expect("the retained residual dialect is preservable");
+    let plan = inherit(decoded.ir(), Some(decoded.source_fidelity()))
+        .expect("the retained residual dialect is preservable");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -252,167 +285,388 @@ fn inherit_preserves_an_unknown_schema_declaration_exactly() {
     assert_eq!(primary.declared()["schema_version"], "04");
 }
 
-/// The canonical §8.2 case, in its refusing half: a schema-2 source whose
-/// retained document graph cannot be written back is refused, not quietly
-/// rewritten as schema 4.
-///
-/// There is no fall-through to the catalog default. The refusal names the
-/// source's own dialect and the catalog, so the caller can reach the file
-/// with an explicit `--to` from the message alone.
+/// The retained `Document.xml` is the baseline: a schema-2 source whose
+/// `document` record is gone still holds the bytes, which state its
+/// declaration, so the write preserves schema 2 entry for entry.
 #[test]
-fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
+fn inherit_writes_a_schema_two_source_without_its_document_record() {
+    let source = schema_two_archive();
     let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(schema_two_archive()),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("decode schema 2");
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena::<DocumentFacts>(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",
             &[],
         )
         .expect("drop the document record");
 
-    let error = inherit(&ir).expect_err("a schema-2 source with no baseline is refused");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "fcstd");
+    let mut written = Vec::new();
+    let report = inherit(&ir, None)
+        .expect("the retained Document.xml declares schema 2")
+        .write_to(&mut written)
+        .expect("write the retained archive");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("fcstd:schema-2")
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
-    assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "inherited_unavailable"
-    );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "fcstd:schema-4"),
-        "{:?}",
-        refusal.available()
-    );
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
 }
 
-/// An explicit `--to` is the escape from the inherit refusal only where the
-/// retained graph can deliver the target. Where it cannot, `plan` refuses
-/// by name, with the catalog, before any byte is written.
-///
-/// This is where the codec's synthesis gap is visible: it patches the
-/// retained `Document.xml` and regenerates none, so schema 2 to schema 4 is
-/// a transcode it cannot perform at any request. A degraded schema-4 write
-/// built from schema-2 records is not the alternative — there is no
-/// synthesis path to degrade to, so the honest answer is the same typed
-/// refusal every sibling gives, not a bare message string from deep inside
-/// `write`.
+/// The source bytes are the `fcstd` archive entries the document holds,
+/// whatever format `ir.source` names. A document read from another format
+/// that holds them is written as the schema its `Document.xml` declares, and
+/// `target.request-displaced` names both where the request names another.
 #[test]
-fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
+fn an_explicit_target_writes_fcstd_entries_under_a_source_of_another_format() {
+    let step_source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("step:ap242"),
+        )),
+        std::collections::BTreeMap::new(),
+    ));
+    let explicit = |ir: &CadIr| {
+        Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit("fcstd:schema-4"),
+        )
+    };
+
+    let mut schema_four = CORE_DESIGN.ir().clone();
+    schema_four.source.clone_from(&step_source);
+    let mut written = Vec::new();
+    explicit(&schema_four)
+        .expect("the retained Document.xml declares schema 4")
+        .write_to(&mut written)
+        .expect("write the retained archive");
+    assert_eq!(
+        entry_payloads(&written),
+        entry_payloads(CORE_DESIGN_PRODUCT)
+    );
+
     let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(schema_two_archive()),
             &DecodeOptions::default(),
         )
         .expect("decode schema 2");
-    let error = Encoder::plan(
+    let mut schema_two = decoded.ir().clone();
+    schema_two.source = step_source;
+    let plan = explicit(&schema_two).expect("the retained Document.xml declares schema 2");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
+    );
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| (loss.code.local_code(), loss.message.as_str()))
+        .collect();
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(*code, "target.request-displaced");
+    assert!(
+        message.contains("fcstd:schema-4") && message.contains("fcstd:schema-2"),
+        "{message}"
+    );
+}
+
+/// An explicit `--to` that the retained graph cannot deliver is written as the
+/// dialect the retained graph declares (§3.4, Refusals).
+///
+/// This writer patches the retained `Document.xml` and regenerates none, so a
+/// schema-2 source asked for schema 4 is written as schema 2. The report names
+/// that dialect, `fcstd/target.request-displaced` names both, and the output
+/// decodes back as schema 2.
+#[test]
+fn an_explicit_schema_four_target_writes_a_schema_two_source_as_schema_two() {
+    let source = schema_two_archive();
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode schema 2");
+    let plan = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit("fcstd:schema-4"),
     )
-    .expect_err("this writer regenerates no Document.xml");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "fcstd");
+    .expect("the retained schema-2 document is written");
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).expect("write");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("fcstd:schema-4")
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
+    let displaced: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| {
+            (
+                loss.code.namespace(),
+                loss.code.local_code(),
+                loss.severity,
+                loss.message.as_str(),
+            )
+        })
+        .collect();
+    let [(namespace, code, severity, message)] = displaced.as_slice() else {
+        panic!("expected one target loss, got {displaced:?}");
+    };
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "explicit_unavailable"
+        (*namespace, *code, *severity),
+        (
+            "fcstd",
+            "target.request-displaced",
+            cadmpeg_ir::report::Severity::Warning
+        )
     );
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "fcstd:schema-4"),
-        "{:?}",
-        refusal.available()
+        message.contains("fcstd:schema-4") && message.contains("fcstd:schema-2"),
+        "{message}"
+    );
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
+
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+            .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
     );
 }
 
-/// An `FCStd` source that records no dialect refuses `Inherit`, uniformly
-/// with every other encoder, and quotes no dialect id because none exists.
+/// Writes `ir` for `request` and decodes the file. Returns the dialect the
+/// output reads back as, which the report names as its target, and the
+/// `target.*` losses of the report, as code and message.
+fn write_and_read_dialect(
+    ir: &CadIr,
+    request: TargetRequest<'_>,
+) -> (String, Vec<(String, String)>) {
+    let mut written = Vec::new();
+    let report = Encoder::plan(&FcstdCodec, EncodeInput::new(ir, None), request)
+        .expect("the retained Document.xml is written")
+        .write_to(&mut written)
+        .expect("write");
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode output");
+    let read = round_trip
+        .ir()
+        .source
+        .as_ref()
+        .and_then(|source| source.dialect())
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
+        .map(ToString::to_string)
+        .expect("the output records its dialect");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string)
+        .as_deref(),
+        Some(read.as_str()),
+        "the report names the dialect the file reads back as"
+    );
+    let charged = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| (loss.code.local_code().to_owned(), loss.message.clone()))
+        .collect();
+    (read, charged)
+}
+
+/// An explicit replay row names a schema this writer reaches by patching a
+/// retained `Document.xml` that declares it. A source of that schema is
+/// written as it, and the report charges no target loss.
 #[test]
-fn inherit_refuses_a_source_that_records_no_dialect() {
+fn an_explicit_replay_row_writes_a_source_of_that_schema() {
     let decoded = FcstdCodec
         .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &mut Cursor::new(schema_two_archive()),
             &DecodeOptions::default(),
         )
-        .expect("decode source");
-    let (mut ir, _, _) = decoded.into_parts();
-    let source = ir.source.take().expect("the decode records a source");
-    let format = source.format().to_owned();
+        .expect("decode schema 2");
+    for token in ["fcstd:schema-2", "schema-2"] {
+        assert_eq!(
+            write_and_read_dialect(decoded.ir(), TargetRequest::Explicit(token)),
+            ("fcstd:schema-2".to_owned(), vec![]),
+            "{token}"
+        );
+    }
+}
+
+/// A same-format source asked for a replay row of another schema is written
+/// as the schema its retained `Document.xml` declares, and
+/// `target.request-displaced` names the requested and the written dialect
+/// (§3.4, Refusals).
+#[test]
+fn an_explicit_replay_row_of_another_schema_writes_the_declared_schema() {
+    let (read, charged) =
+        write_and_read_dialect(CORE_DESIGN.ir(), TargetRequest::Explicit("fcstd:schema-3"));
+    assert_eq!(read, "fcstd:schema-4");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.request-displaced");
+    assert!(
+        message.contains("fcstd:schema-3") && message.contains("fcstd:schema-4"),
+        "{message}"
+    );
+}
+
+/// A schema-3 source is written as schema 3, under `Inherit` and under an
+/// explicit `fcstd:schema-3`, and charges no target loss.
+#[test]
+fn a_schema_three_source_is_written_as_schema_three() {
+    let ir = FcstdCodec
+        .decode(
+            &mut Cursor::new(rewrite_schema_version(CORE_DESIGN_PRODUCT, "3")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 3")
+        .ir()
+        .clone();
+    for request in [
+        TargetRequest::Inherit,
+        TargetRequest::Explicit("fcstd:schema-3"),
+    ] {
+        assert_eq!(
+            write_and_read_dialect(&ir, request),
+            ("fcstd:schema-3".to_owned(), vec![])
+        );
+    }
+}
+
+/// A document of another source format, or of none, that holds `fcstd`
+/// archive entries is written under `Inherit` as the schema its retained
+/// `Document.xml` declares. That schema is not the newest row `Inherit`
+/// resolved to, so the one target loss is `target.source-dialect-displaced`
+/// naming both.
+#[test]
+fn inherit_writes_fcstd_entries_under_a_source_of_another_format_as_their_schema() {
+    let mut ir = FcstdCodec
+        .decode(
+            &mut Cursor::new(schema_two_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 2")
+        .ir()
+        .clone();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("step:ap242"),
+        )),
+        std::collections::BTreeMap::new(),
+    ));
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("source is step")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
+    );
+
+    ir.source = None;
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("records no source")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
+    );
+}
+
+/// `Inherit` on an `FCStd` source that records no dialect writes the
+/// retained `Document.xml` as the dialect it declares (§3.4, Refusals: a
+/// writer refuses only where it can write no file). The report names that
+/// dialect, and the one target loss is `fcstd/target.source-dialect-displaced`.
+#[test]
+fn inherit_writes_a_source_that_records_no_dialect_as_its_declared_dialect() {
+    let source = schema_two_archive();
+    let mut ir = FcstdCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode schema 2")
+        .ir()
+        .clone();
+    let meta = ir.source.take().expect("the decode records a source");
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
-            "identity": {"kind": "unclassified", "format": format},
-            "attributes": source.attributes,
+        json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": meta.format()},
+            "attributes": meta.attributes,
         }))
         .unwrap(),
     );
 
-    let error = inherit(&ir).expect_err("a source with no recorded dialect is refused");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
+    let mut written = Vec::new();
+    let report = inherit(&ir, None)
+        .expect("a source with no recorded dialect is written")
+        .write_to(&mut written)
+        .expect("write");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("fcstd:schema-2".to_owned())
+    );
+    let charged: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| (loss.code.local_code(), loss.message.as_str()))
+        .collect();
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
     };
-    assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        None
-    );
-    assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
-        "unrecorded_source"
-    );
+    assert_eq!(*code, "target.source-dialect-displaced");
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "fcstd:schema-4"),
-        "{:?}",
-        refusal.available()
+        message.contains("records no dialect") && message.contains("fcstd:schema-2"),
+        "{message}"
     );
+    assert_eq!(entry_payloads(&written), entry_payloads(&source));
 }
 
 /// The §8.3 honesty invariant on this codec's only write path: re-decoding
@@ -438,7 +692,7 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{label} source must decode, got {error}"));
-        let plan = inherit(decoded.ir())
+        let plan = inherit(decoded.ir(), Some(decoded.source_fidelity()))
             .unwrap_or_else(|error| panic!("{label} is preserved, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -466,6 +720,61 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
+/// A sidecar that marks a retained record `untyped` patches as an unmarked
+/// one does, and the report carries both carried-source codes naming the
+/// record.
+#[test]
+fn an_untyped_retained_record_is_patched_and_reported() {
+    let decoded = decode_at(DecodeDepth::Full);
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let write = |fidelity: &cadmpeg_ir::SourceFidelity| {
+        let plan = Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(&ir, Some(fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("the retained document patches");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("the patch writes");
+        (report, bytes)
+    };
+    let (unmarked, unmarked_bytes) = write(&fidelity);
+    assert!(matches!(
+        unmarked.write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    assert!(!unmarked
+        .losses
+        .iter()
+        .any(|loss| loss.code.namespace() == "export"));
+    fidelity
+        .insert_retained_record(
+            "fcstd:test:skipped#0"
+                .to_owned()
+                .try_into()
+                .expect("record id"),
+            cadmpeg_ir::RetainedSourceRecord::whole("", b"skipped".to_vec())
+                .with_untyped([cadmpeg_core::decode::ArenaClass::Design]),
+        )
+        .expect("a new record id");
+    let (marked, marked_bytes) = write(&fidelity);
+    assert_eq!(marked_bytes, unmarked_bytes);
+    let carried: Vec<_> = marked
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity, loss.message.as_str()))
+        .collect();
+    assert_eq!(carried.len(), 2, "{carried:?}");
+    assert_eq!(carried[0].0, "source.carried");
+    assert_eq!(carried[0].1, cadmpeg_ir::report::Severity::Info);
+    assert_eq!(carried[1].0, "source.unchecked");
+    assert_eq!(carried[1].1, cadmpeg_ir::report::Severity::Warning);
+    assert!(carried
+        .iter()
+        .all(|(_, _, message)| message.contains("fcstd:test:skipped#0 (design)")));
+}
+
 fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
     FcstdCodec
         .decode(
@@ -478,88 +787,171 @@ fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
         .expect("decode source")
 }
 
-fn recorded_digest(ir: &CadIr) -> Option<&String> {
-    ir.source
-        .as_ref()
-        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+fn recorded_digest(
+    decoded: &cadmpeg_ir::DecodeResult,
+) -> Option<&cadmpeg_ir::hash::digest::Sha256Digest> {
+    decoded
+        .source_fidelity()
+        .codec_digests
+        .get(UNCARRIED_DIGEST)
 }
 
 #[test]
 fn only_a_full_decode_records_the_digest() {
-    let full = decode_at(DecodeDepth::Full);
+    let full = &*CORE_DESIGN;
     assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
-    assert!(recorded_digest(full.ir()).is_some());
+    assert!(recorded_digest(full).is_some());
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
         let decoded = decode_at(depth);
         assert_eq!(decoded.ir().scope(), depth.scope());
-        assert_eq!(recorded_digest(decoded.ir()), None, "{depth}");
+        assert_eq!(recorded_digest(&decoded), None, "{depth}");
     }
 }
 
-/// A document below `Full` has no digest to compare, so the depth gate must
-/// refuse it, edited or not, before the writer looks for a baseline.
-#[test]
-fn a_document_below_full_is_refused_by_depth_edited_or_not() {
-    for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
-        let decoded = decode_at(depth);
-        let mut edited = decoded.ir().clone();
-        edited
-            .source
-            .as_mut()
-            .expect("the fixture records a source")
-            .attributes
-            .insert(
-                cadmpeg_core::nonblank_const!("edited_since_decode"),
-                "yes".to_owned(),
-            );
-        for ir in [decoded.ir(), &edited] {
-            let Err(CodecError::InsufficientDepth {
-                needed, recorded, ..
-            }) = inherit(ir)
-            else {
-                panic!("a {depth} document must be refused for its depth");
-            };
-            assert_eq!(needed, DecodeDepth::Full);
-            assert_eq!(recorded, depth);
-        }
-    }
+/// Writes `ir` through `Inherit` and returns the report and the file.
+fn patched(
+    ir: &CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> (cadmpeg_ir::report::export::ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = inherit(ir, fidelity)
+        .expect("the retained document patches")
+        .write_to(&mut bytes)
+        .expect("the patch writes");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    (report, bytes)
 }
 
-/// A `Full` document that lost its digest cannot prove that it is unedited.
+/// The `export:` losses of `report`, as code and severity.
+fn export_losses(
+    report: &cadmpeg_ir::report::export::ExportReport,
+) -> Vec<(&str, cadmpeg_ir::report::Severity)> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity))
+        .collect()
+}
+
+/// A `Geometry` document records no digest, so its edits are not known. The
+/// writer patches the retained document as it patches the unedited `Full` one
+/// and reports `export:edit.unverified`, edited or not.
 #[test]
-fn a_full_document_without_its_digest_is_refused() {
-    let decoded = decode_at(DecodeDepth::Full);
-    let mut stripped = decoded.ir().clone();
-    stripped
+fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
+    let (full_report, full_bytes) = patched(CORE_DESIGN.ir(), Some(CORE_DESIGN.source_fidelity()));
+    assert_eq!(export_losses(&full_report), []);
+    let decoded = decode_at(DecodeDepth::Geometry);
+    let mut edited = decoded.ir().clone();
+    edited
         .source
         .as_mut()
         .expect("the fixture records a source")
         .attributes
-        .remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    let Err(CodecError::NotImplemented(message)) = inherit(&stripped) else {
-        panic!("a document with no digest must be refused");
+        .insert(
+            cadmpeg_core::nonblank_const!("edited_since_decode"),
+            "yes".to_owned(),
+        );
+    for ir in [decoded.ir(), &edited] {
+        let (report, bytes) = patched(ir, Some(decoded.source_fidelity()));
+        assert_eq!(bytes, full_bytes);
+        assert_eq!(
+            export_losses(&report),
+            [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+        );
+    }
+}
+
+/// A `Container` document retains no archive entry, so this writer, which has
+/// no synthesis path, holds no source bytes to write.
+#[test]
+fn a_container_document_is_an_unsupported_target() {
+    let decoded = decode_at(DecodeDepth::Container);
+    let error =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect_err("no entry is retained");
+    let EncodeError::UnsupportedTarget(refusal) = &error else {
+        panic!("expected a target refusal, got {error}");
     };
+    assert_eq!(refusal.format(), "fcstd");
+}
+
+/// A `Full` document whose sidecar lost its digest cannot prove that it is unedited:
+/// it is patched and reported as a document below `Full` is.
+#[test]
+fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
+    let (_, unedited) = patched(CORE_DESIGN.ir(), Some(CORE_DESIGN.source_fidelity()));
+    let mut stripped = CORE_DESIGN.source_fidelity().clone();
+    assert!(stripped.codec_digests.remove(UNCARRIED_DIGEST).is_some());
+    let (report, bytes) = patched(CORE_DESIGN.ir(), Some(&stripped));
+    assert_eq!(
+        bytes, unedited,
+        "the stripped document patches as the unedited one"
+    );
+    assert_eq!(
+        export_losses(&report),
+        [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+    );
+}
+
+/// A held uncarried digest that no longer computes shows an edit of a record
+/// it covers, which the writer has no serializer for. The document is
+/// patched, and `export:edit.dropped` at Error names the document and the
+/// record the digest does not read (§3.4, Paths item 4).
+#[test]
+fn a_document_whose_held_digest_does_not_compute_reports_the_edit_dropped() {
+    let mut ir = CORE_DESIGN.ir().clone();
+    let unknown = crate::native::native_id("unknown", "unread");
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+        .set_arena(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "unknowns",
+            &[cadmpeg_core::json!({"id": unknown, "field": "value"})],
+        )
+        .expect("set the unknowns arena");
+    let (report, bytes) = patched(&ir, Some(CORE_DESIGN.source_fidelity()));
+    assert_eq!(
+        export_losses(&report),
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
+    );
+    let dropped = report
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "edit.dropped")
+        .expect("edit.dropped");
     assert!(
-        message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        "{message}"
+        dropped.message.contains(unknown.as_str())
+            && dropped
+                .message
+                .contains(crate::native::native_id("document", "0").as_str()),
+        "{}",
+        dropped.message
+    );
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(|dialect| dialect.dialect().to_string()),
+        Some("fcstd:schema-4".to_owned())
     );
 }
 
 /// The writer patches retained native records only, so a neutral edit has no
-/// serializer. It is refused rather than written as the unedited source.
+/// serializer. The file holds the document as the source stores it, and the
+/// report names the document, since the digest does not isolate the edited
+/// record (§3.4, Paths item 4).
 #[test]
-fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
-    let mut control = Vec::new();
-    inherit(decoded.ir())
-        .expect("an unedited document is preserved")
-        .write_to(&mut control)
-        .expect("write control");
+fn a_neutral_edit_is_left_as_stored_and_reported() {
+    let decoded = &*CORE_DESIGN;
+    let (_, control) = patched(decoded.ir(), Some(decoded.source_fidelity()));
     assert_eq!(
         entry_payloads(&control),
         entry_payloads(CORE_DESIGN_PRODUCT)
@@ -575,18 +967,15 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
         "{} renamed",
         body.name.as_deref().unwrap_or("body")
     ));
-    let Err(CodecError::NotImplemented(message)) = inherit(&edited) else {
-        panic!("a neutral edit must be refused");
-    };
-    assert!(
-        message.contains("neutral or uncarried native edits"),
-        "{message}"
+    let (report, bytes) = patched(&edited, Some(decoded.source_fidelity()));
+    assert_eq!(bytes, control);
+    assert_eq!(
+        export_losses(&report),
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
     );
-
-    let mut rewritten = Vec::new();
-    inherit(decoded.ir())
-        .expect("the unedited document is still preserved")
-        .write_to(&mut rewritten)
-        .expect("write unedited");
-    assert_eq!(rewritten, control);
+    let document = crate::native::native_id("document", "0");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(document.as_str())));
 }

@@ -5,7 +5,23 @@ use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
     AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory, AsmPreamble, AsmStateSnapshot,
 };
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
+
+/// A sample of `edge` at `interior` with no sample box and no carrier.
+pub(crate) fn edge_sample(
+    edge: i64,
+    interior: cadmpeg_ir::math::Point3,
+    tangent: Option<cadmpeg_ir::math::Vector3>,
+) -> crate::history_records::AsmHistoricalEdgeSample {
+    crate::history_records::AsmHistoricalEdgeSample {
+        edge,
+        interior,
+        tangent,
+        bounds: None,
+        carrier: None,
+    }
+}
 
 pub(crate) type State = (
     AsmDeltaState,
@@ -188,7 +204,7 @@ pub(crate) fn bounded_face_operand(
     references: Vec<crate::records::dimensions::DesignRecipeReference>,
 ) -> crate::records::topology::face::DesignFaceOperand {
     let mut operand: crate::records::topology::face::DesignFaceOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:design-face-operand#110",
             "scope_record_index": 42,
             "scope_reference_ordinal": 1,

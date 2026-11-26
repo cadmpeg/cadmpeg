@@ -111,8 +111,14 @@ resolved.
 
 [`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is
 selected by `Encoder::plan`, not stored in the options. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
-default output deterministic. The first body name, when present, supplies the
-STEP product name. `product_name` supplies the `FILE_NAME` name instead.
+default output deterministic. `product_name` supplies the `FILE_NAME` name and,
+without product definitions, the name of the single `PRODUCT`. A body written
+as a solid or a shell-based surface model gives that item its name, and the
+reader reads a nonempty item name back as the body's name.
+
+The decoder keeps the `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` strings
+as source attributes, for example `file_name.originating_system` and
+`file_name.author.0`. The [specification][spec], §6, lists the keys.
 
 The writer creates a parent product for distinct local root definitions when no
 repeated root definition has a representable child. It also creates a parent for
@@ -161,6 +167,7 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [docs]: https://docs.rs/cadmpeg-codec-step
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
+[spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/step.md#6-header
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
 [`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html

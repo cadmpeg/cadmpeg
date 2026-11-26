@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
-use crate::design::feature_project::{
-    bind_hole_sketch_point_profiles, bind_sketch_feature_geometry,
-};
+use crate::design::feature_project::hole::bind_hole_sketch_point_profiles;
+use crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry;
 use crate::layout::work_point_sketch_point_identity as layout;
 use crate::records::feature::hole::DesignHoleLocation;
 use crate::records::feature::scope::{
@@ -13,11 +13,11 @@ use crate::records::feature::work_geometry::{
     DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointSketchPointSelection,
     DesignWorkPointSketchPointSelectionDraft,
 };
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::holes::{HoleKind, HoleProfileFilter};
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    PlanarProfileRef,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -86,7 +86,7 @@ fn hole_scope(reference_type: u32, locations: Vec<DesignHoleLocation>) -> Design
         32,
     );
     let mut construction: crate::records::feature::hole::DesignHoleConstruction =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": [0.0, 0.0, 0.0], "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,

@@ -9,7 +9,7 @@
 //! An edge with no vertex admits its curve record's whole domain where the
 //! record is closed.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::ids::VertexId;
@@ -40,7 +40,7 @@ use crate::value::{measured, BoxKind, Errors, Method, Point, Quantity, Scalar, S
 pub(crate) struct EdgeGeometry<'ir> {
     pub(crate) edge: &'ir Edge,
     pub(crate) tau: f64,
-    pub(crate) curve: Outcome<Rc<CurveChart<'ir>>>,
+    pub(crate) curve: Outcome<Arc<CurveChart<'ir>>>,
     /// The interval from the edge's start to its end.
     pub(crate) interval: Outcome<[f64; 2]>,
     pub(crate) length: Outcome<Length>,
@@ -94,10 +94,10 @@ pub(crate) fn measure_edge<'ir>(
         owners
             .vertex(vertex)
             .and_then(|vertex| vertex.tolerance)
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
     };
     let local = [
-        edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         edge.start()
             .and_then(|vertex| vertex_tolerance(vertex.as_str())),
         edge.end()
@@ -117,7 +117,7 @@ pub(crate) fn measure_edge<'ir>(
         match (body, edge.carrier.curve()) {
             (Err(missing), _) => Err(missing.failure()),
             (Ok(_), Some(curve)) => match owners.curve(curve.as_str()) {
-                Some(record) => CurveChart::new(record, placement).map(Rc::new),
+                Some(record) => CurveChart::new(record, placement).map(Arc::new),
                 None => Err(missing(
                     UnavailableReason::CarrierUnresolved,
                     id,
@@ -185,7 +185,7 @@ pub(crate) fn measure_edge<'ir>(
         (Ok(chart), Ok(range)) => (
             settle(curve_length(eval, chart, *range, scale).map_err(|failure| failure.at(id)))?,
             match work {
-                Work::Row => {
+                Work::Row | Work::Body | Work::Box => {
                     settle(curve_box(eval, chart, *range).map_err(|failure| failure.at(id)))?
                 }
                 Work::Orientation => Err(Missing {
@@ -418,7 +418,7 @@ fn interval(
     let seed = domain.map_or(0.0, |[lower, _]| lower);
     let parameter = |point: Point3, seed: f64| -> Measure<f64> {
         chart
-            .parameter(eval, point, seed, alpha)?
+            .parameter(eval, point, seed, alpha, None)?
             .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
     };
     let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;

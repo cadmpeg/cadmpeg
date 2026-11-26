@@ -193,7 +193,9 @@ fn compare_step(
         .iter()
         .map(|(&slot, record)| (slot, record.clone()))
         .collect();
-    let versions_a = a.keys().map(|&slot| (slot, slot)).collect();
+    let versions_a: BTreeMap<i64, i64> = a.keys().map(|&slot| (slot, slot)).collect();
+    let versions_a_fast: super::FastMap<i64, i64> =
+        versions_a.iter().map(|(&k, &v)| (k, v)).collect();
     let mut versions_b = BTreeMap::new();
     for (&slot, record) in b {
         let revision = if changed.contains(&slot) {
@@ -204,11 +206,13 @@ fn compare_step(
         archive.insert(revision, record.clone());
         versions_b.insert(slot, revision);
     }
+    let versions_b_fast: super::FastMap<i64, i64> =
+        versions_b.iter().map(|(&k, &v)| (k, v)).collect();
     let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
     let mut binder = Binder::new(&archive, saved_limit, &work);
     let mut stats = Statistics::default();
     binder
-        .update(&a.keys().copied().collect(), &versions_a)
+        .update(&a.keys().copied().collect(), &versions_a_fast)
         .unwrap();
     binder.rebuild_units();
     let full_previous = binder.full(&ctx, &bytes, &mut stats).unwrap().unwrap();
@@ -220,7 +224,7 @@ fn compare_step(
             &ctx,
             &mut previous,
             changed,
-            &versions_b,
+            &versions_b_fast,
             &bytes,
             &mut stats,
         )
@@ -242,11 +246,6 @@ fn compare_step(
             topology: expected,
             versions: &versions_b,
         };
-        let new_snapshot = || crate::history_records::AsmStateSnapshot {
-            state_id: 2,
-            topology: &actual.as_ref().unwrap().1,
-            versions: &versions_a,
-        };
         let full_new_snapshot = || crate::history_records::AsmStateSnapshot {
             state_id: 2,
             topology: &full_previous,
@@ -254,12 +253,13 @@ fn compare_step(
         };
         assert_eq!(
             super::transition_for_changes(
-                crate::history_records::AsmStateSnapshot {
-                    topology: &actual.as_ref().unwrap().0,
-                    ..old_snapshot()
-                },
-                new_snapshot(),
-                changed
+                1,
+                &actual.as_ref().unwrap().0,
+                &versions_b_fast,
+                2,
+                &actual.as_ref().unwrap().1,
+                &versions_a_fast,
+                changed,
             ),
             super::AsmHistoricalTransition::between(Some(old_snapshot()), full_new_snapshot()),
         );
@@ -365,8 +365,13 @@ fn clean_multi_loop_face_splits_per_loop() {
     );
     assert_eq!(unit.context, Slots::from([10, 11, 12, 30, 60]));
     assert!(!unit.parts[&30].contains(&10));
-    let neighbours = binder.units.neighbours(&super::Parts::from([(10, 30)]));
-    assert_eq!(neighbours, super::Parts::from([(10, 30), (50, 50)]));
+    let neighbours = binder
+        .units
+        .neighbours(&[(10, 30)].into_iter().collect::<super::Parts>());
+    assert_eq!(
+        neighbours,
+        [(10, 30), (50, 50)].into_iter().collect::<super::Parts>()
+    );
 }
 
 #[test]
@@ -648,12 +653,23 @@ fn orphan_container_falls_back() {
 }
 
 #[test]
-fn existing_saved_container_falls_back_for_container_edit() {
+fn existing_saved_container_stays_incremental_for_unrelated_container_edit() {
     let mut a = fixture();
     a.insert(30, refs(30, "edge", &[(3, 15), (5, 15), (8, 17)]));
     let mut b = a.clone();
     set_ref(&mut b, 3, 5, 20);
     let stats = compare_step(&a, &b, &Slots::from([3]), Some(40));
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn touched_saved_container_falls_back() {
+    let mut a = fixture();
+    a.insert(30, refs(30, "edge", &[(3, 15), (5, 15), (8, 17)]));
+    let mut b = a.clone();
+    // Editing the saved free edge itself requires a full re-decode.
+    set_ref(&mut b, 30, 5, 25);
+    let stats = compare_step(&a, &b, &Slots::from([30]), Some(40));
     assert_eq!(stats.fallbacks.get("saved-free-containers"), Some(&1));
 }
 
@@ -775,14 +791,24 @@ fn saved_container_before_later_body_binds_in_key_order() {
         .unwrap();
     assert_eq!(topology.bodies, vec![1, 40, 100]);
     assert!(super::IndexedTopology::ordered(&topology));
-    let versions = records.keys().map(|&slot| (slot, slot)).collect();
+    let versions: BTreeMap<i64, i64> = records.keys().map(|&slot| (slot, slot)).collect();
+    let versions_fast: super::FastMap<i64, i64> = versions.iter().map(|(&k, &v)| (k, v)).collect();
     let snapshot = crate::history_records::AsmStateSnapshot {
         state_id: 1,
         topology: &topology,
         versions: &versions,
     };
     assert!(super::AsmHistoricalTransition::between(None, snapshot).is_some());
-    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_some());
+    assert!(super::transition_for_changes(
+        1,
+        &topology,
+        &versions_fast,
+        1,
+        &topology,
+        &versions_fast,
+        &Slots::from([40]),
+    )
+    .is_some());
     let archive = records
         .iter()
         .map(|(&slot, record)| (slot, record.clone()))
@@ -790,7 +816,7 @@ fn saved_container_before_later_body_binds_in_key_order() {
     let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
     let mut binder = Binder::new(&archive, Some(50), &work);
     binder
-        .update(&records.keys().copied().collect(), &versions)
+        .update(&records.keys().copied().collect(), &versions_fast)
         .unwrap();
     let full = binder
         .full(&ctx, &bytes, &mut Statistics::default())

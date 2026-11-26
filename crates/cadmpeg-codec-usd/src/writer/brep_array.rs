@@ -3,8 +3,9 @@
 
 use cadmpeg_ir::topology::Body;
 
+use super::brep::FaceMeshes;
 use super::text::{quoted, real, tuple};
-use super::{records, Placement, Writer, MILLIMETRES_PER_UNIT};
+use super::{records, Placement, Writer};
 use crate::brep::solid::{
     Curves, Packed, EDGE_CURVE_API, SURFACE_API, TRIM_CURVE_API, VERTEX_POINT_API,
 };
@@ -76,11 +77,22 @@ fn outward(value: f64, upper: bool) -> f32 {
 
 impl Writer<'_> {
     /// The `BrepArray` arrays of `body`, in metres, or `None` when a face or
-    /// edge of the body has no NURBS form.
-    pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<BrepPrim>> {
+    /// edge of the body has no NURBS form, and the tessellation of each face
+    /// meshed on the way.
+    pub(super) fn brep_packed(&mut self, body: &Body) -> (Option<Box<BrepPrim>>, FaceMeshes) {
         self.tessellator
             .set_options(super::brep::mesh_options(&self.index, body));
-        let exported = records::export(self.ir, &self.index, body, &mut self.tessellator, false)?;
+        let Some(mut exported) =
+            records::export(self.ir, &self.index, body, &mut self.tessellator, false)
+        else {
+            return (None, FaceMeshes::new());
+        };
+        let meshes = std::mem::take(&mut exported.meshes);
+        (self.packed(body, exported), meshes)
+    }
+
+    /// The `BrepArray` arrays of the exported B-rep of `body`.
+    fn packed(&mut self, body: &Body, exported: records::Exported) -> Option<Box<BrepPrim>> {
         let name = body.name.clone().unwrap_or_else(|| body.id.to_string());
         if exported.unwritten.faces > 0 || exported.unwritten.edges > 0 {
             self.unwritten.breps.push(format!(
@@ -89,7 +101,7 @@ impl Writer<'_> {
             ));
             return None;
         }
-        let records = exported.brep.divided(MILLIMETRES_PER_UNIT);
+        let records = exported.brep.divided(self.millimetres_per_unit);
         let converted = match crate::brep::convert::nurbs_only(&records) {
             Ok(converted) => converted,
             Err(reason) => {
@@ -99,6 +111,9 @@ impl Writer<'_> {
         };
         if !converted.trimmed {
             self.unwritten.untrimmed_breps.push(name.clone());
+        }
+        if exported.unwritten.pole_uses > 0 {
+            self.unwritten.pole_breps.push(name.clone());
         }
         let mut packed = Packed::default();
         if let Err(reason) = packed.push(&converted.brep, converted.trimmed) {
@@ -145,7 +160,7 @@ impl Writer<'_> {
             let high = max.map(|value| outward(value, true));
             self.extent(Some((low, high)));
         }
-        self.color_primvars(Some(body));
+        self.color_primvars(body.color);
         let out = &mut self.out;
         out.array(
             "uniform double[] brep:intersectTol3d",
@@ -365,7 +380,7 @@ impl Writer<'_> {
         let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
             std::collections::BTreeMap::new();
         for (index, face) in faces.iter().enumerate() {
-            if let Some(path) = self.binding_path(&face.to_string()) {
+            if let Some(path) = self.face_binding_path(face) {
                 groups.entry(path).or_default().push(index);
             }
         }
@@ -379,6 +394,7 @@ impl Writer<'_> {
             );
             self.out.open();
             self.out.line("uniform token elementType = \"face\"");
+            self.out.line("uniform token familyName = \"materialBind\"");
             self.out.array(
                 "int[] indices",
                 &indices.iter().map(ToString::to_string).collect::<Vec<_>>(),

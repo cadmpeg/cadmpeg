@@ -1,0 +1,2 @@
+f3d/source.preserved-image-unavailable Blocking preserved F3D source image is unavailable; regenerated from IR
+export/arena.omitted Warning the f3d write does not represent model arena `attributes`: 2 record(s) omitted: f3d:brep:attribute#19, f3d:brep:attribute#20

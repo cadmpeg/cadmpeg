@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
 use super::{assert_valid, decode};
@@ -45,7 +46,7 @@ fn archive(table: &[u8], second_discriminator: u64) -> Vec<u8> {
 }
 
 fn width_table() -> Vec<u8> {
-    serde_json::to_vec(&table_document(
+    json::to_vec(&table_document(
         "1",
         &[("W", object_target("71", "UserParameterValue"))],
         &[
@@ -73,13 +74,13 @@ fn configuration_empty_table_preserves_discriminator_five_user_parameters() {
     assert_eq!(height.expression, "Width / 2");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(20.0).unwrap()
         ))
     );
     assert_eq!(
         height.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(10.0).unwrap()
         ))
     );
@@ -116,9 +117,10 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
         .unwrap();
     let configurations = &decoded.ir().model.configurations;
     assert_eq!(configurations.len(), 2);
-    for (ordinal, name, expression, active) in
-        [(0, "Small", "10 mm", false), (1, "Large", "30 mm", true)]
-    {
+    for (ordinal, name, expression, active, millimetres) in [
+        (0, "Small", "10 mm", false, 10.0),
+        (1, "Large", "30 mm", true, 30.0),
+    ] {
         let configuration = configurations
             .iter()
             .find(|c| c.name.as_deref() == Some(name))
@@ -131,6 +133,12 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
                 .get(&width.id)
                 .map(String::as_str),
             Some(expression)
+        );
+        assert_eq!(
+            configuration.parameter_values.get(&width.id),
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(millimetres).unwrap()
+            ))
         );
         assert!(configuration.properties.is_empty());
     }

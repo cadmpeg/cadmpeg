@@ -168,7 +168,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 2.5,
             moved.y,
             moved.z,
@@ -641,8 +641,8 @@ fn decode_yields_metadata_and_honest_report() {
     )));
 
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity().retained_records().len(), 2);
+    assert_eq!(unknowns.len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 3);
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -745,6 +745,37 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
             .map(String::as_str),
         Some("DesignAsset[Active]")
     );
+    assert!(decoded
+        .ir()
+        .geometry
+        .bodies
+        .iter()
+        .all(|body| !body.id.as_str().contains("BREP.sibling")));
+}
+
+#[test]
+fn decode_selects_the_board_asset_of_a_document_without_an_empty_subtype_asset() {
+    let f3d = crate::test_support::zip_test::synthetic_board_asset_f3d();
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        let design_breps = container::design_breps(scan).collect::<Vec<_>>();
+        assert_eq!(design_breps.len(), 1);
+        assert!(design_breps[0].name.ends_with("BREP.design.smb"));
+        let streams = scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            streams,
+            ["DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat"]
+        );
+    });
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(decoded
         .ir()
         .geometry

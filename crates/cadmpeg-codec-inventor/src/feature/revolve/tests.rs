@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 #[test]
 fn native_revolve_losses_identify_the_unresolved_form() {
@@ -65,9 +65,9 @@ fn dimension_records_require_the_complete_frame_and_preserve_the_parameter() {
 fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands() {
     let expected = Operands {
         axis: RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("origin"),
-            direction: cadmpeg_ir::features::FeatureDirection3::from(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(0.0, 1.0, 0.0))
                     .expect("axis"),
             ),
@@ -109,8 +109,9 @@ fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands(
         };
         match field {
             "axis" => {
-                axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                    .expect("shifted origin");
+                axis.origin =
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                        .expect("shifted origin");
             }
             "extent" => {
                 *extent = RevolveExtent::OneSided {
@@ -177,7 +178,8 @@ fn dimension_annotation_data_precedes_the_parameter_tail() {
 
 mod axis_side {
     use super::*;
-    use serde_json::json;
+    use cadmpeg_core::json;
+    use cadmpeg_core::serde_erase::json;
 
     /// A square loop in the plane whose u axis is -X and whose v axis is +Z,
     /// with u in `[left, 4]` and v in `[0, 5]`.
@@ -186,7 +188,7 @@ mod axis_side {
         let entities = (0..4)
             .map(|index| {
                 let (start, end) = (corners[index], corners[(index + 1) % 4]);
-                serde_json::from_value(json!({
+                json::from_value(json!({
                     "id": format!("inventor:test:entity#{index}"),
                     "sketch": "inventor:test:sketch#1",
                     "construction": false, "endpoint_refs": [],
@@ -202,7 +204,7 @@ mod axis_side {
         let chain = (0..4)
             .map(|index| json!({"entity": format!("inventor:test:entity#{index}"), "reversed": false}))
             .collect::<Vec<_>>();
-        let sketch = serde_json::from_value(json!({
+        let sketch = json::from_value(json!({
             "id": "inventor:test:sketch#1",
             "placement": {"kind": "resolved", "frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -216,7 +218,7 @@ mod axis_side {
     }
 
     fn axis(origin: [f64; 3], direction: [f64; 3]) -> RevolutionAxis {
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
             "direction": {"x": direction[0], "y": direction[1], "z": direction[2]},
         }))
@@ -224,7 +226,7 @@ mod axis_side {
     }
 
     fn profile() -> PlanarProfileRef {
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "kind": "sketch_regions",
             "value": {
                 "sketch": "inventor:test:sketch#1",
@@ -282,14 +284,14 @@ mod axis_side {
 
     /// One curve in the same plane as [`square`], as a one-entity profile loop.
     fn single(geometry: &serde_json::Value) -> (Sketch, Vec<SketchEntity>) {
-        let entity = serde_json::from_value(json!({
+        let entity = json::from_value(json!({
             "id": "inventor:test:entity#0",
             "sketch": "inventor:test:sketch#1",
             "construction": false, "endpoint_refs": [],
             "geometry": geometry,
         }))
         .expect("curve entity");
-        let sketch = serde_json::from_value(json!({
+        let sketch = json::from_value(json!({
             "id": "inventor:test:sketch#1",
             "placement": {"kind": "resolved", "frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},

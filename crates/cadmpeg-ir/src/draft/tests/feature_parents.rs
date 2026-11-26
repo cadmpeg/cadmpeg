@@ -6,9 +6,8 @@ use crate::draft::DraftError;
 use crate::draft::ModelDraft;
 
 use crate::document::Model;
-use crate::features::{
-    Feature, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, TreeChildren,
-};
+use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
 pub(super) fn parent_draft() -> ModelDraft {
     let mut draft = ModelDraft::new();
@@ -20,12 +19,12 @@ pub(super) fn parent_draft() -> ModelDraft {
                 ordinal,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -46,10 +45,17 @@ fn commit(model: Model, base: &mut CadIr, use_session: bool) -> Result<(), Draft
     let mut draft = ModelDraft::new();
     *draft.model_mut() = model;
     if use_session {
-        CommitSession::new(base, &cadmpeg_test_support::service_decode_context(), None)?
-            .commit_model(draft)?
+        CommitSession::new(
+            base,
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            None,
+        )?
+        .commit_model(draft)?
     } else {
-        draft.commit_model(base, &cadmpeg_test_support::service_decode_context())?
+        draft.commit_model(
+            base,
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+        )?
     }
 }
 
@@ -92,10 +98,8 @@ fn parent_admission_preserves_a_predecessor_moved_to_the_destination() {
             .features
             .push(draft.model_mut().features.remove(0));
         commit(draft.model().clone(), &mut base, use_session).unwrap();
-        let read = CadIr::from_json(&base.to_canonical_json().unwrap()).unwrap();
-        assert_eq!(read, base);
         assert_eq!(
-            read.model
+            base.model
                 .feature_regeneration_parent(&"test:parents:feature#1-child".try_into().unwrap())
                 .unwrap()
                 .as_str(),

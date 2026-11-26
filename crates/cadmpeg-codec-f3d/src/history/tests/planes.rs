@@ -5,6 +5,7 @@ use crate::history::{
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
@@ -70,7 +71,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) = scope.payload_mut()
     {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "count": 2, "count_record_index": 11, "count_offset": 0,
                 "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                 "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
@@ -80,7 +81,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         );
     }
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
@@ -92,7 +93,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         }))
         .expect("mirror plane group");
     let mut operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
             "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -174,9 +175,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+            cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("finite plane normal")
         )
     );
@@ -201,9 +202,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
                 .expect("finite plane normal")
         )
     );
@@ -450,7 +451,7 @@ fn bound_mirror_plane_in(
     if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) = scope.payload_mut()
     {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "count": 2, "count_record_index": 11, "count_offset": 0,
                 "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                 "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
@@ -460,7 +461,7 @@ fn bound_mirror_plane_in(
         );
     }
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
@@ -472,7 +473,7 @@ fn bound_mirror_plane_in(
         }))
         .expect("mirror plane group");
     let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
             "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -484,9 +485,9 @@ fn bound_mirror_plane_in(
         .expect("mirror plane selection");
     let identities = persistent_identity
         .map(|local_id| {
-            serde_json::from_value::<
+            json::from_value::<
                 crate::records::topology::construction::DesignConstructionOperandIdentity,
-            >(serde_json::json!({
+            >(cadmpeg_core::json!({
                 "id": "f3d:Design/BulkStream.dat:operand-identity#50",
                 "group_record_index": 30,
                 "wrapper_record_indices": [50], "wrapper_byte_offsets": [500],
@@ -642,8 +643,9 @@ fn an_origin_plane_identity_keeps_its_plane_when_an_asm_face_shares_it() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let plane = |origin, normal| {
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(origin).expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(normal).expect("finite plane normal"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(origin).expect("finite plane origin"),
+            cadmpeg_ir::features::geometry::FiniteVector3::new(normal)
+                .expect("finite plane normal"),
         )
     };
     let historical = plane(Point3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 1.0));
@@ -679,23 +681,21 @@ fn a_compact_plane_selection_without_a_usable_face_assumes_the_next_work_plane()
         Absent,
     }
     let construction = |proven_plane_scope: bool| {
-        let mut construction = serde_json::json!({
+        let mut construction = cadmpeg_core::json!({
             "count": 2, "count_record_index": 11, "count_offset": 0,
             "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
             "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
             "plane_group_record_index": 30, "plane_selection_record_index": 40
         });
         if proven_plane_scope {
-            construction["plane_scope_record_index"] = serde_json::json!(7);
-            construction["plane_reference_offset"] = serde_json::json!(0);
+            construction["plane_scope_record_index"] = cadmpeg_core::json!(7);
+            construction["plane_reference_offset"] = cadmpeg_core::json!(0);
         }
-        serde_json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(
-            construction,
-        )
-        .expect("mirror construction")
+        json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(construction)
+            .expect("mirror construction")
     };
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
@@ -792,7 +792,7 @@ fn a_compact_plane_selection_without_a_usable_face_assumes_the_next_work_plane()
             *slot = Some(construction(proven_plane_scope));
         }
         let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
                 "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
                 "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -933,7 +933,7 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
             .collect(),
     );
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
@@ -961,17 +961,17 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
             mirror.payload_mut()
         {
             *slot = Some({
-                let mut construction = serde_json::json!({
+                let mut construction = cadmpeg_core::json!({
                     "count": 2, "count_record_index": 11, "count_offset": 0,
                     "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                     "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
                     "plane_group_record_index": 30, "plane_selection_record_index": 40
                 });
                 if plane_scope != 369 {
-                    construction["plane_scope_record_index"] = serde_json::json!(plane_scope);
-                    construction["plane_reference_offset"] = serde_json::json!(0);
+                    construction["plane_scope_record_index"] = cadmpeg_core::json!(plane_scope);
+                    construction["plane_reference_offset"] = cadmpeg_core::json!(0);
                 }
-                serde_json::from_value(construction).expect("mirror construction")
+                json::from_value(construction).expect("mirror construction")
             });
         }
         let mut work_plane = crate::records::feature::scope::DesignParameterScope::empty(
@@ -997,7 +997,7 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
             });
         }
         let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
                 "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
                 "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -1061,7 +1061,7 @@ fn a_construction_plane_identity_names_the_next_work_plane_without_an_assumption
 #[test]
 fn a_construction_plane_scope_excludes_an_assumed_scope_and_a_different_plane_reference() {
     let construction = |extra: serde_json::Value| {
-        let mut construction = serde_json::json!({
+        let mut construction = cadmpeg_core::json!({
             "count": 2, "count_record_index": 11, "count_offset": 0,
             "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
             "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
@@ -1071,20 +1071,18 @@ fn a_construction_plane_scope_excludes_an_assumed_scope_and_a_different_plane_re
         for (key, value) in extra.as_object().unwrap() {
             construction[key] = value.clone();
         }
-        serde_json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(
-            construction,
-        )
+        json::from_value::<crate::records::feature::mirror::DesignMirrorConstruction>(construction)
     };
-    assert!(construction(serde_json::json!({})).is_ok());
-    assert!(construction(serde_json::json!({
+    assert!(construction(cadmpeg_core::json!({})).is_ok());
+    assert!(construction(cadmpeg_core::json!({
         "plane_scope_record_index": 369, "plane_reference_offset": 0
     }))
     .is_ok());
-    assert!(construction(serde_json::json!({
+    assert!(construction(cadmpeg_core::json!({
         "plane_scope_record_index": 500, "plane_reference_offset": 0
     }))
     .is_err());
-    assert!(construction(serde_json::json!({
+    assert!(construction(cadmpeg_core::json!({
         "assumed_plane_scope": {"scope_record_index": 500, "identity_offset": 21, "unusable_faces": []}
     }))
     .is_err());
@@ -1126,7 +1124,7 @@ fn an_origin_plane_selection_outranks_a_face_reading_with_a_later_recipe() {
             .collect(),
     );
     let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:group#100", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 0,
             "class_tag": "282", "members": [110], "member_offsets": [0],
@@ -1138,7 +1136,7 @@ fn an_origin_plane_selection_outranks_a_face_reading_with_a_later_recipe() {
         }))
         .expect("mirror plane group");
     let operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:operand#110", "scope_record_index": 42,
             "group_record_index": 100, "group_member_ordinal": 0, "record_index": 110,
             "byte_offset": 0, "class_tag": "414", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
@@ -1167,7 +1165,7 @@ fn an_origin_plane_selection_outranks_a_face_reading_with_a_later_recipe() {
             mirror.payload_mut()
         {
             *slot = Some(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "count": 2, "count_record_index": 11, "count_offset": 0,
                     "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                     "stitch_tolerance_offset": 0, "seed_group_record_index": 20,

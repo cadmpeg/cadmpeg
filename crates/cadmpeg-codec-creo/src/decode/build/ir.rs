@@ -6,13 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::VertexSelection;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternTransform},
-    AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    SurfaceBoundary,
-};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::extents::{AngularTermination, LinearTermination};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::VertexSelection;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -22,6 +22,7 @@ use cadmpeg_ir::tessellation::{
     ShadedVertex, Strip, Strips, Tessellation, TessellationId, TessellationLaneError,
     TessellationMesh,
 };
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -48,6 +49,9 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The source parts the build gives up, for the decode to commit after it
+    /// attaches the retained records that contain them.
+    pub(in super::super) given_up: Vec<GivenUpPart>,
 }
 
 pub(in super::super) fn build_container_ir(
@@ -69,6 +73,7 @@ pub(in super::super) fn build_container_ir(
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
         transfer_losses,
+        given_up: Vec::new(),
     })
 }
 
@@ -259,12 +264,8 @@ fn transfer_reference_lines(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -342,12 +343,8 @@ fn transfer_reference_circles(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -428,12 +425,8 @@ fn transfer_reference_ellipses(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -487,7 +480,7 @@ fn transfer_display_tessellations(
         )?;
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "SolidPrimdata",
             cadmpeg_core::decode::u64_from_index(strip.offset),
             "display_triangle_strip",
@@ -615,12 +608,8 @@ fn transfer_datum_plane_surfaces(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: source_object_id_checked(format_args!("ActDatums:{}", plane.id))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -738,12 +727,8 @@ fn transfer_placed_planes(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: source_object_id_checked(format_args!("VisibGeom:{surface_id}"))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -792,10 +777,19 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
         &mut source_carriers,
     )?;
+    let mut given_up = super::super::assembly::give_up_unread_rows(ctx, scan)?
+        .into_iter()
+        .collect::<Vec<_>>();
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
-    let dimension_targets =
-        super::super::pmi::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
+    let dimension_targets = super::super::pmi::transfer(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut transfer_losses,
+        &mut given_up,
+    )?;
     super::super::pmi::tags::transfer(
         ctx,
         scan,
@@ -814,7 +808,14 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    emit_geometry_arenas(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &brep_diagnostics,
+        &mut transfer_losses,
+    )?;
     collect_feature_coverage(
         scan,
         &ir,
@@ -826,7 +827,13 @@ pub(in super::super) fn build_ir(
     let definition =
         super::design_v11::root_definition(ctx, &mut ir, super::design_v11::model_kind(scan))?;
     if ctx.depth() >= DecodeDepth::Design {
-        super::design_v11::project(ctx, scan, &mut ir, &definition)?;
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "creo",
+            &mut ir,
+            &mut transfer_losses,
+            |ir, losses| super::design_v11::project(ctx, scan, ir, &definition, losses),
+        )?;
     }
     Ok(BuiltIr {
         ir,
@@ -835,6 +842,7 @@ pub(in super::super) fn build_ir(
         coverage,
         brep_diagnostics,
         transfer_losses,
+        given_up,
     })
 }
 

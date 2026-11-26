@@ -36,7 +36,7 @@ use crate::CodecError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::text::NonBlankString;
+use crate::text::{CodecId, NonBlankString};
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
@@ -360,7 +360,7 @@ pub struct DialectMatch {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_instance"
     )]
-    instance: Option<String>,
+    instance: Option<NonBlankString>,
     /// How this layer was admitted.
     admission: Admission,
 }
@@ -376,10 +376,9 @@ pub enum LayerInstance {
 
 /// A report's primary format layer and any nested or carried format layers.
 ///
-/// Extra layers are unique by `(format, instance)`. An extra layer for the
-/// primary format has an instance that identifies it inside the containing
-/// document. The wire names the primary explicitly, so the collection carries
-/// its complete identity without an enclosing report's format.
+/// Layers are unique by `(format, instance)`. The wire names the primary
+/// explicitly, so the collection carries its complete identity without an
+/// enclosing report's format.
 ///
 /// A read rejects a wire whose `extra` repeats a `(format, instance)` key, and
 /// one whose `extra` carries the primary key. The key set on the wire is the
@@ -411,39 +410,22 @@ impl<'de> Deserialize<'de> for DialectLayers {
     }
 }
 
-/// Failure to insert a unique dialect layer.
+/// A layer that [`DialectLayers::insert`] refused, returned unchanged: a
+/// layer of the collection already has its format and instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DialectLayerError {
-    /// The existing layer has the same format and instance.
-    Duplicate(DialectMatch),
-    /// An extra layer in the primary format has no instance.
-    MissingInstance(DialectMatch),
-}
+pub struct DuplicateDialectLayer(pub DialectMatch);
 
-impl fmt::Display for DialectLayerError {
+impl fmt::Display for DuplicateDialectLayer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Duplicate(layer) => write!(formatter, "duplicate dialect layer key: {layer:?}"),
-            Self::MissingInstance(layer) => write!(
-                formatter,
-                "extra dialect layer in the primary format needs an instance: {layer:?}"
-            ),
-        }
+        write!(formatter, "duplicate dialect layer key: {:?}", self.0)
     }
 }
 
-impl Error for DialectLayerError {}
+impl Error for DuplicateDialectLayer {}
 
-impl From<DialectLayerError> for CodecError {
-    fn from(error: DialectLayerError) -> Self {
-        match error {
-            DialectLayerError::Duplicate(layer) => {
-                Self::malformed(format_args!("duplicate dialect layer key: {layer:?}"))
-            }
-            DialectLayerError::MissingInstance(layer) => Self::malformed(format_args!(
-                "extra dialect layer in the primary format needs an instance: {layer:?}"
-            )),
-        }
+impl From<DuplicateDialectLayer> for CodecError {
+    fn from(DuplicateDialectLayer(layer): DuplicateDialectLayer) -> Self {
+        Self::malformed(format_args!("duplicate dialect layer key: {layer:?}"))
     }
 }
 
@@ -460,26 +442,22 @@ impl DialectLayers {
     /// Inserts a layer keyed by `(format, instance)`.
     ///
     /// The first layer for a key remains authoritative. A duplicate is
-    /// returned unchanged so its producer can report the collision. An extra
-    /// layer in the primary format must carry a nonempty instance.
-    pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectLayerError> {
+    /// returned unchanged so its producer can report the collision.
+    pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DuplicateDialectLayer> {
         if Self::same_key(&self.primary, &layer)
             || self
                 .extra
                 .iter()
                 .any(|existing| Self::same_key(existing, &layer))
         {
-            return Err(DialectLayerError::Duplicate(layer));
-        }
-        if layer.format() == self.primary.format() && layer.instance().is_none_or(str::is_empty) {
-            return Err(DialectLayerError::MissingInstance(layer));
+            return Err(DuplicateDialectLayer(layer));
         }
         self.extra.push(layer);
         Ok(())
     }
 
     /// Adds a layer, returning it unchanged when its key is occupied.
-    pub fn with(mut self, layer: DialectMatch) -> Result<Self, DialectLayerError> {
+    pub fn with(mut self, layer: DialectMatch) -> Result<Self, DuplicateDialectLayer> {
         self.insert(layer)?;
         Ok(self)
     }
@@ -555,7 +533,7 @@ pub enum FormatIdentity<T> {
     /// The format is known but no classification payload exists.
     Unclassified {
         /// Registry format namespace.
-        format: String,
+        format: CodecId,
     },
 }
 
@@ -568,10 +546,8 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
 
     /// Constructs an identity for a known format without classification.
     #[must_use]
-    pub fn unclassified(format: impl Into<String>) -> Self {
-        Self::Unclassified {
-            format: format.into(),
-        }
+    pub const fn unclassified(format: CodecId) -> Self {
+        Self::Unclassified { format }
     }
 
     /// Returns the authoritative format id.
@@ -579,7 +555,18 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
     pub fn format(&self) -> &str {
         match self {
             Self::Classified { dialects } => dialects.format(),
-            Self::Unclassified { format } => format,
+            Self::Unclassified { format } => format.as_str(),
+        }
+    }
+
+    /// Returns the authoritative format id as a codec id: a classified
+    /// payload's format is the namespace of a dialect id, which has the
+    /// grammar of a codec id.
+    #[must_use]
+    pub fn codec(&self) -> CodecId {
+        match self {
+            Self::Classified { dialects } => CodecId::admitted(dialects.format()),
+            Self::Unclassified { format } => format.clone(),
         }
     }
 
@@ -646,9 +633,10 @@ impl DialectMatch {
     }
 
     /// Attaches a report-local layer instance before the match enters a report.
+    /// A blank instance names no instance.
     #[must_use]
     pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
-        self.instance = Some(instance.into());
+        self.instance = NonBlankString::new(instance);
         self
     }
 
@@ -673,7 +661,7 @@ impl DialectMatch {
     /// Returns the report-local layer instance.
     #[must_use]
     pub fn instance(&self) -> Option<&str> {
-        self.instance.as_deref()
+        self.instance.as_ref().map(NonBlankString::as_str)
     }
 
     /// Returns how this layer was admitted.
@@ -764,7 +752,7 @@ mod tests {
             "rhino:archive_80",
             "rhino:-archive-80",
         ] {
-            serde_json::from_value::<DialectId>(serde_json::json!(id))
+            crate::serde_erase::json::from_value::<DialectId>(crate::json!(id))
                 .expect_err("a malformed dialect id must be rejected");
         }
     }
@@ -803,14 +791,14 @@ mod tests {
 
     #[test]
     fn a_dialect_match_wire_states_its_format_once_through_its_dialect() {
-        let restated = serde_json::json!({
+        let restated = crate::json!({
             "format": "rhino",
             "dialect": "rhino:archive-80",
             "declared": {},
             "admission": {"kind": "admitted"},
         });
 
-        let error = serde_json::from_value::<DialectMatch>(restated)
+        let error = crate::serde_erase::json::from_value::<DialectMatch>(restated)
             .expect_err("the format is read from the dialect, so the wire carries no format key");
         assert!(
             error.to_string().contains("unknown field `format`"),
@@ -864,12 +852,12 @@ mod tests {
 
     #[test]
     fn a_self_named_unverified_grammar_remains_opaque() {
-        let self_named = serde_json::json!({
+        let self_named = crate::json!({
             "dialect": "rhino:unknown",
             "declared": {},
             "admission": { "kind": "unverified", "using": "unknown" },
         });
-        let matched = serde_json::from_value::<DialectMatch>(self_named)
+        let matched = crate::serde_erase::json::from_value::<DialectMatch>(self_named)
             .expect("core does not infer grammar semantics from an opaque dialect name");
         assert_eq!(
             matched.admission(),
@@ -881,12 +869,12 @@ mod tests {
 
     #[test]
     fn a_grammar_name_has_no_spelling_for_a_foreign_namespace() {
-        let malformed = serde_json::json!({
+        let malformed = crate::json!({
             "dialect": "rhino:unknown",
             "declared": {},
             "admission": { "kind": "unverified", "using": "step:ap242-e3" },
         });
-        let error = serde_json::from_value::<DialectMatch>(malformed)
+        let error = crate::serde_erase::json::from_value::<DialectMatch>(malformed)
             .expect_err("a grammar substitute belongs to the classified format layer");
         assert!(
             error
@@ -939,9 +927,9 @@ mod tests {
             .with(member.clone())
             .expect("distinct dialect layer keys");
 
-        let serialized = serde_json::to_value(&layers).unwrap();
+        let serialized = crate::serde_erase::json::to_value(&layers).unwrap();
         assert_eq!(
-            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            crate::serde_erase::json::from_value::<DialectLayers>(serialized).unwrap(),
             layers
         );
         assert_eq!(layers.extra, [member]);
@@ -958,7 +946,7 @@ mod tests {
 
         assert_eq!(
             layers.insert(replacement.clone()),
-            Err(super::DialectLayerError::Duplicate(replacement))
+            Err(super::DuplicateDialectLayer(replacement))
         );
         assert_eq!(layers.extra, [first]);
     }
@@ -972,7 +960,7 @@ mod tests {
 
         assert_eq!(
             layers.insert(replacement.clone()),
-            Err(super::DialectLayerError::Duplicate(replacement))
+            Err(super::DuplicateDialectLayer(replacement))
         );
         assert_eq!(layers.primary(), &layer("rhino"));
         assert_eq!(layers.extra, [layer("acis")]);
@@ -988,7 +976,7 @@ mod tests {
             .expect("distinct dialect layer keys");
         assert_eq!(
             layers.with(replacement.clone()),
-            Err(super::DialectLayerError::Duplicate(replacement))
+            Err(super::DuplicateDialectLayer(replacement))
         );
     }
 
@@ -1005,12 +993,12 @@ mod tests {
 
     #[test]
     fn dialect_layers_deserialization_rejects_a_repeated_key() {
-        let serialized = serde_json::json!({
+        let serialized = crate::json!({
             "primary": layer("rhino"),
             "extra": [layer("acis"), DialectMatch::residual(crate::dialect_id!("acis:other"))],
         });
 
-        let error = serde_json::from_value::<DialectLayers>(serialized)
+        let error = crate::serde_erase::json::from_value::<DialectLayers>(serialized)
             .expect_err("a repeated extra layer key is a read error");
         assert!(
             error.to_string().contains("duplicate dialect layer key"),
@@ -1020,12 +1008,12 @@ mod tests {
 
     #[test]
     fn dialect_layers_deserialization_rejects_an_extra_on_the_primary_key() {
-        let serialized = serde_json::json!({
+        let serialized = crate::json!({
             "primary": layer("rhino"),
             "extra": [DialectMatch::residual(crate::dialect_id!("rhino:other"))],
         });
 
-        let error = serde_json::from_value::<DialectLayers>(serialized)
+        let error = crate::serde_erase::json::from_value::<DialectLayers>(serialized)
             .expect_err("an extra layer on the primary key is a read error");
         assert!(
             error.to_string().contains("duplicate dialect layer key"),
@@ -1033,29 +1021,39 @@ mod tests {
         );
     }
 
+    /// §2.7: no two layers of `DialectLayers` share a format and `instance`.
     #[test]
-    fn dialect_layers_reject_an_untagged_extra_in_a_tagged_primary_format() {
+    fn an_untagged_extra_beside_a_tagged_primary_of_its_format_is_kept() {
         let extra = layer("rhino");
-        let error = DialectLayers::of(layer("rhino").with_instance("root"))
+        let layers = DialectLayers::of(layer("rhino").with_instance("root"))
             .with(extra.clone())
-            .expect_err("an untagged extra in the primary format needs an instance");
-        assert_eq!(error, super::DialectLayerError::MissingInstance(extra));
+            .expect("distinct dialect layer keys");
+        assert_eq!(layers.iter().nth(1), Some(&extra));
+    }
+
+    /// "`instance`: `Option<NonBlankString>`" (§2.7): a blank instance names
+    /// no instance, and a document that states one is refused.
+    #[test]
+    fn a_blank_instance_names_no_instance() {
+        assert_eq!(layer("rhino").with_instance(" \t").instance(), None);
+        let mut wire =
+            crate::serde_erase::json::to_value(layer("rhino").with_instance("root")).unwrap();
+        wire["instance"] = crate::json!(" ");
+        assert!(crate::serde_erase::json::from_value::<DialectMatch>(wire).is_err());
     }
 
     #[test]
-    fn dialect_layers_deserialization_rejects_an_untagged_extra_in_a_tagged_primary_format() {
-        let serialized = serde_json::json!({
+    fn dialect_layers_deserialization_reads_an_untagged_extra_beside_a_tagged_primary() {
+        let serialized = crate::json!({
             "primary": layer("rhino").with_instance("root"),
             "extra": [layer("rhino")],
         });
 
-        let error = serde_json::from_value::<DialectLayers>(serialized)
-            .expect_err("an untagged extra in the primary format is a read error");
-        assert!(
-            error
-                .to_string()
-                .contains("extra dialect layer in the primary format needs an instance"),
-            "{error}"
+        let layers = crate::serde_erase::json::from_value::<DialectLayers>(serialized.clone())
+            .expect("an untagged extra beside a tagged primary reads");
+        assert_eq!(
+            crate::serde_erase::json::to_value(&layers).unwrap(),
+            serialized
         );
     }
 
@@ -1064,17 +1062,17 @@ mod tests {
         let layers = DialectLayers::of(layer("rhino"))
             .with(layer("acis"))
             .expect("distinct dialect layer keys");
-        let serialized = serde_json::to_value(&layers).unwrap();
+        let serialized = crate::serde_erase::json::to_value(&layers).unwrap();
 
         assert_eq!(
             serialized,
-            serde_json::json!({
+            crate::json!({
                 "primary": layer("rhino"),
                 "extra": [layer("acis")],
             })
         );
         assert_eq!(
-            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            crate::serde_erase::json::from_value::<DialectLayers>(serialized).unwrap(),
             layers
         );
         assert_eq!(
@@ -1082,7 +1080,25 @@ mod tests {
             ["rhino", "acis"]
         );
     }
+
+    #[test]
+    fn an_unclassified_format_is_a_codec_id() {
+        type Identity = super::FormatIdentity<DialectLayers>;
+        let read = |format: &str| {
+            crate::serde_erase::json::from_value::<Identity>(
+                crate::json!({"kind": "unclassified", "format": format}),
+            )
+        };
+        let identity = read("rhino").unwrap();
+        assert_eq!(identity.format(), "rhino");
+        assert_eq!(identity.codec(), crate::codec_id!("rhino"));
+        for format in ["", "Rhino", "rhino:archive-80", "my-codec"] {
+            assert!(read(format).is_err(), "{format:?}");
+        }
+        let classified = Identity::classified(DialectLayers::of(layer("step")));
+        assert_eq!(classified.codec(), crate::codec_id!("step"));
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.
-crate::named_optional_field!(deserialize_instance, String, "instance");
+crate::named_optional_field!(deserialize_instance, NonBlankString, "instance");

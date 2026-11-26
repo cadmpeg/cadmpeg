@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{CompoundLoftDirection, RevisionCompoundLoftTail};
+use crate::geometry::lofts::CompoundLoftDirection;
+use crate::geometry::revision_forms::RevisionCompoundLoftTail;
 use crate::ids::CurveId;
 use crate::math::Vector3;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct TailWire {
@@ -35,9 +37,9 @@ fn the_revision_compound_loft_tail_names_its_form() {
         ),
     ] {
         let value = TailWire { tail };
-        let wire = serde_json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert_eq!(wire, expected);
-        assert_eq!(serde_json::from_value::<TailWire>(wire).unwrap(), value);
+        assert_eq!(json::from_value::<TailWire>(wire).unwrap(), value);
     }
 }
 
@@ -50,15 +52,13 @@ fn a_detached_bound_and_curve_have_no_encoding_in_the_loft_tail() {
         json!({"kind": "curve", "curve": "test:model:curve#tail"}),
     ] {
         assert!(
-            serde_json::from_value::<TailWire>(json!({"tail": tail.clone()})).is_err(),
+            json::from_value::<TailWire>(json!({"tail": tail.clone()})).is_err(),
             "{tail}"
         );
     }
 
     let bogus = json!({"tail": {"kind": "unbounded", "zz_bogus": 1}});
-    let error = serde_json::from_value::<TailWire>(bogus)
-        .unwrap_err()
-        .to_string();
+    let error = json::from_value::<TailWire>(bogus).unwrap_err().to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
 
@@ -69,11 +69,11 @@ fn a_compound_loft_direction_carries_a_selector_only_on_its_curve_form() {
             value: Vector3::new(0.0, 0.0, 1.0),
         },
     };
-    let wire = serde_json::to_value(&vector).unwrap();
+    let wire = json::to_value(&vector).unwrap();
     assert_eq!(wire["direction"]["kind"], "vector");
     assert!(wire["direction"].get("selector").is_none());
     assert_eq!(
-        serde_json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(wire).unwrap(),
+        json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(wire).unwrap(),
         vector
     );
 
@@ -83,21 +83,20 @@ fn a_compound_loft_direction_carries_a_selector_only_on_its_curve_form() {
             selector: std::num::NonZeroI64::new(3).expect("three is nonzero"),
         },
     };
-    let wire = serde_json::to_value(&curve).unwrap();
+    let wire = json::to_value(&curve).unwrap();
     assert_eq!(wire["direction"]["selector"], 3);
     assert_eq!(
-        serde_json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(wire.clone())
-            .unwrap(),
+        json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(wire.clone()).unwrap(),
         curve
     );
 
     let mut zero = wire.clone();
     zero["direction"]["selector"] = json!(0);
-    assert!(serde_json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(zero).is_err());
+    assert!(json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(zero).is_err());
 
     let mut bogus = wire;
     bogus["direction"]["zz_bogus"] = json!(1);
-    let error = serde_json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(bogus)
+    let error = json::from_value::<super::RevisionCompoundLoftDirectionWireTest>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -119,8 +118,8 @@ fn an_admitted_loft_tail_holds_finite_bounds() {
     );
     assert_eq!(admitted.curve(), Some(&id));
     assert_eq!(
-        serde_json::to_value(&admitted).unwrap(),
-        serde_json::to_value(&raw).unwrap()
+        json::to_value(&admitted).unwrap(),
+        json::to_value(&raw).unwrap()
     );
     for tail in [
         RevisionCompoundLoftTail::LowerBound { lower: f64::NAN },

@@ -9,20 +9,21 @@ use crate::sketch::{
     SKETCH_TYPE,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 /// The same record read as a distance dimension driven by parameter
 /// reference 5.
 fn as_distance(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-    let mut wire = serde_json::to_value(relation).expect("relation wire");
-    wire["kind"] = serde_json::json!({
+    let mut wire = json::to_value(relation).expect("relation wire");
+    wire["kind"] = cadmpeg_core::json!({
         "form": "distance",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),
         "value": 0,
         "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     });
-    wire["header"]["parameter"] = serde_json::json!({"index": 5, "qualified": true});
-    serde_json::from_value(wire).expect("distance wire")
+    wire["header"]["parameter"] = cadmpeg_core::json!({"index": 5, "qualified": true});
+    json::from_value(wire).expect("distance wire")
 }
 
 /// Project a distance dimension between entities at ordinals 7 and 3,
@@ -46,7 +47,7 @@ fn distance_definition(axis: &[u32]) -> serde_json::Value {
         crate::sketch::project_constraint(&ctx, &distance, &entities, &parameters, &axis_lines)
             .expect("distance operands resolve")
             .expect("distance projection");
-    serde_json::to_value(projected.definition).expect("definition wire")
+    json::to_value(projected.definition).expect("definition wire")
 }
 
 #[test]
@@ -82,7 +83,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
             cadmpeg_ir::identity_key!("segment"),
             2,
         );
-        let parameter = cadmpeg_ir::features::DesignParameter {
+        let parameter = cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: cadmpeg_ir::features::ParameterId::mint("inventor:test:parameter#4")
                 .expect("parameter id"),
@@ -92,7 +93,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some("inventor:pmdc:parameter#segment-4".into()),
@@ -103,7 +104,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
         let projected = project(&ctx, &inventory, &[parameter]).expect("sketch projection");
         assert_eq!(projected.constraints.len(), 1);
         assert_eq!(projected.native_axis_distances, native);
-        let definition = serde_json::to_value(&projected.constraints[0].definition).expect("wire");
+        let definition = json::to_value(&projected.constraints[0].definition).expect("wire");
         assert_eq!(
             definition["kind"],
             if flagged { "native" } else { "distance_loci" }

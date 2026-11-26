@@ -308,9 +308,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     native_ref: None,
                 },
             )?;
-            let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(position))
-                .ok_or(Point::NON_FINITE_POSITION)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let finite_position =
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(position))
+                    .ok_or(Point::NON_FINITE_POSITION)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.charge_entities(1, "admit Creo model points")?;
             source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
@@ -462,12 +463,11 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         ir.geometry.shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
@@ -479,6 +479,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         transferred += 1;
@@ -496,7 +497,7 @@ impl PrevalidatedRevolutionBoundary {
         transform: &crate::placement::FeatureSectionTransform,
         segment: &super::profiles::ProfileEntity,
         surface: &cadmpeg_ir::geometry::SurfaceGeometry,
-        axis: &cadmpeg_ir::features::RevolutionAxis,
+        axis: &cadmpeg_ir::features::revolve::RevolutionAxis,
         boundary_point: ([f64; 2], RevolutionBoundary),
         diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {

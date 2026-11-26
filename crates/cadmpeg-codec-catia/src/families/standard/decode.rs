@@ -30,14 +30,18 @@ use crate::families::standard::records::{AnalyticSurfaceKind, StandardSurfaceRec
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
-    pcurve::{Pcurve, PcurveGeometry},
-    surface_payloads::ExtrusionSurfaceConstruction,
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -272,7 +276,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         }
         let face_edges = face
             .loops
-            .iter()
+            .stated()
             .filter_map(|id| loop_indices.get(id))
             .flat_map(|index| ir.geometry.loops[*index].coedges())
             .filter_map(|id| coedge_indices.get(id))
@@ -439,7 +443,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations.derived(&ir.geometry.curves[curve_index].id, "geometry")?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         seam_count += 1;
     }
     Ok((surface_bindings.len(), seam_count))
@@ -450,9 +454,10 @@ mod consolidated_revolution_binding_tests {
     use super::bind_consolidated_revolution_faces_and_seams;
     use crate::families::freeform::ConsolidatedRevolutionBinding;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
         SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
@@ -525,7 +530,7 @@ mod consolidated_revolution_binding_tests {
                 .expect("identity grammar");
             ir.geometry.points.push(Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(7.0, 0.0, 0.0))
                     .expect("finite endpoint"),
                 None,
             ));
@@ -645,7 +650,7 @@ mod consolidated_revolution_binding_tests {
                 .expect("identity grammar");
             ir.geometry.points.push(Point::new(
                 point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -788,7 +793,7 @@ mod consolidated_revolution_binding_tests {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("finite point"),
             None,
         ));
@@ -1180,7 +1185,7 @@ fn attach_free_vertices(
     }
     if free_vertices.is_empty() {
         return Err(cadmpeg_core::CodecError::malformed(
-            cadmpeg_ir::features::BodySelectionError::Empty,
+            cadmpeg_ir::features::selections::BodySelectionError::Empty,
         ));
     }
     let shell = Shell::with_members(
@@ -1189,10 +1194,14 @@ fn attach_free_vertices(
         Vec::new(),
         free_vertices,
     );
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "MainDataStream+SurfacicReps",
             0,
             "unbound_point_owner",
@@ -1209,15 +1218,13 @@ fn attach_free_vertices(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
     let region_shells = vec![shell_id];
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, body_id, region_shells));
     ir.geometry.shells.push(shell);
     Ok(())
 }
@@ -1926,6 +1933,15 @@ fn try_decode_standard_populations(
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        for mut loss in output.report.losses {
+            if loss.code == unreadable {
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
+                    Ok(rescope_standard_id(id, &scope))
+                })?;
+                merged.report.losses.push(loss);
+            }
+        }
     }
 
     for (key, value) in population_coverage {
@@ -2541,7 +2557,7 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_2d",
                     tag,
-                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
+                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None)).ok()?),
                     Exactness::Derived,
                 )
             }
@@ -2667,6 +2683,15 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
+    let given_up_faces: Vec<cadmpeg_ir::ids::FaceId> = match topology_failure {
+        Some(_) => topology_ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.clone())
+            .collect(),
+        None => Vec::new(),
+    };
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations.into_retained();
@@ -2790,8 +2815,19 @@ fn try_decode_standard_population(
     }
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
-    consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
-    consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
+    let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        refusal,
+        &mut admission,
+    ) {
+        Ok(source_jet_pcurves) => source_jet_pcurves,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
+    consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -2820,17 +2856,38 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
+    if let Some(failure) = topology_failure {
+        let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
+        report.losses.extend(given_up_faces.into_iter().map(|face| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                face,
+                format_args!("{code}: {}", failure.message()),
+            )
+            .loss()
+        }));
+    }
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
             consolidated_curve_bindings.rechart_numeric_failures,
         )));
     }
-    if consolidated_curve_bindings.widened_vertices != 0 {
-        report.losses.push(CatiaLossCode::GeometryVertexToleranceWidened.note(format!(
-            "Widened {} vertex tolerances for binary32 coordinate storage; maximum widening {:.17} mm",
-            consolidated_curve_bindings.widened_vertices,
-            consolidated_curve_bindings.max_vertex_widening,
+    if source_jet_pcurves.unresolved_source_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) lacked a complete A20/A25 boundary binding",
+            source_jet_pcurves.unresolved_source_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_existing_uses != 0 {
+        report.losses.push(CatiaLossCode::GeometryPcurveSourceUseUntransferred.note(format!(
+            "{} source-owned spherical pcurve use(s) retained their existing coedge bindings",
+            source_jet_pcurves.unresolved_existing_uses,
+        )));
+    }
+    if source_jet_pcurves.unresolved_identity_collisions != 0 {
+        report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
+            "{} source-owned spherical pcurve identity collision(s) were withheld",
+            source_jet_pcurves.unresolved_identity_collisions,
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
@@ -2976,6 +3033,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()
@@ -3880,6 +3938,7 @@ fn attach_standard_faces(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = crate::assemble::unspecified_loops_on(ir, surface, Vec::new());
         ir.geometry.faces.push(Face {
             id: face_id,
             shell: shell_id.clone(),
@@ -3889,7 +3948,7 @@ fn attach_standard_faces(
             } else {
                 Sense::Reversed
             },
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            loops,
             name: None,
             color: None,
             tolerance: None,
@@ -3914,6 +3973,7 @@ fn attach_standard_faces(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     annotate(
         annotations,
@@ -3927,12 +3987,9 @@ fn attach_standard_faces(
     annotations.derived(&region_id, "shells")?;
     let region_shells = vec![shell_id.clone()];
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id.clone(), body_id, region_shells));
     annotate(
         annotations,
         &shell_id,
@@ -3992,19 +4049,25 @@ fn partition_standard_face_components(
             else {
                 return Ok(false);
             };
-            region.shells = region_shells;
+            region.set_shells(region_shells);
             if !ir.geometry.shells.iter().any(|shell| shell.id == shell_id) {
                 return Ok(false);
             }
             continue;
         }
-        for (id, tag) in [
-            (region_id.as_str(), "derived_region"),
-            (shell_id.as_str(), "derived_shell"),
+        for (key, tag) in [
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+                "derived_region",
+            ),
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+                "derived_shell",
+            ),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "MainDataStream+SurfacicReps",
                 0,
                 tag,
@@ -4015,12 +4078,11 @@ fn partition_standard_face_components(
             annotations.derived(&region_id, field)?;
         }
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         annotations.derived(&shell_id, "region")?;
         admission.charge()?;
         ir.geometry.shells.push(Shell::new(shell_id, region_id));
@@ -4678,6 +4740,14 @@ fn attach_standard_topology(
             .get(point)
             .is_some_and(|faces| faces.binary_search(&face).is_ok())
     };
+    let mut face_points = ctx
+        .alloc_filled(bindings.len(), Vec::new(), "catia_face_point_membership")
+        .map_err(StandardTopologyError::Codec)?;
+    for (point, faces) in point_faces.iter().enumerate() {
+        for &face in faces {
+            face_points[face].push(point);
+        }
+    }
     let limit_curve_bindings = standard_limit_curve_bindings(
         ctx,
         ir,
@@ -4715,7 +4785,6 @@ fn attach_standard_topology(
     }
     let mut endpoint_candidates = Vec::new();
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
-    let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return Err(StandardTopologyFailure::MissingFaceSurface.into());
@@ -4752,44 +4821,12 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
                 faces.sort_unstable_by(Ord::cmp);
-                for (face, surface) in [
-                    (support.faces[0], &surface0.geometry),
-                    (support.faces[1], &surface1.geometry),
-                ] {
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        face_incidence_candidates.entry(face)
-                    {
-                        let mut points = Vec::new();
-                        for (index, point) in ir.geometry.points.iter().enumerate() {
-                            if point_on_standard_face(
-                                ctx,
-                                point.position().get(),
-                                surface,
-                                face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            )
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Codec)?
-                            {
-                                points.push(index);
-                            }
-                        }
-                        e.insert(points);
-                    }
-                }
                 incidence_candidates.entry(faces).or_insert_with(|| {
-                    let mut right = HashSet::new();
-                    for point in face_incidence_candidates[&faces[1]].iter().copied() {
-                        right.insert(point);
-                    }
-                    let mut shared = Vec::new();
-                    for point in face_incidence_candidates[&faces[0]]
+                    face_points[faces[0]]
                         .iter()
                         .copied()
-                        .filter(|point| right.contains(point))
-                    {
-                        shared.push(point);
-                    }
-                    shared
+                        .filter(|point| point_on_face(faces[1], *point))
+                        .collect()
                 });
                 incidence_candidates[&faces].clone()
             }
@@ -5793,9 +5830,9 @@ fn attach_standard_topology(
                     .collect::<Vec<_>>();
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                let preferred = mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome(
                     ctx,
-                    crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
+                    crate::solve::mesh_quotient::standard_candidate::ParseStandardMeshCandidateOutcomeInputs {
                         bytes: spine,
                         edge_faces: selected_edge_faces,
                         edge_candidates: &solver_options,
@@ -5851,9 +5888,9 @@ fn attach_standard_topology(
                     // an invalid endpoint relation in both searches.
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    let fallback = mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome(
                         ctx,
-                        crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
+                        crate::solve::mesh_quotient::standard_candidate::ParseStandardMeshCandidateOutcomeInputs {
                             bytes: spine,
                             edge_faces: selected_edge_faces,
                             edge_candidates: &solver_options,
@@ -5906,7 +5943,7 @@ fn attach_standard_topology(
                     face_count,
                 },
             );
-            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
+            match mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome_with_face_assignments(
                 face_assignments,
                 work_budget,
                 |selected_edge_faces, branch_budget| {
@@ -6168,7 +6205,10 @@ fn standard_face_loops(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<cadmpeg_ir::topology::FaceLoops, CodecError> {
     let Some(face_topology) = topology.faces().get(face_index) else {
-        return Ok(cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()));
+        return Ok(match bindings.get(face_index) {
+            Some((surface, _, _)) => crate::assemble::unspecified_loops_on(ir, surface, Vec::new()),
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        });
     };
     let mut ids = Vec::new();
 
@@ -6185,7 +6225,10 @@ fn standard_face_loops(
             let id = id.clone();
             copy.push(id);
         }
-        Ok(cadmpeg_ir::topology::FaceLoops::unspecified(copy))
+        Ok(match bindings.get(face_index) {
+            Some((surface, _, _)) => crate::assemble::unspecified_loops_on(ir, surface, copy),
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(copy),
+        })
     };
     if let [single] = ids.as_slice() {
         return Ok(cadmpeg_ir::topology::FaceLoops::classified(
@@ -6367,12 +6410,12 @@ fn emit_standard_topology(
             Exactness::ByteExact,
         )?;
         if curve.is_some() {
-            annotations.derived(&id, "curve")?;
+            annotations.derived(&id, "carrier.curve")?;
         }
         annotations.derived(&id, "ends.start")?;
         annotations.derived(&id, "ends.end")?;
         if param_range.is_some() {
-            annotations.derived(&id, "param_range")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         admission.charge()?;
         ir.geometry.edges.push(Edge {
@@ -6419,7 +6462,7 @@ fn emit_standard_topology(
             Some(ordered_range([start, end])),
         )
         .map_err(CodecError::malformed)?;
-        annotations.derived(&edge.id, "param_range")?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
         if start > end {
             if let Some(ends) = &mut edge.ends {
                 std::mem::swap(&mut ends.start, &mut ends.end);
@@ -6454,7 +6497,7 @@ fn emit_standard_topology(
                 let vertex = standard_id("v", format_args!("{point}"), VertexId::mint)?;
                 vertices.push(vertex);
             }
-            let vertices: cadmpeg_ir::features::NonEmptyMembers<VertexId> =
+            let vertices: cadmpeg_ir::features::selections::NonEmptyMembers<VertexId> =
                 vertices.try_into().map_err(CodecError::malformed)?;
             let mut coedges = Vec::new();
             let mut vertex_uses = Vec::new();
@@ -6498,7 +6541,10 @@ fn emit_standard_topology(
                     ) if matches!(
                         support.geometry,
                         crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-                    ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                    ) && (matches!(
+                        ir.geometry.surfaces[surface_indices[&bindings[face_index].0]].geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                    ) || edge_geometry::arc_bounds::bounded_circle_branch(
                         circle.center().get(),
                         circle.radius().get(),
                         *circle.frame().axis(),
@@ -6507,7 +6553,7 @@ fn emit_standard_topology(
                     )
                     .is_some_and(|(axis, _, bounded_range)| {
                         axis == *circle.frame().axis() && bounded_range == range.get()
-                    }) =>
+                    })) =>
                     {
                         let [lower, upper] = range.get();
                         cadmpeg_ir::eval::finite_or_refusal(
@@ -6587,7 +6633,7 @@ refusal)?
                         edge_use
                             .reversed
                             .then_some([range[1], range[0]])
-                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                             .transpose()
                             .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
                                 pcurve,
@@ -6623,10 +6669,12 @@ refusal)?
                 Exactness::ByteExact,
             )?;
             annotations.derived(&loop_id, "face")?;
-            annotations.derived(&loop_id, "coedges")?;
-            annotations.derived(&loop_id, "vertex_uses")?;
+            annotations.derived(&loop_id, "boundary.coedges")?;
+            if !ring.vertex_uses().is_empty() {
+                annotations.derived(&loop_id, "boundary.vertex_uses")?;
+            }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role")?;
+                annotations.derived(&ir.geometry.faces[face_index].id, "loops")?;
             }
             admission.charge()?;
             ir.geometry.loops.push(Loop {
@@ -7103,7 +7151,7 @@ fn standard_native_graph_endpoint_pairs(
     let identity_points = unique_native_identity_points(
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
-        &graph.vertex_tolerances,
+        &graph.vertex_residuals,
         points,
     );
     let mut pairs = Vec::new();
@@ -8289,7 +8337,7 @@ fn standard_face_boundary_witnesses(
         let mut witnesses = Vec::new();
         for edge in face
             .loops
-            .iter()
+            .stated()
             .filter_map(|id| loops.get(id.as_str()))
             .flat_map(|loop_| loop_.coedges())
             .filter_map(|id| coedges.get(id.as_str()))
@@ -9116,7 +9164,7 @@ mod circle_axis_tests {
         )
         .expect("anisotropic nurbs surface");
         let residual = super::surface_membership::nurbs_surface_witness_distance(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             Point3::new(0.3, 0.4, 0.),
         )

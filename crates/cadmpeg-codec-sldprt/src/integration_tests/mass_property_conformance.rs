@@ -1,34 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved mass properties compare at their serialized precision.
 
-use std::io::Cursor;
-use std::path::Path;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
-use crate::SldprtCodec;
-
-fn specimen(name: &str) -> DecodeResult {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/sldprt")
-        .join(name);
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_or_else(|error| panic!("decode {}: {error}", path.display()))
-}
+use crate::test_support::nist::{ftc_06, ftc_08};
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let findings = cadmpeg_measure::declared_findings(&ctx, ir, MeasureOptions::default())
         .expect("measure declarations");
     ctx.finish_session().expect("measurement session");
@@ -110,33 +95,33 @@ fn assert_active_body_target(ir: &CadIr, measure: &DeclaredMeasure) {
     );
 }
 
-fn assert_volume(measure: &DeclaredMeasure, value: f64, source_error: f64) {
+fn assert_volume(measure: &DeclaredMeasure, value: f64, precision: f64) {
     let DeclaredQuantity::Volume { value: actual } = &measure.quantity else {
         panic!("volume declaration")
     };
     assert_close(actual.get(), value, 1.0e-8);
     assert_close(
-        measure.source_error.expect("source precision").get(),
-        source_error,
+        measure.precision.expect("source precision").get(),
+        precision,
         1.0e-8,
     );
 }
 
-fn assert_area(measure: &DeclaredMeasure, value: f64, source_error: f64) {
+fn assert_area(measure: &DeclaredMeasure, value: f64, precision: f64) {
     let DeclaredQuantity::SolidArea { value: actual } = &measure.quantity else {
         panic!("solid-area declaration")
     };
     assert_close(actual.get(), value, 1.0e-8);
     assert_close(
-        measure.source_error.expect("source precision").get(),
-        source_error,
+        measure.precision.expect("source precision").get(),
+        precision,
         1.0e-8,
     );
 }
 
 #[test]
 fn ftc_08_saved_mass_properties_agree_with_active_body_at_six_decimal_precision() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     assert_eq!(ir.model.declared_measures.len(), 2);
     let volume = ir
@@ -153,8 +138,8 @@ fn ftc_08_saved_mass_properties_agree_with_active_body_at_six_decimal_precision(
         .expect("saved area");
     assert_active_body_target(ir, volume);
     assert_active_body_target(ir, area);
-    assert_eq!(volume.provenance, DeclaredMeasureProvenance::SavedCache);
-    assert_eq!(area.provenance, DeclaredMeasureProvenance::SavedCache);
+    assert_eq!(volume.basis, Some(MeasureBasis::Cache));
+    assert_eq!(area.basis, Some(MeasureBasis::Cache));
     assert_volume(volume, 504_000.0, 500.0);
     assert_area(area, 191_706.0, 0.5);
     assert!(findings(ir).is_empty());
@@ -162,7 +147,7 @@ fn ftc_08_saved_mass_properties_agree_with_active_body_at_six_decimal_precision(
 
 #[test]
 fn ftc_06_saved_area_mismatch_warns_while_orientation_keeps_volume_uncompared() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     assert_eq!(ir.model.declared_measures.len(), 2);
     let volume = ir
@@ -179,8 +164,8 @@ fn ftc_06_saved_area_mismatch_warns_while_orientation_keeps_volume_uncompared() 
         .expect("saved area");
     assert_active_body_target(ir, volume);
     assert_active_body_target(ir, area);
-    assert_eq!(volume.provenance, DeclaredMeasureProvenance::SavedCache);
-    assert_eq!(area.provenance, DeclaredMeasureProvenance::SavedCache);
+    assert_eq!(volume.basis, Some(MeasureBasis::Cache));
+    assert_eq!(area.basis, Some(MeasureBasis::Cache));
     assert_volume(volume, 3_325_000.0, 500.0);
     assert_area(area, 282_664.0, 0.5);
     let DeclaredTarget::Bodies { bodies } = &volume.target else {

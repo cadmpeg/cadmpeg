@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Annex A of the specification is generated from the schema, never edited.
 
-`scripts/generate-annex-a.py --check` builds the `emit_schema` example of
-`cadmpeg-ir` and compares the annex with the schema. The check runs when the
-specification or the generator changed, or when a changed source of
-`cadmpeg-ir` or `cadmpeg-core` declares a type the annex states (its `### `
+`scripts/generate-annex-a.py --check` compares Annex A with the committed
+schema, `crates/cadmpeg-ir/schema/cadir.schema.json`, and Annex B with
+`crates/cadmpeg-ir/schema/decode-sidecar.schema.json`. The check runs when the
+specification, the generator or a schema changed, or when a changed source of
+`cadmpeg-ir` or `cadmpeg-core` declares a type an annex states (its `### `
 headings). CI's schema gate runs it on every change to those crates.
 """
 
@@ -16,7 +17,8 @@ NAME = "annex-a"
 ORDER = 45
 
 SPEC = "docs/cadir-v11.md"
-INPUTS = {SPEC, "scripts/generate-annex-a.py"}
+INPUTS = {SPEC, "scripts/generate-annex-a.py", "crates/cadmpeg-ir/schema/cadir.schema.json",
+          "crates/cadmpeg-ir/schema/decode-sidecar.schema.json"}
 SOURCES = ("crates/cadmpeg-ir/src/", "crates/cadmpeg-core/src/")
 ANNEX = re.compile(r"^## Annex A\.", re.MULTILINE)
 ENTRY = re.compile(r"^### `(\w+)`$", re.MULTILINE)
@@ -44,10 +46,10 @@ def run(context):
     if not reasons:
         return context.passed("no change reaches Annex A")
     if not context.worktree:
-        return context.skipped("the Annex A check builds the schema; it needs the working tree, not --rev",
+        return context.skipped("the Annex A check reads the working tree, not --rev",
                                *reasons)
     status, output = context.run(CHECK)
     if status == 0:
         return context.passed("Annex A states the schema", *reasons)
-    return context.failed("Annex A differs from the schema" if status == 1 else "the Annex A check failed",
+    return context.failed("an annex differs from its schema" if status == 1 else "the Annex A check failed",
                           *reasons, *output.splitlines()[-20:], f"fix: run {WRITE} and commit the result")

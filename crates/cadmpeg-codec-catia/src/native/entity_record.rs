@@ -115,7 +115,7 @@ impl CatiaEntityRecordBody {
 
 impl CatiaEntityRecord {
     /// Total framed byte length.
-    pub(super) fn byte_len(&self) -> u64 {
+    pub(crate) fn byte_len(&self) -> u64 {
         match &self.body {
             CatiaEntityRecordBody::Inline(bytes) => 6 + u64_from_index(bytes.len()),
             CatiaEntityRecordBody::Nested {
@@ -796,15 +796,16 @@ mod tests {
     use crate::test_support::test_object_graph::{
         object_graph_record, sequential_entity_backed_object_graph,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn wire_rejects_noncanonical_entity_frame_lengths() {
         let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
         let native = CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
         let entity = &native.entity_records[0];
-        let wire = serde_json::to_value(entity).expect("entity record serializes");
+        let wire = json::to_value(entity).expect("entity record serializes");
         assert_eq!(
-            serde_json::from_value::<CatiaEntityRecord>(wire.clone())
+            json::from_value::<CatiaEntityRecord>(wire.clone())
                 .expect("derived frame lengths match the entity body"),
             *entity,
         );
@@ -813,8 +814,8 @@ mod tests {
             let length = invalid_wire[field]
                 .as_u64()
                 .expect("frame length is unsigned");
-            invalid_wire[field] = serde_json::json!(length + 1);
-            let error = serde_json::from_value::<CatiaEntityRecord>(invalid_wire)
+            invalid_wire[field] = cadmpeg_core::json!(length + 1);
+            let error = json::from_value::<CatiaEntityRecord>(invalid_wire)
                 .expect_err("frame length must match the body bytes");
             assert!(error.to_string().contains(field), "{error}");
         }
@@ -825,15 +826,14 @@ mod tests {
         let native = CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
         let entity = &native.entity_records[0];
         assert!(entity.formula_relation().is_some());
-        let mut wire = serde_json::to_value(entity).expect("serialize formula entity");
-        wire["schema_configuration_row_link"] =
-            serde_json::to_value(CatiaSchemaConfigurationRowLink {
-                class_reference: CatiaEntityReference::Unresolved { entity_id: 1 },
-                successor_payload_offset: 0,
-                successor: CatiaEntityReference::Unresolved { entity_id: 2 },
-            })
-            .expect("serialize row-link production");
-        let error = serde_json::from_value::<CatiaEntityRecord>(wire)
+        let mut wire = json::to_value(entity).expect("serialize formula entity");
+        wire["schema_configuration_row_link"] = json::to_value(CatiaSchemaConfigurationRowLink {
+            class_reference: CatiaEntityReference::Unresolved { entity_id: 1 },
+            successor_payload_offset: 0,
+            successor: CatiaEntityReference::Unresolved { entity_id: 2 },
+        })
+        .expect("serialize row-link production");
+        let error = json::from_value::<CatiaEntityRecord>(wire)
             .expect_err("formula and row-link productions require distinct object payloads");
         assert!(error
             .to_string()
@@ -847,8 +847,8 @@ mod tests {
         let native = CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
         let entity = &native.entity_records[2];
         assert!(entity.parameter_value().is_some());
-        let mut wire = serde_json::to_value(entity).expect("serialize parameter entity");
-        wire["definition_value"] = serde_json::to_value(CatiaDefinitionValue {
+        let mut wire = json::to_value(entity).expect("serialize parameter entity");
+        wire["definition_value"] = json::to_value(CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
                 offset: 0,
                 ordinal: 1,
@@ -859,7 +859,7 @@ mod tests {
             schema_selection: None,
         })
         .expect("serialize definition production");
-        let error = serde_json::from_value::<CatiaEntityRecord>(wire)
+        let error = json::from_value::<CatiaEntityRecord>(wire)
             .expect_err("a named parameter and a definition value require distinct value frames");
         assert!(error
             .to_string()

@@ -2,18 +2,19 @@
 //! The v11 operation of one feature-tree node: the operation family its
 //! native class establishes, or the native operation where none does.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
-    Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
+    Construction, ConstructionInput, ConstructionKind, InputReference, InputRole, Relation, Subject,
 };
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::selection::{
     Anchor, Members, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
+use cadmpeg_ir::features::PrincipalPlane;
 
 use crate::classification::{classify, principal_plane_with_siblings, FeatureClass};
 use crate::history::classify::principal_plane_in_history;
@@ -37,10 +38,10 @@ pub(super) fn operation(
     if feature.input_class.as_deref() == Some(BASE_BODY_CLASS) {
         return native(feature);
     }
-    if principal_plane_with_siblings(feature, history).is_some()
-        || principal_plane_in_history(feature, by_source, history).is_some()
+    if let Some(plane) = principal_plane_with_siblings(feature, history)
+        .or_else(|| principal_plane_in_history(feature, by_source, history))
     {
-        return unresolved(OperationFamily::Datum);
+        return principal_plane(plane);
     }
     match classify(feature) {
         Some(class) => family(feature, class).map_or_else(|| native(feature), unresolved),
@@ -51,9 +52,42 @@ pub(super) fn operation(
 /// The datum of the Origin feature (§6.2): one point coincident with the
 /// definition's principal origin.
 pub(super) fn origin() -> FeatureOperation {
+    FeatureOperation::Datum(Box::new(Datum {
+        element: DatumElement::Points(vec![principal(PrincipalEntity::Origin)]),
+        link: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    }))
+}
+
+/// The principal entity a built-in reference plane lists (§6.2): Front is
+/// the XY plane, Top the XZ plane, and Right the YZ plane
+/// (`docs/formats/sldprt.md`).
+pub(super) fn principal_entity(plane: PrincipalPlane) -> PrincipalEntity {
+    match plane {
+        PrincipalPlane::Front => PrincipalEntity::XyPlane,
+        PrincipalPlane::Top => PrincipalEntity::XzPlane,
+        PrincipalPlane::Right => PrincipalEntity::YzPlane,
+    }
+}
+
+/// The datum of a built-in reference plane (§6.2): one plane coincident
+/// with the definition's principal plane.
+fn principal_plane(plane: PrincipalPlane) -> FeatureOperation {
+    FeatureOperation::Datum(Box::new(Datum {
+        element: DatumElement::Plane(principal(principal_entity(plane))),
+        link: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    }))
+}
+
+/// A construction with one `Whole` `Coincident` input on a principal entity
+/// of the definition, and no steps.
+fn principal<K: ConstructionKind>(entity: PrincipalEntity) -> Construction<K> {
     let pick = Picked {
         target: PickTarget::Principal {
-            entity: PrincipalEntity::Origin,
+            entity,
             container: None,
         },
         context: None,
@@ -75,19 +109,14 @@ pub(super) fn origin() -> FeatureOperation {
         value: None,
         reversed: None,
     };
-    FeatureOperation::Datum(Box::new(Datum {
-        element: DatumElement::Points(vec![Construction {
-            inputs: vec![input],
-            after: Vec::new(),
-            solution: None,
-            mode: None,
-            resolved: None,
-            resolved_in: BTreeMap::new(),
-        }]),
-        link: None,
-        native_options: NativeOptions::new(),
-        source_settings: NativeOptions::new(),
-    }))
+    Construction {
+        inputs: vec![input],
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: std::collections::BTreeMap::new(),
+    }
 }
 
 fn unresolved(family: OperationFamily) -> FeatureOperation {
@@ -96,8 +125,8 @@ fn unresolved(family: OperationFamily) -> FeatureOperation {
 
 /// The native operation of `feature`, written `sldprt:<type>`.
 fn native(feature: &Feature) -> FeatureOperation {
-    let kind = NonBlankString::new(format!("sldprt:{}", feature.kind))
-        .unwrap_or_else(|| cadmpeg_core::nonblank_literal!("sldprt:feature"));
+    let kind = CodecName::new(&cadmpeg_ir::codec_id!("sldprt"), &feature.kind)
+        .unwrap_or_else(|| cadmpeg_ir::codec_name!("sldprt:feature"));
     FeatureOperation::Native {
         kind,
         native_options: NativeOptions::new(),

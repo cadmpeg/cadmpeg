@@ -8,7 +8,6 @@ use crate::directory::UseFlag;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
@@ -161,7 +160,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
             1.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(
@@ -312,7 +311,7 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             assert_eq!(
                 result.ir().geometry.edges[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 Some(0.001)
             );
             assert_eq!(
@@ -485,14 +484,25 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 #[test]
 fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let failure = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
-    assert!(
-        matches!(failure, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } if rejection.loss().code == IgesLossCode::GeometryNotProjected.kind())
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(
+        crate::test_support::code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
     );
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    match IgesCodec.decode(&mut Cursor::new(bytes), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
 }
 
 #[test]

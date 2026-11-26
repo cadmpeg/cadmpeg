@@ -43,37 +43,36 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -570,8 +569,7 @@
           "value": {
             "code": "geometry.brep-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:zero-entity` (zero-entity a9 03 (no nested container): analytic carriers decoded); the applicable decoded record families transfer geometry in this codec.",
@@ -583,8 +581,7 @@
           "value": {
             "code": "topology.graph-not-built",
             "kind": "topology_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
@@ -622,6 +619,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "a8c1039ac1b0c1c5de5c4d2b31dcc3ab9170d911f7c47af18638c8cb77fb0b44",
     "file_digests": {},
     "retained_records": {

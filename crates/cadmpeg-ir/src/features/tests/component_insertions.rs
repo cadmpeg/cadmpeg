@@ -1,27 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn component_insertions_round_trip_native_partial_and_complete_membership() {
-    use crate::features::{FeatureDefinition, FeatureOperation, InsertedComponents};
+    use crate::features::selections::InsertedComponents;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     use crate::ids::OccurrenceId;
     let first = OccurrenceId::mint("fixture:model:occurrence#1").unwrap();
     let second = OccurrenceId::mint("fixture:model:occurrence#2").unwrap();
     let cases = [
         (
             InsertedComponents::native("fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"native","native":"fixture:scope#10"}),
+            cadmpeg_core::json!({"kind":"native","native":"fixture:scope#10"}),
             false,
             0,
         ),
         (
             InsertedComponents::partial(vec![first.clone()], "fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"partial","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#1"]}),
+            cadmpeg_core::json!({"kind":"partial","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#1"]}),
             false,
             1,
         ),
         (
             InsertedComponents::resolved(vec![second, first], "fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"resolved","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#2","fixture:model:occurrence#1"]}),
+            cadmpeg_core::json!({"kind":"resolved","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#2","fixture:model:occurrence#1"]}),
             true,
             2,
         ),
@@ -32,13 +35,13 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
         assert_eq!(components.native_reference().as_str(), "fixture:scope#10");
         let definition =
             FeatureDefinition::Operation(FeatureOperation::InsertComponents { components });
-        let wire = serde_json::to_value(&definition).unwrap();
+        let wire = json::to_value(&definition).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
+            cadmpeg_core::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
         );
         assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            json::from_value::<FeatureDefinition>(wire).unwrap(),
             definition
         );
     }
@@ -46,7 +49,7 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
 
 #[test]
 fn component_insertions_reject_blank_empty_and_repeated_membership() {
-    use crate::features::{InsertedComponents, InsertedComponentsError};
+    use crate::features::selections::{InsertedComponents, InsertedComponentsError};
     use crate::ids::OccurrenceId;
     let occurrence = OccurrenceId::mint("fixture:model:occurrence#1").unwrap();
     assert_eq!(

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::sketches::SketchEntityId;
 
 fn edge(id: &str, range: [f64; 2], reversed: bool) -> SketchProfileBoundaryUse {

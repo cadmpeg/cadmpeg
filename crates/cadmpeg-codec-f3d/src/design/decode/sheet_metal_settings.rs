@@ -8,6 +8,7 @@ use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
 use crate::records::sheet_metal_settings::{
     DesignSheetMetalSettings, DesignSheetMetalSettingsInputs, DesignSheetMetalSettingsWire,
     V3RuleReferenceTail, PAIRED_GUID, PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID,
+    V3_LEADING_ZERO_RUN,
 };
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -62,6 +63,8 @@ pub(crate) fn linked_record_indices(settings: &[DesignSheetMetalSettings]) -> Ve
 
 pub(crate) fn decode_settings(
     scan: &ContainerScan,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<Vec<DesignSheetMetalSettings>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -94,6 +97,14 @@ pub(crate) fn decode_settings(
             .iter()
             .map(|frame| (frame.entity_id, frame))
             .collect::<HashMap<_, _>>();
+        let stream = SettingsStream {
+            entry_name: &entry.name,
+            bytes,
+            registrations: &meta.types,
+            primary: &primary,
+            by_entity: &by_entity,
+            frames_by_entity: &frames_by_entity,
+        };
         let mut thickness_by_rule = HashMap::new();
         for frame in &frames {
             let Some((guid, version)) = by_entity.get(&frame.entity_id) else {
@@ -102,39 +113,17 @@ pub(crate) fn decode_settings(
             if !guid.eq_ignore_ascii_case(SETTINGS_GUID) || !matches!(version, 2 | 3) {
                 continue;
             }
-            let Some(fields) =
-                parse_settings(bytes, *frame, *version, &primary, &by_entity, &meta.types)
+            let Some(record) = super::record::recover_frame(
+                stream.record(frame, *version, &mut thickness_by_rule),
+                losses,
+                given_up,
+                crate::loss::F3dLossCode::BendSettingsUndecoded,
+                super::record::RecordFrame::new(&entry.name, frame.start, frame.end),
+                format_args!("Sheet-metal settings record {}", frame.entity_id),
+            )?
             else {
-                return Err(CodecError::Malformed(
-                    "F3D sheet-metal settings frame or typed link is invalid".into(),
-                ));
+                continue;
             };
-            let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
-                let frame = frames_by_entity.get(&fields.rule)?;
-                let (_, version) = by_entity.get(&fields.rule)?;
-                let view = View::over_retained(bytes).child(frame.start, frame.member_end)?;
-                rule_thickness(view, *version, &by_entity)
-            });
-            let id = super::text::design_record_id(
-                &entry.name,
-                ":design-sheet-metal-settings#",
-                u64_from_index(frame.start),
-            );
-            let record = DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
-                id,
-                record_index: frame.entity_id,
-                byte_offset: u64_from_index(frame.start),
-                paired_byte_offset: u64_from_index(frame.member_end),
-                mask: fields.mask,
-                inputs: fields.inputs,
-                rule_record_index: fields.rule,
-                presentation_record_index: fields.presentation,
-                owner_record_index: fields.owner,
-                context_record_index: fields.context,
-                rule_thickness: rule.map(|(thickness, _)| thickness),
-                rule_thickness_offset: rule.map(|(_, offset)| offset),
-            })
-            .map_err(CodecError::Malformed)?;
             out.push(record);
         }
     }
@@ -176,7 +165,7 @@ fn rule_thickness(
 }
 
 struct SettingsFields {
-    mask: u32,
+    mask: Option<u32>,
     inputs: DesignSheetMetalSettingsInputs,
     rule: u64,
     presentation: u64,
@@ -201,6 +190,69 @@ fn local(view: &mut View<'_>) -> Result<Option<u64>, ()> {
         _ => Err(()),
     }
 }
+type RuleThickness = Option<(cadmpeg_ir::scalar::PositiveReal, u64)>;
+
+/// The primary frames of one settings stream and the registrations that type
+/// them.
+struct SettingsStream<'a> {
+    entry_name: &'a str,
+    bytes: &'a [u8],
+    registrations: &'a [crate::records::entity_header::SegmentTypeData],
+    primary: &'a HashSet<u64>,
+    by_entity: &'a HashMap<u64, (&'a str, u32)>,
+    frames_by_entity: &'a HashMap<u64, &'a PrimaryRecordFrame>,
+}
+
+impl SettingsStream<'_> {
+    /// The settings record at `frame`, with the thickness of the rule it names.
+    fn record(
+        &self,
+        frame: &PrimaryRecordFrame,
+        version: u32,
+        thickness_by_rule: &mut HashMap<u64, RuleThickness>,
+    ) -> Result<DesignSheetMetalSettings, CodecError> {
+        let fields = parse_settings(
+            self.bytes,
+            *frame,
+            version,
+            self.primary,
+            self.by_entity,
+            self.registrations,
+        )
+        .ok_or_else(|| {
+            CodecError::malformed("F3D sheet-metal settings frame or typed link is invalid")
+        })?;
+        let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
+            let frame = self.frames_by_entity.get(&fields.rule)?;
+            let (_, version) = self.by_entity.get(&fields.rule)?;
+            let view = View::over_retained(self.bytes).child(frame.start, frame.member_end)?;
+            rule_thickness(view, *version, self.by_entity)
+        });
+        let id = super::text::design_record_id(
+            self.entry_name,
+            ":design-sheet-metal-settings#",
+            u64_from_index(frame.start),
+        );
+        DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
+            id,
+            record_index: frame.entity_id,
+            byte_offset: u64_from_index(frame.start),
+            paired_byte_offset: u64_from_index(frame.member_end),
+            mask: fields.mask,
+            inputs: fields.inputs,
+            rule_record_index: fields.rule,
+            presentation_record_index: fields.presentation,
+            owner_record_index: fields.owner,
+            context_record_index: fields.context,
+            rule_thickness: rule.map(|(thickness, _)| thickness),
+            rule_thickness_offset: rule.map(|(_, offset)| offset),
+        })
+        .map_err(CodecError::Malformed)
+    }
+}
+
+/// The mask-and-slots reading comes first; a version-3 frame that it does not
+/// close is read as the leading-reference form.
 fn parse_settings(
     bytes: &[u8],
     frame: PrimaryRecordFrame,
@@ -208,6 +260,23 @@ fn parse_settings(
     primary: &HashSet<u64>,
     types: &HashMap<u64, (&str, u32)>,
     registrations: &[crate::records::entity_header::SegmentTypeData],
+) -> Option<SettingsFields> {
+    parse_form(bytes, frame, version, primary, types, registrations, false).or_else(|| {
+        if version != 3 {
+            return None;
+        }
+        parse_form(bytes, frame, version, primary, types, registrations, true)
+    })
+}
+
+fn parse_form(
+    bytes: &[u8],
+    frame: PrimaryRecordFrame,
+    version: u32,
+    primary: &HashSet<u64>,
+    types: &HashMap<u64, (&str, u32)>,
+    registrations: &[crate::records::entity_header::SegmentTypeData],
+    leading: bool,
 ) -> Option<SettingsFields> {
     let mut view = View::over_retained(bytes.get(frame.start..frame.end)?);
     let primary_class = header(&mut view, frame.entity_id)?;
@@ -224,7 +293,7 @@ fn parse_settings(
     if view.take(settings_prefix::OVERRIDE_MASK)? != [0; settings_prefix::OVERRIDE_MASK] {
         return None;
     }
-    let mask = view.u32_le()?;
+    let mask = if leading { None } else { Some(view.u32_le()?) };
     let (inputs, rule) = match version {
         2 => {
             let mut slots = [None; 7];
@@ -239,8 +308,16 @@ fn parse_settings(
         }
         3 => {
             let mut slots = [None; 9];
-            for slot in &mut slots {
-                *slot = local(&mut view).ok()?;
+            let mut first = None;
+            if leading {
+                first = Some(local(&mut view).ok()??);
+                if view.take(V3_LEADING_ZERO_RUN)? != [0; V3_LEADING_ZERO_RUN] {
+                    return None;
+                }
+            } else {
+                for slot in &mut slots {
+                    *slot = local(&mut view).ok()?;
+                }
             }
             let rule = local(&mut view).ok()??;
             let rule_reference_tail = match view.u8()? {
@@ -248,20 +325,24 @@ fn parse_settings(
                 1 if view.take(2)? == [0, 0] => V3RuleReferenceTail::OneZeroPair,
                 _ => return None,
             };
-            (
-                DesignSheetMetalSettingsInputs::V3 {
+            let inputs = match first {
+                Some(first) => DesignSheetMetalSettingsInputs::V3LeadingReference {
+                    first,
+                    rule_reference_tail,
+                },
+                None => DesignSheetMetalSettingsInputs::V3 {
                     slots,
                     rule_reference_tail,
                 },
-                rule,
-            )
+            };
+            (inputs, rule)
         }
         _ => return None,
     };
     if inputs
-        .slots()
+        .leading_reference()
         .iter()
-        .flatten()
+        .chain(inputs.slots().iter().flatten())
         .any(|id| !primary.contains(id))
     {
         return None;

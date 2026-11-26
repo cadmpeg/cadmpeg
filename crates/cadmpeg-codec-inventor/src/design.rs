@@ -7,11 +7,10 @@ use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId, ParameterValue},
-    report::loss::LossNote,
-    scalar::{Angle, FiniteReal, Length},
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use serde::{Deserialize, Serialize};
 
 use crate::loss::InventorLossCode;
@@ -709,7 +708,7 @@ pub(crate) fn project_parameters(
         } else {
             renderer.emit(token, parameter.formula.index(), expression_length)?
         };
-        let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
+        let mut dependency_members = cadmpeg_ir::features::selections::DistinctMembers::default();
         dependency_members.extend(dependencies);
         projected.push(DesignParameter {
             product_definition: None,
@@ -1673,8 +1672,10 @@ mod tests {
     use crate::test_support::test_fixtures::primary_envelope_fixture;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
@@ -1913,18 +1914,18 @@ mod tests {
             visible: true,
             derived: reference(0, false),
         };
-        let wire = serde_json::to_value(&unit).expect("valid test fixture");
-        assert_eq!(wire["numerator_metadata"], serde_json::json!([3, 7]));
+        let wire = json::to_value(&unit).expect("valid test fixture");
+        assert_eq!(wire["numerator_metadata"], cadmpeg_core::json!([3, 7]));
         assert_eq!(
-            serde_json::from_value::<PmDcUnitKind>(wire.clone()).expect("valid test fixture"),
+            json::from_value::<PmDcUnitKind>(wire.clone()).expect("valid test fixture"),
             unit
         );
         let mut missing_metadata = wire.clone();
         missing_metadata["numerator_metadata"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<PmDcUnitKind>(missing_metadata).is_err());
+        assert!(json::from_value::<PmDcUnitKind>(missing_metadata).is_err());
         let mut orphan_metadata = wire;
-        orphan_metadata["denominator_metadata"] = serde_json::json!([3, 7]);
-        assert!(serde_json::from_value::<PmDcUnitKind>(orphan_metadata).is_err());
+        orphan_metadata["denominator_metadata"] = cadmpeg_core::json!([3, 7]);
+        assert!(json::from_value::<PmDcUnitKind>(orphan_metadata).is_err());
     }
 
     #[test]
@@ -2558,7 +2559,7 @@ mod tests {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
                 .expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
@@ -2607,7 +2608,7 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 dependency.into_iter().map(id).collect::<Vec<_>>(),
             )
             .expect("valid dependency fixture"),
@@ -2647,7 +2648,7 @@ mod tests {
                 expression: name.into(),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                     dependency.into_iter().map(id).collect::<Vec<_>>(),
                 )
                 .expect("valid dependency fixture"),

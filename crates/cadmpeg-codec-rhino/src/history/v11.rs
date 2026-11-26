@@ -12,6 +12,7 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
@@ -35,9 +36,10 @@ pub(crate) type ObjectBodies = HashMap<Uuid, Vec<BodyId>>;
 /// record with its antecedents as selections, and the current state each
 /// record's descendants hold.
 ///
-/// A document with no history record has no design records. An object that
-/// no record lists among its descendants is in no current state (interim,
-/// errata A1).
+/// A document with no history record has no design records. Each body stays
+/// listed by the definition that owns it (§8.1); a body of a definition the
+/// scope spans that no record produces, because no record or several list
+/// its object among their descendants, is unproduced (§5.5).
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &[HistoryRecord],
@@ -90,10 +92,11 @@ pub(crate) fn project(
             suppressed: None,
             definition: FeatureDefinition {
                 operation: FeatureOperation::Native {
-                    kind: text(format!("rhino:{}", record.command_id))?,
+                    kind: codec_name(&record.command_id.to_string())?,
                     native_options,
                     source_settings: NativeOptions::default(),
                 },
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -111,6 +114,7 @@ pub(crate) fn project(
     });
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
+    let unproduced = unproduced(ir, &definition, &current);
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![group],
@@ -118,8 +122,44 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
+        unproduced,
     });
     Ok(())
+}
+
+/// The bodies of the definitions the scope of `definition` spans that no
+/// current state holds (§5.5).
+fn unproduced(
+    ir: &CadIr,
+    definition: &ProductDefinitionId,
+    current: &[CurrentState],
+) -> BTreeSet<BodyId> {
+    let spanned = ir.spanned_definitions(definition);
+    let produced = current
+        .iter()
+        .flat_map(|state| &state.bodies)
+        .collect::<HashSet<_>>();
+    let geometry = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<HashSet<_>>();
+    ir.model
+        .product_definitions
+        .iter()
+        .filter(|candidate| spanned.contains(candidate.id.as_str()))
+        .flat_map(|candidate| {
+            candidate.bodies.iter().chain(
+                candidate
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|instance| &instance.bodies),
+            )
+        })
+        .filter(|body| geometry.contains(body) && !produced.contains(body))
+        .cloned()
+        .collect()
 }
 
 /// The document's root definition, where the document states none.
@@ -202,7 +242,7 @@ impl History<'_> {
                 target: PickTarget::Native { within: None },
                 context: None,
                 native: Some(NativeName {
-                    codec: cadmpeg_core::nonblank_literal!("rhino").into(),
+                    codec: cadmpeg_ir::codec_id!("rhino"),
                     value: NativeNameValue::Text(text(object.to_string())?),
                 }),
                 domain: None,
@@ -222,7 +262,7 @@ impl History<'_> {
             };
             let picks = Members::new(picks).map_err(CodecError::malformed)?;
             options.insert(
-                option_key(&name)?,
+                codec_name(&name)?,
                 NativeOption::Selection(Selection {
                     at,
                     picks: Picks::Named(picks),
@@ -292,15 +332,16 @@ fn native_options(
             } else {
                 format!("{key}.{index}")
             };
-            options.insert(option_key(&name)?, element);
+            options.insert(codec_name(&name)?, element);
         }
     }
     Ok(options)
 }
 
-/// A native option key, `rhino:<name>` (§6).
-fn option_key(name: &str) -> Result<NonBlankString, CodecError> {
-    text(format!("rhino:{name}"))
+/// A native option key or operation kind, `rhino:<name>` (§2.7).
+fn codec_name(name: &str) -> Result<CodecName, CodecError> {
+    CodecName::new(&cadmpeg_ir::codec_id!("rhino"), name)
+        .ok_or_else(|| CodecError::malformed("Rhino v11 history name is blank"))
 }
 
 fn text(value: String) -> Result<NonBlankString, CodecError> {

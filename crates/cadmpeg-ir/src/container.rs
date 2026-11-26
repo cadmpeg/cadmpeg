@@ -169,7 +169,7 @@ impl ContainerSummary {
     /// not classify, as when the part that declares the dialect was given up.
     #[must_use]
     pub fn unclassified(
-        format: impl Into<String>,
+        format: crate::design::names::CodecId,
         container_kind: ContainerKind,
         entries: Vec<ContainerEntry>,
         losses: Vec<LossNote>,
@@ -200,26 +200,29 @@ impl ContainerSummary {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
+    use cadmpeg_core::serde_erase::json;
 
     use super::{ContainerKind, ContainerSummary};
 
     #[test]
     fn an_unclassified_summary_states_its_format_inside_the_identity() {
         let summary = ContainerSummary {
-            identity: cadmpeg_core::dialect::FormatIdentity::unclassified("rhino"),
+            identity: cadmpeg_core::dialect::FormatIdentity::unclassified(crate::codec_id!(
+                "rhino"
+            )),
             container_kind: ContainerKind::Flat,
             entries: Vec::new(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
 
-        let bare = serde_json::to_value(&summary).expect("a summary serializes");
-        assert_eq!(bare["losses"], serde_json::json!([]), "{bare}");
+        let bare = json::to_value(&summary).expect("a summary serializes");
+        assert_eq!(bare["losses"], cadmpeg_core::json!([]), "{bare}");
         assert_eq!(bare["identity"]["kind"], "unclassified");
         assert_eq!(bare["identity"]["format"], "rhino");
         assert!(bare.get("format").is_none(), "{bare}");
         assert_eq!(
-            serde_json::from_value::<ContainerSummary>(bare).expect("a summary round-trips"),
+            json::from_value::<ContainerSummary>(bare).expect("a summary round-trips"),
             summary
         );
     }
@@ -237,16 +240,16 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
-        let classified = serde_json::to_value(&summary).expect("a summary serializes");
+        let classified = json::to_value(&summary).expect("a summary serializes");
         assert_eq!(classified["identity"]["kind"], "classified");
         assert_eq!(
             classified["identity"]["dialects"],
-            serde_json::json!({"primary": primary, "extra": [extra]})
+            cadmpeg_core::json!({"primary": primary, "extra": [extra]})
         );
         assert!(classified["identity"].get("format").is_none());
 
         let restored: ContainerSummary =
-            serde_json::from_value(classified.clone()).expect("classified summary reads");
+            json::from_value(classified.clone()).expect("classified summary reads");
         assert_eq!(
             restored
                 .dialects()
@@ -257,8 +260,8 @@ mod tests {
         );
 
         let mut restated = classified;
-        restated["identity"]["format"] = serde_json::json!("step");
-        let error = serde_json::from_value::<ContainerSummary>(restated)
+        restated["identity"]["format"] = cadmpeg_core::json!("step");
+        let error = json::from_value::<ContainerSummary>(restated)
             .expect_err("a classified identity carries no second format");
         assert!(error.to_string().contains("format"), "{error}");
     }
@@ -266,7 +269,7 @@ mod tests {
     #[cfg(feature = "schema")]
     #[test]
     fn current_summary_schema_requires_its_identity_and_losses() {
-        let schema = serde_json::to_value(schemars::schema_for!(ContainerSummary))
+        let schema = json::to_value(schemars::schema_for!(ContainerSummary))
             .expect("summary schema serializes");
         let required = schema["required"]
             .as_array()

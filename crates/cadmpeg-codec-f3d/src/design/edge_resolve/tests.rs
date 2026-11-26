@@ -27,10 +27,11 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:identity#{record_index}"),
         "scope_record_index": 1,
         "group_record_index": 2,
@@ -51,7 +52,7 @@ fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityO
             .collect::<Vec<_>>(),
         "treatment_radius_candidates": candidates
             .iter()
-            .map(|(edge, radius)| serde_json::json!({
+            .map(|(edge, radius)| cadmpeg_core::json!({
                 "edge_slot": edge,
                 "radius": radius
             }))
@@ -87,7 +88,7 @@ fn identity_radius_candidates_require_member_local_evidence() {
 }
 
 fn fixed_scope() -> DesignParameterScope {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:scope",
         "byte_offset": 0,
         "class_tag": "300",
@@ -126,7 +127,7 @@ fn fixed_scope() -> DesignParameterScope {
 }
 
 fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:group-{record_index}"),
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,
@@ -173,7 +174,7 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
     assert!(matches!(
         groups.as_slice(),
         [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. },
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius
             },
@@ -233,7 +234,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
@@ -255,7 +256,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             &treatment_feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:19").expect("identity grammar"),
@@ -307,7 +308,7 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -316,7 +317,7 @@ fn recipe_edge_operand(
     changed_boundary_edge_slots: &[i64],
     deleted_boundary_edge_slots: &[i64],
 ) -> DesignEdgeOperand {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:edge-operand#{record_index}"),
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,
@@ -376,7 +377,7 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     operand.changed_boundary_edge_slots = vec![17];
@@ -392,7 +393,7 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -418,7 +419,7 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -550,7 +551,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
                 &mut Vec::new(),
             )
         }).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
 
@@ -574,7 +575,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             )
         })
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -733,7 +734,7 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("surface-patch"), 7);
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 crate::ids::history_input_edge_id(&prefix, 17),
                 crate::ids::history_input_edge_id(&prefix, 18),
@@ -768,7 +769,7 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -811,14 +812,14 @@ fn alternate_patch_operand() -> (
         id: "f3d:test:asm-face-boundary#7:91".into(),
         parent: "f3d:test:asm-delta-state#7".into(),
         face_slot: 91,
-        loops: vec![serde_json::from_value(serde_json::json!({
+        loops: vec![json::from_value(cadmpeg_core::json!({
             "loop_slot": 5,
             "coedge_slots": [6],
             "edge_slots": [17],
         }))
         .unwrap()],
     };
-    operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
+    operand.recipe_reference_contexts = vec![json::from_value(cadmpeg_core::json!({
         "reference_ordinal": 1,
         "result_faces": [],
         "result_shared_edge_slots": [],
@@ -907,18 +908,17 @@ fn grouped_surface_patch_alternate_rejects_wrong_or_missing_exact_faces() {
 #[test]
 fn grouped_surface_patch_alternate_rejects_ambiguous_roles_and_remaining_edges() {
     let (operand, mut boundary) = alternate_patch_operand();
-    boundary.loops[0] = serde_json::from_value(
-        serde_json::json!({"loop_slot":5,"coedge_slots":[6,9],"edge_slots":[17,18]}),
+    boundary.loops[0] = json::from_value(
+        cadmpeg_core::json!({"loop_slot":5,"coedge_slots":[6,9],"edge_slots":[17,18]}),
     )
     .unwrap();
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&operand], std::slice::from_ref(&boundary)),
         SurfacePatchRecipeEdges::Inconclusive,
     );
-    boundary.loops[0] = serde_json::from_value(
-        serde_json::json!({"loop_slot":5,"coedge_slots":[6],"edge_slots":[99]}),
-    )
-    .unwrap();
+    boundary.loops[0] =
+        json::from_value(cadmpeg_core::json!({"loop_slot":5,"coedge_slots":[6],"edge_slots":[99]}))
+            .unwrap();
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&operand], &[boundary]),
         SurfacePatchRecipeEdges::Inconclusive,
@@ -939,7 +939,7 @@ fn grouped_surface_patch_alternate_rejects_ambiguous_roles_and_remaining_edges()
 #[test]
 fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     let context = |reference_ordinal, shared_edge_slots: &[i64]| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": reference_ordinal,
             "result_faces": [],
             "result_shared_edge_slots": shared_edge_slots,
@@ -973,7 +973,7 @@ fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
 #[test]
 fn primary_terminal_support_references_resolve_one_shared_edge() {
     let side = |header_value, scalars: [i32; 2]| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "field_count": 3,
             "header_value": header_value,
             "scalars": scalars,
@@ -1007,7 +1007,7 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
     assert_eq!(resolved_edge_operand(&operand), None);
 
     operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 1]);
-    operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
+    operand.recipe_reference_contexts = vec![json::from_value(cadmpeg_core::json!({
         "reference_ordinal": 0,
         "result_faces": [],
         "result_shared_edge_slots": [],
@@ -1044,7 +1044,7 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     .unwrap();
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#11:edge-flange:7:17").expect("identity grammar")]
     ));
 }
@@ -1071,7 +1071,7 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -1086,7 +1086,7 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
     ));
 
     let context = |changed_reference_edge_slots| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": 0,
             "result_faces": [],
             "result_shared_edge_slots": [],
@@ -1140,7 +1140,7 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut second_identity = identity(11, &[(17, 1.0), (18, 1.0)]);
     second_identity.group_member_ordinal = 1;
     let context = |changed_reference_edge_slots| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": 0,
             "result_faces": [],
             "result_shared_edge_slots": [],
@@ -1176,7 +1176,7 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     .unwrap();
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
@@ -1220,7 +1220,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     selection_group.lost_edge_references = vec!["f3d:test:lost#0".into()];
@@ -1235,7 +1235,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Unresolved
+        cadmpeg_ir::features::selections::EdgeSelection::Unresolved
     ));
 
     selection_group
@@ -1251,7 +1251,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             &feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
@@ -1312,7 +1312,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -1324,7 +1324,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             &feature_id,
             Some(3.0),
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 2
     ));
 
@@ -1342,7 +1342,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(3.0),
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     let recipe_operands = [
@@ -1365,7 +1365,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             &feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 3
     ));
 
@@ -1384,7 +1384,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -1437,7 +1437,7 @@ fn hem_transition_edge_is_the_unique_non_support_boundary() {
 
 #[test]
 fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
-    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
 
     let state =
@@ -1600,7 +1600,7 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
 #[test]
 fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
     let context = |changed_reference_edge_slots: &[i64]| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": 0,
             "result_faces": [],
             "result_shared_edge_slots": [],
@@ -1651,7 +1651,7 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
 #[test]
 fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
     let context = |changed_reference_edge_slots: &[i64]| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": 0,
             "result_faces": [],
             "result_shared_edge_slots": [],
@@ -1700,7 +1700,7 @@ fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
 #[test]
 fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
     let context = |changed_reference_edge_slots: &[i64]| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal": 0,
             "result_faces": [],
             "result_shared_edge_slots": [],

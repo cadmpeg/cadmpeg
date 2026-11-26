@@ -4,9 +4,9 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -198,7 +198,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .geometry
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
@@ -252,16 +252,19 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("STYLED_ITEM #52")));
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .appearance_bindings
-            .iter()
-            .filter(|binding| binding.source_entity_id.as_deref() == Some("#47"))
-            .count(),
-        2
-    );
+    for set_member in ["#3", "#8"] {
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| binding.source_entity_id.as_deref() == Some(set_member))
+                .count(),
+            2,
+            "{set_member} is styled directly and through the styled curve set"
+        );
+    }
     assert!(result
         .ir()
         .model
@@ -269,8 +272,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|binding| matches!(
             &binding.target.entity,
-            cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
-        )));
+            cadmpeg_ir::appearance::AppearanceTarget::Unresolved
+        ) && binding.source_entity_id.as_deref() == Some("#6")));
     assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
@@ -346,7 +349,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
         .expect("Cartesian trimmed curve");
     assert!(match cartesian_trim.definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+            matched_payload,
+        ) =>
             matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
         _ => false,
     });
@@ -356,7 +361,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                definition_payload,
+            ) => {
                 let source = definition_payload.source();
                 let parameter_range = definition_payload.parameter_range();
                 Some((source, *parameter_range))
@@ -375,14 +382,15 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .procedural_curves
         .iter()
         .any(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(matched_payload) =>
-                matches!(
-                    (
-                        matched_payload.distance().get(),
-                        matched_payload.self_intersect(),
-                    ),
-                    (1.0, None,)
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SpatialOffset(
+                matched_payload,
+            ) => matches!(
+                (
+                    matched_payload.distance().get(),
+                    matched_payload.self_intersect(),
                 ),
+                (1.0, None,)
+            ),
             _ => false,
         }));
     assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
@@ -393,7 +401,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::DegenerateTorus {
                 select_outer: true
             }
         )));
@@ -404,7 +412,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
                 if definition_payload.direction().get().z == 2.0
         )));
     assert!(result
@@ -414,7 +422,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
                 if definition_payload.axis_direction().as_raw().z == 1.0
         )));
     assert!(result
@@ -424,7 +432,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| {
             match surface.definition() {
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::ParallelOffset(
                     matched_payload,
                 ) => {
                     matches!(
@@ -631,23 +639,23 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
-/// A kept default replaces the source value, so strict decode refuses the
-/// substitution. Strict decode keeps a faithfully transferred source relation.
+/// A kept default replaces the source value and reports it. Its code pins no
+/// strict floor, so a pinned decode admits the substitution.
 #[test]
-fn strict_decode_rejects_a_substituted_length_uncertainty() {
+fn a_pinned_decode_admits_a_substituted_length_uncertainty() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
+    options.strictness.pinned = true;
+    let result = StepCodec::default()
         .decode(
             &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
             &options,
         )
-        .expect_err("strict mode rejects a substituted default tolerance");
-
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+        .expect("a substituted default tolerance pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::UncertaintyLengthAmbiguous.kind()));
 }
 
 #[test]
@@ -817,7 +825,7 @@ fn trim_end(result: &cadmpeg_ir::codec::DecodeResult) -> f64 {
     let [curve] = result.ir().geometry.procedural_curves.as_slice() else {
         panic!("one trimmed curve");
     };
-    let value = serde_json::to_value(curve).unwrap();
+    let value = json::to_value(curve).unwrap();
     value["definition"]["parameter_range"][1].as_f64().unwrap()
 }
 

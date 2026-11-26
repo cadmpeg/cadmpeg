@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 use crate::design::decode::scopes::surfaces::{
@@ -214,10 +215,10 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(*metadata_record, 401);
     assert_eq!(result_records, &[501, 502]);
     assert_eq!(body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
-    let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
+    let serialized = json::to_value(&construction).expect("serialize legacy form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+        json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize legacy form"),
         construction
     );
@@ -432,10 +433,10 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
         .unwrap()
         .expect("body-snapshot Base Feature frame is canonical");
-    let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
+    let serialized = json::to_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+        json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize snapshot form"),
         construction
     );
@@ -1098,6 +1099,81 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 }
 
 #[test]
+fn class_444_zero_body_frame_of_257_bytes_is_canonical() {
+    let prefix = 17;
+    let mut zero_body = vec![0u8; prefix + 257];
+    zero_body[prefix + 20] = 1;
+    zero_body[prefix + 32] = 1;
+    zero_body[prefix + 33..prefix + 41].copy_from_slice(&701u64.to_le_bytes());
+    zero_body[prefix + 55..prefix + 59].copy_from_slice(&36u32.to_le_bytes());
+    for (ordinal, code_unit) in "00000000-0000-0000-0000-000000000000"
+        .encode_utf16()
+        .enumerate()
+    {
+        zero_body[prefix + 59 + ordinal * 2..prefix + 61 + ordinal * 2]
+            .copy_from_slice(&code_unit.to_le_bytes());
+    }
+    zero_body[prefix + 134..prefix + 138].copy_from_slice(&1u32.to_le_bytes());
+    zero_body[prefix + 138] = 1;
+    zero_body[prefix + 139..prefix + 143].copy_from_slice(&701u32.to_le_bytes());
+    zero_body[prefix + 149..prefix + 153].copy_from_slice(&17u32.to_le_bytes());
+    zero_body[prefix + 153..prefix + 157].copy_from_slice(&12u32.to_le_bytes());
+    for (ordinal, code_unit) in "Base Feature".encode_utf16().enumerate() {
+        zero_body[prefix + 157 + ordinal * 2..prefix + 159 + ordinal * 2]
+            .copy_from_slice(&code_unit.to_le_bytes());
+    }
+    zero_body[prefix + 181..prefix + 185].copy_from_slice(&1u32.to_le_bytes());
+    zero_body[prefix + 211..prefix + 215].copy_from_slice(&17u32.to_le_bytes());
+    let mut zero_scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-444-263-zero-257",
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
+        73,
+    );
+    zero_scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("444".to_owned()).unwrap();
+    zero_scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
+    zero_scope
+        .try_edit(|draft| {
+            draft.byte_offset = u64_from_index(prefix);
+            draft.frame_length = 257;
+            draft.kind_offset = u64_from_index(prefix + 157);
+            draft.paired_byte_offset = u64_from_index(prefix + 257);
+            draft.reference_count_offset = u64_from_index(prefix + 134);
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                vec![701],
+                vec![u64_from_index(prefix + 139)],
+                "reference_members",
+            )
+            .unwrap();
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let construction = exact_base_feature_construction(&zero_body, &zero_scope)
+        .unwrap()
+        .expect("257-byte class-444/class-263 zero-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        bodies,
+        metadata_record,
+        ..
+    } = construction
+    else {
+        panic!("257-byte zero-body frame selected the wrong form");
+    };
+    assert!(bodies.iter().next().is_none());
+    assert_eq!(metadata_record, 701);
+
+    let mut mismatched_reference = zero_body;
+    mismatched_reference[prefix + 139] = 1;
+    assert!(
+        exact_base_feature_construction(&mismatched_reference, &zero_scope)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     use crate::layout::base_feature_class_377_prefix as class_377;
 
@@ -1274,9 +1350,9 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         .expect("class-365/class-262 Base Feature frame is canonical");
     assert_eq!(class_365_construction, construction);
 
-    let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
+    let serialized = json::to_value(&construction).expect("serialize body-reference form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+        json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize body-reference form"),
         construction
     );

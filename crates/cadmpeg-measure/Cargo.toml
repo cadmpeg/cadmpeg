@@ -12,8 +12,13 @@ readme = "README.md"
 
 [features]
 # `test_support::round_trip` for the tests of writer crates, which take this
-# feature in their dev-dependencies.
+# feature in their dev-dependencies, and `test_support::box_pass` for the
+# `box_pass` example and the fixture test of the `cadmpeg` package.
 test-support = []
+
+[[example]]
+name = "box_pass"
+required-features = ["test-support"]
 
 [dependencies]
 cadmpeg-core.workspace = true
@@ -22,7 +27,6 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 serde_json.workspace = true
 
 [lints]

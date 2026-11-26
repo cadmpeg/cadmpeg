@@ -46,6 +46,23 @@ fn design_findings(result: &EditableDecodeResult) -> Vec<String> {
         .collect()
 }
 
+/// The one root definition of an unscoped part owns every body (§8.1).
+fn assert_root_owns_every_body(ir: &cadmpeg_ir::CadIr) {
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert!(root.is_root());
+    assert_eq!(root.id.as_str(), "catia:model:product-definition#root");
+    assert_eq!(
+        root.bodies,
+        ir.geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
     let result = decode(
@@ -59,14 +76,24 @@ fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
     };
     assert!(root.is_root());
     assert_eq!(root.id.as_str(), "catia:model:product-definition#root");
-    assert!(root.bodies.is_empty());
     assert!(!ir.geometry.bodies.is_empty());
+    assert_root_owns_every_body(ir);
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one design scope");
     };
     assert_eq!(scope.definition, root.id);
     assert!(scope.roots.is_empty());
     assert!(scope.current.is_empty());
+    // The decoder reads no member that produces a body: every body of the
+    // root is unproduced, and a loss names the unread history (§5.5).
+    assert_eq!(
+        scope.unproduced.iter().collect::<Vec<_>>(),
+        root.bodies.iter().collect::<Vec<_>>()
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::HistoryFeaturesUnread
+            .note("")
+            .code));
     assert_eq!(
         ir.design
             .parameters
@@ -89,7 +116,7 @@ fn a_feature_whose_container_is_unread_states_no_design_record() {
     let result = decode(principal_plane_part("xy-plane"), &DecodeOptions::default());
     let ir = result.ir();
     assert_eq!(ir.model.features.len(), 1);
-    assert!(ir.model.product_definitions.is_empty());
+    assert_root_owns_every_body(ir);
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.containers.is_empty());
     assert!(ir.design.features.is_empty());
@@ -106,7 +133,7 @@ fn a_part_with_no_history_states_no_design_record() {
     assert!(ir.model.parameters.is_empty());
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.parameters.is_empty());
-    assert!(ir.model.product_definitions.is_empty());
+    assert_root_owns_every_body(ir);
 }
 
 #[test]
@@ -119,5 +146,5 @@ fn a_geometry_decode_states_no_design_record() {
     let ir = result.ir();
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.parameters.is_empty());
-    assert!(ir.model.product_definitions.is_empty());
+    assert_root_owns_every_body(ir);
 }

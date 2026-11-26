@@ -56,12 +56,12 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
             }),
@@ -79,7 +79,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
             &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
             None,
         ),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut first_encoding))
     .expect("source-less spatial line should encode");
@@ -99,7 +99,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut second_encoding = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut second_encoding))
     .expect("edited retained spatial line should encode");
@@ -128,7 +128,7 @@ fn mutated_semantic_write_round_trips() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,

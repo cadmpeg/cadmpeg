@@ -26,6 +26,10 @@ pub(crate) struct OperationPose {
     pub(super) frame: Vec<u8>,
     pub(super) carrier: u64,
     source_root_record_index: u64,
+    /// The path-ordinal value of a version-four table.
+    pub(super) path_ordinal: Option<u32>,
+    /// The type version of the table.
+    pub(super) table_version: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,17 +37,53 @@ pub(super) struct DirectPose {
     pub(super) target_record_index: u64,
     pub(super) matrix: [[f64; 4]; 4],
     source_root_record_index: u64,
+    pub(super) path_ordinal: Option<u32>,
 }
 
+/// Grammar of an operation table between its name and its entry run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableForm {
+    /// A two-byte zero run and a one-reference path.
+    ShortRun,
+    /// A six-byte zero run and a one-reference path.
+    LongRun,
+    /// A six-byte zero run, a one-reference path, and the path-ordinal field.
+    PathOrdinals,
+}
+
+impl TableForm {
+    const ALL: [Self; 3] = [Self::ShortRun, Self::LongRun, Self::PathOrdinals];
+
+    fn of_version(version: u32) -> Option<Self> {
+        match version {
+            0 => Some(Self::ShortRun),
+            1..=3 => Some(Self::LongRun),
+            4 => Some(Self::PathOrdinals),
+            _ => None,
+        }
+    }
+
+    fn zero_run(self) -> usize {
+        match self {
+            Self::ShortRun => 2,
+            Self::LongRun | Self::PathOrdinals => 6,
+        }
+    }
+}
+
+/// Marker byte of the path-ordinal field that follows an explicit occurrence path.
+const PATH_ORDINAL_FIELD: u8 = 2;
+
 pub(super) fn parse(body: &[u8]) -> Option<DirectPose> {
-    let mut matches = [2, 6]
+    let mut matches = TableForm::ALL
         .into_iter()
-        .filter_map(|prefix| parse_prefix(body, prefix));
+        .filter_map(|form| parse_form(body, form));
     let result = matches.next()?;
     matches.next().is_none().then_some(result)
 }
 
-fn parse_prefix(body: &[u8], prefix: usize) -> Option<DirectPose> {
+fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
+    let prefix = form.zero_run();
     class_tag(body)?;
     let (name, mut at) = lp_ascii_strict(body, header::LEN, 0..=body.len())?;
     if !name.is_ascii() {
@@ -70,6 +110,14 @@ fn parse_prefix(body: &[u8], prefix: usize) -> Option<DirectPose> {
             .is_some_and(|guid| !guid.eq_ignore_ascii_case(super::OCCURRENCE_PLACEMENT_TYPE_GUID))
     {
         return None;
+    }
+    let mut path_ordinal = None;
+    if form == TableForm::PathOrdinals {
+        if body.get(at) != Some(&PATH_ORDINAL_FIELD) || View::u32_le_at(body, at + 1)? != 1 {
+            return None;
+        }
+        path_ordinal = Some(View::u32_le_at(body, at + 5)?);
+        at += 9;
     }
     let (source_root_record_index, root_type) =
         take_owned_reference(body, &mut at)?.into_local()?;
@@ -108,6 +156,7 @@ fn parse_prefix(body: &[u8], prefix: usize) -> Option<DirectPose> {
         target_record_index: target,
         matrix,
         source_root_record_index,
+        path_ordinal,
     })
 }
 
@@ -177,7 +226,7 @@ fn read(
                 table.native += 1;
                 continue;
             };
-            if *version > 1 {
+            if TableForm::of_version(*version).is_none() {
                 table.native += 1;
                 continue;
             }
@@ -206,14 +255,9 @@ fn register(
     body: &[u8],
     version: Option<u32>,
 ) -> Result<(), CodecError> {
-    let pose = version.and_then(|version| {
-        let prefix = match version {
-            0 => 2,
-            1 => 6,
-            _ => return None,
-        };
-        parse(body).filter(|_| parse_prefix(body, prefix).is_some())
-    });
+    let pose = version
+        .and_then(TableForm::of_version)
+        .and_then(|form| parse(body).filter(|_| parse_form(body, form).is_some()));
     let Some(pose) = pose else {
         table.native += 1;
         return Ok(());
@@ -230,6 +274,8 @@ fn register(
                 frame,
                 carrier,
                 source_root_record_index: pose.source_root_record_index,
+                path_ordinal: pose.path_ordinal,
+                table_version: version,
             }));
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -514,6 +560,19 @@ pub(crate) fn project(
     protected: &BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, CodecError> {
+    project_in_members(ctx, ir, poses, protected, losses, &BTreeMap::new())
+}
+
+/// [`project`] for a model that places archive member instances, whose
+/// `instance_scopes` name the placement each member occurrence sits in.
+pub(crate) fn project_in_members(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    poses: &BTreeMap<String, OperationPose>,
+    protected: &BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    instance_scopes: &BTreeMap<cadmpeg_ir::ids::OccurrenceId, String>,
+) -> Result<usize, CodecError> {
     if poses.is_empty() {
         return Ok(0);
     }
@@ -535,7 +594,11 @@ pub(crate) fn project(
             streams.insert(r.id.clone(), s.to_owned());
         }
     }
-    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let parents = crate::tree::parent_ids_in_members(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    );
     let mut placement = Placement {
         occurrences: &ir.model.occurrences,
         parents,
@@ -684,7 +747,7 @@ pub(crate) fn project(
             o.transform = Some(transform);
         }
     }
-    let ns = ir.native.namespace_mut("f3d");
+    let ns = ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {
             for r in records {
@@ -702,7 +765,7 @@ pub(crate) fn project(
                 let mut fields = r.copy_fields(ctx)?;
                 fields.insert(
                     "operation_pose".into(),
-                    serde_json::to_value(operation)
+                    cadmpeg_core::serde_erase::to_json_value(&operation)
                         .map_err(|e| CodecError::malformed(e.to_string()))?,
                 );
                 *r = cadmpeg_ir::NativeRecord::new(
@@ -712,6 +775,32 @@ pub(crate) fn project(
                 )?;
             }
         }
+    }
+    let path_ordinals = applied
+        .iter()
+        .filter(|key| {
+            poses
+                .get(*key)
+                .is_some_and(|pose| pose.path_ordinal.is_some())
+        })
+        .count();
+    if path_ordinals != 0 {
+        losses.push(F3dLossCode::OperationPosePathOrdinalAssumed.note(format!(
+            "{path_ordinals} occurrence definition(s) take the pose of a version-four operation table; the path-ordinal value of the table is assumed to leave that pose unchanged (DR-520)."
+        )));
+    }
+    let assumed_versions = applied
+        .iter()
+        .filter(|key| {
+            poses
+                .get(*key)
+                .is_some_and(|pose| matches!(pose.table_version, Some(2 | 3)))
+        })
+        .count();
+    if assumed_versions != 0 {
+        losses.push(F3dLossCode::OperationPoseVersionAssumed.note(format!(
+            "{assumed_versions} occurrence definition(s) take the pose of a version-two or version-three operation table; these tables are assumed to carry the pose semantics of a version-one table (DR-520)."
+        )));
     }
     if !applied.is_empty() {
         losses.push(F3dLossCode::OperationPoseApplied.note(format!("{} occurrence definition(s) take their direct operation table's final pose in every instance; {count} instance transform(s) changed", applied.len())));

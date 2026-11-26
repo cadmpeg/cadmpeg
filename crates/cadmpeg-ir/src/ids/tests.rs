@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
@@ -31,14 +32,14 @@ fn identity_schemas_constrain_strings_and_map_keys() {
     use std::collections::BTreeMap;
     macro_rules! check {
         ($identity:ty) => {{
-            let schema = serde_json::to_value(schemars::schema_for!($identity)).unwrap();
+            let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!($identity)).unwrap();
             let string_schema = match schema["$ref"].as_str() {
                 Some(reference) => schema.pointer(reference.strip_prefix('#').unwrap()).unwrap(),
                 None => &schema,
             };
             assert_eq!(string_schema["type"], "string");
             let pattern = string_schema["pattern"].as_str().unwrap();
-            let map = serde_json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
+            let map = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
             assert_eq!(map["additionalProperties"], false);
             assert!(map["patternProperties"].get(pattern).is_some());
         }};
@@ -84,6 +85,43 @@ fn three_component_ids_are_valid() {
 }
 
 #[test]
+fn the_format_component_is_a_codec_id() {
+    for (format, valid) in [
+        ("step", true),
+        ("3mf", true),
+        ("Step", false),
+        ("st-ep", false),
+        ("st_ep", false),
+        ("st\u{e9}p", false),
+    ] {
+        let id = format!("{format}:file:signature#0");
+        assert_eq!(is_valid_identity(&id), valid, "{format}");
+        assert_eq!(
+            json::from_value::<super::Identity>(cadmpeg_core::json!(id)).is_ok(),
+            valid,
+            "{format}"
+        );
+        assert_eq!(
+            super::StaticIdentityNamespace::new(format, "file", "signature").is_some(),
+            valid,
+            "{format}"
+        );
+        assert_eq!(
+            IdentityNamespace::new(format, "file", "signature").is_ok(),
+            valid,
+            "{format}"
+        );
+    }
+    assert!(matches!(
+        IdentityNamespace::new("STEP", "file", "signature"),
+        Err(IdentityError::InvalidComponent {
+            label: "format",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn two_component_ids_are_rejected() {
     assert!(!is_valid_identity("step:signature#0"));
     assert!(matches!(
@@ -95,7 +133,7 @@ fn two_component_ids_are_rejected() {
 #[test]
 fn typed_ids_keep_their_canonical_json_string_shape() {
     let id = crate::ids::BodyId::mint("test:model:body#1").unwrap();
-    assert_eq!(serde_json::to_string(&id).unwrap(), "\"test:model:body#1\"");
+    assert_eq!(json::to_string(&id).unwrap(), "\"test:model:body#1\"");
     assert_eq!(
         serde_json::from_str::<crate::ids::BodyId>("\"test:model:body#1\"").unwrap(),
         id
@@ -123,7 +161,7 @@ fn fallible_conversions_enforce_entity_identity_grammar() {
     ] {
         assert!(BodyId::try_from(invalid).is_err(), "{invalid:?}");
         assert!(BodyId::try_from(invalid.to_owned()).is_err(), "{invalid:?}");
-        let wire = serde_json::to_string(invalid).unwrap();
+        let wire = json::to_string(invalid).unwrap();
         assert!(
             serde_json::from_str::<BodyId>(&wire).is_err(),
             "{invalid:?}"
@@ -145,7 +183,7 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
             HistoricalBodyId::try_from(invalid.to_owned()).is_err(),
             "{invalid:?}"
         );
-        let wire = serde_json::to_string(invalid).unwrap();
+        let wire = json::to_string(invalid).unwrap();
         assert!(
             serde_json::from_str::<HistoricalBodyId>(&wire).is_err(),
             "{invalid:?}"
@@ -153,7 +191,7 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
     }
     let id = HistoricalBodyId::try_from("member-1").unwrap();
     assert_eq!(id.as_str(), "member-1");
-    assert_eq!(serde_json::to_string(&id).unwrap(), "\"member-1\"");
+    assert_eq!(json::to_string(&id).unwrap(), "\"member-1\"");
 }
 
 #[test]
@@ -179,18 +217,21 @@ fn arena_identity_types_enforce_the_entity_identity_grammar() {
                     <$type>::try_from(invalid.to_owned()).is_err(),
                     "{invalid:?}"
                 );
-                let wire = serde_json::to_string(invalid).unwrap();
+                let wire = cadmpeg_core::serde_erase::json::to_string(invalid).unwrap();
                 assert!(serde_json::from_str::<$type>(&wire).is_err(), "{invalid:?}");
             }
             let id = <$type>::mint($valid).expect("identity grammar");
             assert_eq!(
-                serde_json::from_str::<$type>(&serde_json::to_string($valid).unwrap()).unwrap(),
+                serde_json::from_str::<$type>(
+                    &cadmpeg_core::serde_erase::json::to_string($valid).unwrap()
+                )
+                .unwrap(),
                 id
             );
             assert_eq!(id.as_str(), $valid);
             assert_eq!(
-                serde_json::to_string(&id).unwrap(),
-                serde_json::to_string($valid).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&id).unwrap(),
+                cadmpeg_core::serde_erase::json::to_string($valid).unwrap()
             );
             assert_eq!(crate::ids::Identity::from(id).into_string(), $valid);
         }};
@@ -228,10 +269,7 @@ fn checked_identity_admission_and_typed_conversion() {
         IdentityKey::try_new("1".to_owned()).unwrap(),
     );
     assert_eq!(identity.as_str(), text);
-    assert_eq!(
-        serde_json::to_string(&identity).unwrap(),
-        "\"test:model:body#1\""
-    );
+    assert_eq!(json::to_string(&identity).unwrap(), "\"test:model:body#1\"");
     assert_eq!(
         serde_json::from_str::<Identity>("\"test:model:body#1\"").unwrap(),
         identity
@@ -246,9 +284,7 @@ fn checked_identity_admission_and_typed_conversion() {
         "test:model:body#a b",
     ] {
         assert!(Identity::new(invalid).is_err());
-        assert!(
-            serde_json::from_str::<Identity>(&serde_json::to_string(invalid).unwrap()).is_err()
-        );
+        assert!(serde_json::from_str::<Identity>(&json::to_string(invalid).unwrap()).is_err());
     }
 }
 
@@ -270,6 +306,14 @@ fn encoded_components_preserve_empty_prefixes_and_unicode_bytes() {
     use super::IdentityKeyTail;
     let encoded = IdentityKeyTail::percent_encode("A B:#%\u{2003}é");
     assert_eq!(encoded.as_str(), "A%20B%3A%23%25%E2%80%83é");
+    assert_eq!(
+        IdentityKeyTail::percent_encode("Pin@2/BulkStream.dat").as_str(),
+        "Pin%402/BulkStream.dat"
+    );
+    assert_eq!(
+        IdentityKeyTail::percent_encode("Pin@ 2").as_str(),
+        "Pin%40%202"
+    );
     let suffix = crate::identity_key!("@7");
     assert_eq!(
         suffix
@@ -433,9 +477,9 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
         );
 
         identity.clear();
-        identity.push('a');
+        identity.push_str("a:a");
         identity.push(character);
-        identity.push_str("b:c:d#key");
+        identity.push_str("b:d#key");
         assert_eq!(
             super::valid_component_text(&component),
             super::is_valid_identity(&identity),
@@ -478,4 +522,46 @@ fn identity_grammar_admits_only_three_components_and_one_key() {
             text
         );
     }
+}
+
+#[test]
+fn inline_identity_keys_match_owned_and_borrowed_across_operations() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let hash_of = |key: &IdentityKey| {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        hasher.finish()
+    };
+
+    for (key, expected) in [
+        (IdentityKey::from(0_u64), "0"),
+        (IdentityKey::from(42_u32), "42"),
+        (IdentityKey::from(u64::MAX), "18446744073709551615"),
+        (IdentityKey::from(i64::MIN), "-9223372036854775808"),
+        (IdentityKey::from(i64::MAX), "9223372036854775807"),
+        (IdentityKey::from(-1_i8), "-1"),
+        (IdentityKey::from(123_usize).dash(456_u64), "123-456"),
+        (IdentityKey::from(123_usize).colon(456_u64), "123:456"),
+        (
+            IdentityKey::from(u64::MAX).dash(u64::MAX),
+            "18446744073709551615-18446744073709551615",
+        ),
+    ] {
+        assert_eq!(key.as_str(), expected);
+        let owned = IdentityKey::try_new(expected.to_owned()).unwrap();
+        assert_eq!(key, owned);
+        assert_eq!(key.cmp(&owned), std::cmp::Ordering::Equal);
+        assert_eq!(hash_of(&key), hash_of(&owned));
+        assert_eq!(key.clone().into_string(), expected);
+    }
+
+    let borrowed = crate::identity_key!("42");
+    let inline = IdentityKey::from(42_u64);
+    let owned = IdentityKey::try_new("42".to_owned()).unwrap();
+    assert_eq!(borrowed, inline);
+    assert_eq!(inline, owned);
+    assert_eq!(hash_of(&borrowed), hash_of(&inline));
+    assert_eq!(hash_of(&inline), hash_of(&owned));
 }

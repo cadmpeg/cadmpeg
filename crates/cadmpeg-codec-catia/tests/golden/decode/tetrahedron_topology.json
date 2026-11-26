@@ -784,37 +784,38 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "catia:standard:body#0"
+          ],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1499,102 +1500,103 @@
         },
         "catia:standard:curve#290": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:curve#301": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:curve#312": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:curve#323": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:curve#334": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:curve#345": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#0": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#1": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#2": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#3": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#4": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:edge#5": {
           "fields": {
-            "curve": "derived",
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:face#0": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1603,6 +1605,7 @@
         },
         "catia:standard:face#1": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1611,6 +1614,7 @@
         },
         "catia:standard:face#2": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1619,6 +1623,7 @@
         },
         "catia:standard:face#3": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
@@ -1627,37 +1632,33 @@
         },
         "catia:standard:loop#0:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:loop#1:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:loop#2:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "kind": "fields"
         },
         "catia:standard:loop#3:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "kind": "fields"
         },
@@ -1944,6 +1945,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c0ac58d0d7f4492b5f4beae33ee29f7f1fab5b7b65ad9e48930abb554f2622f1",
     "file_digests": {},
     "retained_records": {

@@ -11,9 +11,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{
-    dialect_loss, dialect_losses, SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT,
-};
+use super::{dialect_loss, SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;
@@ -143,7 +141,7 @@ fn format_13006_is_admitted_for_a_versioned_solidworks_host() {
 }
 
 #[test]
-fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
+fn residual_parasolid_schema_charges_a_dialect_loss_with_no_strict_floor() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
         cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
@@ -155,17 +153,19 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");
-    let losses = dialect_losses(&layers);
+    let losses = layers
+        .iter()
+        .filter_map(|matched| dialect_loss(matched, &[]))
+        .collect::<Vec<_>>();
 
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
         SldprtLossCode::KernelDialectUnverified.kind()
     );
-    assert_eq!(
-        losses[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Reject
-    );
+    assert!(!crate::test_support::ir::strict_options()
+        .strictness
+        .refuses(&losses[0], false));
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
     assert!(losses[0].message.contains("block@7:body+3"));
 }
@@ -346,7 +346,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 
     for case in CASES {
         let matched = SldprtDialect::classify(case.declaration);
-        let loss = dialect_loss(&matched);
+        let loss = dialect_loss(&matched, &[]);
         let context = format!("swVersion {:?}", case.declaration);
 
         assert_eq!(
@@ -393,7 +393,7 @@ fn the_unverified_note_records_the_declaration_that_failed_to_verify() {
     // A declaration the padding rule cannot use is named in the note; an
     // absent one is described as absent. The two are different states and a
     // reader must be able to tell them apart.
-    let named = dialect_loss(&SldprtDialect::classify(Some("SW2019")))
+    let named = dialect_loss(&SldprtDialect::classify(Some("SW2019")), &[])
         .expect("a non-numeric declaration is unverified");
     assert!(
         named.message.contains("\"SW2019\""),
@@ -402,7 +402,7 @@ fn the_unverified_note_records_the_declaration_that_failed_to_verify() {
     );
 
     let absent =
-        dialect_loss(&SldprtDialect::classify(None)).expect("no declaration is unverified");
+        dialect_loss(&SldprtDialect::classify(None), &[]).expect("no declaration is unverified");
     assert!(
         absent
             .message
@@ -410,6 +410,22 @@ fn the_unverified_note_records_the_declaration_that_failed_to_verify() {
         "the note must say the declaration is absent: {}",
         absent.message
     );
+}
+
+#[test]
+fn a_declaration_in_a_given_up_section_is_not_reported_absent() {
+    let unread = ["swXmlContents/Features__ZLB".to_owned()];
+    let loss = dialect_loss(&SldprtDialect::classify(None), &unread)
+        .expect("an unread declaration is unverified");
+    assert!(
+        loss.message.starts_with(
+            "no swSolidWorks swVersion declaration was read: the given-up section(s) \
+             swXmlContents/Features__ZLB can hold one"
+        ),
+        "{}",
+        loss.message
+    );
+    assert!(!loss.message.contains("carries no"), "{}", loss.message);
 }
 
 #[test]
@@ -467,7 +483,7 @@ fn a_container_declaring_nothing_reaches_the_totality_row() {
     assert_eq!(matched.dialect().as_str(), "sldprt:unknown");
     assert!(matched.declared().is_empty());
     assert_eq!(matched.admission(), &Admission::Residual);
-    assert!(dialect_loss(&matched).is_some());
+    assert!(dialect_loss(&matched, &[]).is_some());
 }
 
 #[test]

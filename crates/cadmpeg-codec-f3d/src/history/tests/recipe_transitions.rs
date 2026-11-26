@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! History-module unit tests.
 
-use crate::history::{
-    bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    historical_brep_source, select_legacy_extrude_face_candidate, BindingHistories,
-    LegacyFaceResolution,
+use crate::history::binding_histories::BindingHistories;
+use crate::history::face_operand_history::bind_face_operand_history_candidates;
+use crate::history::face_resolution::{
+    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
 };
+use crate::history::face_selections::bind_feature_face_selections;
+use crate::history::feature_outputs::bind_sweep_result_modes;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
@@ -24,9 +26,9 @@ fn split_face_case() -> (
             construction::DesignConstructionOperandGroupFrame, face::DesignFaceOperand,
         },
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, SplitFaceTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::FaceId;
 
     let scope_id = "f3d:Design/BulkStream.dat:scope#42".to_string();
@@ -170,7 +172,7 @@ fn split_face_case() -> (
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                 targets: FaceSelection::Native(group_id.clone()),
                 tool: SplitFaceTool::Plane {
@@ -182,10 +184,10 @@ fn split_face_case() -> (
         native_ref: Some(scope_id),
     }];
 
-    super::super::bind_feature_face_selections(
+    super::super::face_selections::bind_feature_face_selections(
         &mut features,
         &mut [],
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: &[scope],
             groups: &[group],
             operands: &[operand],
@@ -201,7 +203,8 @@ fn split_face_case() -> (
 
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (features, face_id, group_id) = split_face_case();
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -230,7 +233,8 @@ fn split_face_recovery_and_final_admission_do_not_leave_an_unresolved_selection_
 
 #[test]
 fn split_face_historical_demotion_records_the_final_selection_loss() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut features, _, native) = split_face_case();
     let feature_id = features[0].id.clone();
     let selection = FaceSelection::historical(
@@ -504,6 +508,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         cylinder_scope.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Standard,
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
@@ -649,9 +654,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
 #[test]
 fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
-    };
+    use cadmpeg_ir::features::sweeps::{SweepMode, SweepSection};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -663,6 +667,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         product_definition: None,
@@ -676,11 +681,11 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                     SweepMode::Unresolved {},
-                    SweepSection::Unresolved(None),
+                    SweepSection::Unresolved,
                     Vec::new(),
                 ),
 
@@ -698,7 +703,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 scale: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs).unwrap(),
         ),
         native_ref: None,
     };
@@ -738,7 +743,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     assert_eq!(
         modes[1],
         SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::NewBody
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody
         }
     );
     assert_eq!(modes[2], SweepMode::Unresolved {});
@@ -818,7 +823,7 @@ const HOLE_CANDIDATE_HISTORY: &str =
 
 fn hole_face_case() -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology>,
     cadmpeg_ir::features::FeatureId,
 ) {
     hole_face_case_in("f3d:history", vec![1])
@@ -829,7 +834,7 @@ fn hole_face_case_in(
     candidate_states: Vec<i64>,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology>,
     cadmpeg_ir::features::FeatureId,
 ) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
@@ -871,7 +876,7 @@ fn hole_case_with(
     history: crate::history_records::AsmHistory,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology>,
     cadmpeg_ir::features::FeatureId,
 ) {
     use crate::records::{
@@ -881,10 +886,11 @@ fn hole_case_with(
         },
         topology::entity_selection::DesignEntitySelectionFaceCandidate,
     };
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureInputTopology, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
@@ -966,18 +972,20 @@ fn hole_case_with(
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: Some(FaceSelection::Native(scope_id.into())),
                 direction: None,
                 placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                 }]),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
@@ -999,12 +1007,15 @@ fn hole_case_with(
     };
     feature.native_ref = Some(scope_id.into());
     let mut input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     }];
@@ -1012,7 +1023,7 @@ fn hole_case_with(
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: &[scope],
             groups: &[],
             operands: &[],
@@ -1152,7 +1163,8 @@ fn entry_location(position: [f64; 3]) -> crate::records::feature::hole::DesignHo
 
 #[test]
 fn hole_support_face_binds_ahead_of_a_selection_candidate() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (feature, topologies, feature_id) = hole_case_with(
         Some(vec![1]),
         vec![entry_location([1.0, 1.5, 2.0])],
@@ -1178,7 +1190,8 @@ fn hole_support_face_binds_ahead_of_a_selection_candidate() {
 
 #[test]
 fn hole_entry_off_the_support_plane_falls_back_to_its_selection_candidate() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (feature, _, feature_id) = hole_case_with(
         Some(vec![1]),
         vec![entry_location([1.0, 1.5, 3.0])],
@@ -1203,7 +1216,8 @@ fn hole_entry_off_the_support_plane_falls_back_to_its_selection_candidate() {
 
 #[test]
 fn hole_face_candidate_of_the_operation_history_binds_only_in_the_input_state() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let face_of = |feature: &cadmpeg_ir::features::Feature| match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(face), ..
@@ -1225,7 +1239,8 @@ fn hole_face_candidate_of_the_operation_history_binds_only_in_the_input_state() 
 
 #[test]
 fn hole_face_selection_binds_to_the_feature_input_topology() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (feature, input_topologies, feature_id) = hole_face_case();
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -1265,7 +1280,8 @@ fn a_hole_whose_entry_points_lie_on_no_input_face_has_no_face() {
 
 #[test]
 fn a_hole_whose_entry_point_lies_on_an_input_face_carrier_keeps_its_native_face() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (feature, _, _) = hole_case_with(
         None,
         vec![entry_location([1.0, 3.0, 2.0])],

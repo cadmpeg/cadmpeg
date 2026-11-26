@@ -10,7 +10,7 @@
 use crate::wire::records::ConsolidatedPcurve;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -2365,10 +2365,14 @@ fn parse_b2_nurbs_curve(
 
     knots.extend(std::iter::repeat_with(|| knot_start).take(control_count));
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
-    crate::nurbs::note_refusal(
+    crate::nurbs::give_up_refused(
         NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "b2-nurbs-curve-frame"),
+            frame.pos,
+        ),
     )
     .map(|geometry| B2NurbsCurve {
         pos: frame.pos,

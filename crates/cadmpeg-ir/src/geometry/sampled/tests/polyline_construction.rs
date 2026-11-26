@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::math::Point3;
 use crate::scalar::FiniteReal;
+use cadmpeg_core::serde_erase::json;
 
 fn raw(parameters: Option<[f64; 3]>) -> PolylineSamples {
     let points = [
@@ -65,7 +66,7 @@ fn polyline_construction_preserves_diagnostic_order() {
             .to_string(),
         "parameters must be finite and strictly monotonic"
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         PolylineCurve::from_checked_samples(checked(Some([0., 0., 0.])), -1.)
             .expect_err("negative deflection")
@@ -80,7 +81,7 @@ fn polyline_construction_accepts_both_lanes_and_either_parameter_direction() {
     for parameters in [None, Some([0., 1., 2.]), Some([2., 1., 0.])] {
         let curve = PolylineCurve::new(raw(parameters), 0.25).expect("valid");
         assert_eq!(
-            serde_json::from_str::<PolylineCurve>(&serde_json::to_string(&curve).expect("wire"))
+            serde_json::from_str::<PolylineCurve>(&json::to_string(&curve).expect("wire"))
                 .expect("context-free serde"),
             curve
         );

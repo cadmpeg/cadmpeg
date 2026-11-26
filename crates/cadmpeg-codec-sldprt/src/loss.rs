@@ -49,6 +49,9 @@ pub(crate) enum SldprtLossCode {
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
     ConfigActivePartitionMismatch,
+    /// The active partition is not chosen: a section the choice needs was
+    /// given up.
+    ConfigActivePartitionUnread,
     /// Configuration state inferred from geometry without a native definition.
     ConfigInferredWithoutNative,
     /// Configuration-scoped feature-input lane has unresolved configuration id.
@@ -64,6 +67,20 @@ pub(crate) enum SldprtLossCode {
     /// The configuration pass reached its work cap; later configurations
     /// keep empty projected states.
     ConfigProjectionWorkCapped,
+    /// A configuration's stored state has no design evaluation.
+    ConfigStateUnstated,
+    /// A configuration that is not active has no stored partition.
+    ConfigStateNotStored,
+    /// The appearances or tessellations on the records of a state that is not
+    /// current are not stated.
+    ConfigStatePresentationUnstated,
+    /// The imported-feature body streams of a configuration that is not
+    /// active are not taken into its state.
+    ConfigStateImportedBodiesNotTransferred,
+    /// A feature output on a body of a state that is not current, whose
+    /// feature no face name of that body in the state's evaluation names, is
+    /// not stated.
+    ConfigStateOutputsUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -100,6 +117,24 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
+    /// The stored marks do not fix the rollback position of the feature tree.
+    HistoryRollbackUnread,
+    /// The `moPMarkRecord_c` class index of a configuration is the class
+    /// token whose records name the most main-line marks.
+    HistoryRollbackMarkClassInferred,
+    /// A Keywords history member has no XML text that parses, so none of its
+    /// records is read.
+    HistoryUnread,
+    /// A Keywords root holds an `Application` element, which the native history
+    /// keeps and no neutral record holds.
+    HistoryApplicationNotTransferred,
+    /// An `Application` element nests deeper than the levels the native history
+    /// keeps, so the elements below them are not kept.
+    HistoryApplicationNestingCut,
+    /// A Keywords text holds comments, processing instructions, text with
+    /// edge whitespace or namespace prefixes, which the native history does
+    /// not keep.
+    HistoryXmlNormalised,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -118,12 +153,61 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
+    /// A sketch line keeps the line its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form that gives no
+    /// entity.
+    SketchArcRecordConflict,
+    /// A sketch marker that the marker layouts skip and only its `sgSketch`
+    /// record admits gives no entity, because that record gives none in the
+    /// sketch.
+    SketchMarkerRecordUnread,
+    /// A profile-stream sketch that no feature binds repeats the profile
+    /// loops of the marker sketch that a sketch feature binds.
+    SketchSecondReading,
+    /// The marker sketch of a sketch feature stays unbound beside the
+    /// profile-stream circle bound to the feature.
+    SketchMarkerReadingUnbound,
+    /// A relation point marker whose record form reads a coordinate pair
+    /// that holds a nonzero subnormal value gives no relation point.
+    SketchPointCoordinatesSubnormal,
+    /// A relation point marker gives no relation point where the decode
+    /// does not settle its place: no unique fitted marker transform and no
+    /// sketch frame place it; or, for a marker that only a list-read record
+    /// reaches, the fitted transform and the frame place it more than the
+    /// linear resolution apart and a curve end or centre of the sketch or a
+    /// vertex or circular-edge centre of the solid marks both places or
+    /// neither, or the sketch its feature binds is read from another
+    /// feature-input lane.
+    SketchRelationPointPlaceUnsettled,
+    /// A profile sketch lies on a plane the decoder assumes (open item
+    /// DI-73): the plane that the preceding object's or the lane's plane
+    /// reference names, the Top plane its feature-input reference names, the
+    /// only frame of its legacy configuration lane, or the Front lane fallback
+    /// frame (SF-01).
+    SketchPlaneBindingAssumed,
+    /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
+    SketchPointRecordIndexBasisAssumed,
+    /// A sketch handle takes the arc of its `sgSketch` curve record although
+    /// the arc, placed in the sketch, ends off its endpoint point records.
+    SketchArcRecordOffChord,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
+    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
+    SketchListedLineConstructionAssumed,
+    /// A framed list curve drops a constraint-owning reading of +17 (DI-77).
+    SketchListedCurveRelationDropped,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
     SketchRelationMultiplyProjected,
+    /// A sketch dimension of a compound-file lane that no relation-class
+    /// declaration claims has an unknown relation class and forms no
+    /// relation instance (open item EV-05).
+    SketchDimensionClassUnknown,
+    /// A sketch dimension of a compound-file lane whose relation-class token
+    /// gives it the family and the two sketch points of a kept relation
+    /// forms no second relation instance (open item EV-05).
+    SketchDimensionRepeated,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
     /// Native feature-input operation object does not bind uniquely to a feature.
@@ -133,14 +217,56 @@ pub(crate) enum SldprtLossCode {
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.
     FeatureInputArchiveWalkStopped,
+    /// A fillet or chamfer names its edges by the feature-local component paths
+    /// of the feature that made them; the sketch entities that generate those
+    /// edges are not established, so the selection keeps the paths.
+    FeatureBlendEdgeGeneratorUnstated,
+    /// Every edge vector of a fillet or chamfer lies inside a
+    /// `moPMarkRecord_c`; the selection takes the record's edge references as
+    /// the feature's edge list.
+    FeatureBlendMarkReferencesAssumed,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Sweep path geometry keeps its native reference after an unreadable record.
+    FeatureSweepPathRetained,
+    /// Unframed spatial sweep path lines with an identifier trailer use their
+    /// primary-point roster.
+    FeatureSweepPathRosterAssumed,
+    /// A sweep path component source follows a u32 header word.
+    FeatureSweepPathHeaderAssumed,
+    /// A generated solid sweep uses the Merge reading of its Boolean operation.
+    FeatureSweepMergeAssumed,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
+    FeatureExtrudeReversalContradicted,
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
+    FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
+    /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
+    /// magnitude, and neither a stored frame of the object nor the point and
+    /// normal of its plane-data object states the side.
+    FeatureOffsetPlaneSideAssumed,
+    /// An offset reference plane stores a frame, or a point and normal, that
+    /// is not the plane the decoder places from its source plane and `D1`.
+    FeatureOffsetPlaneFrameConflict,
+    /// An offset reference plane takes its distance from the `D1` display: the
+    /// decoder reads no value of its `D1` parameter object that the display
+    /// shows.
+    FeatureOffsetPlaneDistanceDisplayed,
+    /// A revolution keeps a stored axis that lies outside the plane the
+    /// decoder binds its profile sketch to (DI-85).
+    FeatureRevolveAxisOffProfilePlane,
+    /// A revolution reads its axis from the tail of an `moLineRef_w` record
+    /// whose words before the scalar record are not read, or keeps no axis
+    /// from such records (DI-86).
+    FeatureRevolveAxisRecordPrefixUnread,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -157,6 +283,8 @@ pub(crate) enum SldprtLossCode {
     GeometryOffsetValidityUnresolved,
     /// Stored spun-profile bounds are ignored and the whole profile is revolved.
     GeometrySpunProfileIntervalIgnored,
+    /// A rolling-ball blend face has no solved cache; it keeps its construction.
+    GeometryBlendCacheUnsolved,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -239,7 +367,8 @@ pub(crate) enum SldprtLossCode {
     GeometryParasolidNotTransferred,
     /// Mesh bodies whose facet geometry remains unresolved.
     GeometryMeshBodyNotTransferred,
-    /// Imported-feature body streams that do not decode.
+    /// Imported-feature body streams of the active configuration that do not
+    /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
@@ -249,8 +378,9 @@ pub(crate) enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// The legacy Parasolid zlib probe stopped at its work limit in a section.
     ContainerParasolidProbeCapped,
-    /// An optional weldment owner was retained after a malformed extraction refusal.
-    ContainerAuxiliaryParasolidRefused,
+    /// The compound document admits a noncanonical CFB encoding that every
+    /// stream it names is read past.
+    ContainerNoncanonical,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
     /// The document carries no usable `swVersion`, so no declared identity was
@@ -279,13 +409,126 @@ pub(crate) enum SldprtLossCode {
     WriterAppearanceBindingsOmitted,
     /// Export omits records named by the counted loss message.
     WriterAttributesOmitted,
+    /// Export omits the driven (reference) dimensions of a generated sketch.
+    WriterDrivenDimensionsOmitted,
     /// Export omits records named by the counted loss message.
     WriterUnboundAppearancesOmitted,
+    /// Export writes no `SWObjects` material for the appearances or bodies
+    /// named by the counted loss message.
+    WriterMaterialsOmitted,
     /// Export omits records named by the counted loss message.
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
-    SourceDialectDisplaced,
+    /// Export writes the unit code in a generated `Units` member that no
+    /// `SolidWorks` file is known to hold.
+    WriterUnitsMemberGenerated,
+    /// Export writes the generated feature history as a cadmpeg summary stream; the native
+    /// feature tree holds none of the source's features.
+    WriterNativeHistorySummary,
+    /// Export writes as zero bytes the native skeleton's byte runs whose fields `sldprt.md`
+    /// does not lay out.
+    WriterNativeSkeletonUnlaidRuns,
+    /// Export writes a generated part without the native skeleton.
+    WriterNativeSkeletonOmitted,
+    /// Export leaves out the named native streams of the generated part.
+    WriterNativeStreamsOmitted,
+    /// Export writes generated sketch marker records with no owning native object.
+    WriterNativeSketchLaneOrphan,
+    /// Export writes a native extrusion with no face references and a zero bounding box.
+    WriterNativeBodyIdentityOmitted,
+    /// Export generates partitions with no producer or persistent-id
+    /// attribute, so feature outputs and face and body names are not written.
+    WriterProducerAttributesOmitted,
+    /// Export writes each native sketch with its profile body, which native top-level sketches
+    /// do not hold.
+    WriterNativeSketchProfileBodyKept,
+    /// Export writes the named native sketches of one circle about the origin with a
+    /// coincidence of the circle's centre and the origin point that the document does not state.
+    WriterNativeSketchOriginRelationAdded,
+    /// Export writes the named configurations with a name or partition index it assigned.
+    WriterConfigurationIdentityAssigned,
+    /// Export omits the named bodies.
+    WriterBodiesOmitted,
+    /// Export writes the named faces without their name.
+    WriterFaceNamesOmitted,
+    /// Export writes the named bodies without their name.
+    WriterBodyNamesOmitted,
+    /// Export writes the named appearances with their name and base colour only.
+    WriterAppearanceFieldsOmitted,
+    /// Export omits the named subdivision surfaces.
+    WriterSubdOmitted,
+    /// Export writes the named configuration active, where the document states none or several.
+    WriterActiveConfigurationAssumed,
+    /// Export writes no history record for the named design records.
+    WriterFeaturesOmitted,
+    /// Export writes the sketches without the named constraints.
+    WriterSketchConstraintsOmitted,
+    /// Export bounds the named edges by their vertices, without their range.
+    WriterEdgeRangesOmitted,
+    /// Export omits the named PMI annotations.
+    WriterPmiOmitted,
+    /// Export writes the named parameters with their displayed value, without
+    /// the expression that drives it.
+    WriterParameterExpressionsOmitted,
+    /// Export writes the named approximation caches as exact carriers, without
+    /// the fit tolerance they state.
+    WriterCacheTolerancesOmitted,
+    /// Export writes the named faces with a loop whose coedges do not meet end
+    /// to end, which the ring order cannot state.
+    WriterFaceLoopsUnchained,
+    /// Export writes the named feature selections by their native selection
+    /// token, without the input-topology identities they state.
+    WriterSelectionIdentitiesOmitted,
+    /// Export writes the named features without a construction field their
+    /// SLDPRT record has no field for.
+    WriterFeatureFieldsOmitted,
+    /// Export writes the named parameters under the positional dimension name
+    /// from which the SLDPRT record's construction value is read.
+    WriterParametersRenamed,
+    /// Export writes the named Keywords records with U+FFFD in place of each
+    /// character XML 1.0 does not allow.
+    WriterKeywordsCharactersReplaced,
+    /// Export writes the text items and dimension values of the named
+    /// Keywords records without their edge whitespace, and leaves out text
+    /// items that hold only whitespace, which the reader does not keep.
+    WriterKeywordsTextTrimmed,
+    /// Export writes the named features as Keywords history records without
+    /// the feature objects from which `SolidWorks` rebuilds a part.
+    WriterHistoryKeywordsOnly,
+    /// Export writes the named Keywords features under the `Feature` tag, or
+    /// leaves out the named Keywords elements with their subtrees, because XML
+    /// cannot hold the tag or the reader reads it as another record.
+    WriterHistoryNameNotWritten,
+    /// A regenerated Keywords text cannot be built or is refused by the
+    /// reader, so the source member, or the retained source blocks of the
+    /// member, are written in its place, or no member is written.
+    WriterHistoryRegenerationRefused,
+    /// A construction edit that shapes the solid is written as edited, and the
+    /// output keeps the stored solid, which shows the state before the edit.
+    /// Without the retained source image, it names the kinds of record that
+    /// differ from the decoded source, whose edit may not shape the solid.
+    WriterSolidStaleAfterEdit,
+    /// An edit of the active configuration snapshot that the decoder
+    /// synthesized from the model is not written; the written configuration
+    /// states the model's state.
+    WriterConfigurationSnapshotEditUnwritten,
+    /// A variant edit of a feature is written in the record shape of the
+    /// edited variant, which adds or drops a parameter or drops a source
+    /// property of the feature.
+    WriterFeatureRecordReshaped,
+    /// The written part, decoded again, differs from the document as the
+    /// write of the unedited source does: a writer defect no edit causes.
+    WriterReadBackDiffers,
+    /// The written part does not decode again or does not serialize, so it
+    /// is not compared with the document.
+    WriterReadBackUnread,
+    /// An edit cleared a decoded extrusion reversal whose end-spec flag the
+    /// writer found no place to clear.
+    WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in a lane outside the active configuration.
+    WriterExtrudeReversalConfigurationCleared,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
     SourcePropertyKeyBlank,
@@ -313,6 +556,94 @@ pub(crate) enum SldprtLossCode {
     AssemblyEmbeddedDocumentsNotTransferred,
     /// An occurrence's exclusion from the bill of materials is not transferred.
     AssemblyBomExclusionNotTransferred,
+    /// Design features whose operation the decoder typed in its own records
+    /// state their family without operands.
+    DesignFeatureUnresolved,
+    /// User datums whose decoded definition the design types no
+    /// construction for state their family without geometry.
+    DesignDatumUnresolved,
+    /// A feature folder whose members regeneration order does not keep in
+    /// one run is not stated.
+    DesignFolderDropped,
+    /// Parameters whose literal and value are their dimension's displayed
+    /// number, which Keywords rounds to the display precision.
+    DesignParameterDisplayRounded,
+    /// Parameters whose dimension text is a bare number and that hold no
+    /// value: no record types the dimension or binds it to a stored value,
+    /// or the part's length unit is not read.
+    DesignParameterValueUnread,
+    /// Parameters whose text is one reference to a parameter whose kind
+    /// differs or is not read, and whose unit-blind tree does not type or is
+    /// not confirmed by the document's values, hold the text and state no
+    /// dependency on the parameter it names.
+    DesignParameterReferenceAsText,
+    /// Extrudes whose blind depth is bound to their record's only dimension,
+    /// whose name is neither `Depth` nor `D1`.
+    DesignExtrudeDepthAssumed,
+    /// Dimensions whose kind is the parameter class a compound-file lane's
+    /// own declarations alone give their scalar's class token, which assumes
+    /// the token is the lane's own.
+    DesignParameterClassAssumed,
+    /// Dimensions whose scalars' parameter classes the decoder's class
+    /// sources name differently, and whose length the equation manager's
+    /// stored value gives where their display shows it.
+    DesignParameterClassesDisagree,
+    /// Equation-manager lines that the decoder does not read into the
+    /// expression of the parameter they assign.
+    DesignEquationUnread,
+    /// Parameters whose equation-manager line is stated as `SolidWorks`
+    /// source text.
+    DesignEquationSource,
+    /// Sketch curves stated construction because their curve record has
+    /// state `0`, read as a curve outside the profile.
+    DesignSketchConstructionAssumed,
+    /// Typed extrudes whose `Sketch` pick's closed regions differ from the
+    /// profile loops read from the stored records.
+    DesignExtrudeProfileDiffers,
+    /// Typed extrudes whose sketch holds no profile curve, so their `Sketch`
+    /// pick takes no region.
+    DesignExtrudeSketchEmpty,
+    /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignExtrudeProfileUnchecked,
+    /// Sketch circles built from a dimension record that the design leaves
+    /// out, its dimension naming the stored curve they lie on, or states
+    /// construction where no face of the solid witnesses them.
+    DesignSketchDimensionCircle,
+    /// Typed revolves whose axis picks the line of their profile sketch that
+    /// lies on the stored axis; the decoder does not read which entity the
+    /// record's axis reference names.
+    DesignRevolveAxisLineInferred,
+    /// Typed revolves whose axis no record stores: the decoder derived it
+    /// from the sketch's records or the solid's surfaces, and the axis states
+    /// the line of the profile sketch that lies on it.
+    DesignRevolveAxisDerived,
+    /// Typed revolves whose boolean the design leaves unstated: the decoder
+    /// reads no operation, or a revolve adds material after an earlier member
+    /// and no read field tells a new body from a join.
+    DesignRevolveBooleanUnstated,
+    /// Typed revolves whose `Sketch` pick's closed regions differ from the
+    /// profile loops read from the stored records.
+    DesignRevolveProfileDiffers,
+    /// Typed revolves whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignRevolveProfileUnchecked,
+    /// Revolves whose solid depends on the turn sense, a partial turn on one
+    /// side or a two-sided turn, whose decoded axis turns about the axis
+    /// direction their record stores, reversed where their record's reverse
+    /// byte is `1`.
+    DesignRevolveSenseAssumed,
+    /// Typed reference planes whose frame comes from their mid-plane
+    /// constraint: their origin and x axis are a frame the decoder
+    /// constructs on the plane.
+    DesignDatumPlaneAxisConstructed,
+    /// Typed reference planes with an angular `D1` whose x axis is the
+    /// u-axis of their angular frame; offset planes on them can store
+    /// another u-axis for it (open item DI-82).
+    DesignDatumPlaneAxisAngled,
+    /// Typed datums whose geometry decodes differently in a configuration:
+    /// the datum states the active configuration's geometry.
+    DesignDatumConfigurationDropped,
 }
 
 impl SldprtLossCode {
@@ -331,6 +662,7 @@ impl SldprtLossCode {
         Self::MetadataConfigurationPropertyValueUnsupported,
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
+        Self::ConfigActivePartitionUnread,
         Self::ConfigInferredWithoutNative,
         Self::ConfigLaneIdentityUnresolved,
         Self::ConfigAmbiguousPartition,
@@ -338,6 +670,11 @@ impl SldprtLossCode {
         Self::ConfigIncoherentBodyRefs,
         Self::ConfigIncompleteSnapshot,
         Self::ConfigProjectionWorkCapped,
+        Self::ConfigStateUnstated,
+        Self::ConfigStateNotStored,
+        Self::ConfigStatePresentationUnstated,
+        Self::ConfigStateImportedBodiesNotTransferred,
+        Self::ConfigStateOutputsUnstated,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -355,6 +692,12 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
+        Self::HistoryRollbackUnread,
+        Self::HistoryRollbackMarkClassInferred,
+        Self::HistoryUnread,
+        Self::HistoryApplicationNotTransferred,
+        Self::HistoryApplicationNestingCut,
+        Self::HistoryXmlNormalised,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -363,17 +706,43 @@ impl SldprtLossCode {
         Self::SketchNativeGeometry,
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
+        Self::SketchArcRecordConflict,
+        Self::SketchMarkerRecordUnread,
+        Self::SketchSecondReading,
+        Self::SketchMarkerReadingUnbound,
+        Self::SketchPointCoordinatesSubnormal,
+        Self::SketchRelationPointPlaceUnsettled,
+        Self::SketchPlaneBindingAssumed,
+        Self::SketchPointRecordIndexBasisAssumed,
+        Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
+        Self::SketchListedLineConstructionAssumed,
+        Self::SketchListedCurveRelationDropped,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
+        Self::SketchDimensionClassUnknown,
+        Self::SketchDimensionRepeated,
         Self::FeatureNativeKindRetained,
         Self::FeatureInputObjectUnbound,
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
+        Self::FeatureBlendEdgeGeneratorUnstated,
+        Self::FeatureBlendMarkReferencesAssumed,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureSweepPathRetained,
+        Self::FeatureSweepPathRosterAssumed,
+        Self::FeatureSweepPathHeaderAssumed,
+        Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
+        Self::FeatureExtrudeReversalContradicted,
+        Self::FeatureExtrudeReversalAssumed,
         Self::FeatureExtrudeStartUnresolved,
+        Self::FeatureOffsetPlaneSideAssumed,
+        Self::FeatureOffsetPlaneFrameConflict,
+        Self::FeatureOffsetPlaneDistanceDisplayed,
+        Self::FeatureRevolveAxisOffProfilePlane,
+        Self::FeatureRevolveAxisRecordPrefixUnread,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -382,6 +751,7 @@ impl SldprtLossCode {
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
         Self::GeometrySpunProfileIntervalIgnored,
+        Self::GeometryBlendCacheUnsolved,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -422,7 +792,7 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::ContainerParasolidProbeCapped,
-        Self::ContainerAuxiliaryParasolidRefused,
+        Self::ContainerNoncanonical,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
@@ -432,10 +802,50 @@ impl SldprtLossCode {
         Self::WriterSphereSeamCurvesOmitted,
         Self::WriterAppearanceBindingsOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterDrivenDimensionsOmitted,
         Self::WriterUnboundAppearancesOmitted,
+        Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
-        Self::SourceDialectDisplaced,
+        Self::WriterUnitsMemberGenerated,
+        Self::WriterNativeHistorySummary,
+        Self::WriterNativeSkeletonUnlaidRuns,
+        Self::WriterNativeSkeletonOmitted,
+        Self::WriterNativeStreamsOmitted,
+        Self::WriterNativeSketchLaneOrphan,
+        Self::WriterNativeBodyIdentityOmitted,
+        Self::WriterProducerAttributesOmitted,
+        Self::WriterNativeSketchProfileBodyKept,
+        Self::WriterNativeSketchOriginRelationAdded,
+        Self::WriterConfigurationIdentityAssigned,
+        Self::WriterBodiesOmitted,
+        Self::WriterFaceNamesOmitted,
+        Self::WriterBodyNamesOmitted,
+        Self::WriterAppearanceFieldsOmitted,
+        Self::WriterSubdOmitted,
+        Self::WriterActiveConfigurationAssumed,
+        Self::WriterFeaturesOmitted,
+        Self::WriterSketchConstraintsOmitted,
+        Self::WriterEdgeRangesOmitted,
+        Self::WriterPmiOmitted,
+        Self::WriterParameterExpressionsOmitted,
+        Self::WriterCacheTolerancesOmitted,
+        Self::WriterFaceLoopsUnchained,
+        Self::WriterSelectionIdentitiesOmitted,
+        Self::WriterFeatureFieldsOmitted,
+        Self::WriterParametersRenamed,
+        Self::WriterKeywordsCharactersReplaced,
+        Self::WriterKeywordsTextTrimmed,
+        Self::WriterHistoryKeywordsOnly,
+        Self::WriterHistoryNameNotWritten,
+        Self::WriterHistoryRegenerationRefused,
+        Self::WriterSolidStaleAfterEdit,
+        Self::WriterConfigurationSnapshotEditUnwritten,
+        Self::WriterFeatureRecordReshaped,
+        Self::WriterReadBackDiffers,
+        Self::WriterReadBackUnread,
+        Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
         Self::AssemblyMatesNotTransferred,
@@ -446,6 +856,31 @@ impl SldprtLossCode {
         Self::AssemblyConfigurationsNotTransferred,
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
+        Self::DesignFeatureUnresolved,
+        Self::DesignDatumUnresolved,
+        Self::DesignFolderDropped,
+        Self::DesignParameterDisplayRounded,
+        Self::DesignParameterValueUnread,
+        Self::DesignParameterReferenceAsText,
+        Self::DesignExtrudeDepthAssumed,
+        Self::DesignParameterClassAssumed,
+        Self::DesignParameterClassesDisagree,
+        Self::DesignEquationUnread,
+        Self::DesignEquationSource,
+        Self::DesignSketchConstructionAssumed,
+        Self::DesignExtrudeProfileDiffers,
+        Self::DesignExtrudeSketchEmpty,
+        Self::DesignExtrudeProfileUnchecked,
+        Self::DesignSketchDimensionCircle,
+        Self::DesignRevolveAxisLineInferred,
+        Self::DesignRevolveAxisDerived,
+        Self::DesignRevolveBooleanUnstated,
+        Self::DesignRevolveProfileDiffers,
+        Self::DesignRevolveProfileUnchecked,
+        Self::DesignRevolveSenseAssumed,
+        Self::DesignDatumPlaneAxisConstructed,
+        Self::DesignDatumPlaneAxisAngled,
+        Self::DesignDatumConfigurationDropped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -454,6 +889,7 @@ impl SldprtLossCode {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
+            Self::ConfigActivePartitionUnread => "config.active-partition-unread",
             Self::ConfigInferredWithoutNative => "config.inferred-without-native",
             Self::ConfigLaneIdentityUnresolved => "config.lane-identity-unresolved",
             Self::ConfigAmbiguousPartition => "config.ambiguous-partition",
@@ -461,6 +897,13 @@ impl SldprtLossCode {
             Self::ConfigIncoherentBodyRefs => "config.incoherent-body-refs",
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
             Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
+            Self::ConfigStateUnstated => "config.state-unstated",
+            Self::ConfigStateNotStored => "config.state-not-stored",
+            Self::ConfigStatePresentationUnstated => "config.state-presentation-unstated",
+            Self::ConfigStateImportedBodiesNotTransferred => {
+                "config.state-imported-bodies-not-transferred"
+            }
+            Self::ConfigStateOutputsUnstated => "config.state-outputs-unstated",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -484,6 +927,12 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
+            Self::HistoryUnread => "history.unread",
+            Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
+            Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
+            Self::HistoryXmlNormalised => "history.xml-normalised",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -491,18 +940,46 @@ impl SldprtLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
+            Self::SketchListedLineConstructionAssumed => "sketch.listed-line-construction-assumed",
+            Self::SketchListedCurveRelationDropped => "sketch.listed-curve-relation-dropped",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
+            Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
+            Self::SketchSecondReading => "sketch.second-reading",
+            Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
+            Self::SketchRelationPointPlaceUnsettled => "sketch.relation-point-place-unsettled",
+            Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
+            Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
+            Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
+            Self::SketchDimensionClassUnknown => "sketch.dimension-class-unknown",
+            Self::SketchDimensionRepeated => "sketch.dimension-repeated",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
+            Self::FeatureBlendEdgeGeneratorUnstated => "feature.blend-edge-generator-unstated",
+            Self::FeatureBlendMarkReferencesAssumed => "feature.blend-mark-references-assumed",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
+            Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
+            Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
+            Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
+            Self::FeatureExtrudeReversalContradicted => "feature.extrude-reversal-contradicted",
+            Self::FeatureExtrudeReversalAssumed => "feature.extrude-reversal-assumed",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
+            Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
+            Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
+            Self::FeatureOffsetPlaneDistanceDisplayed => "feature.offset-plane-distance-displayed",
+            Self::FeatureRevolveAxisOffProfilePlane => "feature.revolve-axis-off-profile-plane",
+            Self::FeatureRevolveAxisRecordPrefixUnread => {
+                "feature.revolve-axis-record-prefix-unread"
+            }
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -511,6 +988,7 @@ impl SldprtLossCode {
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
             Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
+            Self::GeometryBlendCacheUnsolved => "geometry.blend-cache-unsolved",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -555,7 +1033,7 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::ContainerParasolidProbeCapped => "container.parasolid-probe-capped",
-            Self::ContainerAuxiliaryParasolidRefused => "container.auxiliary-parasolid-refused",
+            Self::ContainerNoncanonical => "container.noncanonical",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
@@ -565,12 +1043,58 @@ impl SldprtLossCode {
             Self::WriterSphereSeamCurvesOmitted => "writer.sphere-seam-curves-omitted",
             Self::WriterAppearanceBindingsOmitted => "writer.appearance-bindings-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterDrivenDimensionsOmitted => "writer.driven-dimensions-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
+            Self::WriterMaterialsOmitted => "writer.materials-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::WriterUnitsMemberGenerated => "writer.units-member-generated",
+            Self::WriterNativeHistorySummary => "writer.native-history-summary",
+            Self::WriterNativeSkeletonUnlaidRuns => "writer.native-skeleton-unlaid-runs",
+            Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
+            Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
+            Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
+            Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
+            Self::WriterProducerAttributesOmitted => "writer.producer-attributes-omitted",
+            Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
+            Self::WriterNativeSketchOriginRelationAdded => {
+                "writer.native-sketch-origin-relation-added"
+            }
+            Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
+            Self::WriterBodiesOmitted => "writer.bodies-omitted",
+            Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
+            Self::WriterBodyNamesOmitted => "writer.body-names-omitted",
+            Self::WriterAppearanceFieldsOmitted => "writer.appearance-fields-omitted",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
+            Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
+            Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
+            Self::WriterPmiOmitted => "writer.pmi-omitted",
+            Self::WriterParameterExpressionsOmitted => "writer.parameter-expressions-omitted",
+            Self::WriterCacheTolerancesOmitted => "writer.cache-tolerances-omitted",
+            Self::WriterFaceLoopsUnchained => "writer.face-loops-unchained",
+            Self::WriterSelectionIdentitiesOmitted => "writer.selection-identities-omitted",
+            Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
+            Self::WriterParametersRenamed => "writer.parameters-renamed",
+            Self::WriterKeywordsCharactersReplaced => "writer.keywords-characters-replaced",
+            Self::WriterKeywordsTextTrimmed => "writer.keywords-text-trimmed",
+            Self::WriterHistoryKeywordsOnly => "writer.history-keywords-only",
+            Self::WriterHistoryNameNotWritten => "writer.history-name-not-written",
+            Self::WriterHistoryRegenerationRefused => "writer.history-regeneration-refused",
+            Self::WriterSolidStaleAfterEdit => "writer.solid-stale-after-edit",
+            Self::WriterConfigurationSnapshotEditUnwritten => {
+                "writer.configuration-snapshot-edit-unwritten"
+            }
+            Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
+            Self::WriterReadBackDiffers => "writer.read-back-differs",
+            Self::WriterReadBackUnread => "writer.read-back-unread",
+            Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
             Self::MetadataConfigurationManagerOpaque => "metadata.configuration-manager-opaque",
@@ -601,6 +1125,31 @@ impl SldprtLossCode {
                 "assembly.embedded-documents-not-transferred"
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
+            Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignDatumUnresolved => "design.datum-unresolved",
+            Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignParameterValueUnread => "design.parameter-value-unread",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
+            Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
+            Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
+            Self::DesignEquationUnread => "design.equation-unread",
+            Self::DesignEquationSource => "design.equation-source",
+            Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
+            Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
+            Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
+            Self::DesignRevolveAxisLineInferred => "design.revolve-axis-line-inferred",
+            Self::DesignRevolveAxisDerived => "design.revolve-axis-derived",
+            Self::DesignRevolveBooleanUnstated => "design.revolve-boolean-unstated",
+            Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
+            Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
+            Self::DesignRevolveSenseAssumed => "design.revolve-sense-assumed",
+            Self::DesignDatumPlaneAxisConstructed => "design.datum-plane-axis-constructed",
+            Self::DesignDatumPlaneAxisAngled => "design.datum-plane-axis-angled",
+            Self::DesignDatumConfigurationDropped => "design.datum-configuration-dropped",
+            Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
 
@@ -610,8 +1159,49 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterUnitsMemberGenerated => Severity::Warning,
+            Self::WriterNativeHistorySummary => Severity::Warning,
+            Self::WriterNativeSkeletonUnlaidRuns => Severity::Warning,
+            Self::WriterNativeSkeletonOmitted => Severity::Warning,
+            Self::WriterNativeStreamsOmitted => Severity::Warning,
+            Self::WriterNativeSketchLaneOrphan => Severity::Warning,
+            Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
+            Self::WriterProducerAttributesOmitted => Severity::Warning,
+            Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
+            Self::WriterNativeSketchOriginRelationAdded => Severity::Warning,
+            Self::WriterConfigurationIdentityAssigned => Severity::Warning,
+            Self::WriterBodiesOmitted => Severity::Warning,
+            Self::WriterFaceNamesOmitted => Severity::Warning,
+            Self::WriterBodyNamesOmitted => Severity::Warning,
+            Self::WriterAppearanceFieldsOmitted => Severity::Warning,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterActiveConfigurationAssumed => Severity::Warning,
+            Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterSketchConstraintsOmitted => Severity::Warning,
+            Self::WriterEdgeRangesOmitted => Severity::Warning,
+            Self::WriterPmiOmitted => Severity::Warning,
+            Self::WriterParameterExpressionsOmitted => Severity::Warning,
+            Self::WriterCacheTolerancesOmitted => Severity::Warning,
+            Self::WriterFaceLoopsUnchained => Severity::Warning,
+            Self::WriterSelectionIdentitiesOmitted => Severity::Warning,
+            Self::WriterFeatureFieldsOmitted => Severity::Warning,
+            Self::WriterParametersRenamed => Severity::Warning,
+            Self::WriterKeywordsCharactersReplaced => Severity::Warning,
+            Self::WriterKeywordsTextTrimmed => Severity::Warning,
+            Self::WriterHistoryKeywordsOnly => Severity::Warning,
+            Self::WriterHistoryNameNotWritten => Severity::Warning,
+            Self::WriterHistoryRegenerationRefused => Severity::Error,
+            Self::WriterSolidStaleAfterEdit => Severity::Warning,
+            Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
+            Self::WriterFeatureRecordReshaped => Severity::Warning,
+            Self::WriterReadBackDiffers => Severity::Warning,
+            Self::WriterReadBackUnread => Severity::Error,
+            Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
+            Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
+            Self::WriterDrivenDimensionsOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
             Self::WriterSphereSeamCurvesOmitted => Severity::Warning,
             Self::WriterCoedgePcurveUsesOmitted => Severity::Warning,
@@ -621,9 +1211,14 @@ impl SldprtLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream
             | Self::GeometryMeshBodyNotTransferred
-            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
+            | Self::GeometryImportedBodiesNotTransferred
+            | Self::HistoryUnread => Severity::Error,
+            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
+                Severity::Warning
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -631,6 +1226,11 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -648,6 +1248,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -656,17 +1257,41 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
+            | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
+            | Self::SketchPointRecordIndexBasisAssumed
+            | Self::SketchArcRecordOffChord
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
+            | Self::SketchDimensionClassUnknown
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
+            | Self::FeatureBlendMarkReferencesAssumed
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
+            | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
+            | Self::FeatureRevolveAxisOffProfilePlane
+            | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -674,6 +1299,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
             | Self::GeometrySpunProfileIntervalIgnored
+            | Self::GeometryBlendCacheUnsolved
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -709,12 +1335,11 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
+            | Self::ContainerNoncanonical
             | Self::ContainerParasolidProbeCapped
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
-            | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -728,22 +1353,94 @@ impl SldprtLossCode {
             Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
-            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            | Self::AssemblyEmbeddedDocumentsNotTransferred
+            | Self::DesignFolderDropped
+            | Self::DesignParameterDisplayRounded
+            | Self::DesignParameterValueUnread
+            | Self::DesignParameterReferenceAsText
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
+            | Self::DesignEquationUnread
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignSketchDimensionCircle
+            | Self::DesignRevolveAxisDerived
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveSenseAssumed
+            | Self::DesignDatumPlaneAxisConstructed
+            | Self::DesignDatumPlaneAxisAngled
+            | Self::DesignDatumConfigurationDropped => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
-            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
+            | Self::AssemblyBomExclusionNotTransferred
+            | Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
+            | Self::SketchSecondReading
+            | Self::SketchDimensionRepeated
+            | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignRevolveAxisLineInferred
+            | Self::DesignRevolveBooleanUnstated
+            | Self::DesignRevolveProfileUnchecked
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryXmlNormalised => Severity::Info,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
-            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted
+            | Self::WriterHistoryNameNotWritten
+            | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeHistorySummary => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSkeletonUnlaidRuns => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterProducerAttributesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchOriginRelationAdded => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterBodyNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAppearanceFieldsOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterParameterExpressionsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterCacheTolerancesOmitted => LossTaxonomy::ProceduralReduced,
+            Self::WriterFaceLoopsUnchained => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterSelectionIdentitiesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParametersRenamed => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsCharactersReplaced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsTextTrimmed => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterHistoryKeywordsOnly => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSolidStaleAfterEdit
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
+            Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackDiffers => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterDrivenDimensionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterSphereSeamCurvesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterCoedgePcurveUsesOmitted => LossTaxonomy::TopologyNotTransferred,
@@ -754,7 +1451,6 @@ impl SldprtLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -779,6 +1475,31 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
+            Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
+            | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
+            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::DesignParameterDisplayRounded
+            | Self::DesignParameterValueUnread
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignSketchDimensionCircle
+            | Self::DesignRevolveAxisLineInferred
+            | Self::DesignRevolveAxisDerived
+            | Self::DesignRevolveBooleanUnstated
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveProfileUnchecked
+            | Self::DesignRevolveSenseAssumed
+            | Self::DesignDatumPlaneAxisConstructed
+            | Self::DesignDatumPlaneAxisAngled
+            | Self::DesignDatumConfigurationDropped => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -793,6 +1514,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
+            Self::GeometryBlendCacheUnsolved => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -810,7 +1532,6 @@ impl SldprtLossCode {
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::GeometryMeshBodyNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
@@ -832,9 +1553,16 @@ impl SldprtLossCode {
             | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
-            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::ContainerNoncanonical
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
+            Self::HistoryApplicationNotTransferred
+            | Self::HistoryApplicationNestingCut
+            | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -842,6 +1570,11 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -850,6 +1583,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -858,17 +1592,43 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
+            | Self::SketchSecondReading
+            | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
+            | Self::SketchPointRecordIndexBasisAssumed
+            | Self::SketchArcRecordOffChord
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
+            | Self::SketchDimensionClassUnknown
+            | Self::SketchDimensionRepeated
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
+            | Self::FeatureBlendMarkReferencesAssumed
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
+            | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
+            | Self::FeatureRevolveAxisOffProfilePlane
+            | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -894,7 +1654,7 @@ impl SldprtLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `sldprt/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -984,10 +1744,29 @@ pub(crate) fn spline_refusal(
     ))
 }
 
+/// Number of names that one loss message lists before it counts the rest.
+const NAMED_PER_NOTE: usize = 8;
+
+/// The first [`NAMED_PER_NOTE`] of `names`, then the count of the rest.
+pub(crate) fn named<S: AsRef<str>>(names: &[S]) -> String {
+    let mut text = names
+        .iter()
+        .take(NAMED_PER_NOTE)
+        .map(|name| format!("`{}`", name.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() > NAMED_PER_NOTE {
+        text = format!("{text}, and {} more", names.len() - NAMED_PER_NOTE);
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
     use cadmpeg_ir::report::Severity;
+
+    use crate::test_support::ir::strict_options;
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
@@ -1051,6 +1830,7 @@ mod tests {
                 "metadata.configuration-property-value-unsupported",
                 "config.active-identity-unresolved",
                 "config.active-partition-mismatch",
+                "config.active-partition-unread",
                 "config.inferred-without-native",
                 "config.lane-identity-unresolved",
                 "config.ambiguous-partition",
@@ -1058,6 +1838,11 @@ mod tests {
                 "config.incoherent-body-refs",
                 "config.incomplete-snapshot",
                 "config.projection-work-capped",
+                "config.state-unstated",
+                "config.state-not-stored",
+                "config.state-presentation-unstated",
+                "config.state-imported-bodies-not-transferred",
+                "config.state-outputs-unstated",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
@@ -1075,6 +1860,12 @@ mod tests {
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
+                "history.rollback-unread",
+                "history.rollback-mark-class-inferred",
+                "history.unread",
+                "history.application-not-transferred",
+                "history.application-nesting-cut",
+                "history.xml-normalised",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1083,17 +1874,43 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
+                "sketch.arc-record-conflict",
+                "sketch.marker-record-unread",
+                "sketch.second-reading",
+                "sketch.marker-reading-unbound",
+                "sketch.point-coordinates-subnormal",
+                "sketch.relation-point-place-unsettled",
+                "sketch.plane-binding-assumed",
+                "sketch.point-record-index-basis-assumed",
+                "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",
+                "sketch.listed-line-construction-assumed",
+                "sketch.listed-curve-relation-dropped",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
+                "sketch.dimension-class-unknown",
+                "sketch.dimension-repeated",
                 "feature.native-kind-retained",
                 "feature.input-object-unbound",
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
+                "feature.blend-edge-generator-unstated",
+                "feature.blend-mark-references-assumed",
                 "feature.typed-operand-incomplete",
+                "feature.sweep-path-retained",
+                "feature.sweep-path-roster-assumed",
+                "feature.sweep-path-header-assumed",
+                "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
+                "feature.extrude-reversal-contradicted",
+                "feature.extrude-reversal-assumed",
                 "feature.extrude-start-unresolved",
+                "feature.offset-plane-side-assumed",
+                "feature.offset-plane-frame-conflict",
+                "feature.offset-plane-distance-displayed",
+                "feature.revolve-axis-off-profile-plane",
+                "feature.revolve-axis-record-prefix-unread",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
@@ -1102,6 +1919,7 @@ mod tests {
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
                 "geometry.spun-profile-interval-ignored",
+                "geometry.blend-cache-unsolved",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
@@ -1142,7 +1960,7 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "container.parasolid-probe-capped",
-                "container.auxiliary-parasolid-refused",
+                "container.noncanonical",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
@@ -1152,10 +1970,50 @@ mod tests {
                 "writer.sphere-seam-curves-omitted",
                 "writer.appearance-bindings-omitted",
                 "writer.attributes-omitted",
+                "writer.driven-dimensions-omitted",
                 "writer.unbound-appearances-omitted",
+                "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
-                "target.source-dialect-displaced",
+                "writer.units-member-generated",
+                "writer.native-history-summary",
+                "writer.native-skeleton-unlaid-runs",
+                "writer.native-skeleton-omitted",
+                "writer.native-streams-omitted",
+                "writer.native-sketch-lane-orphan",
+                "writer.native-body-identity-omitted",
+                "writer.producer-attributes-omitted",
+                "writer.native-sketch-profile-body-kept",
+                "writer.native-sketch-origin-relation-added",
+                "writer.configuration-identity-assigned",
+                "writer.bodies-omitted",
+                "writer.face-names-omitted",
+                "writer.body-names-omitted",
+                "writer.appearance-fields-omitted",
+                "writer.subd-omitted",
+                "writer.active-configuration-assumed",
+                "writer.features-omitted",
+                "writer.sketch-constraints-omitted",
+                "writer.edge-ranges-omitted",
+                "writer.pmi-omitted",
+                "writer.parameter-expressions-omitted",
+                "writer.cache-tolerances-omitted",
+                "writer.face-loops-unchained",
+                "writer.selection-identities-omitted",
+                "writer.feature-fields-omitted",
+                "writer.parameters-renamed",
+                "writer.keywords-characters-replaced",
+                "writer.keywords-text-trimmed",
+                "writer.history-keywords-only",
+                "writer.history-name-not-written",
+                "writer.history-regeneration-refused",
+                "writer.solid-stale-after-edit",
+                "writer.configuration-snapshot-edit-unwritten",
+                "writer.feature-record-reshaped",
+                "writer.read-back-differs",
+                "writer.read-back-unread",
+                "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
                 "assembly.mates-not-transferred",
@@ -1166,6 +2024,31 @@ mod tests {
                 "assembly.configurations-not-transferred",
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
+                "design.feature-unresolved",
+                "design.datum-unresolved",
+                "design.folder-dropped",
+                "design.parameter-display-rounded",
+                "design.parameter-value-unread",
+                "design.parameter-reference-as-text",
+                "design.extrude-depth-assumed",
+                "design.parameter-class-assumed",
+                "design.parameter-classes-disagree",
+                "design.equation-unread",
+                "design.equation-source",
+                "design.sketch-construction-assumed",
+                "design.extrude-profile-differs",
+                "design.extrude-sketch-empty",
+                "design.extrude-profile-unchecked",
+                "design.sketch-dimension-circle",
+                "design.revolve-axis-line-inferred",
+                "design.revolve-axis-derived",
+                "design.revolve-boolean-unstated",
+                "design.revolve-profile-differs",
+                "design.revolve-profile-unchecked",
+                "design.revolve-sense-assumed",
+                "design.datum-plane-axis-constructed",
+                "design.datum-plane-axis-angled",
+                "design.datum-configuration-dropped",
             ]
         );
     }
@@ -1203,7 +2086,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -1211,7 +2094,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftPositionTargetUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -1220,6 +2103,6 @@ mod tests {
         assert_eq!(note.code.namespace(), "sldprt");
         assert_eq!(note.code.local_code(), "geometry.pcurve-ambiguous");
         assert_eq!(note.code.taxonomy(), LossTaxonomy::PcurveOmitted);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 }

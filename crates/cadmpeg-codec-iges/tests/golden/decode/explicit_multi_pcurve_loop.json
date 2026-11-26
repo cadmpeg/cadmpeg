@@ -51,10 +51,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE3",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -83,10 +80,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE4",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -128,10 +122,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PCURVE1",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         },
         {
@@ -173,10 +164,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PCURVE2",
-            "object_id": "D21",
-            "visible": true
+            "object_id": "D21"
           }
         },
         {
@@ -205,10 +193,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE1",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         },
         {
@@ -237,10 +222,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE2",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],
@@ -282,10 +264,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURFACE",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -296,37 +275,198 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D19",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D19"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PCURVE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D21",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D21"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PCURVE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
-      "product_definitions": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D13",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D19",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D21",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "iges:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -2524,18 +2664,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3530382c352c302c31372c312c312c322c312c31392c302c32312c312c31352c322c302c302c302c31372c322c312c302c302c31372c332c312c302c302c3137202020202020323350202020202031322c342c312c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202032335020202020203133",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#23",
-            "section": "parameter-data",
-            "sequence": 23,
-            "source_offset": 3402
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -2547,6 +2675,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -2571,13 +2705,20 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "author": "author",
+        "drafting_standard": "0",
+        "iges_version_flag": "11",
+        "model_scale": "1",
         "native_file_name": "part.igs",
+        "native_system_id": "cadmpeg",
         "native_units": "MM",
+        "organization": "org",
         "parameter_delimiter": ",",
+        "preprocessor_version": "0.1",
         "record_delimiter": ";",
         "representation": "fixed-ascii",
-        "sender_product": "product"
+        "sender_product": "product",
+        "units_flag": "2"
       },
       "identity": {
         "dialects": {
@@ -2634,8 +2775,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
@@ -2653,8 +2793,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid",
@@ -2672,8 +2811,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -2684,6 +2822,24 @@
           "tag": "D23:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part parameter-data \"D23\" stream=\"\" offset=3402 length=161 record=iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[iges:entity:directory#25, iges:entity:directory#27]",
+        "provenance": {
+          "format": "iges",
+          "offset": 3402,
+          "tag": "parameter-data"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -2859,8 +3015,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#23"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa"
           },
           "source": "D23:parameter"
         }
@@ -2872,6 +3028,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "2f0a2fba6d203624977f20ccc64a75708d12d838a1af34d075bd88ff058f409b",
     "file_digests": {},
     "retained_records": {
@@ -2882,6 +3040,17 @@
         },
         "offset": 0,
         "stream": "iges",
+        "untyped": [
+          "model"
+        ]
+      },
+      "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa": {
+        "bytes": {
+          "data": "NTA4LDUsMCwxNywxLDEsMiwxLDE5LDAsMjEsMSwxNSwyLDAsMCwwLDE3LDIsMSwwLDAsMTcsMywxLDAsMCwxNyAgICAgIDIzUCAgICAgMTIKLDQsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIzUCAgICAgMTM=",
+          "kind": "inline"
+        },
+        "offset": 3402,
+        "stream": "",
         "untyped": [
           "model"
         ]

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::nurbs::{
     KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
 };
 use crate::math::Point3;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 fn knots() -> Vec<f64> {
     vec![0.0, 0.0, 1.0, 1.0]
@@ -63,9 +64,9 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     assert_eq!(surface.u_knots().as_ptr(), u_address);
     assert_eq!(surface.v_knots().as_ptr(), v_address);
     ctx.finish_session().expect("exact row-width work");
-    let wire = serde_json::to_value(&surface).expect("wire");
+    let wire = json::to_value(&surface).expect("wire");
     assert_eq!(
-        serde_json::from_value::<NurbsSurface>(wire).expect("context-free reconstruction"),
+        json::from_value::<NurbsSurface>(wire).expect("context-free reconstruction"),
         surface
     );
 }

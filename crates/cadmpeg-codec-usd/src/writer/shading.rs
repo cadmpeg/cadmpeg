@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writes appearances as materials with a `UsdPreviewSurface` shader, a
-//! `MaterialX` surface shader, and, for an `OmniPBR` source, an MDL shader
-//! (spec §15).
+//! `MaterialX` surface shader unless the scene options leave it out, and,
+//! for an `OmniPBR` source, an MDL shader (spec §15).
 //!
 //! An appearance's properties are the inputs of its own shader, named
 //! without a prefix, and the inputs of the material's other shaders, named
@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::appearance::Appearance;
 
-use super::text::{asset, quoted, real32, tuple32};
+use super::text::{asset, float, floats, quoted};
 use super::Writer;
 
 const PREVIEW: &str = "UsdPreviewSurface";
@@ -104,7 +104,7 @@ fn scalar_text(kind: &str, value: f64) -> String {
     match kind {
         "bool" => if value == 0.0 { "0" } else { "1" }.to_owned(),
         "int" => format!("{}", value.round()),
-        _ => real32(crate::text::value::round_f32(value)),
+        _ => float(value),
     }
 }
 
@@ -159,11 +159,7 @@ fn inputs(
                     } else {
                         "color3f"
                     };
-                    out.push((
-                        kind.to_owned(),
-                        input.clone(),
-                        tuple32(&[r, g, b].map(crate::text::value::round_f32)),
-                    ));
+                    out.push((kind.to_owned(), input.clone(), floats(&[r, g, b])));
                     for channel in ["r", "g", "b"] {
                         written.insert(format!("{prefix}{input}.{channel}"));
                     }
@@ -194,19 +190,11 @@ fn inputs(
         if shared.color {
             let channels = ["r", "g", "b"].map(|channel| property(&format!("{source}.{channel}")));
             if let [Some(r), Some(g), Some(b)] = channels {
-                out.push((
-                    "color3f".to_owned(),
-                    target.to_owned(),
-                    tuple32(&[r, g, b].map(crate::text::value::round_f32)),
-                ));
+                out.push(("color3f".to_owned(), target.to_owned(), floats(&[r, g, b])));
                 names.insert(target.to_owned());
             }
         } else if let Some(value) = property(source) {
-            out.push((
-                "float".to_owned(),
-                target.to_owned(),
-                real32(crate::text::value::round_f32(value)),
-            ));
+            out.push(("float".to_owned(), target.to_owned(), float(value)));
             names.insert(target.to_owned());
         }
     }
@@ -216,16 +204,12 @@ fn inputs(
             out.push((
                 "color3f".to_owned(),
                 base.to_owned(),
-                tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32)),
+                floats(&[color.r(), color.g(), color.b()]),
             ));
             names.insert(base.to_owned());
         }
         if color.a() < 1.0 && !names.contains(opacity) {
-            out.push((
-                "float".to_owned(),
-                opacity.to_owned(),
-                real32(crate::text::value::round_f32(color.a())),
-            ));
+            out.push(("float".to_owned(), opacity.to_owned(), float(color.a())));
             if column == 3 {
                 out.push((
                     "bool".to_owned(),
@@ -319,12 +303,16 @@ impl<'ir> Writer<'ir> {
             (PREVIEW, column(PREVIEW)),
             &mut written,
         );
-        let mut materialx_inputs = inputs(
-            appearance,
-            own_family,
-            (&materialx, column(&materialx)),
-            &mut written,
-        );
+        let mut materialx_inputs = if self.materialx {
+            inputs(
+                appearance,
+                own_family,
+                (&materialx, column(&materialx)),
+                &mut written,
+            )
+        } else {
+            Vec::new()
+        };
         let mdl_column = mdl.as_ref().and_then(|(_, sub)| column(sub));
         let mut mdl_inputs = mdl
             .as_ref()
@@ -335,16 +323,19 @@ impl<'ir> Writer<'ir> {
         self.out.line(&format!(
             "token outputs:surface.connect = <{path}/PreviewSurface.outputs:surface>"
         ));
-        self.out.line(&format!(
-            "token outputs:mtlx:surface.connect = <{path}/MaterialX.outputs:out>"
-        ));
+        if self.materialx {
+            self.out.line(&format!(
+                "token outputs:mtlx:surface.connect = <{path}/MaterialX.outputs:out>"
+            ));
+        }
         if mdl.is_some() {
             self.out.line(&format!(
                 "token outputs:mdl:surface.connect = <{path}/Mdl.outputs:out>"
             ));
         }
         preview_inputs.extend(self.preview_textures(&planned, path));
-        if let Some(column) = crate::schema::shading::family(&materialx) {
+        if let Some(column) = crate::schema::shading::family(&materialx).filter(|_| self.materialx)
+        {
             materialx_inputs.extend(self.materialx_textures(&planned, path, column));
         }
         if let (Some(mdl_inputs), Some(3)) = (&mut mdl_inputs, mdl_column) {
@@ -356,12 +347,14 @@ impl<'ir> Writer<'ir> {
             &preview_inputs,
             "surface",
         );
-        self.shader(
-            "MaterialX",
-            &[format!("uniform token info:id = {}", quoted(&materialx))],
-            &materialx_inputs,
-            "out",
-        );
+        if self.materialx {
+            self.shader(
+                "MaterialX",
+                &[format!("uniform token info:id = {}", quoted(&materialx))],
+                &materialx_inputs,
+                "out",
+            );
+        }
         if let (Some((module, mdl)), Some(mdl_inputs)) = (mdl, mdl_inputs) {
             self.shader(
                 "Mdl",

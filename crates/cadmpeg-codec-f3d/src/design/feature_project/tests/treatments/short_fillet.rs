@@ -14,7 +14,9 @@ use crate::records::feature::fillet_set::{
 };
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const PREVIOUS_STATE: i64 = 7;
 const TOLERANCE: f64 = 1e-12;
@@ -115,7 +117,7 @@ fn short_fillet_pairs_unclaimed_scope_tangency_weight() {
 
 #[test]
 fn short_fillet_resolves_edges_from_its_constant_radius() {
-    let identity = serde_json::from_value(serde_json::json!({
+    let identity = json::from_value(cadmpeg_core::json!({
         "id": "f3d:native/BulkStream.dat:edge-identity#200",
         "scope_record_index": 12,
         "group_record_index": 100,

@@ -3,9 +3,10 @@
 use super::{PipeIndex, PipeRoleAssessment};
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
+use cadmpeg_core::serde_erase::json;
 
 fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     crate::native::F3dNative::load(&namespace).unwrap()
@@ -13,7 +14,7 @@ fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
 
 #[test]
 fn pipe_native_admits_known_roles_and_keeps_role8() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for operation in [1, 2, 3, 4] {
         for body_role in [4, 8] {
             let native = Fixture::new(Config {
@@ -51,7 +52,9 @@ fn pipe_native_admits_known_roles_and_keeps_role8() {
                 );
             }
             let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-            native.store(&ctx, ir.native.namespace_mut("f3d")).unwrap();
+            native
+                .store(&ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
+                .unwrap();
             let findings = crate::validate::validate_native(&ctx, &ir).unwrap();
             assert!(!findings.iter().any(|finding| finding.message
                 == "Fusion Design path-feature operand roles conflict with its construction"));
@@ -61,7 +64,7 @@ fn pipe_native_admits_known_roles_and_keeps_role8() {
 
 #[test]
 fn pipe_native_round_trips_point_relations_and_absent_construction() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for version in [2, 3] {
         let native = Fixture::new(Config {
             point_version: Some(version),
@@ -95,18 +98,18 @@ fn reject_mutation(arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
 }
 
 fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(config).decode(&ctx).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     let mut values = match arena {
-        "design_parameter_scopes" => serde_json::to_value(&native.design_parameter_scopes).unwrap(),
-        "design_parameter_owners" => serde_json::to_value(&native.design_parameter_owners).unwrap(),
+        "design_parameter_scopes" => json::to_value(&native.design_parameter_scopes).unwrap(),
+        "design_parameter_owners" => json::to_value(&native.design_parameter_owners).unwrap(),
         "design_construction_operand_groups" => {
-            serde_json::to_value(&native.design_construction_operand_groups).unwrap()
+            json::to_value(&native.design_construction_operand_groups).unwrap()
         }
-        "design_types" => serde_json::to_value(&native.design_types).unwrap(),
-        "design_record_headers" => serde_json::to_value(&native.design_record_headers).unwrap(),
+        "design_types" => json::to_value(&native.design_types).unwrap(),
+        "design_record_headers" => json::to_value(&native.design_record_headers).unwrap(),
         _ => panic!("mutation arena"),
     };
     mutate(&mut values);
@@ -170,13 +173,13 @@ fn pipe_native_load_rejects_cross_record_tampering() {
             .as_array_mut()
             .unwrap()
             .iter_mut()
-            .find(|row| row["role"] == serde_json::json!(4_u64 << 32))
+            .find(|row| row["role"] == cadmpeg_core::json!(4_u64 << 32))
             .unwrap();
         body["role"] = (5_u64 << 32).into();
     });
     reject_mutation("design_construction_operand_groups", |rows| {
-        rows[0]["members"] = serde_json::json!([]);
-        rows[0]["member_offsets"] = serde_json::json!([]);
+        rows[0]["members"] = cadmpeg_core::json!([]);
+        rows[0]["member_offsets"] = cadmpeg_core::json!([]);
     });
     reject_mutation("design_parameter_owners", |rows| {
         rows[0]["evaluated_value"] = serde_json::Value::Null;
@@ -188,12 +191,12 @@ fn pipe_native_load_rejects_cross_record_tampering() {
 
 #[test]
 fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
         panic!("Pipe fixture")
     };
-    let wire = serde_json::to_value(pipe).unwrap();
+    let wire = json::to_value(pipe).unwrap();
     assert_eq!(wire["opaque_post_operation"], "0101");
     for key in [
         "section_shape",
@@ -204,9 +207,9 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         "value_offsets",
     ] {
         let mut bad = wire.clone();
-        bad[key] = serde_json::json!(0);
+        bad[key] = cadmpeg_core::json!(0);
         assert!(
-            serde_json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
+            json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
             "deleted {key}"
         );
     }
@@ -220,25 +223,25 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         let mut bad = wire.clone();
         bad.as_object_mut().unwrap().remove(key);
         assert!(
-            serde_json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
+            json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
             "missing {key}"
         );
     }
     for bytes in [
         serde_json::Value::Null,
-        serde_json::json!("01"),
-        serde_json::json!("010101"),
-        serde_json::json!([1, 1]),
+        cadmpeg_core::json!("01"),
+        cadmpeg_core::json!("010101"),
+        cadmpeg_core::json!([1, 1]),
     ] {
         let mut bad = wire.clone();
         bad["opaque_post_operation"] = bytes;
-        assert!(serde_json::from_value::<super::super::DesignPipeConstruction>(bad).is_err());
+        assert!(json::from_value::<super::super::DesignPipeConstruction>(bad).is_err());
     }
 }
 
 #[test]
 fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     native.design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
@@ -268,7 +271,7 @@ fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
 
 #[test]
 fn pipe_native_load_rejects_an_empty_new_body_path() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     native.design_construction_operand_groups[0]
         .try_set_members(Vec::new())
@@ -298,6 +301,6 @@ fn pipe_native_load_rejects_a_misplaced_section_shape() {
     };
     reject_mutation_of(pointed, "design_parameter_scopes", |rows| {
         rows[0]["path_feature_construction"]["section"] =
-            serde_json::json!({ "shape_value": 1, "shape_offset": 95 });
+            cadmpeg_core::json!({ "shape_value": 1, "shape_offset": 95 });
     });
 }

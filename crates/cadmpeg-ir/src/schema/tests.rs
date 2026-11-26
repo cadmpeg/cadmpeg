@@ -17,7 +17,6 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
 
-        tessellations: Vec::new(),
         id: owner.clone(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
@@ -40,7 +39,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             references.push(reference.to_owned());
             Ok(())
@@ -51,7 +50,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut borrowed_references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             borrowed_references.push(reference.to_owned());
             Ok(())
@@ -74,11 +73,10 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 
 #[test]
 fn typed_reference_walk_treats_historical_members_as_state_local() {
-    use crate::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation,
-    };
+    use crate::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use crate::features::evaluation::FeatureInputTopology;
+    use crate::features::selections::EdgeSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
 
@@ -88,12 +86,18 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let historical_edge =
         HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
-        vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: crate::features::selections::DistinctMembers::try_from(
+            vec![historical_edge.clone()],
+        )
+        .unwrap(),
+        vertices: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     };
@@ -103,15 +107,15 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: crate::features::NonEmptyMembers::one(FilletGroup {
+                groups: crate::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::historical(
                         state_id.clone(),
                         vec![historical_edge],
@@ -131,7 +135,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut state_references = Vec::new();
     state
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 state_references.push(reference.to_owned());
                 Ok(())
@@ -139,7 +143,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         )
         .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut borrowed_state_references = Vec::new();
     state
         .visit_references(&ctx, &mut |target| {
@@ -152,7 +156,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut feature_references = Vec::new();
     feature
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 feature_references.push(reference.to_owned());
                 Ok(())
@@ -215,7 +219,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 #[cfg(feature = "schema")]
 #[test]
 fn schema_constrains_version_and_requires_subd_arena() {
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let schema = cadmpeg_core::serde_erase::json::to_value(crate::cadir_json_schema()).unwrap();
     let version_property = schema.pointer("/properties/ir_version").unwrap();
     let version_schema = match version_property["$ref"].as_str() {
         Some(reference) => schema
@@ -225,7 +229,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
     };
     assert_eq!(
         version_schema.get("const"),
-        Some(&serde_json::json!(crate::IR_VERSION))
+        Some(&cadmpeg_core::json!(crate::IR_VERSION))
     );
     assert!(schema
         .pointer("/properties/geometry/$ref")
@@ -237,24 +241,26 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .pointer("/required")
         .and_then(serde_json::Value::as_array)
         .unwrap()
-        .contains(&serde_json::json!("subds")));
+        .contains(&cadmpeg_core::json!("subds")));
     assert!(schema.pointer("/properties/byte_ledger").is_none());
 
-    let mut value = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(unit_cube().expect("valid unit cube fixture"))
+            .unwrap();
     value
         .pointer_mut("/geometry")
         .unwrap()
         .as_object_mut()
         .unwrap()
         .remove("subds");
-    assert!(serde_json::from_value::<CadIr>(value).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<CadIr>(value).is_err());
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();
-    let json = serde_json::to_string(&schema).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_string(&schema).unwrap();
     assert!(json.contains("Body"));
     assert!(json.contains("Coedge"));
     assert!(json.contains("SurfaceGeometry"));
@@ -267,15 +273,17 @@ fn schema_generation_produces_definitions() {
 
 #[cfg(feature = "schema")]
 #[test]
-fn model_feature_schema_describes_serialized_regeneration_parent() {
+fn model_wire_and_schema_leave_out_features_and_their_regeneration_parents() {
     use crate::document::Model;
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
     use crate::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let parent = FeatureId::mint("test:model:feature#parent").unwrap();
-    let child = FeatureId::mint("test:model:feature#child").unwrap();
+    let parent = FeatureId::mint("test:model:feature#1-parent").unwrap();
+    let child = FeatureId::mint("test:model:feature#2-child").unwrap();
     let mut model = Model::default();
     model.features.push(Feature {
         product_definition: None,
@@ -308,19 +316,16 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
     model
         .set_feature_regeneration_parent(&(child), &(parent.clone()))
         .unwrap();
-    let wire = serde_json::to_value(&model).unwrap();
-    assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());
+    let wire = cadmpeg_core::serde_erase::json::to_value(&model).unwrap();
+    assert!(wire.get("features").is_none());
+    let held = cadmpeg_core::serde_erase::json::to_value(model.sorted_omitted()).unwrap();
+    assert_eq!(held["features"][1]["regeneration_parent"], parent.as_str());
 
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
-    let row = schema
-        .pointer("/$defs/Model/properties/features/items/$ref")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|reference| reference.strip_prefix('#'))
-        .and_then(|path| schema.pointer(path))
-        .unwrap();
-    assert!(row.pointer("/properties/regeneration_parent").is_some());
+    let schema = cadmpeg_core::serde_erase::json::to_value(crate::cadir_json_schema()).unwrap();
+    assert!(schema.pointer("/$defs/Model/properties/features").is_none());
 
-    let standalone = serde_json::to_value(schemars::schema_for!(Feature)).unwrap();
+    let standalone =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(Feature)).unwrap();
     assert!(standalone
         .pointer("/properties/regeneration_parent")
         .is_none());
@@ -334,7 +339,6 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     let entity = ProductDefinition {
         sketches: Vec::default(),
 
-        tessellations: Vec::new(),
         id: "test:model:product#owner".try_into().unwrap(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
@@ -365,7 +369,7 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = 0;
     entity
         .visit_references(&ctx, &mut |target| {
@@ -388,7 +392,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         tolerance: None,
         native_ref: None,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(
         ResourceDimension::RetainedBytes,
         4096,

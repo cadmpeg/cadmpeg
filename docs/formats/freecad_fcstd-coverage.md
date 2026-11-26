@@ -16,7 +16,7 @@ retained document graph writes back the band it declares, and nothing regenerate
 | L6   | all Sketcher geometry/constraint branches; expressions; spreadsheet; core Part and PartDesign operations                | constraint, expression, cell, and operation graphs are typed and valid; the recomputed design census matches every projected object; design-domain loss report is empty                                                                          |
 | L7   | groups, parts, nested links, link arrays, external links, assemblies, joints                                            | components and occurrences have distinct identity; local/world placements, persistent operands, missing externals, and cycles validate                                                                                                           |
 | L8   | GUI state, TechDraw, annotations, embedded files, Mesh, Points, FEM, CAM, Python-backed and extension data              | presentation/drawing graphs validate; every application record is typed or named-retained; no payload executes; all physical/logical ledgers close                                                                                               |
-| L9   | every manifested primary-envelope fixture; source-less parametric document; supported and unsupported target selections | writes are deterministic and decode to the same semantic fingerprint; typed edits survive; every named entry survives by identity and digest; source-less output is accepted by FreeCAD; unsupported targets and unsafe nested edits are refused |
+| L9   | every manifested primary-envelope fixture; source-less parametric document; supported and unsupported target selections | writes are deterministic and decode to the same semantic fingerprint; typed edits survive; every named entry survives by identity and digest; source-less output is accepted by FreeCAD; unsupported targets are refused and an unsafe nested edit stays as stored with `export:edit.dropped` |
 
 Every gate also includes deterministic malformed-input cases for truncation, invalid counts and
 indices, duplicate identities, missing owners, resource limits, and unsupported layout dispatch.
@@ -25,7 +25,7 @@ The checked-in [`freecad_fcstd-profile.json`](freecad_fcstd-profile.json) is gen
 manifested corpus rather than edited by hand. Regenerate it from the repository root with:
 
 ```sh
-cargo run -p cadmpeg-codec-freecad --bin fcstd-profile -- \
+cargo run -p cadmpeg-codec-freecad --example fcstd-profile -- \
   corpus/freecad_fcstd/fixtures corpus/manifest.toml \
   docs/formats/freecad_fcstd-profile.json
 ```
@@ -273,6 +273,14 @@ attachment properties keep an absent neutral placement and emit the same loss. T
 attachment summary product is separate from the neutral primitive frame. Multiple parent
 containers violate product or feature-tree ownership and refuse the document.
 
+## First body feature
+
+The first solid feature of a `PartDesign::Body` decodes with a new-body operation when it adds
+material and both the body and feature `BaseFeature` links are empty. When that first solid feature
+removes material, it keeps its typed removal operation with an empty input solid and emits
+`fcstd/feature.removal-without-base`. Each body owns its result;
+a feature outside every body keeps its additive operation.
+
 ## Revolution admission
 
 The neutral revolution axis retains the normalized resolved direction, origin, and native
@@ -294,3 +302,8 @@ coedges keeps its boundary ownership. A face root retains the same edge roles. B
 remains solid. STEP keeps all three cylinder faces and the additional edge. A forward open edge
 continues to fail the boundary-order check. Native records retain the non-boundary face incidence;
 `topology.non-boundary-incidence-retained` reports that neutral association limit.
+
+## Faces with no boundary wire
+
+A synthetic text BRep test covers a face with no wire on a plane. The face is partial with no
+loop, and `topology.face-boundary-unstated` names it.

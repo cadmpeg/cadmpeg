@@ -6,15 +6,14 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, PositiveReal};
 use cadmpeg_ir::sketches::{
     NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
     SketchConstraintId, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
-};
-use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId},
-    scalar::{Angle, FiniteReal, Length, PositiveReal},
 };
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
@@ -198,7 +197,7 @@ const CIRCLE_STATE_FULL: u8 = 1;
 pub(crate) mod member_curve;
 pub(crate) mod spline;
 
-const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
+pub(crate) const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 pub(crate) const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
 const POINT_TYPE: [u8; 16] = sketch_entity_id(0xce52_df35);
 const LINE_TYPE: [u8; 16] = sketch_entity_id(0xce52_df3a);
@@ -2956,16 +2955,18 @@ fn line_carrier_matches(
     start: [f64; 2],
     end: [f64; 2],
 ) -> bool {
-    let Some(unit) =
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::new(direction[0], direction[1], 0.0))
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
-    else {
+    let Some(unit) = cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+        direction[0],
+        direction[1],
+        0.0,
+    ))
+    .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero) else {
         return false;
     };
     let span = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0);
     let span_scale = span.x.abs().max(span.y.abs());
-    let Some(span) = cadmpeg_ir::features::FiniteVector3::new(span)
-        .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    let Some(span) = cadmpeg_ir::features::geometry::FiniteVector3::new(span)
+        .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     else {
         return false;
     };
@@ -3531,16 +3532,19 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 }
 
 #[cfg(test)]
+use cadmpeg_core::serde_erase::json as json_wire;
+
+#[cfg(test)]
 mod tests {
     use super::{
         block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
-        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        placed_endpoint_refs, project, project_placed_geometry, solver_hint, BlockPlacement,
-        PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity, PmDcSketchEntityKind,
-        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, PointTail,
-        SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE, CIRCLE_TYPE,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
-        SKETCH_TYPE, TRANSFORM_TYPE,
+        inventory, json_wire, parse_constraint, parse_direction, parse_entity, parse_sketch,
+        parse_transform, placed_endpoint_refs, project, project_placed_geometry, solver_hint,
+        BlockPlacement, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
+        PmDcSketchEntityKind, PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload,
+        PointTail, SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE,
+        CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE,
+        POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -4399,7 +4403,7 @@ mod tests {
             let parsed = parse(&bytes, |_, source| {
                 parse_constraint(tag, source, 22).expect(expected)
             });
-            let form = serde_json::to_value(parsed.kind).expect("constraint kind")["form"].clone();
+            let form = json_wire::to_value(parsed.kind).expect("constraint kind")["form"].clone();
             assert_eq!(form, expected);
         }
         let mut polygon = entity_prefix(7, 3, 0);
@@ -5114,13 +5118,13 @@ mod tests {
 
     /// The same record read as a tangent relation.
     fn as_tangent(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-        let mut wire = serde_json::to_value(relation).expect("relation wire");
-        wire["kind"] = serde_json::json!({
+        let mut wire = json_wire::to_value(relation).expect("relation wire");
+        wire["kind"] = cadmpeg_core::json!({
             "form": "tangent",
             "first": wire["kind"]["first"].clone(),
             "second": wire["kind"]["second"].clone(),
         });
-        serde_json::from_value(wire).expect("tangent wire")
+        json_wire::from_value(wire).expect("tangent wire")
     }
 
     #[test]
@@ -5368,29 +5372,29 @@ mod tests {
     }
     #[test]
     fn point_tail_wire_requires_both_fields() {
-        let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-        let mut wire = serde_json::json!({
+        let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
+        let mut wire = cadmpeg_core::json!({
             "form": "point", "position": [0.0, 0.0],
             "endpoint_of": list.clone(), "center_of": list.clone(),
             "state": null, "associations": null
         });
         let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+            json_wire::from_value(wire.clone()).expect("paired point fixture round-trips");
         assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            json_wire::to_value(point).expect("paired point fixture round-trips"),
             wire
         );
-        wire["state"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
+        wire["state"] = cadmpeg_core::json!(0);
+        assert!(json_wire::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
         wire["associations"] = list;
         let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+            json_wire::from_value(wire.clone()).expect("paired point fixture round-trips");
         assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            json_wire::to_value(point).expect("paired point fixture round-trips"),
             wire
         );
         wire["state"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
+        assert!(json_wire::from_value::<PmDcSketchEntityKind>(wire).is_err());
     }
     #[test]
     fn transform_prefix_wire_is_constant_or_absent() {
@@ -5401,27 +5405,27 @@ mod tests {
             parse_transform(source, 22).expect("constant-prefix transform fixture is valid")
         });
         let mut wire =
-            serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
+            json_wire::to_value(transform).expect("constant-prefix transform fixture is valid");
         for (prefix, present) in [
             (serde_json::Value::Null, false),
-            (serde_json::json!(515), true),
+            (cadmpeg_core::json!(515), true),
         ] {
             wire["prefix"] = prefix;
-            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone())
+            let parsed: PmDcTransformPayload = json_wire::from_value(wire.clone())
                 .expect("constant-prefix transform fixture is valid");
             assert_eq!(parsed.prefix_present, present);
             assert_eq!(
-                serde_json::to_value(parsed).expect("constant-prefix transform fixture is valid"),
+                json_wire::to_value(parsed).expect("constant-prefix transform fixture is valid"),
                 wire
             );
         }
-        wire["prefix"] = serde_json::json!(516);
-        assert!(serde_json::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
+        wire["prefix"] = cadmpeg_core::json!(516);
+        assert!(json_wire::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
         wire.as_object_mut()
             .expect("constant-prefix transform fixture is valid")
             .remove("prefix");
         assert!(
-            !serde_json::from_value::<PmDcTransformPayload>(wire)
+            !json_wire::from_value::<PmDcTransformPayload>(wire)
                 .expect("constant-prefix transform fixture is valid")
                 .prefix_present
         );

@@ -1,4 +1,4 @@
-use crate::design::decode::operands::{
+use crate::design::decode::operands::construction_groups::{
     parse_construction_operand_group, ConstructionOperandGroupParse, RecordFrame,
 };
 use crate::design::decode::parameters::{parse_design_parameter_record, parse_parameter_owner};
@@ -14,8 +14,10 @@ use crate::records::references::DesignClassTag;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::typed_reference_scopes::{parse, typed_scope_frame};
 use crate::test_support::{indexed_header, push_marked_reference};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const BULK: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
 
@@ -123,7 +125,7 @@ fn typed_fillet_without_radius_retains_group_and_missing_member() {
     let source: serde_json::Value =
         serde_json::from_str(&feature.source_properties["fillet:source"]).unwrap();
     assert_eq!(source["scope"]["record_index"], 226);
-    assert_eq!(source["groups"][0], serde_json::to_value(&group).unwrap());
+    assert_eq!(source["groups"][0], json::to_value(&group).unwrap());
     assert!(source["owners"].as_array().unwrap().is_empty());
     assert!(projected
         .projection_losses
@@ -198,7 +200,7 @@ fn typed_fillet_keeps_missing_parameter_owner_and_source_only_expressions() {
     ));
     let source: serde_json::Value =
         serde_json::from_str(&feature.source_properties["fillet:source"]).unwrap();
-    assert_eq!(source["owners"][0], serde_json::to_value(&owner).unwrap());
+    assert_eq!(source["owners"][0], json::to_value(&owner).unwrap());
     assert_eq!(source["owners"][0]["record_index"], 44);
     assert_eq!(source["owners"][0]["parameter_record_index"], 45);
     assert_eq!(source["owners"][0]["evaluated_value"], 6.0);
@@ -212,11 +214,11 @@ fn typed_fillet_keeps_missing_parameter_owner_and_source_only_expressions() {
     assert_eq!(source["parameters"][0]["evaluated_value"], 0.7);
     assert_eq!(
         source["parameters"][0],
-        serde_json::to_value(&parameters[0]).unwrap()
+        json::to_value(&parameters[0]).unwrap()
     );
     assert_eq!(
         source["parameters"][1],
-        serde_json::to_value(&parameters[1]).unwrap()
+        json::to_value(&parameters[1]).unwrap()
     );
     assert!(projected
         .projection_losses
@@ -286,7 +288,7 @@ fn full_round_group(scope: &DesignParameterScope) -> DesignConstructionOperandGr
         byte_offset: 0,
     };
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::decode::operands::bind_construction_operand_trailing_records(
+        crate::design::decode::operands::construction_groups::bind_construction_operand_trailing_records(
             scan,
             std::slice::from_mut(&mut group),
             &[header],
@@ -328,11 +330,11 @@ fn bounded_face(scope: &DesignParameterScope) -> crate::records::topology::face:
         record_index: None,
     }];
     crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::parse_face_operand(
+        crate::design::decode::operands::face_operand_frames::parse_face_operand(
             ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            crate::design::decode::operands::FaceOperandFrame {
+            crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                 scope,
                 scope_reference_ordinal: 1,
                 group_ownership: Some((222, 0)),
@@ -350,7 +352,7 @@ fn bounded_face(scope: &DesignParameterScope) -> crate::records::topology::face:
 #[test]
 fn typed_fillet_full_round_requires_bounded_face_evidence() {
     use cadmpeg_ir::features::edge_treatments::FullRoundSideSelection;
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let scope = scope();
     let group = full_round_group(&scope);

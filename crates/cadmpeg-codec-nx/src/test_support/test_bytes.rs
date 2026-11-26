@@ -52,13 +52,13 @@ pub(crate) fn attach_test_body_surface(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            vec![shell_id.clone()],
+        ));
     }
     let face_id = FaceId::mint(format!("{body_id}:face:{}", ir.geometry.faces.len()))
         .expect("identity grammar");

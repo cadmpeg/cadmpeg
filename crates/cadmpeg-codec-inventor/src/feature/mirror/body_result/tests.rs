@@ -4,7 +4,9 @@ use crate::feature::tests::{reference, reference_list, test_label};
 use crate::record_identity::Located;
 use crate::test_support::mirror::new_body_form;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn mirror_new_body_uses_the_source_collection_and_generated_result() {
@@ -52,15 +54,15 @@ fn generated_body_checks_each_variable_word_and_its_type() {
                 .iter()
                 .position(|p| p.identity.record_ordinal == ordinal)
                 .expect("variable");
-            let mut wire = serde_json::to_value(&fixture.properties[index]).expect("variable");
+            let mut wire = json::to_value(&fixture.properties[index]).expect("variable");
             if field == "type_id" {
                 wire[field] =
-                    serde_json::json!(crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE));
+                    cadmpeg_core::json!(crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE));
             } else {
                 let value = wire["kind"][field].as_u64().expect("word");
-                wire["kind"][field] = serde_json::json!(value + 1);
+                wire["kind"][field] = cadmpeg_core::json!(value + 1);
             }
-            fixture.properties[index] = serde_json::from_value(wire).expect("changed variable");
+            fixture.properties[index] = json::from_value(wire).expect("changed variable");
             assert!(
                 fixture
                     .index()
@@ -117,10 +119,10 @@ fn generated_body_checks_owner_class_source_and_generated_reference() {
                     .iter_mut()
                     .find(|p| p.identity.record_ordinal == 113)
                     .expect("map");
-                let mut wire = serde_json::to_value(&*map).expect("map");
+                let mut wire = json::to_value(&*map).expect("map");
                 wire["kind"]["definition"]["source"] =
-                    serde_json::to_value(reference(107)).expect("reference");
-                *map = serde_json::from_value(wire).expect("changed map");
+                    json::to_value(reference(107)).expect("reference");
+                *map = json::from_value(wire).expect("changed map");
             }
         }
         assert!(fixture
@@ -233,7 +235,7 @@ fn replacement_boolean_bytes_select_the_historical_body_and_offset_plane() {
     );
     assert_eq!(
         *plane_reference,
-        Some(cadmpeg_ir::features::FaceSelection::Native(
+        Some(cadmpeg_ir::features::selections::FaceSelection::Native(
             fixture.planes[0].id()
         ))
     );
@@ -267,7 +269,8 @@ fn mirror_source_resolves_to_the_current_body_of_its_wrapper() {
     assert_eq!(&bodies[..], &[body]);
     assert_eq!(native, &fixture.properties[2].id());
     let mut resolved = feature.clone();
-    resolved.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+    resolved.evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(definition);
     let index = fixture.index().with_bodies(&joined);
     assert!(index.matches_projection(&source, &fixture.label, &resolved, &result, false, |_| None));
     // A wrapper without a current body leaves the source unresolved, and an

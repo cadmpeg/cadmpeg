@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json as json_wire;
 
 use super::{
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
@@ -11,7 +12,6 @@ use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 #[test]
 fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
@@ -34,15 +34,15 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     .with_native_ref(Some("native-planar".into()))
     .with_geometry_ref(Some("native-curve".into()))
     .with_endpoint_refs(vec!["native-point".into()]);
-    let planar_wire = serde_json::to_value(&planar).unwrap();
+    let planar_wire = json_wire::to_value(&planar).unwrap();
     assert_eq!(
-        serde_json::from_value::<SketchEntity>(planar_wire.clone()).unwrap(),
+        json_wire::from_value::<SketchEntity>(planar_wire.clone()).unwrap(),
         planar
     );
     assert_eq!(planar_wire["id"], "synthetic:test:sketch-entity#0");
     let mut empty_planar = planar_wire;
     empty_planar["id"] = serde_json::Value::String(String::new());
-    assert!(serde_json::from_value::<SketchEntity>(empty_planar)
+    assert!(json_wire::from_value::<SketchEntity>(empty_planar)
         .unwrap_err()
         .to_string()
         .contains("identity is invalid"));
@@ -59,15 +59,15 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
     .with_native_ref(Some("native-spatial".into()))
     .with_geometry_ref(Some("native-curve".into()))
     .with_endpoint_refs(vec!["native-point".into()]);
-    let spatial_wire = serde_json::to_value(&spatial).unwrap();
+    let spatial_wire = json_wire::to_value(&spatial).unwrap();
     assert_eq!(
-        serde_json::from_value::<SpatialSketchEntity>(spatial_wire.clone()).unwrap(),
+        json_wire::from_value::<SpatialSketchEntity>(spatial_wire.clone()).unwrap(),
         spatial
     );
     assert_eq!(spatial_wire["id"], "synthetic:test:spatial-sketch-entity#0");
     let mut empty_spatial = spatial_wire;
     empty_spatial["id"] = serde_json::Value::String(String::new());
-    assert!(serde_json::from_value::<SpatialSketchEntity>(empty_spatial)
+    assert!(json_wire::from_value::<SpatialSketchEntity>(empty_spatial)
         .unwrap_err()
         .to_string()
         .contains("identity is invalid"));
@@ -78,7 +78,7 @@ fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
         assert!(SpatialSketchId::mint(invalid).is_err());
         assert!(SpatialSketchEntityId::mint(invalid).is_err());
         assert!(crate::sketches::SketchConstraintId::mint(invalid).is_err());
-        let wire = serde_json::to_string(invalid).unwrap();
+        let wire = json_wire::to_string(invalid).unwrap();
         assert!(serde_json::from_str::<SketchId>(&wire).is_err());
         assert!(serde_json::from_str::<SketchEntityId>(&wire).is_err());
         assert!(serde_json::from_str::<SpatialSketchId>(&wire).is_err());
@@ -154,14 +154,13 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.sketch_constraints,
-        ir.model.sketch_constraints
-    );
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        json_wire::from_value(json_wire::to_value(&ir.model.sketch_constraints).unwrap()).unwrap();
+    assert_eq!(round_trip, ir.model.sketch_constraints);
 }
 
 #[test]
@@ -320,7 +319,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             is_text_height: false,
         },
     ];
-    let json = serde_json::to_string(&definitions).unwrap();
+    let json = json_wire::to_string(&definitions).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<SketchConstraintDefinitionInput>>(&json).unwrap(),
         definitions
@@ -489,11 +488,9 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             .as_deref()
             .is_some_and(|entity| entity.starts_with("synthetic:test:constraint#"))
     }));
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.sketch_constraints,
-        ir.model.sketch_constraints
-    );
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        json_wire::from_value(json_wire::to_value(&ir.model.sketch_constraints).unwrap()).unwrap();
+    assert_eq!(round_trip, ir.model.sketch_constraints);
 
     let midpoint_entity = ir
         .model
@@ -514,8 +511,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
 
 #[test]
 fn sketch_regions_round_trip_with_explicit_boundary_roles() {
-    use crate::features::PlanarProfileRef;
-    use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::profiles::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
     let profile = PlanarProfileRef::sketch_regions(
@@ -526,7 +523,10 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
-                    parameter_range: crate::geometry::DirectedParameterRange::new([0.25, 0.75])
+                    parameter_range:
+                        crate::geometry::procedural_curves::DirectedParameterRange::new([
+                            0.25, 0.75,
+                        ])
                         .unwrap(),
                     reversed: true,
                 }],
@@ -536,24 +536,27 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
         ],
     )
     .unwrap();
-    let json = serde_json::to_value(&profile).expect("serialize sketch regions");
+    let json = json_wire::to_value(&profile).expect("serialize sketch regions");
     assert_eq!(json["kind"], "sketch_regions");
     assert_eq!(json["value"]["regions"][0]["outer"], 2);
     assert_eq!(
         json["value"]["regions"][0]["holes"],
-        serde_json::json!([3, 5])
+        cadmpeg_core::json!([3, 5])
     );
-    assert_eq!(json["value"]["regions"][1]["holes"], serde_json::json!([]));
+    assert_eq!(
+        json["value"]["regions"][1]["holes"],
+        cadmpeg_core::json!([])
+    );
     assert_eq!(
         json["value"]["regions"][2]["outer_boundary"][0]["parameter_range"],
-        serde_json::json!([0.25, 0.75])
+        cadmpeg_core::json!([0.25, 0.75])
     );
     assert_eq!(
         json["value"]["regions"][2]["outer_boundary"][0]["reversed"],
         true
     );
     assert_eq!(
-        serde_json::from_value::<ProfileRef>(serde_json::json!({"kind": "planar", "value": json}))
+        json_wire::from_value::<ProfileRef>(cadmpeg_core::json!({"kind": "planar", "value": json}))
             .expect("deserialize sketch regions"),
         ProfileRef::Planar(profile)
     );
@@ -594,25 +597,25 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     )
     .unwrap();
     let definition = SketchConstraintDefinitionInput::RectangularPattern { pattern };
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert!(wire["pattern"]["directions"][0].get("count").is_none());
     assert!(wire["pattern"]["directions"][1].get("count").is_none());
     assert_eq!(
         wire["pattern"]["directions"][0]["distance"],
-        serde_json::json!({"kind": "spacing", "parameter": "test:test:parameter#spacing"})
+        cadmpeg_core::json!({"kind": "spacing", "parameter": "test:test:parameter#spacing"})
     );
     assert!(wire["pattern"]["directions"][1].get("distance").is_none());
     assert!(wire.get("instances").is_none());
     assert!(wire["pattern"].get("instances").is_none());
     assert_eq!(
         wire["pattern"]["rows"],
-        serde_json::json!([
+        cadmpeg_core::json!([
             [{ "entities": ["test:test:sketch-entity#0"] }],
             [{ "entities": ["test:test:sketch-entity#1"] }]
         ])
     );
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
@@ -620,8 +623,8 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     restated_count["pattern"]["directions"][0]
         .as_object_mut()
         .unwrap()
-        .insert("count".to_string(), serde_json::json!(2));
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_count)
+        .insert("count".to_string(), cadmpeg_core::json!(2));
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(restated_count)
         .unwrap_err()
         .to_string();
     assert!(error.contains("count"), "{error}");
@@ -630,16 +633,16 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     restated_indices["pattern"]["rows"][0][0]
         .as_object_mut()
         .unwrap()
-        .insert("indices".to_string(), serde_json::json!([0, 0]));
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_indices)
+        .insert("indices".to_string(), cadmpeg_core::json!([0, 0]));
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(restated_indices)
         .unwrap_err()
         .to_string();
     assert!(error.contains("indices"), "{error}");
 
     let mut orphan_distance = wire.clone();
     orphan_distance["pattern"]["directions"][0]["span_parameter"] =
-        serde_json::json!("test:test:parameter#span");
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(orphan_distance)
+        cadmpeg_core::json!("test:test:parameter#span");
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(orphan_distance)
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field"), "{error}");
@@ -647,15 +650,15 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
 
     let mut two_distance_kinds = wire.clone();
     two_distance_kinds["pattern"]["directions"][0]["distance"]["span"] =
-        serde_json::json!("test:test:parameter#span");
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(two_distance_kinds)
+        cadmpeg_core::json!("test:test:parameter#span");
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(two_distance_kinds)
         .unwrap_err()
         .to_string();
     assert!(error.contains("span"), "{error}");
 
     let mut ragged = wire;
-    ragged["pattern"]["rows"][1] = serde_json::json!([]);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
+    ragged["pattern"]["rows"][1] = cadmpeg_core::json!([]);
+    assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
 }
 
 /// The seeded count follows from the instance population, which carries
@@ -686,10 +689,10 @@ fn a_circular_pattern_count_survives_a_wire_that_states_no_count() {
     assert_eq!((pattern.instances().len() + 1), 3);
 
     let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert!(wire["pattern"].get("count").is_none());
     let SketchConstraintDefinitionInput::CircularPattern { pattern } =
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap()
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire).unwrap()
     else {
         panic!("circular pattern");
     };
@@ -745,9 +748,9 @@ fn an_empty_circular_pattern_instance_array_is_refused_by_the_population() {
     )
     .unwrap();
     let mut wire =
-        serde_json::to_value(SketchConstraintDefinitionInput::CircularPattern { pattern }).unwrap();
-    wire["pattern"]["instances"] = serde_json::json!([]);
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(wire)
+        json_wire::to_value(SketchConstraintDefinitionInput::CircularPattern { pattern }).unwrap();
+    wire["pattern"]["instances"] = cadmpeg_core::json!([]);
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("population states no member"), "{error}");
@@ -790,13 +793,13 @@ fn a_circular_pattern_count_cannot_disagree_with_its_instances() {
     // The wire states no count and refuses an unknown key, so no document can
     // state a figure that disagrees with the instances it carries.
     let pattern = build(vec![instance(1), instance(2)]);
-    let wire = serde_json::to_value(&pattern).unwrap();
+    let wire = json_wire::to_value(&pattern).unwrap();
     assert!(wire.get("count").is_none());
     let mut stated = wire.clone();
-    stated["count"] = serde_json::json!(9);
-    assert!(serde_json::from_value::<SketchCircularPattern>(stated).is_err());
+    stated["count"] = cadmpeg_core::json!(9);
+    assert!(json_wire::from_value::<SketchCircularPattern>(stated).is_err());
     assert_eq!(
-        (serde_json::from_value::<SketchCircularPattern>(wire)
+        (json_wire::from_value::<SketchCircularPattern>(wire)
             .unwrap()
             .instances()
             .len()
@@ -826,19 +829,19 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
     )
     .unwrap();
     let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert!(wire["pattern"].get("count").is_none());
     assert!(wire["pattern"]["instances"][0].get("index").is_none());
     assert_eq!(
         wire["pattern"]["seed"],
-        serde_json::json!(["test:test:sketch-entity#0"])
+        cadmpeg_core::json!(["test:test:sketch-entity#0"])
     );
     assert_eq!(
         wire["pattern"]["instances"],
-        serde_json::json!([{ "angle": 1.0, "entities": ["test:test:sketch-entity#1"] }])
+        cadmpeg_core::json!([{ "angle": 1.0, "entities": ["test:test:sketch-entity#1"] }])
     );
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
@@ -846,8 +849,8 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
     restated_count["pattern"]
         .as_object_mut()
         .unwrap()
-        .insert("count".to_string(), serde_json::json!(2));
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_count)
+        .insert("count".to_string(), cadmpeg_core::json!(2));
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(restated_count)
         .unwrap_err()
         .to_string();
     assert!(error.contains("count"), "{error}");
@@ -856,8 +859,8 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
     restated_index["pattern"]["instances"][0]
         .as_object_mut()
         .unwrap()
-        .insert("index".to_string(), serde_json::json!(0));
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(restated_index)
+        .insert("index".to_string(), cadmpeg_core::json!(0));
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(restated_index)
         .unwrap_err()
         .to_string();
     assert!(error.contains("index"), "{error}");
@@ -865,8 +868,8 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
     // The seed is not an instance, so an instance's rotation is a nonzero
     // scalar mint and no arm compares an angle against zero.
     let mut unseeded = wire;
-    unseeded["pattern"]["instances"][0]["angle"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(unseeded).is_err());
+    unseeded["pattern"]["instances"][0]["angle"] = cadmpeg_core::json!(0.0);
+    assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(unseeded).is_err());
 }
 
 #[test]
@@ -888,24 +891,24 @@ fn the_offset_parameter_is_one_nested_key_with_an_explicit_sign() {
             negated: true,
         }),
     };
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(
         wire["parameter"],
-        serde_json::json!({"id": "test:test:parameter#offset", "negated": true})
+        cadmpeg_core::json!({"id": "test:test:parameter#offset", "negated": true})
     );
     assert!(wire.get("parameter_factor").is_none());
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
     let mut half = wire.clone();
     half["parameter"].as_object_mut().unwrap().remove("negated");
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(half).is_err());
+    assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(half).is_err());
 
     let mut bogus = wire;
-    bogus["parameter"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(bogus)
+    bogus["parameter"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -946,28 +949,28 @@ fn the_conic_bounds_are_one_nested_pair_or_absent() {
     ];
 
     for geometry in cases {
-        let wire = serde_json::to_value(&geometry).unwrap();
+        let wire = json_wire::to_value(&geometry).unwrap();
         assert!(matches!(
             geometry.definition(),
             SketchGeometryDefinition::Ellipse { .. }
                 | SketchGeometryDefinition::Hyperbola { .. }
                 | SketchGeometryDefinition::Parabola { .. }
         ));
-        assert_eq!(wire["bounds"], serde_json::json!([-0.5, 1.5]));
+        assert_eq!(wire["bounds"], cadmpeg_core::json!([-0.5, 1.5]));
         assert!(wire.get("start_angle").is_none());
         assert!(wire.get("start_parameter").is_none());
         assert_eq!(
-            serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+            json_wire::from_value::<SketchGeometry>(wire.clone()).unwrap(),
             geometry
         );
 
         let mut half = wire.clone();
-        half["bounds"] = serde_json::json!([-0.5]);
-        assert!(serde_json::from_value::<SketchGeometry>(half).is_err());
+        half["bounds"] = cadmpeg_core::json!([-0.5]);
+        assert!(json_wire::from_value::<SketchGeometry>(half).is_err());
 
         let mut absent = wire;
         absent.as_object_mut().unwrap().remove("bounds");
-        let unbounded = serde_json::from_value::<SketchGeometry>(absent).unwrap();
+        let unbounded = json_wire::from_value::<SketchGeometry>(absent).unwrap();
         assert_ne!(unbounded, geometry);
     }
 }
@@ -992,14 +995,14 @@ fn the_text_placement_is_one_nested_key_or_absent() {
         vertical_alignment: None,
     })
     .unwrap();
-    let wire = serde_json::to_value(&geometry).unwrap();
+    let wire = json_wire::to_value(&geometry).unwrap();
     assert_eq!(
         wire["placement"],
-        serde_json::json!({"anchor": {"u": 1.0, "v": 2.0}, "rotation": 0.5})
+        cadmpeg_core::json!({"anchor": {"u": 1.0, "v": 2.0}, "rotation": 0.5})
     );
     assert!(wire.get("anchor").is_none());
     assert_eq!(
-        serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchGeometry>(wire.clone()).unwrap(),
         geometry
     );
 
@@ -1008,11 +1011,11 @@ fn the_text_placement_is_one_nested_key_or_absent() {
         .as_object_mut()
         .unwrap()
         .remove("rotation");
-    assert!(serde_json::from_value::<SketchGeometry>(half).is_err());
+    assert!(json_wire::from_value::<SketchGeometry>(half).is_err());
 
     let mut bogus = wire;
-    bogus["placement"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<SketchGeometry>(bogus)
+    bogus["placement"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<SketchGeometry>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1029,11 +1032,11 @@ fn internal_alignment_index_stays_with_bspline_variants() {
         parent: SketchEntityId::mint("test:test:sketch-entity#parent").unwrap(),
         alignment: SketchInternalAlignment::BsplineControlPoint(2),
     };
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(wire["alignment"]["kind"], "bspline_control_point");
     assert_eq!(wire["alignment"]["index"], 2);
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
@@ -1042,11 +1045,11 @@ fn internal_alignment_index_stays_with_bspline_variants() {
         .as_object_mut()
         .unwrap()
         .remove("index");
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(missing_index).is_err());
+    assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(missing_index).is_err());
 
     let mut extraneous_index = wire;
-    extraneous_index["alignment"]["kind"] = serde_json::json!("ellipse_focus1");
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(extraneous_index)
+    extraneous_index["alignment"]["kind"] = cadmpeg_core::json!("ellipse_focus1");
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(extraneous_index)
         .unwrap_err()
         .to_string();
     assert!(error.contains("index"), "{error}");
@@ -1061,12 +1064,12 @@ fn a_solver_scalar_slot_is_its_key_and_carries_no_class_key() {
         difference: 19,
         value: crate::scalar::Angle::new(0.5).unwrap(),
     };
-    let wire = serde_json::to_value(&angle).unwrap();
-    assert_eq!(wire["first"], serde_json::json!(17));
-    assert_eq!(wire["second"], serde_json::json!(18));
-    assert_eq!(wire["difference"], serde_json::json!(19));
+    let wire = json_wire::to_value(&angle).unwrap();
+    assert_eq!(wire["first"], cadmpeg_core::json!(17));
+    assert_eq!(wire["second"], cadmpeg_core::json!(18));
+    assert_eq!(wire["difference"], cadmpeg_core::json!(19));
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
         angle
     );
 
@@ -1074,11 +1077,11 @@ fn a_solver_scalar_slot_is_its_key_and_carries_no_class_key() {
         first: 17,
         second: 18,
     };
-    let wire = serde_json::to_value(&equality).unwrap();
-    assert_eq!(wire["first"], serde_json::json!(17));
-    assert_eq!(wire["second"], serde_json::json!(18));
+    let wire = json_wire::to_value(&equality).unwrap();
+    assert_eq!(wire["first"], cadmpeg_core::json!(17));
+    assert_eq!(wire["second"], cadmpeg_core::json!(18));
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
         equality
     );
 }
@@ -1086,13 +1089,13 @@ fn a_solver_scalar_slot_is_its_key_and_carries_no_class_key() {
 #[test]
 fn a_solver_scalar_slot_rejects_the_deleted_variable_type_key() {
     use crate::sketches::SketchConstraintDefinitionInput;
-    let mut wire = serde_json::to_value(SketchConstraintDefinitionInput::ScalarEquality {
+    let mut wire = json_wire::to_value(SketchConstraintDefinitionInput::ScalarEquality {
         first: 17,
         second: 18,
     })
     .unwrap();
-    wire["first"] = serde_json::json!({"variable_type": 6, "key": 17});
-    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(wire)
+    wire["first"] = cadmpeg_core::json!({"variable_type": 6, "key": 17});
+    let error = json_wire::from_value::<SketchConstraintDefinitionInput>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("invalid type: map"), "{error}");
@@ -1102,7 +1105,7 @@ fn a_solver_scalar_slot_rejects_the_deleted_variable_type_key() {
 fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "nurbs",
         "curve": {
             "degree": 1,
@@ -1116,21 +1119,21 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
             "periodic": false
         }
     });
-    let geometry: SketchGeometry = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let geometry: SketchGeometry = json_wire::from_value(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&geometry).unwrap(), wire);
     for (field, value) in [
-        ("degree", serde_json::json!(0)),
-        ("degree", serde_json::json!(2)),
-        ("knots", serde_json::json!([0.0, 1.0])),
+        ("degree", cadmpeg_core::json!(0)),
+        ("degree", cadmpeg_core::json!(2)),
+        ("knots", cadmpeg_core::json!([0.0, 1.0])),
         (
             "poles",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "rational", "points": [{"point": {"u": 2.0, "v": 3.0}, "weight": 1.0}]
             }),
         ),
         (
             "poles",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "rational", "points": [
                     {"point": {"u": 2.0, "v": 3.0}, "weight": 0.0},
                     {"point": {"u": 4.0, "v": 5.0}, "weight": 0.5}
@@ -1141,12 +1144,12 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         let mut invalid = wire.clone();
         invalid["curve"][field] = value;
         assert!(
-            serde_json::from_value::<SketchGeometry>(invalid).is_err(),
+            json_wire::from_value::<SketchGeometry>(invalid).is_err(),
             "{field}"
         );
     }
     let mut nonrational = wire;
-    nonrational["curve"]["poles"] = serde_json::json!({
+    nonrational["curve"]["poles"] = cadmpeg_core::json!({
         "kind": "polynomial", "points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}]
     });
     let mut unstated = nonrational.clone();
@@ -1154,8 +1157,8 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         .as_object_mut()
         .unwrap()
         .remove("periodic");
-    assert!(serde_json::from_value::<SketchGeometry>(unstated).is_err());
-    let geometry = serde_json::from_value::<SketchGeometry>(nonrational).unwrap();
+    assert!(json_wire::from_value::<SketchGeometry>(unstated).is_err());
+    let geometry = json_wire::from_value::<SketchGeometry>(nonrational).unwrap();
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         panic!("NURBS geometry");
     };
@@ -1168,22 +1171,22 @@ fn native_operand_requires_nonempty_names_and_keeps_the_role_inside_the_field() 
     use crate::sketches::SketchNativeOperand;
 
     for wire in [
-        serde_json::json!({"native_kind": "", "object_index": 0}),
-        serde_json::json!({"native_kind": "operand", "object_index": 0,
+        cadmpeg_core::json!({"native_kind": "", "object_index": 0}),
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0,
             "field": {"name": "", "role": 1}}),
-        serde_json::json!({"native_kind": "operand", "object_index": 0, "native_role": 1}),
-        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"role": 1}}),
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0, "native_role": 1}),
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0, "field": {"role": 1}}),
     ] {
-        assert!(serde_json::from_value::<SketchNativeOperand>(wire).is_err());
+        assert!(json_wire::from_value::<SketchNativeOperand>(wire).is_err());
     }
     for wire in [
-        serde_json::json!({"native_kind": "operand", "object_index": 0}),
-        serde_json::json!({"native_kind": "operand", "object_index": 0, "field": {"name": "edge"}}),
-        serde_json::json!({"native_kind": "operand", "object_index": 0,
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0}),
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0, "field": {"name": "edge"}}),
+        cadmpeg_core::json!({"native_kind": "operand", "object_index": 0,
             "field": {"name": "edge", "role": 1}}),
     ] {
-        let operand: SketchNativeOperand = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+        let operand: SketchNativeOperand = json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(operand).unwrap(), wire);
     }
 }
 
@@ -1201,16 +1204,16 @@ fn polygon_membership_is_checked_at_admission() {
         vec![members[0].clone(), members[1].clone(), members[0].clone()],
     ] {
         assert!(SketchPolygon::try_new(entities.clone()).is_err());
-        let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": entities}});
-        assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
+        let wire = cadmpeg_core::json!({"kind": "polygon", "polygon": {"entities": entities}});
+        assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
     }
-    let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": members}});
+    let wire = cadmpeg_core::json!({"kind": "polygon", "polygon": {"entities": members}});
     let definition = SketchConstraintDefinitionInput::Polygon {
         polygon: SketchPolygon::try_new(members).unwrap(),
     };
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&definition).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
+        json_wire::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
         definition
     );
 }
@@ -1226,16 +1229,16 @@ fn coordinate_locus_distinctness_is_checked_at_admission() {
     let first = SketchLocus::Start(entity.clone());
     for axis in [SketchCoordinateAxis::U, SketchCoordinateAxis::V] {
         assert!(SketchSameCoordinate::try_new(first.clone(), first.clone(), axis).is_err());
-        let mut wire = serde_json::json!({"kind": "same_coordinate", "relation": {"first": first, "second": first, "axis": axis}});
-        assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
+        let mut wire = cadmpeg_core::json!({"kind": "same_coordinate", "relation": {"first": first, "second": first, "axis": axis}});
+        assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
         let second = SketchLocus::End(entity.clone());
-        wire["relation"]["second"] = serde_json::to_value(&second).unwrap();
+        wire["relation"]["second"] = json_wire::to_value(&second).unwrap();
         let definition = SketchConstraintDefinitionInput::SameCoordinate {
             relation: SketchSameCoordinate::try_new(first.clone(), second, axis).unwrap(),
         };
-        assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+        assert_eq!(json_wire::to_value(&definition).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
+            json_wire::from_value::<SketchConstraintDefinitionInput>(wire).unwrap(),
             definition
         );
     }
@@ -1291,16 +1294,16 @@ fn planar_geometry_admission_checks_each_numeric_family() {
         assert!(SketchGeometry::try_from(definition).is_err());
     }
     for wire in [
-        serde_json::json!({"kind":"point","position":{"u":null,"v":0.0}}),
-        serde_json::json!({"kind":"line","start":{"u":0.0,"v":0.0},"end":{"u":0.0,"v":null}}),
-        serde_json::json!({"kind":"reference_line","origin":{"u":0.0,"v":0.0},"direction":{"u":0.0,"v":0.0}}),
-        serde_json::json!({"kind":"circle","center":{"u":0.0,"v":0.0},"radius":-1.0}),
-        serde_json::json!({"kind":"arc","center":{"u":0.0,"v":0.0},"radius":0.0,"start_angle":0.0,"end_angle":0.0}),
-        serde_json::json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":1.0,"minor_radius":2.0}),
-        serde_json::json!({"kind":"hyperbola","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":0.0,"minor_radius":2.0}),
-        serde_json::json!({"kind":"parabola","vertex":{"u":0.0,"v":0.0},"axis_angle":0.0,"focal_length":-1.0}),
+        cadmpeg_core::json!({"kind":"point","position":{"u":null,"v":0.0}}),
+        cadmpeg_core::json!({"kind":"line","start":{"u":0.0,"v":0.0},"end":{"u":0.0,"v":null}}),
+        cadmpeg_core::json!({"kind":"reference_line","origin":{"u":0.0,"v":0.0},"direction":{"u":0.0,"v":0.0}}),
+        cadmpeg_core::json!({"kind":"circle","center":{"u":0.0,"v":0.0},"radius":-1.0}),
+        cadmpeg_core::json!({"kind":"arc","center":{"u":0.0,"v":0.0},"radius":0.0,"start_angle":0.0,"end_angle":0.0}),
+        cadmpeg_core::json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":1.0,"minor_radius":2.0}),
+        cadmpeg_core::json!({"kind":"hyperbola","center":{"u":0.0,"v":0.0},"major_angle":0.0,"major_radius":0.0,"minor_radius":2.0}),
+        cadmpeg_core::json!({"kind":"parabola","vertex":{"u":0.0,"v":0.0},"axis_angle":0.0,"focal_length":-1.0}),
     ] {
-        assert!(serde_json::from_value::<SketchGeometry>(wire).is_err());
+        assert!(json_wire::from_value::<SketchGeometry>(wire).is_err());
     }
 }
 
@@ -1309,12 +1312,12 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     use crate::scalar::Length;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "arc", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0,
         "start_angle": -2.0, "end_angle": -2.0
     });
-    let mut geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let mut geometry = json_wire::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&geometry).unwrap(), wire);
     let original = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().to_raw();
@@ -1343,7 +1346,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
         definition.try_into()
     })
     .unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap()["radius"], 2.0);
+    assert_eq!(json_wire::to_value(&geometry).unwrap()["radius"], 2.0);
 }
 
 #[test]
@@ -1351,21 +1354,21 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
     use crate::scalar::Length;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "text", "text": "A", "font_family": "Arial", "font_weight": 400,
         "height": 2.0, "width_factor": 1.0,
         "placement": {"anchor": {"u": 0.0, "v": 0.0}, "rotation": -1.0}
     });
-    let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let geometry = json_wire::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&geometry).unwrap(), wire);
     for field in ["height", "width_factor"] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(0.0);
-        assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
+        invalid[field] = cadmpeg_core::json!(0.0);
+        assert!(json_wire::from_value::<SketchGeometry>(invalid).is_err());
     }
     let mut invalid_rotation = wire.clone();
     invalid_rotation["placement"]["rotation"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<SketchGeometry>(invalid_rotation).is_err());
+    assert!(json_wire::from_value::<SketchGeometry>(invalid_rotation).is_err());
     for field in 0..3 {
         let mut definition = geometry.definition().to_raw();
         let SketchGeometryDefinition::Text {
@@ -1397,23 +1400,23 @@ fn sketch_text_style_admits_only_nonempty_names_and_three_integer_weights() {
     ] {
         assert_eq!(SketchFontWeight::try_from(raw).unwrap(), weight);
         assert_eq!(i32::from(weight), raw);
-        assert_eq!(serde_json::to_value(weight).unwrap(), raw);
+        assert_eq!(json_wire::to_value(weight).unwrap(), raw);
         assert_eq!(
-            serde_json::from_value::<SketchFontWeight>(serde_json::json!(raw)).unwrap(),
+            json_wire::from_value::<SketchFontWeight>(cadmpeg_core::json!(raw)).unwrap(),
             weight
         );
     }
     for raw in [-1, 0, 399, 401, 499, 501, 700, 749, 751, i32::MAX] {
         assert!(SketchFontWeight::try_from(raw).is_err());
-        assert!(serde_json::from_value::<SketchFontWeight>(serde_json::json!(raw)).is_err());
+        assert!(json_wire::from_value::<SketchFontWeight>(cadmpeg_core::json!(raw)).is_err());
     }
-    let wire = serde_json::json!({"kind":"text", "text":" t ", "font_family":" f ", "font_weight":500, "height":1.0});
-    let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
+    let wire = cadmpeg_core::json!({"kind":"text", "text":" t ", "font_family":" f ", "font_weight":500, "height":1.0});
+    let geometry = json_wire::from_value::<SketchGeometry>(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&geometry).unwrap(), wire);
     for field in ["text", "font_family"] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!("");
-        assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
+        invalid[field] = cadmpeg_core::json!("");
+        assert!(json_wire::from_value::<SketchGeometry>(invalid).is_err());
     }
 }
 
@@ -1433,7 +1436,7 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
         )),
         Some((origin, normal, u_axis))
     );
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "resolved",
         "frame": {
             "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
@@ -1441,9 +1444,9 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
             "u_axis": {"x": 3.0, "y": 0.0, "z": 0.0}
         }
     });
-    assert_eq!(serde_json::to_value(placement).unwrap(), wire);
+    assert_eq!(json_wire::to_value(placement).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<SketchPlacement>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchPlacement>(wire.clone()).unwrap(),
         placement
     );
     for axis in [
@@ -1458,21 +1461,30 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
             .is_err()
     );
     for (field, invalid) in [
-        ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),
-        ("normal", serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0})),
-        ("u_axis", serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})),
+        (
+            "origin",
+            cadmpeg_core::json!({"x": null, "y": 0.0, "z": 0.0}),
+        ),
+        (
+            "normal",
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
+        ),
+        (
+            "u_axis",
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0}),
+        ),
     ] {
         let mut invalid_wire = wire.clone();
         invalid_wire[field] = invalid;
-        assert!(serde_json::from_value::<SketchPlacement>(invalid_wire).is_err());
+        assert!(json_wire::from_value::<SketchPlacement>(invalid_wire).is_err());
     }
-    let unresolved = serde_json::json!({"kind": "unresolved"});
+    let unresolved = cadmpeg_core::json!({"kind": "unresolved"});
     assert_eq!(
-        serde_json::to_value(SketchPlacement::Unresolved {}).unwrap(),
+        json_wire::to_value(SketchPlacement::Unresolved {}).unwrap(),
         unresolved
     );
     assert_eq!(
-        serde_json::from_value::<SketchPlacement>(unresolved).unwrap(),
+        json_wire::from_value::<SketchPlacement>(unresolved).unwrap(),
         SketchPlacement::Unresolved {}
     );
 }
@@ -1486,16 +1498,16 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
         reversed: false,
     };
     let mut profiles = SketchProfiles::try_from(vec![vec![usage.clone()]]).unwrap();
-    let wire = serde_json::json!([[{"entity": "synthetic:test:sketch-entity#profile", "reversed": false}]]);
-    assert_eq!(serde_json::to_value(&profiles).unwrap(), wire);
+    let wire = cadmpeg_core::json!([[{"entity": "synthetic:test:sketch-entity#profile", "reversed": false}]]);
+    assert_eq!(json_wire::to_value(&profiles).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<SketchProfiles>(wire).unwrap(),
+        json_wire::from_value::<SketchProfiles>(wire).unwrap(),
         profiles
     );
     assert!(SketchProfiles::try_from(vec![vec![]]).is_err());
-    assert!(serde_json::from_value::<SketchProfiles>(serde_json::json!([[]])).is_err());
+    assert!(json_wire::from_value::<SketchProfiles>(cadmpeg_core::json!([[]])).is_err());
     assert!(
-        serde_json::from_value::<SketchProfiles>(serde_json::json!([]))
+        json_wire::from_value::<SketchProfiles>(cadmpeg_core::json!([]))
             .unwrap()
             .is_empty()
     );
@@ -1555,22 +1567,22 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
         invalid[0].entities[0] = entity;
         assert!(admit(-1.0, invalid).is_none());
     }
-    let wire = serde_json::to_value(&pattern).unwrap();
+    let wire = json_wire::to_value(&pattern).unwrap();
     assert_eq!(
-        serde_json::from_value::<SketchCircularPattern>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchCircularPattern>(wire.clone()).unwrap(),
         pattern
     );
     for (path, value) in [
-        ("angle", serde_json::json!(0.0)),
-        ("entities", serde_json::json!([pattern.center()])),
+        ("angle", cadmpeg_core::json!(0.0)),
+        ("entities", cadmpeg_core::json!([pattern.center()])),
     ] {
         let mut invalid = wire.clone();
         invalid["instances"][0][path] = value;
-        assert!(serde_json::from_value::<SketchCircularPattern>(invalid).is_err());
+        assert!(json_wire::from_value::<SketchCircularPattern>(invalid).is_err());
     }
     let mut duplicate = wire;
     duplicate["instances"][0]["entities"] = duplicate["seed"].clone();
-    assert!(serde_json::from_value::<SketchCircularPattern>(duplicate).is_err());
+    assert!(json_wire::from_value::<SketchCircularPattern>(duplicate).is_err());
 }
 
 #[test]
@@ -1615,15 +1627,15 @@ fn rectangular_pattern_admission_checks_directions_and_distinct_members() {
             .is_none()
     );
     let pattern = SketchRectangularPattern::new([first, second], vec![vec![instance]]).unwrap();
-    let wire = serde_json::to_value(&pattern).unwrap();
+    let wire = json_wire::to_value(&pattern).unwrap();
     assert_eq!(
-        serde_json::from_value::<SketchRectangularPattern>(wire.clone()).unwrap(),
+        json_wire::from_value::<SketchRectangularPattern>(wire.clone()).unwrap(),
         pattern
     );
     for direction in [[0.0, 0.0], [2.0, 0.0], [0.0, 1.0]] {
         let mut invalid = wire.clone();
-        invalid["directions"][0]["direction"] = serde_json::json!(direction);
-        assert!(serde_json::from_value::<SketchRectangularPattern>(invalid).is_err());
+        invalid["directions"][0]["direction"] = cadmpeg_core::json!(direction);
+        assert!(json_wire::from_value::<SketchRectangularPattern>(invalid).is_err());
     }
 }
 
@@ -1760,13 +1772,13 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
     let mut admitted = SketchConstraintDefinition::try_from(Kind::Disabled {}).unwrap();
     let original = admitted.clone();
     for kind in invalid {
-        let wire = serde_json::to_value(&kind).unwrap();
+        let wire = json_wire::to_value(&kind).unwrap();
         assert!(
             SketchConstraintDefinition::try_from(kind.clone()).is_err(),
             "{kind:?}"
         );
         assert!(
-            serde_json::from_value::<SketchConstraintDefinition>(wire).is_err(),
+            json_wire::from_value::<SketchConstraintDefinition>(wire).is_err(),
             "{kind:?}"
         );
         assert!(admitted.edit(|current| *current = kind).is_err());
@@ -1822,9 +1834,9 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
             value: Angle::new(std::f64::consts::TAU).unwrap(),
         },
     ] {
-        let wire = serde_json::to_value(&kind).unwrap();
+        let wire = json_wire::to_value(&kind).unwrap();
         assert!(SketchConstraintDefinition::try_from(kind).is_err());
-        assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
+        assert!(json_wire::from_value::<SketchConstraintDefinition>(wire).is_err());
     }
     for value in [-1.0, std::f64::consts::TAU] {
         assert!(SketchConstraintDefinition::try_from(Kind::AngleDifference {
@@ -1870,8 +1882,8 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
         })
         .unwrap();
         assert_eq!(
-            serde_json::from_value::<SketchConstraintDefinition>(
-                serde_json::to_value(&definition).unwrap()
+            json_wire::from_value::<SketchConstraintDefinition>(
+                json_wire::to_value(&definition).unwrap()
             )
             .unwrap(),
             definition
@@ -1885,28 +1897,27 @@ fn native_and_external_geometry_identity_admission_preserves_wire() {
     use super::{SketchGeometry, SpatialSketchGeometry};
     for (wire, field) in [
         (
-            serde_json::json!({"kind": "native", "native_kind": "line"}),
+            cadmpeg_core::json!({"kind": "native", "native_kind": "line"}),
             "native_kind",
         ),
         (
-            serde_json::json!({"kind": "external_reference", "object": "Sketch001", "subelements": []}),
+            cadmpeg_core::json!({"kind": "external_reference", "object": "Sketch001", "subelements": []}),
             "object",
         ),
     ] {
-        let value: SketchGeometry =
-            serde_json::from_value(wire.clone()).expect("nonempty identity");
-        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        let value: SketchGeometry = json_wire::from_value(wire.clone()).expect("nonempty identity");
+        assert_eq!(json_wire::to_value(value).expect("serialize"), wire);
         let mut invalid = wire;
-        invalid[field] = serde_json::json!("");
-        let error = serde_json::from_value::<SketchGeometry>(invalid).expect_err("empty identity");
+        invalid[field] = cadmpeg_core::json!("");
+        let error = json_wire::from_value::<SketchGeometry>(invalid).expect_err("empty identity");
         assert!(error.to_string().contains(field));
     }
-    let wire = serde_json::json!({"kind": "native", "native_kind": "curve"});
+    let wire = cadmpeg_core::json!({"kind": "native", "native_kind": "curve"});
     let value: SpatialSketchGeometry =
-        serde_json::from_value(wire.clone()).expect("nonempty native_kind");
-    assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
-    let error = serde_json::from_value::<SpatialSketchGeometry>(
-        serde_json::json!({"kind": "native", "native_kind": ""}),
+        json_wire::from_value(wire.clone()).expect("nonempty native_kind");
+    assert_eq!(json_wire::to_value(value).expect("serialize"), wire);
+    let error = json_wire::from_value::<SpatialSketchGeometry>(
+        cadmpeg_core::json!({"kind": "native", "native_kind": ""}),
     )
     .expect_err("empty native_kind");
     assert!(error.to_string().contains("native_kind"));
@@ -1915,15 +1926,15 @@ fn native_and_external_geometry_identity_admission_preserves_wire() {
 #[test]
 fn native_constraint_kind_rejects_empty_text_at_input_admission() {
     use crate::sketches::{SketchConstraintDefinition, SketchConstraintDefinitionInput};
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "kind": "native", "native_kind": "source", "entities": ["test:sketch:entity#0"],
         "native_properties": {}, "operands": []
     });
-    let admitted = serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted = json_wire::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(admitted).unwrap(), wire);
     wire["native_kind"] = "".into();
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
-    assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
+    assert!(json_wire::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
+    assert!(json_wire::from_value::<SketchConstraintDefinition>(wire).is_err());
 }
 
 mod admitted_records;

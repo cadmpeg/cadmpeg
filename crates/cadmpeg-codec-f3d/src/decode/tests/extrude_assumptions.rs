@@ -24,6 +24,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::sketch_profile::{
     DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
 };
+use cadmpeg_core::serde_erase::json;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#12";
@@ -236,29 +237,29 @@ fn definition(
     start: serde_json::Value,
     extent: serde_json::Value,
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    let mut value = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
+    let mut value = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
         "direction": {"kind": "profile_normal"},
         "op": "new_body",
         "solid": true}}});
     value["value"]["value"]["start"] = start;
     value["value"]["value"]["extent"] = extent;
-    serde_json::from_value(value).unwrap()
+    json::from_value(value).unwrap()
 }
 
 fn blind(length: f64) -> serde_json::Value {
-    serde_json::json!({"termination": {"kind": "blind", "length": length}})
+    cadmpeg_core::json!({"termination": {"kind": "blind", "length": length}})
 }
 
 fn one_sided() -> serde_json::Value {
-    serde_json::json!({"kind": "one_sided", "side": blind(2.0)})
+    cadmpeg_core::json!({"kind": "one_sided", "side": blind(2.0)})
 }
 
 fn two_sided() -> serde_json::Value {
-    serde_json::json!({"kind": "two_sided", "first": blind(2.0), "second": blind(3.0)})
+    cadmpeg_core::json!({"kind": "two_sided", "first": blind(2.0), "second": blind(3.0)})
 }
 
 fn profile_plane() -> serde_json::Value {
-    serde_json::json!({"kind": "profile_plane"})
+    cadmpeg_core::json!({"kind": "profile_plane"})
 }
 
 fn notes(
@@ -278,7 +279,9 @@ fn notes(
         source_tag: Some("Extrude".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(SCOPE_ID.into()),
     });
     let mut report = cadmpeg_ir::codec::DecodeBody {
@@ -290,7 +293,7 @@ fn notes(
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         native,
     )
@@ -358,7 +361,7 @@ fn native_scope_profile_reports_its_unresolved_sketch_placement() {
 #[test]
 fn distance_and_through_all_reports_its_auxiliary_selection() {
     let code = F3dLossCode::FeatureExtrudeAuxiliarySelectionNative;
-    let extent = serde_json::json!({
+    let extent = cadmpeg_core::json!({
         "kind": "two_sided",
         "first": blind(2.0),
         "second": {"termination": {"kind": "through_all"}}
@@ -384,6 +387,37 @@ fn distance_and_through_all_reports_its_auxiliary_selection() {
 
     native.design_construction_operand_groups.clear();
     assert!(notes(&native, definition(SCOPE_ID, profile_plane(), extent), code).is_empty());
+}
+
+#[test]
+fn one_sided_distance_reports_its_auxiliary_selection() {
+    let code = F3dLossCode::FeatureExtrudeAuxiliarySelectionNative;
+    let mut native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::ProfilePlane,
+    ));
+    native.design_construction_operand_groups.push(group(
+        13,
+        DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5),
+    ));
+    assert_eq!(
+        notes(
+            &native,
+            definition(SCOPE_ID, profile_plane(), one_sided()),
+            code
+        ),
+        [format!(
+            "Extrude {FEATURE_ID} retains an auxiliary selection in its native scope (DR-328)."
+        )]
+    );
+
+    native.design_construction_operand_groups.clear();
+    assert!(notes(
+        &native,
+        definition(SCOPE_ID, profile_plane(), one_sided()),
+        code
+    )
+    .is_empty());
 }
 
 #[test]
@@ -453,13 +487,13 @@ fn selected_face_start_read_as_offset_plane_reports_the_absent_start_group() {
         DesignExtrudeExtent::OneSidedToFace,
         DesignExtrudeStart::FromFace,
     ));
-    let offset_plane = serde_json::json!({"kind": "offset_profile_plane", "offset": 5.0});
+    let offset_plane = cadmpeg_core::json!({"kind": "offset_profile_plane", "offset": 5.0});
     assert_eq!(
         notes(&native, definition(SCOPE_ID, offset_plane.clone(), one_sided()), code),
         [format!("Extrude {FEATURE_ID} reads its selected-face start without a start group as the offset profile plane (DR-322).")]
     );
 
-    let from_face = serde_json::json!({
+    let from_face = cadmpeg_core::json!({
         "kind": "from_face",
         "face": {"kind": "native", "value": format!("{STREAM}:operand-group#13")}
     });
@@ -485,10 +519,10 @@ fn group_free_extrude_start_reports_the_unresolved_face() {
         DesignExtrudeExtent::OneSidedDistance,
         DesignExtrudeStart::FromFace,
     ));
-    let start = |face| serde_json::json!({"kind": "from_face", "face": face, "offset": -5.0});
+    let start = |face| cadmpeg_core::json!({"kind": "from_face", "face": face, "offset": -5.0});
     let unresolved = definition(
         SCOPE_ID,
-        start(serde_json::json!({"kind": "unresolved"})),
+        start(cadmpeg_core::json!({"kind": "unresolved"})),
         one_sided(),
     );
     assert_eq!(notes(&native, unresolved.clone(), code).len(), 1);
@@ -496,7 +530,7 @@ fn group_free_extrude_start_reports_the_unresolved_face() {
 
     let native_face = definition(
         SCOPE_ID,
-        start(serde_json::json!({
+        start(cadmpeg_core::json!({
             "kind": "native",
             "value": format!("{STREAM}:operand-group#13")
         })),
@@ -513,7 +547,7 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         definition(
             SCOPE_ID,
             profile_plane(),
-            serde_json::json!({"kind": "symmetric", "side": blind(2.0)}),
+            cadmpeg_core::json!({"kind": "symmetric", "side": blind(2.0)}),
         )
     };
     let indexed = native_with(scope(
@@ -543,11 +577,35 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         }),
     );
     assert_eq!(
-        notes(&native_with(fixed), symmetric(), code),
+        notes(&native_with(fixed.clone()), symmetric(), code),
         [format!(
             "Extrude {FEATURE_ID} assumes the symmetric distance applies to each side (DR-78)."
         )]
     );
+
+    for scope in [
+        scope(
+            DesignExtrudeExtent::SymmetricDistance,
+            DesignExtrudeStart::ProfilePlane,
+        ),
+        fixed,
+    ] {
+        let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
+            scope,
+            [101, 100, 11, 12, 13],
+        );
+        let mut native = native_with(legacy);
+        native
+            .design_parameters
+            .push(parameter(40, "AlongDistance", 0.2));
+        native.design_parameter_owners.push(owner(40));
+        assert_eq!(
+            notes(&native, symmetric(), code),
+            [format!(
+                "Extrude {FEATURE_ID} assumes the symmetric distance applies to the whole travel (DR-78)."
+            )]
+        );
+    }
 
     let mut two_lanes = scope(
         DesignExtrudeExtent::SymmetricDistance,

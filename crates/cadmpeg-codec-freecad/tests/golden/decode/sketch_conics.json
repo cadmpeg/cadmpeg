@@ -36,7 +36,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -114,7 +114,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -145,7 +145,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -176,7 +176,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -215,7 +215,7 @@
               "major_direction": {
                 "x": 0.7838216658808489,
                 "y": 0.6209859870365603,
-                "z": -0.0
+                "z": 0.0
               },
               "vertex": {
                 "x": 60.0,
@@ -633,269 +633,38 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#ConicWitness"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#ConicWitness",
-          "name": "ConicWitness",
-          "native_ref": "fcstd:native:object#ConicWitness",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "center": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "end_angle": 1.83,
-            "kind": "arc",
-            "radius": 8.0,
-            "start_angle": 0.65
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:1",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 12.0,
-              "v": 10.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 6.368670388392447,
-              "v": 4.841491245888316
-            }
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:2",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": -2.0504872658201823,
-              "v": 7.73275513466638
-            },
-            "kind": "line",
-            "start": {
-              "u": 12.0,
-              "v": 10.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:3",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "bounds": [
-              5.863185307179586,
-              7.653185307179586
-            ],
-            "center": {
-              "u": 30.0,
-              "v": 0.0
-            },
-            "kind": "ellipse",
-            "major_angle": 0.5300000000000001,
-            "major_radius": 10.999999999999998,
-            "minor_radius": 4.000000000000001
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:4",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "center": {
-              "u": 0.0,
-              "v": 30.0
-            },
-            "kind": "ellipse",
-            "major_angle": 0.71,
-            "major_radius": 9.0,
-            "minor_radius": 2.9999999999999973
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:5",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "bounds": [
-              -0.63,
-              0.88
-            ],
-            "center": {
-              "u": 30.0,
-              "v": 30.0
-            },
-            "kind": "hyperbola",
-            "major_angle": 0.4700000000000007,
-            "major_radius": 7.000000000000004,
-            "minor_radius": 3.0000000000000027
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:6",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "axis_angle": 0.6700000000000007,
-            "bounds": [
-              -2.1,
-              2.4
-            ],
-            "focal_length": 3.9999999999999996,
-            "kind": "parabola",
-            "vertex": {
-              "u": 60.0,
-              "v": 20.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#ConicWitness:7",
-          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
-          "sketch": "fcstd:design:sketch#ConicWitness"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#ConicWitness",
-          "name": "ConicWitness",
-          "native_ref": "fcstd:native:object#ConicWitness",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:1",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:2",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:3",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:4",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:5",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:6",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#ConicWitness:7",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1065,7 +834,6 @@
       "attributes": {
         "application_domains": "App,Sketcher",
         "document_kind": "application-document",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -1140,6 +908,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
     "file_digests": {},
     "retained_records": {},

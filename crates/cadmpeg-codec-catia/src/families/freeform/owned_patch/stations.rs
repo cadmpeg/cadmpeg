@@ -400,7 +400,6 @@ fn map_station(
     arc_parameter(local, tail[9], &knots, first_arc, extrapolation_sites)
 }
 
-/// Resolve a circle endpoint through the edge selector's affine chart map.
 pub(super) fn mapped_circle_endpoint(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -784,6 +783,24 @@ mod tests {
             ),
             Some(7.0)
         );
+        for offset in [14, 23] {
+            let mut invalid = bytes.clone();
+            invalid[offset] = 3;
+            assert_eq!(
+                station_value(
+                    &invalid,
+                    0,
+                    1,
+                    Domain {
+                        range: [0.0, 1.0],
+                        knots: Some((&knots, 1, 1)),
+                        line: false
+                    },
+                    &resolve,
+                ),
+                None,
+            );
+        }
     }
 
     #[test]

@@ -22,7 +22,14 @@ fn tested_bind_sketch_graph(
     surfaces: &mut [crate::records::sketch_geometry::SketchSurface],
     relations: &mut [crate::records::sketch_relations::SketchRelation],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_sketch_graph(entities, points, curves, surfaces, relations)
+    bind_sketch_graph(
+        entities,
+        points,
+        curves,
+        surfaces,
+        relations,
+        &mut Vec::new(),
+    )
 }
 
 fn tested_parse_sketch_member_run(
@@ -933,6 +940,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         &meta,
         "Design/BulkStream.dat",
         &mut Vec::new(),
+        &mut Vec::new(),
     )
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
@@ -1028,13 +1036,24 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
     .unwrap()
 }
 
+/// The Geometry member bytes from offset 11 through the zero byte after an
+/// empty display name, with a direct-container reference to record 300.
+fn push_unnamed_contained_member_head(bytes: &mut Vec<u8>) {
+    bytes.extend_from_slice(&[0; 25]);
+    bytes.push(1);
+    bytes.extend_from_slice(&300u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0);
+}
+
 #[test]
 fn sketch_member_run_counts_base_point_and_stops_at_count() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     for value in [1130u32, 1131, 1179] {
         bytes.push(1);
@@ -1151,7 +1170,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     let mut member_offsets = Vec::new();
     member_offsets.push(u64_from_index(bytes.len() + 1));
@@ -1198,19 +1217,27 @@ fn sketch_member_run_backfills_relation_free_owners() {
     assert_eq!(points[1].owner_reference, Some(100));
     assert_eq!(points[2].owner_reference, None);
 
-    // Two sketches claiming one record is a structural conflict.
-    let mut points = [sketch_graph_point(20)];
-    assert!(tested_bind_sketch_graph(
+    let mut points = [sketch_graph_point(20), sketch_graph_point(21)];
+    let mut losses = Vec::new();
+    bind_sketch_graph(
         &[
-            sketch_graph_header(100, vec![20]),
-            sketch_graph_header(101, vec![20])
+            sketch_graph_header(100, vec![20, 21]),
+            sketch_graph_header(101, vec![20]),
         ],
         &mut points,
         &mut [],
         &mut [],
         &mut [],
+        &mut losses,
     )
-    .is_err());
+    .unwrap();
+    assert_eq!(points[0].owner_reference, None);
+    assert_eq!(points[1].owner_reference, Some(100));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchOwnerConflict.kind()
+    );
 }
 
 fn typed_sketch_reference(bytes: &mut Vec<u8>, target: u32) {

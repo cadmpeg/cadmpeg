@@ -6,7 +6,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
 #[test]
-fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry() {
+fn semantic_writer_keeps_stored_partial_or_controlled_axes_and_names_the_edit() {
     use cadmpeg_ir::design::dimension::Dimension;
     use cadmpeg_ir::design::options::NativeOption;
     use cadmpeg_ir::features::{datums::DatumAxisDraft, FeatureDefinition, FeatureOperation};
@@ -30,13 +30,13 @@ fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry()
                 1 => draft.origin = None,
                 2 => {
                     draft.native_options.insert(
-                        cadmpeg_core::nonblank_literal!("sldprt:unknown"),
+                        cadmpeg_ir::codec_name!("sldprt:unknown"),
                         NativeOption::Bool(Dimension::Literal(false)),
                     );
                 }
                 3 => {
                     draft.source_settings.insert(
-                        cadmpeg_core::nonblank_literal!("sldprt:setting"),
+                        cadmpeg_ir::codec_name!("sldprt:setting"),
                         NativeOption::Bool(Dimension::Literal(false)),
                     );
                 }
@@ -55,17 +55,12 @@ fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry()
                     draft.into_operation().unwrap(),
                 ));
         }
-        let mut encoded = Vec::new();
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap_err();
+        let (unwritten, _) =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
-            matches!(&error,cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported datum-axis construction or partial geometry")),
-            "{error}"
+            unwritten.iter().any(|message| message
+                .contains("unsupported datum-axis construction or partial geometry")),
+            "{unwritten:?}"
         );
-        assert!(encoded.is_empty());
     }
 }

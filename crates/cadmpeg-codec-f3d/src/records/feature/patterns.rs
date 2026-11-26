@@ -4,7 +4,7 @@
 use crate::records::identity::Located;
 use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;
@@ -71,9 +71,23 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_symmetric"
     )]
     pub(crate) symmetric: Option<Located<bool>>,
+    /// Keys of the suppressed instances that the pattern payload stores,
+    /// with the offset of their count: instance `k` of a one-sided pattern
+    /// has key `k + 1`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_circular_suppressed"
+    )]
+    pub(crate) suppressed: Option<Located<Vec<u32>>>,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
+cadmpeg_core::named_optional_field!(
+    deserialize_circular_suppressed,
+    Located<Vec<u32>>,
+    "suppressed"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,
@@ -138,7 +152,7 @@ pub(crate) enum DesignCircularPatternAxis {
     /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
         /// Referenced wrappers and the offsets of their shared identity.
-        wrappers: cadmpeg_ir::features::NonEmptyMembers<DesignPatternAxisWrapper>,
+        wrappers: cadmpeg_ir::features::selections::NonEmptyMembers<DesignPatternAxisWrapper>,
         /// Persistent ASM identity shared by the wrappers.
         persistent_identity: u64,
         /// Resolved model-space axis, when exact.
@@ -500,12 +514,14 @@ pub(crate) struct DesignRectangularPatternConstruction {
 }
 
 /// Distribution bytes of a rectangular-pattern payload.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignRectangularPatternDistribution {
     /// Payload record.
     pub(crate) record_index: u32,
     /// Direction one places its instances on both sides of the seed.
     pub(crate) symmetric: Located<bool>,
+    /// Direction two places its instances on both sides of the seed.
+    pub(crate) symmetric_two: Located<bool>,
     /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
     pub(crate) total_extent: Located<bool>,
     /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
@@ -517,6 +533,22 @@ pub(crate) struct DesignRectangularPatternDistribution {
     /// Body references whose record the stream does not register as a body
     /// browser node.
     pub(crate) untyped_body_references: u32,
+    /// Instance keys of the suppressed instances, at the suffix's count.
+    pub(crate) suppressed: Located<Vec<u32>>,
+}
+
+/// The zero-based direction-one and direction-two grid position of
+/// suppressed-instance key `key`: `(s + 1)(s + 2) / 2 - v` with `s = u + v`.
+pub(crate) fn suppressed_instance_position(key: u32) -> Option<[u32; 2]> {
+    let key = u64::from(key);
+    // The largest diagonal `s` whose first key `s(s + 1) / 2 + 1` is at most `key`.
+    let mut diagonal = key.checked_mul(2)?.isqrt().checked_sub(1)?;
+    while (diagonal + 1) * (diagonal + 2) / 2 < key {
+        diagonal += 1;
+    }
+    let v = (diagonal + 1) * (diagonal + 2) / 2 - key;
+    let u = diagonal.checked_sub(v)?;
+    Some([u32::try_from(u).ok()?, u32::try_from(v).ok()?])
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -576,7 +608,7 @@ impl Clone for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: self.directions.clone(),
             secondary_direction: self.secondary_direction,
-            distribution: self.distribution,
+            distribution: self.distribution.clone(),
         }
     }
 }
@@ -614,7 +646,7 @@ impl Serialize for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: &self.directions,
             secondary_direction: self.secondary_direction,
-            distribution: self.distribution,
+            distribution: self.distribution.clone(),
         }
         .serialize(serializer)
     }
@@ -768,6 +800,64 @@ impl DesignRectangularPatternConstruction {
             .count()
     }
 
+    pub(crate) fn direction_two_active(&self) -> bool {
+        self.v_count.get() > 1 && self.v_extent != 0.0
+    }
+
+    /// The number of direction records the scope binds: the one U-direction
+    /// record beside a payload V direction, or one record per active direction.
+    pub(crate) fn bound_direction_record_count(&self) -> usize {
+        if self.secondary_direction.is_some() {
+            1
+        } else {
+            self.active_direction_count()
+        }
+    }
+
+    /// The neutral grid positions of the suppressed instances: `[first,
+    /// second]` over the active directions. A symmetric direction numbers its
+    /// instances as the neutral grid does: odd positions along the direction,
+    /// even ones against it. A position that stands for the coincident
+    /// instances of an inactive direction is omitted when all of them are
+    /// suppressed. `None` when a key names no position within both counts.
+    pub(crate) fn omitted_grid_positions(&self) -> Option<Vec<[u32; 2]>> {
+        let Some(distribution) = self.distribution() else {
+            return Some(Vec::new());
+        };
+        let counts = [self.u_count(), self.v_count()];
+        let extents = [self.u_extent(), self.v_extent()];
+        let active = [0, 1].map(|axis| counts[axis] > 1 && extents[axis] != 0.0);
+        let copies: u64 = (0..2)
+            .filter(|axis| !active[*axis])
+            .map(|axis| u64::from(counts[axis]))
+            .product();
+        let positions = distribution
+            .suppressed
+            .value
+            .iter()
+            .map(|key| {
+                let position = suppressed_instance_position(*key)?;
+                (position[0] < counts[0] && position[1] < counts[1]).then_some(position)
+            })
+            .collect::<Option<std::collections::BTreeSet<_>>>()?;
+        let mut suppressed = std::collections::BTreeMap::<[u32; 2], u64>::new();
+        for [u, v] in positions {
+            let neutral = match active {
+                [true, true] => [u, v],
+                [true, false] => [u, 0],
+                [false, true] => [v, 0],
+                [false, false] => [0, 0],
+            };
+            *suppressed.entry(neutral).or_default() += 1;
+        }
+        Some(
+            suppressed
+                .into_iter()
+                .filter_map(|(position, count)| (count == copies).then_some(position))
+                .collect(),
+        )
+    }
+
     pub(crate) fn distribution(&self) -> Option<&DesignRectangularPatternDistribution> {
         self.distribution.as_ref()
     }
@@ -791,15 +881,15 @@ impl DesignRectangularPatternConstruction {
         if self.secondary_direction.is_some() && directions.len() != 1 {
             return Err("payload V direction requires one U direction record");
         }
-        if directions
-            .windows(2)
-            .any(|pair| pair[0].distance_type != pair[1].distance_type)
-        {
+        if directions.windows(2).any(|pair| {
+            pair[0].distance_type != pair[1].distance_type
+                && pair[0].distance_type != 10
+                && pair[1].distance_type != 10
+        }) {
             return Err("direction records must use the same distance representation");
         }
         if !directions.is_empty() {
-            let secondary_count = usize::from(self.secondary_direction.is_some());
-            if directions.len() + secondary_count != self.active_direction_count() {
+            if directions.len() != self.bound_direction_record_count() {
                 return Err("directions must hold one record per active direction");
             }
             if directions.iter().any(|record| record.direction().is_none()) {
@@ -821,11 +911,13 @@ impl DesignRectangularPatternConstruction {
         direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
     ) -> Result<(), &'static str> {
         if let Some(direction) = &direction {
-            if self.active_direction_count() != 2
+            if !self.direction_two_active()
                 || UnitVector3::normalized(Vector3::from(direction.value.map(FiniteReal::get)))
                     .is_none()
             {
-                return Err("secondary direction requires two active axes and a nonzero vector");
+                return Err(
+                    "secondary direction requires an active direction two and a nonzero vector",
+                );
             }
         }
         self.secondary_direction = direction;
@@ -1111,6 +1203,109 @@ mod tests {
     };
     use crate::records::identity::Located;
     use crate::records::sketch_placement::SketchPlacementMatrix;
+    use cadmpeg_core::serde_erase::json;
+
+    #[test]
+    fn suppressed_instance_keys_name_their_grid_positions() {
+        for (key, position) in [(1, [0, 0]), (2, [0, 1]), (3, [1, 0]), (5, [1, 1])] {
+            assert_eq!(super::suppressed_instance_position(key), Some(position));
+        }
+        for (key, position) in [(6, [2, 0]), (10, [3, 0]), (13, [2, 2]), (15, [4, 0])] {
+            assert_eq!(super::suppressed_instance_position(key), Some(position));
+        }
+        // Every position of a grid has one key, and the key names it back.
+        let mut keys = std::collections::BTreeSet::new();
+        for u in 0..40u32 {
+            for v in 0..40u32 {
+                let s = u + v;
+                let key = (s + 1) * (s + 2) / 2 - v;
+                assert!(keys.insert(key));
+                assert_eq!(super::suppressed_instance_position(key), Some([u, v]));
+            }
+        }
+        assert_eq!(super::suppressed_instance_position(0), None);
+        assert!(super::suppressed_instance_position(u32::MAX).is_some());
+    }
+
+    #[test]
+    fn suppressed_keys_map_to_the_active_directions() {
+        // `keys` suppressed in a pattern of the given counts and extents.
+        let with = |counts: [u32; 2], extents: [f64; 2], symmetric: bool, keys: Vec<u32>| {
+            let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
+            [wire.u_count, wire.v_count] = counts;
+            [wire.u_extent, wire.v_extent] = extents;
+            wire.distribution = Some(DesignRectangularPatternDistribution {
+                record_index: 9,
+                symmetric: Located {
+                    value: symmetric,
+                    offset: 109,
+                },
+                symmetric_two: Located {
+                    value: false,
+                    offset: 110,
+                },
+                total_extent: Located {
+                    value: false,
+                    offset: 158,
+                },
+                compute_option: Located {
+                    value: 0,
+                    offset: 146,
+                },
+                seed_kind: Located {
+                    value: 0,
+                    offset: 150,
+                },
+                body_references: Located {
+                    value: 0,
+                    offset: 134,
+                },
+                untyped_body_references: 0,
+                suppressed: Located {
+                    value: keys,
+                    offset: 170,
+                },
+            });
+            DesignRectangularPatternConstruction::try_from(wire)
+                .expect("construction")
+                .omitted_grid_positions()
+        };
+        // Both directions active: `[u, v]`.
+        assert_eq!(
+            with([3, 3], [1.2, 1.2], false, vec![5, 13]),
+            Some(vec![[1, 1], [2, 2]])
+        );
+        // Only direction one active: `[u, 0]`; a key off that direction refuses.
+        assert_eq!(
+            with([5, 1], [2.4, 0.6], false, vec![3, 10]),
+            Some(vec![[1, 0], [3, 0]])
+        );
+        assert_eq!(with([5, 1], [2.4, 0.6], false, vec![2]), None);
+        // Only direction two active: its index becomes the first coordinate.
+        assert_eq!(
+            with([1, 4], [0.6, 1.8], false, vec![2, 7]),
+            Some(vec![[1, 0], [3, 0]])
+        );
+        // A symmetric direction keeps the neutral numbering: position 1 lies
+        // along it and position 2 against it.
+        assert_eq!(
+            with([3, 1], [1.2, 0.0], true, vec![3, 6]),
+            Some(vec![[1, 0], [2, 0]])
+        );
+        // A position of a coincident direction two is omitted when all three
+        // of its instances are suppressed.
+        assert_eq!(with([3, 3], [1.2, 0.0], false, vec![3]), Some(Vec::new()));
+        assert_eq!(
+            with([3, 3], [1.2, 0.0], false, vec![3, 5, 8, 6]),
+            Some(vec![[1, 0]])
+        );
+        // No key, or no distribution block, omits nothing.
+        assert_eq!(with([3, 3], [1.2, 0.0], true, Vec::new()), Some(Vec::new()));
+        assert_eq!(
+            construction(None).omitted_grid_positions(),
+            Some(Vec::new())
+        );
+    }
     use std::num::NonZeroU32;
 
     #[derive(serde::Serialize)]
@@ -1186,9 +1381,9 @@ mod tests {
             .unwrap(),
             persistent_identity: 7,
             resolved: resolved.then(|| DesignAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                    0.0, 0.0, 0.0,
-                ))
+                origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                )
                 .unwrap(),
                 direction: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(
                     0.0, 0.0, 1.0,
@@ -1212,10 +1407,7 @@ mod tests {
         };
         for axis in [inline, circular_axis(false), circular_axis(true)] {
             let owned = DesignCircularPatternAxisWire::from(axis.clone());
-            assert_eq!(
-                serde_json::to_vec(&axis).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
-            );
+            assert_eq!(json::to_vec(&axis).unwrap(), json::to_vec(&owned).unwrap());
         }
     }
 
@@ -1242,8 +1434,8 @@ mod tests {
         ] {
             let owned = DesignRectangularPatternInstancesWire::from(instances.clone());
             assert_eq!(
-                serde_json::to_vec(&instances).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&instances).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1268,8 +1460,8 @@ mod tests {
         for record in [construction(None), construction(Some(components()))] {
             let owned = DesignRectangularPatternConstructionWire::from(record.clone());
             assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&record).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1291,10 +1483,10 @@ mod tests {
 
     #[test]
     fn historical_pattern_axis_refuses_empty_wrapper_arrays() {
-        let mut wire = serde_json::to_value(circular_axis(false)).unwrap();
-        wire["wrapper_record_indices"] = serde_json::json!([]);
-        wire["identity_offsets"] = serde_json::json!([]);
-        let error = serde_json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
+        let mut wire = json::to_value(circular_axis(false)).unwrap();
+        wire["wrapper_record_indices"] = cadmpeg_core::json!([]);
+        wire["identity_offsets"] = cadmpeg_core::json!([]);
+        let error = json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
         assert!(error.to_string().contains("wrappers must be nonempty"));
     }
 
@@ -1302,18 +1494,18 @@ mod tests {
     fn rectangular_pattern_instances_validate_scalar_count_and_active_axis() {
         for count in [0, 1, 3] {
             let mut record = construction(Some(components()));
-            let previous = serde_json::to_vec(&record).unwrap();
+            let previous = json::to_vec(&record).unwrap();
             let frames = (0..count).map(frame).collect();
             assert!(record
                 .try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames)))
                 .is_err());
-            assert_eq!(serde_json::to_vec(&record).unwrap(), previous);
-            let mut wire = serde_json::to_value(&record).unwrap();
-            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies(
+            assert_eq!(json::to_vec(&record).unwrap(), previous);
+            let mut wire = json::to_value(&record).unwrap();
+            wire["instances"] = json::to_value(DesignRectangularPatternInstances::Bodies(
                 (0..count).map(frame).collect(),
             ))
             .unwrap();
-            assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(wire).is_err());
+            assert!(json::from_value::<DesignRectangularPatternConstruction>(wire).is_err());
         }
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 2;
@@ -1355,6 +1547,10 @@ mod tests {
                 value: true,
                 offset: 109,
             },
+            symmetric_two: Located {
+                value: false,
+                offset: 110,
+            },
             total_extent: Located {
                 value: false,
                 offset: 158,
@@ -1372,12 +1568,16 @@ mod tests {
                 offset: 134,
             },
             untyped_body_references: 0,
+            suppressed: Located {
+                value: Vec::new(),
+                offset: 158,
+            },
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
         assert_eq!(record.distribution(), wire.distribution.as_ref());
-        let json = serde_json::to_value(&record).unwrap();
+        let json = json::to_value(&record).unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
+            json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
             record
         );
     }
@@ -1385,7 +1585,7 @@ mod tests {
     #[test]
     fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
         let uncapped = construction(None);
-        assert!(serde_json::to_value(&uncapped)
+        assert!(json::to_value(&uncapped)
             .unwrap()
             .get("instance_search_cap")
             .is_none());
@@ -1396,10 +1596,10 @@ mod tests {
             record.instance_search_cap(),
             Some(RectangularPatternSearchCap::ScannedBytes)
         );
-        let value = serde_json::to_value(&record).unwrap();
+        let value = json::to_value(&record).unwrap();
         assert_eq!(value["instance_search_cap"], "scanned-bytes");
         assert_eq!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(value).unwrap(),
+            json::from_value::<DesignRectangularPatternConstruction>(value).unwrap(),
             record
         );
         wire.instances = Some(components());
@@ -1437,6 +1637,45 @@ mod tests {
         );
     }
     #[test]
+    fn a_distance_type_ten_record_can_pair_with_another_distance_type() {
+        let record =
+            |record_index, distance_type, displacement| super::DesignRectangularPatternDirection {
+                record_index,
+                selection_record_index: record_index + 3,
+                selection_kind: 8,
+                distance_type,
+                origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+                origin_offset: 0,
+                displacement: crate::test_support::reals(displacement),
+                displacement_offset: 24,
+            };
+        let wire = |directions| {
+            let mut wire = DesignRectangularPatternConstructionWire {
+                directions,
+                ..DesignRectangularPatternConstructionWire::from(construction(None))
+            };
+            wire.v_count = 3;
+            wire.v_extent = 1.0;
+            wire
+        };
+        for (first, second) in [(10, 7), (7, 10), (10, 8)] {
+            assert!(
+                DesignRectangularPatternConstruction::try_from(wire(vec![
+                    record(20, first, [1.0, 0.0, 0.0]),
+                    record(30, second, [0.0, 1.0, 0.0]),
+                ]))
+                .is_ok(),
+                "{first} and {second}"
+            );
+        }
+        assert!(DesignRectangularPatternConstruction::try_from(wire(vec![
+            record(20, 7, [1.0, 0.0, 0.0]),
+            record(30, 8, [0.0, 1.0, 0.0]),
+        ]))
+        .is_err());
+    }
+
+    #[test]
     fn rectangular_pattern_payload_direction_validates_wire_fields() {
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 3;
@@ -1456,7 +1695,7 @@ mod tests {
             offset: 63,
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
-        let encoded = serde_json::to_value(&record).unwrap();
+        let encoded = json::to_value(&record).unwrap();
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
@@ -1464,21 +1703,29 @@ mod tests {
         ] {
             let mut corrupt = encoded.clone();
             corrupt["directions"][0][field] = value.into();
-            assert!(
-                serde_json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err()
-            );
+            assert!(json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err());
         }
         let mut span = encoded.clone();
         span["directions"][0]["distance_type"] = 8.into();
         span["directions"][0]["selection_kind"] = 16.into();
-        span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
+        span["directions"][0]["displacement"] = cadmpeg_core::json!([0.0, 0.0, 1.0]);
+        assert!(json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
         let mut zero = encoded.clone();
-        zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());
+        zero["secondary_direction"]["value"] = cadmpeg_core::json!([0.0, 0.0, 0.0]);
+        assert!(json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());
         let mut missing = encoded;
-        missing["directions"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
+        missing["directions"] = cadmpeg_core::json!([]);
+        assert!(json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
+        let mut inactive_one = wire.clone();
+        inactive_one.u_extent = 0.0;
+        let record = DesignRectangularPatternConstruction::try_from(inactive_one).unwrap();
+        assert_eq!(record.active_direction_count(), 1);
+        assert_eq!(record.directions().len(), 1);
+        assert!(record.secondary_direction().is_some());
+        assert!(json::from_value::<DesignRectangularPatternConstruction>(
+            json::to_value(&record).unwrap()
+        )
+        .is_ok());
         wire.v_count = 1;
         wire.v_extent = 0.0;
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());

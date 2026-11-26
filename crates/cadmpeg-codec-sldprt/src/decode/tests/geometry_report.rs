@@ -17,10 +17,11 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+use cadmpeg_ir::features::parameters::{
+    DesignParameter, ParameterPmi, ParameterValue, PmiDimensionSubtype,
 };
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
@@ -86,7 +87,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -107,12 +108,12 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint("synthetic:test:id#sketch").unwrap(),
@@ -229,7 +230,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }));
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
@@ -423,15 +424,15 @@ fn native_dimension_subtypes_are_reported() {
         ordinal: 0,
         name: Some("Feature".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -447,7 +448,7 @@ fn native_dimension_subtypes_are_reported() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: Some(ParameterPmi {
             subtype: PmiDimensionSubtype::Native("Ordinate".into()),
@@ -463,7 +464,7 @@ fn native_dimension_subtypes_are_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -485,13 +486,15 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     };
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
 
     let classification = crate::dialect::classify_layers(&scan).unwrap();
     let report = super::super::build_geometry_report(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &scan,
         &mut decoded,
         &classification,
@@ -514,6 +517,8 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     };
     let mut decoded = Brep::default();
     decoded.stats.surface_solver_capped.push("coedge#1");
@@ -524,7 +529,7 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
 
     let classification = crate::dialect::classify_layers(&scan).unwrap();
     let report = super::super::build_geometry_report(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &scan,
         &mut decoded,
         &classification,
@@ -560,7 +565,7 @@ fn unresolved_swift_source() -> Vec<u8> {
 fn unsupported_swift_loss_retains_exact_text() {
     let source = unresolved_swift_source();
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut losses = Vec::new();
     super::super::append_swift_pmi_losses(&ctx, &scan, &mut losses).unwrap();
     assert_eq!(losses.len(), 1);

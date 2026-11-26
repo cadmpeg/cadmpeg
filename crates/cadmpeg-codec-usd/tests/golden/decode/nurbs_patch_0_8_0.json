@@ -40,62 +40,665 @@
           "name": "Trimmed"
         }
       ],
-      "coedges": [],
-      "curves": [],
-      "edges": [],
-      "faces": [
+      "coedges": [
         {
-          "id": "usd:stage:face#/Surfaces/Bilinear",
-          "loops": {
-            "kind": "unspecified",
-            "loops": []
-          },
-          "sense": "forward",
-          "shell": "usd:stage:shell#/Surfaces/Bilinear",
-          "surface": "usd:stage:surface#/Surfaces/Bilinear"
+          "edge": "usd:stage:edge#/Surfaces/Bilinear:edge:0",
+          "id": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:0",
+          "owner_loop": "usd:stage:loop#/Surfaces/Bilinear:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:0"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:0",
+          "sense": "forward"
         },
         {
-          "id": "usd:stage:face#/Surfaces/Trimmed",
-          "loops": {
-            "kind": "unspecified",
-            "loops": []
-          },
-          "sense": "reversed",
-          "shell": "usd:stage:shell#/Surfaces/Trimmed",
-          "surface": "usd:stage:surface#/Surfaces/Trimmed"
+          "edge": "usd:stage:edge#/Surfaces/Bilinear:edge:1",
+          "id": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:1",
+          "owner_loop": "usd:stage:loop#/Surfaces/Bilinear:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:1"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Surfaces/Bilinear:edge:2",
+          "id": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:2",
+          "owner_loop": "usd:stage:loop#/Surfaces/Bilinear:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:2"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Surfaces/Bilinear:edge:3",
+          "id": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:3",
+          "owner_loop": "usd:stage:loop#/Surfaces/Bilinear:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:3"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Surfaces/Trimmed:edge:0",
+          "id": "usd:stage:coedge#/Surfaces/Trimmed:orientedEdge:0",
+          "owner_loop": "usd:stage:loop#/Surfaces/Trimmed:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                4.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Surfaces/Trimmed:pcurve-nurbs:0"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Surfaces/Trimmed:orientedEdge:0",
+          "sense": "forward"
         }
       ],
-      "loops": [],
-      "pcurves": [],
-      "points": [],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 2,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 4.999999999999997,
+                      "z": 1.9999999999999991
+                    },
+                    "weight": 0.5000000000000002
+                  },
+                  {
+                    "point": {
+                      "x": 10.0,
+                      "y": 10.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:1"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 10.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 10.0,
+                    "z": 0.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:2"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 2,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 10.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 4.999999999999999,
+                      "z": 1.9999999999999996
+                    },
+                    "weight": 0.5000000000000002
+                  },
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:3"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                4.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 1.0000000000000002,
+                    "y": 1.0000000000000002,
+                    "z": 5.000000000000001
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 9.000000000000002,
+                    "z": 5.000000000000001
+                  },
+                  {
+                    "x": 9.000000000000002,
+                    "y": 9.000000000000002,
+                    "z": 5.0
+                  },
+                  {
+                    "x": 9.000000000000002,
+                    "y": 1.0,
+                    "z": 5.000000000000001
+                  },
+                  {
+                    "x": 1.0000000000000002,
+                    "y": 1.0000000000000002,
+                    "z": 5.000000000000001
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Surfaces/Trimmed:curve3d-nurbs:0"
+        }
+      ],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:0",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Surfaces/Bilinear:vertex:1",
+            "start": "usd:stage:vertex#/Surfaces/Bilinear:vertex:0"
+          },
+          "id": "usd:stage:edge#/Surfaces/Bilinear:edge:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:1",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Surfaces/Bilinear:vertex:2",
+            "start": "usd:stage:vertex#/Surfaces/Bilinear:vertex:1"
+          },
+          "id": "usd:stage:edge#/Surfaces/Bilinear:edge:1"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:2",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Surfaces/Bilinear:vertex:3",
+            "start": "usd:stage:vertex#/Surfaces/Bilinear:vertex:2"
+          },
+          "id": "usd:stage:edge#/Surfaces/Bilinear:edge:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Surfaces/Bilinear:curve3d-nurbs:3",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Surfaces/Bilinear:vertex:0",
+            "start": "usd:stage:vertex#/Surfaces/Bilinear:vertex:3"
+          },
+          "id": "usd:stage:edge#/Surfaces/Bilinear:edge:3"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Surfaces/Trimmed:curve3d-nurbs:0",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Surfaces/Trimmed:vertex:0",
+            "start": "usd:stage:vertex#/Surfaces/Trimmed:vertex:0"
+          },
+          "id": "usd:stage:edge#/Surfaces/Trimmed:edge:0"
+        }
+      ],
+      "faces": [
+        {
+          "id": "usd:stage:face#/Surfaces/Bilinear:face:0",
+          "loops": {
+            "inner": [],
+            "kind": "classified",
+            "outer": "usd:stage:loop#/Surfaces/Bilinear:loop:0"
+          },
+          "sense": "forward",
+          "shell": "usd:stage:shell#/Surfaces/Bilinear:shell:0",
+          "surface": "usd:stage:surface#/Surfaces/Bilinear:surface-nurbs:0"
+        },
+        {
+          "id": "usd:stage:face#/Surfaces/Trimmed:face:0",
+          "loops": {
+            "inner": [],
+            "kind": "classified",
+            "outer": "usd:stage:loop#/Surfaces/Trimmed:loop:0"
+          },
+          "sense": "reversed",
+          "shell": "usd:stage:shell#/Surfaces/Trimmed:shell:0",
+          "surface": "usd:stage:surface#/Surfaces/Trimmed:surface-nurbs:0"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:0",
+              "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:1",
+              "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:2",
+              "usd:stage:coedge#/Surfaces/Bilinear:orientedEdge:3"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "usd:stage:face#/Surfaces/Bilinear:face:0",
+          "id": "usd:stage:loop#/Surfaces/Bilinear:loop:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Surfaces/Trimmed:orientedEdge:0"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "usd:stage:face#/Surfaces/Trimmed:face:0",
+          "id": "usd:stage:loop#/Surfaces/Trimmed:loop:0"
+        }
+      ],
+      "pcurves": [
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:0",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 1.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:1",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 1.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:2",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Surfaces/Bilinear:pcurve-nurbs:3",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              4.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 0.1,
+                  "v": 0.1
+                },
+                {
+                  "u": 0.1,
+                  "v": 0.9
+                },
+                {
+                  "u": 0.9,
+                  "v": 0.9
+                },
+                {
+                  "u": 0.9,
+                  "v": 0.1
+                },
+                {
+                  "u": 0.1,
+                  "v": 0.1
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Surfaces/Trimmed:pcurve-nurbs:0",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        }
+      ],
+      "points": [
+        {
+          "id": "usd:stage:point#/Surfaces/Bilinear:vertex:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Surfaces/Bilinear:vertex:1",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Surfaces/Bilinear:vertex:2",
+          "position": {
+            "x": 10.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Surfaces/Bilinear:vertex:3",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Surfaces/Trimmed:vertex:0",
+          "position": {
+            "x": 1.0000000000000002,
+            "y": 1.0000000000000002,
+            "z": 5.000000000000001
+          }
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "regions": [
         {
           "body": "usd:stage:body#/Surfaces/Bilinear",
-          "id": "usd:stage:region#/Surfaces/Bilinear",
+          "id": "usd:stage:region#/Surfaces/Bilinear:region:0",
           "shells": [
-            "usd:stage:shell#/Surfaces/Bilinear"
+            "usd:stage:shell#/Surfaces/Bilinear:shell:0"
           ]
         },
         {
           "body": "usd:stage:body#/Surfaces/Trimmed",
-          "id": "usd:stage:region#/Surfaces/Trimmed",
+          "id": "usd:stage:region#/Surfaces/Trimmed:region:0",
           "shells": [
-            "usd:stage:shell#/Surfaces/Trimmed"
+            "usd:stage:shell#/Surfaces/Trimmed:shell:0"
           ]
         }
       ],
       "shells": [
         {
-          "id": "usd:stage:shell#/Surfaces/Bilinear",
+          "id": "usd:stage:shell#/Surfaces/Bilinear:shell:0",
           "members": [],
-          "region": "usd:stage:region#/Surfaces/Bilinear"
+          "region": "usd:stage:region#/Surfaces/Bilinear:region:0"
         },
         {
-          "id": "usd:stage:shell#/Surfaces/Trimmed",
+          "id": "usd:stage:shell#/Surfaces/Trimmed:shell:0",
           "members": [],
-          "region": "usd:stage:region#/Surfaces/Trimmed"
+          "region": "usd:stage:region#/Surfaces/Trimmed:region:0"
         }
       ],
       "subds": [],
@@ -183,7 +786,7 @@
               "v_periodic": false
             }
           },
-          "id": "usd:stage:surface#/Surfaces/Bilinear"
+          "id": "usd:stage:surface#/Surfaces/Bilinear:surface-nurbs:0"
         },
         {
           "geometry": {
@@ -238,27 +841,42 @@
               "v_periodic": false
             }
           },
-          "id": "usd:stage:surface#/Surfaces/Trimmed"
+          "id": "usd:stage:surface#/Surfaces/Trimmed:surface-nurbs:0"
         }
       ],
-      "vertices": []
+      "vertices": [
+        {
+          "id": "usd:stage:vertex#/Surfaces/Bilinear:vertex:0",
+          "point": "usd:stage:point#/Surfaces/Bilinear:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Surfaces/Bilinear:vertex:1",
+          "point": "usd:stage:point#/Surfaces/Bilinear:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Surfaces/Bilinear:vertex:2",
+          "point": "usd:stage:point#/Surfaces/Bilinear:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Surfaces/Bilinear:vertex:3",
+          "point": "usd:stage:point#/Surfaces/Bilinear:vertex:3"
+        },
+        {
+          "id": "usd:stage:vertex#/Surfaces/Trimmed:vertex:0",
+          "point": "usd:stage:point#/Surfaces/Trimmed:vertex:0"
+        }
+      ]
     },
     "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -343,7 +961,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -363,12 +980,10 @@
             "usd:stage:occurrence#/Surfaces/Trimmed"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Surfaces",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -381,12 +996,10 @@
           "native_ref": "/Surfaces/Bilinear",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Bilinear",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -399,12 +1012,10 @@
           "native_ref": "/Surfaces/Trimmed",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Trimmed",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -415,24 +1026,15 @@
             "usd:stage:occurrence#/Surfaces"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -517,18 +1119,6 @@
         },
         "message": "prim metadata was not transferred: doc 1",
         "severity": "info"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "nurbs.trim-not-transferred",
-            "kind": "pcurve_omitted",
-            "namespace": "usd"
-          }
-        },
-        "message": "trim curves of 1 NURBS patches were not transferred; each face covers its whole patch",
-        "severity": "warning"
       }
     ],
     "notes": [],
@@ -545,6 +1135,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ce9cac2678daa54716885214e3e7909ed3bb11cad1dd6587b6f82c0829992089",
     "file_digests": {},
     "retained_records": {},

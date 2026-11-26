@@ -7,21 +7,21 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
-use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
-};
+use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree, Branch, Harness};
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, reports_carried_source, semantic_roundtrip, verbatim_replay_holds,
+    ExpectedWritePath, MutationOutcome, SemanticOutcome,
 };
 
 use super::SldprtCodec;
@@ -50,8 +50,8 @@ fn branches() -> [Branch; 2] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -60,25 +60,18 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-                if let Some(source) = result.ir_mut().source.as_mut() {
-                    // The `native` lane digests cover retained source bytes and
-                    // stay pinned; a `_local_sha256` digest covers decoded
-                    // content, so a platform's libm moves it.
-                    elide_local_digests(&mut source.attributes);
-                }
-                serde_json::json!({
-                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    {
+        Ok(result) => {
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
+            })
+        }
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -112,17 +105,25 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 /// Compare neutral semantics after mapping source section positions through
 /// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let scan = crate::test_support::container::scan(bytes);
-                let sections =
-                    section_identities(&scan).expect("unique admitted source member identities");
-                normalized_document(result.ir(), &sections)
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    neutral_text(bytes, &decode_container(bytes))
+}
+
+/// [`neutral_document`] of `bytes` from their decode `decoded`.
+fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> String {
+    let value = match decoded {
+        Ok(result) => {
+            let scan = crate::test_support::container::scan(bytes);
+            let sections =
+                section_identities(&scan).expect("unique admitted source member identities");
+            normalized_document(result.ir(), &sections)
+        }
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
+}
+
+fn decode_container(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
+    SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -138,15 +139,20 @@ fn golden_output_is_deterministic() {
 }
 
 /// Every fixture survives a decode and comes back byte for byte through the
-/// verbatim-replay path.
+/// verbatim-replay path. A fixture whose decode keeps bytes it did not decode
+/// replays too, and its report carries `export:source.carried`.
 #[test]
 fn fixtures_replay_verbatim() {
+    let mut marked = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
             continue;
         }
-        verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        if reports_carried_source(&verbatim_replay_holds(&SldprtCodec, &name, &bytes)) {
+            marked += 1;
+        }
     }
+    assert!(marked > 0, "no fixture keeps bytes it did not decode");
 }
 
 /// The semantic write path either reproduces a fixture's document or declares
@@ -161,36 +167,117 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
-                match outcome {
-                SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
-                ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+            // The source's lone configuration is active and owns partition 0.
+            // The writer writes it active without assuming one, and generates
+            // the envelope that states it; the history is the source's.
+            let history = |ir: &cadmpeg_ir::CadIr| {
+                (
+                    ir.model
+                        .features
+                        .iter()
+                        .map(|feature| {
+                            (
+                                feature.ordinal,
+                                feature.name.clone(),
+                                feature.source_tag.clone(),
+                                feature.suppressed,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    ir.model
+                        .parameters
+                        .iter()
+                        .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+                        .collect::<Vec<_>>(),
+                    ir.geometry.faces.len(),
+                )
+            };
+            let source = decode_container(&bytes).expect("legacy history decodes");
+            let fixture = bytes.as_slice();
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    assert!(
+                        !report
+                            .losses
+                            .iter()
+                            .any(|loss| loss.code.local_code()
+                                == "writer.active-configuration-assumed"),
+                        "{:#?}",
+                        report.losses
+                    );
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    let [configuration] = written.ir().model.configurations.as_slice() else {
+                        panic!("fixture `{name}`: one configuration");
+                    };
+                    assert_eq!(configuration.name.as_deref(), Some("Default"));
+                    assert!(configuration.active);
+                    assert_eq!(configuration.source_index, Some(0));
+                    assert_eq!(history(written.ir()), history(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                }
             });
             continue;
         }
-        let expected = neutral_document(&bytes);
-        let source = bytes.clone();
+        if name == "document_envelope" {
+            // The faceless part keeps its `SWObjects` member, and with it
+            // every metadata record.
+            let values = |ir: &cadmpeg_ir::CadIr| {
+                ir.model
+                    .attributes
+                    .iter()
+                    .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let source = decode_container(&bytes).expect("the envelope decodes");
+            assert!(source
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "configuration_manager"));
+            let fixture = bytes.as_slice();
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    assert_eq!(values(written.ir()), values(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                }
+            });
+            continue;
+        }
+        let source = decode_container(&bytes);
+        let expected = neutral_text(&bytes, &source);
+        let fixture = bytes.as_slice();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
+                assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
                 assert!(
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
-                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                let written = decode_container(bytes);
+                if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
-                if written_measures_agree(&name, &source, bytes) {
+                if written_measures_agree(&name, &source, &written) {
                     measured_count += 1;
                 }
             }
             SemanticOutcome::Refused { error } => {
                 assert!(
-                matches!(error, CodecError::NotImplemented(_)),
+                matches!(
+                    error,
+                    cadmpeg_ir::codec::write::EncodeError::Backend(CodecError::NotImplemented(_))
+                ),
                 "fixture `{name}`: the semantic writer may decline an edit it has not built, but this \
                  refusal reports a defect in what it already retains: {error}"
             );
@@ -208,24 +295,70 @@ fn fixtures_survive_the_semantic_write_path() {
     );
 }
 
+/// Asserts that each member of the `source` image is a member of the
+/// `written` image or that a loss names its record. A stream the source
+/// stores several times counts each member.
+fn assert_members_carried_or_named(
+    name: &str,
+    source: &[u8],
+    written: &[u8],
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) {
+    let mut written_members = BTreeMap::<String, usize>::new();
+    for section in crate::test_support::container::scan(written).sections() {
+        *written_members
+            .entry(section.source_stream().as_str().to_owned())
+            .or_default() += 1;
+    }
+    let source_scan = crate::test_support::container::scan(source);
+    let mut source_members = BTreeMap::<&str, Vec<String>>::new();
+    for section in source_scan.sections() {
+        source_members
+            .entry(section.source_stream().as_str())
+            .or_default()
+            .push(section.native_id().as_str().to_owned());
+    }
+    for (stream, ids) in source_members {
+        let named = ids
+            .iter()
+            .filter(|id| losses.iter().any(|loss| names_record(&loss.message, id)))
+            .count();
+        let carried = written_members.get(stream).copied().unwrap_or_default();
+        assert!(
+            carried + named >= ids.len(),
+            "fixture `{name}`: the source holds {} member(s) `{stream}`; the output holds {carried} \
+             and the losses name {named}: {losses:#?}",
+            ids.len()
+        );
+    }
+}
+
+/// Whether `message` names record `id` as a whole token.
+fn names_record(message: &str, id: &str) -> bool {
+    message.match_indices(id).any(|(at, _)| {
+        !message[at + id.len()..].starts_with(|character: char| character.is_ascii_digit())
+    })
+}
+
 /// Written fixtures whose measures the semantic write lane compares, the
 /// authored cylinder, sphere and NURBS solids among them.
 const MEASURED_FIXTURE_FLOOR: usize = 16;
 
-/// Decodes `source` and `written` and, when the source measures a
-/// comparable body, asserts that both measure the same. Returns whether the
+/// When the decoded `source` measures a comparable body, asserts that the
+/// decoded `written` container measures the same. Returns whether the
 /// source measures a comparable body.
-fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
-    let decode = |bytes: &[u8]| {
-        SldprtCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+fn written_measures_agree(
+    name: &str,
+    source: &Result<DecodeResult, DecodeFailure>,
+    written: &Result<DecodeResult, DecodeFailure>,
+) -> bool {
+    let (Ok(before), Ok(after)) = (source, written) else {
+        panic!("fixture `{name}`: a container does not decode");
     };
-    let before = decode(source);
-    if !measures_decide(name, before.ir()).expect("the fixture is measured") {
+    let Some(report) = measures_decide(name, before.ir()).expect("the fixture is measured") else {
         return false;
-    }
-    measures_agree(name, before.ir(), decode(written).ir())
+    };
+    measures_agree_with(name, before.ir(), report, after.ir())
         .expect("the round trip keeps its measured geometry");
     true
 }
@@ -274,9 +407,10 @@ fn visit_blind_extrude_lengths(
     count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// A blind-depth edit is written as edited over the stored B-rep, which the
+/// export names as the state before the edit.
 #[test]
-fn edited_blind_depth_without_regenerated_brep_is_refused() {
+fn edited_blind_depth_is_written_over_the_stored_brep_and_named() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
@@ -298,7 +432,11 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                 }) != 0
             },
             |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
+                MutationOutcome::Written {
+                    edited,
+                    bytes,
+                    report,
+                } => {
                     let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
@@ -326,15 +464,20 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     assert_eq!(
                         arena_sizes(written.ir()),
                         arena_sizes(edited),
-                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
-                         written; entities were lost or invented"
+                        "fixture `{name}`: the written B-rep is not the stored one; entities were lost \
+                         or invented"
                     );
-                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
+                    assert!(
+                        report.losses.iter().any(|loss| loss.code
+                            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+                        "fixture `{name}`: the stored B-rep shows the depth before the edit, and no \
+                         loss says so: {:?}",
+                        report.losses
+                    );
                 }
-                MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-                    "fixture `{name}`: {error}"
-                ),
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a blind-depth edit was refused: {error}")
+                }
             },
         );
         if ran {
@@ -456,17 +599,12 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .expect("historical history fixture retains its source");
-    assert!(!result.ir().model.configurations.is_empty());
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .configurations
-            .iter()
-            .filter(|c| c.active)
-            .count(),
-        0
-    );
+    let [configuration] = result.ir().model.configurations.as_slice() else {
+        panic!("the lone Keywords configuration");
+    };
+    assert!(configuration.active);
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(configuration.bodies.is_none());
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();
@@ -696,10 +834,44 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let original_geometry =
-        serde_json::to_value(&ir.geometry).expect("serialize original geometry");
-    let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
+    normalized(ir, sections, false)
+}
+
+/// [`normalized_document`] with the arenas the CADIR wire omits restated
+/// under `model`, as the document holds them in memory.
+fn normalized_in_memory(
+    ir: &cadmpeg_ir::CadIr,
+    sections: &BTreeMap<u64, String>,
+) -> serde_json::Value {
+    normalized(ir, sections, true)
+}
+
+/// The JSON form of `model`, with the arenas the wire omits where `omitted`.
+fn model_value(model: &cadmpeg_ir::document::Model, omitted: bool) -> serde_json::Value {
+    let mut value = json::to_value(model).expect("serialize model");
+    if omitted {
+        let serde_json::Value::Object(arenas) = model
+            .omitted_arenas_value()
+            .expect("serialize the omitted arenas")
+        else {
+            panic!("the omitted arenas serialize as an object");
+        };
+        value
+            .as_object_mut()
+            .expect("the model serializes as an object")
+            .extend(arenas);
+    }
+    value
+}
+
+fn normalized(
+    ir: &cadmpeg_ir::CadIr,
+    sections: &BTreeMap<u64, String>,
+    omitted: bool,
+) -> serde_json::Value {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let original_geometry = json::to_value(&ir.geometry).expect("serialize original geometry");
+    let original_model = model_value(&ir.model, omitted);
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
     let mut geometry = cadmpeg_ir::document::Topology::default();
@@ -716,8 +888,8 @@ fn normalized_document(
     model
         .extend_rewritten(ir.model.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
-    let mut normalized_geometry = serde_json::to_value(&geometry).expect("serialize geometry");
-    let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
+    let mut normalized_geometry = json::to_value(&geometry).expect("serialize geometry");
+    let mut normalized_model = model_value(&model, omitted);
     for (original, normalized) in [
         (&original_geometry, &mut normalized_geometry),
         (&original_model, &mut normalized_model),
@@ -729,11 +901,11 @@ fn normalized_document(
             &declared_replacements,
         );
     }
-    let mut document = serde_json::json!({
+    let mut document = cadmpeg_core::json!({
         "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     canonicalize_model_arena_order(&mut document);
     document
@@ -826,11 +998,11 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("complete history decode");
-    let original = normalized_document(result.ir(), &sections);
+    let original = normalized_in_memory(result.ir(), &sections);
     let mut changed = result.ir().clone();
     changed.geometry.coedges[0].owner_loop =
         cadmpeg_ir::ids::LoopId::mint("sldprt:brep:loop#999").expect("authored distinct reference");
-    assert_ne!(original, normalized_document(&changed, &sections));
+    assert_ne!(original, normalized_in_memory(&changed, &sections));
     let mut changed = result.ir().clone();
     assert!(
         visit_blind_extrude_lengths(&mut changed, |length| {
@@ -838,8 +1010,8 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
                 .expect("positive changed depth");
         }) > 0
     );
-    assert_ne!(original, normalized_document(&changed, &sections));
-    let mut ordered = serde_json::json!({"model": {"entities": [
+    assert_ne!(original, normalized_in_memory(&changed, &sections));
+    let mut ordered = cadmpeg_core::json!({"model": {"entities": [
         {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
     ]}});
     canonicalize_model_arena_order(&mut ordered);
@@ -927,7 +1099,7 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
         .expect("physical source section in declared ID");
     assert_ne!(source_id, rewritten_id);
     labeled.model.features[0].name = Some(source_id.clone());
-    let normalized = normalized_document(&labeled, &sections);
+    let normalized = normalized_in_memory(&labeled, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -937,13 +1109,13 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
     assert_eq!(feature["name"], source_id);
     let mut changed = labeled.clone();
     changed.model.features[0].name = Some(rewritten_id.clone());
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
 
     let key = cadmpeg_core::nonblank_literal!("unowned_identity_shaped_text");
     labeled.model.features[0]
         .source_properties
         .insert(key.clone(), source_id.clone());
-    let normalized = normalized_document(&labeled, &sections);
+    let normalized = normalized_in_memory(&labeled, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -955,7 +1127,7 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
     changed.model.features[0]
         .source_properties
         .insert(key, rewritten_id);
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
 }
 
 /// Restore only a leaf changed by the preceding typed owner walk. This paired
@@ -1024,7 +1196,7 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     source.model.features[0].name = Some(reference.to_owned());
     let id = normalize_identifier(source.model.features[0].id.as_str(), &sections)
         .expect("source-backed feature identity");
-    let normalized = normalized_document(&source, &sections);
+    let normalized = normalized_in_memory(&source, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -1036,17 +1208,17 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     for changed_reference in ["1:sldprt:brep:edge#40", "0:sldprt:brep:edge#41"] {
         let mut changed = source.clone();
         changed.model.features[0].native_ref = Some(changed_reference.to_owned());
-        assert_ne!(normalized, normalized_document(&changed, &sections));
+        assert_ne!(normalized, normalized_in_memory(&changed, &sections));
     }
     let mut changed = source.clone();
     changed.model.features[0].name = Some("1:sldprt:brep:edge#40".to_owned());
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
     let token = format!(
         "sldprt:golden-opaque:reference#{}",
         hex_reference(reference)
     );
     source.model.features[0].name = Some(token.clone());
-    let normalized = normalized_document(&source, &sections);
+    let normalized = normalized_in_memory(&source, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")

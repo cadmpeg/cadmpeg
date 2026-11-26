@@ -4,27 +4,49 @@
 use super::boundary_fill::BoundaryFillCell;
 use super::surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 use super::{
-    AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
-    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
-    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
-    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
-    FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
-    GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
-    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
-    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
-    NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
-    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
-    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
-    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
-    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
-    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
-    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
-    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
-    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
+    CombineOperands, FaceBlendOperands, FeatureDefinition, FeatureOperation, LoftGuidance,
+    NativeFeatureKind, SectionOperands, SewBodySelection, SketchFeatureBinding, TrimBodyOperands,
+};
+use crate::features::binders::{BinderConstruction, BinderSource, BinderTarget};
+use crate::features::datums::{DatumPlaneReference, DatumPointConstruction, SketchPointSelection};
+use crate::features::direct_edit::{
+    AxisAngle, DraftAnchor, DraftPull, DraftSecondSide, FaceMotion, ScaleCenter, SplitBodyTool,
+    SplitFacePlanes, SplitFaceTool,
+};
+use crate::features::extents::{
+    AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, LinearTermination,
+};
+use crate::features::geometry::{FeatureEquationCurve, FeaturePolyline};
+use crate::features::operation_settings::{CombineDestination, SolidFeatureResult};
+use crate::features::primitives::{PrimitiveSolid, PrimitiveSolidKind};
+use crate::features::profiles::{
+    GeneratedCurveRef, GeometryImportPath, LoftPointSection, LoftSection, PathRef,
+    PlanarProfileRef, ProfileRef, SketchProfileBoundaryUse, SketchProfileLoops,
+    SketchProfileRegion, SketchProfileRegions, ThreePointSelection,
+};
+use crate::features::revolve::{
+    PartialRevolveConstruction, RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction,
+};
+use crate::features::selections::{
+    BodyMember, BodyMembers, BodySelection, DistinctMembers, EdgeSelection, FaceSelection,
+    GeneratedBodyRef, GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, InsertedBodies,
+    InsertedComponents, NativeSelections, NonEmptyMembers, SelectionMembers, SelectionReference,
+    VertexSelection,
+};
+use crate::features::sheet_metal_forms::{
+    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm,
+};
+use crate::features::surface_inputs::{
+    FilledSurfaceContinuity, RuledSurfaceMode, SurfaceBoundary, TrimCellSelection, TrimRegion,
+};
+use crate::features::sweeps::{
+    CoilConstruction, CoilPlacement, FaceMaker, GeneratedSweepSection, HelicalSweepConstruction,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+};
+use crate::features::tree::{
+    CapturedComponentPosition, CapturedPositionTransform, ComponentTransferMode, TreeChildren,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -77,6 +99,7 @@ rewrite_enum!(BodySelection, []; {
     Historical { state, bodies, native },
     HistoricalSet { state, members },
     Generated { bodies, native },
+    GeneratedSet { members },
     Local { bodies, native },
     Native(field0),
     NativeSet(field0),
@@ -327,8 +350,6 @@ Thicken { faces, thickness, side, result, tangent_chain },
 rewrite_record!(FeaturePolyline, []; { points, closed });
 
 rewrite_record!(FilledSurfaceContinuity, []; { conditions });
-
-rewrite_record!(FilledSurfaceContinuityState, []; (field0));
 
 rewrite_record!(GeneratedBodyRef, []; { feature, local_id });
 
@@ -595,7 +616,8 @@ rewrite_enum!(SweepOrientation, []; {
 });
 
 rewrite_enum!(SweepSection<G>, [G]; {
-    Unresolved(field0),
+    Unresolved,
+    Native(field0),
     Profile(field0),
     Generated(field0),
 });
@@ -628,12 +650,12 @@ rewrite_enum!(VertexSelection, []; {
     Native(field0),
 });
 
-rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
-rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
-rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
+rewrite_enum!(crate::features::parameters::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
+rewrite_record!(crate::features::parameters::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
+rewrite_record!(crate::features::evaluation::FeatureEvaluation, []; { definition, outputs });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
-rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+rewrite_enum!(crate::features::parameters::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
 
 rewrite_record!(super::sheet_metal::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
 rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });

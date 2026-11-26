@@ -4,10 +4,11 @@ use crate::{
     math::Point3,
     test_support::nurbs::{curve, surface},
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{KnotVector, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
     let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).expect("finite point");
     let rows = vec![
@@ -32,8 +33,8 @@ fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
         .expect("admitted surface");
     assert_eq!(admitted, old);
     assert_eq!(
-        serde_json::to_vec(&admitted).expect("wire"),
-        serde_json::to_vec(&old).expect("wire")
+        json::to_vec(&admitted).expect("wire"),
+        json::to_vec(&old).expect("wire")
     );
     let short = NurbsSurface::new(
         NurbsSurfaceAxis::new(
@@ -162,8 +163,8 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     let from_parts = NurbsCurve::new(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
     assert_eq!(from_parts, curve);
     assert_eq!(
-        serde_json::to_vec(&from_parts).unwrap(),
-        serde_json::to_vec(&curve).unwrap()
+        json::to_vec(&from_parts).unwrap(),
+        json::to_vec(&curve).unwrap()
     );
     assert_eq!(
         NurbsCurve::new(2, knots, curve.pole_rows().clone(), true,),
@@ -190,8 +191,8 @@ fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     let from_parts = NurbsSurface::new(u, v, surface.pole_grid().clone(), true).unwrap();
     assert_eq!(from_parts, surface);
     assert_eq!(
-        serde_json::to_vec(&from_parts).unwrap(),
-        serde_json::to_vec(&surface).unwrap()
+        json::to_vec(&from_parts).unwrap(),
+        json::to_vec(&surface).unwrap()
     );
 }
 
@@ -206,14 +207,14 @@ fn admitted_surface_grid_preserves_the_existing_wire() {
         NurbsSurface::new(u, v, surface.pole_grid().clone(), true).expect("admitted fixture grid");
     assert_eq!(admitted, surface);
     assert_eq!(
-        serde_json::to_vec(&admitted).expect("admitted surface wire"),
-        serde_json::to_vec(&surface).expect("fixture surface wire")
+        json::to_vec(&admitted).expect("admitted surface wire"),
+        json::to_vec(&surface).expect("fixture surface wire")
     );
 }
 
 #[test]
 fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
     let rational = NurbsCurve::from_lanes(
@@ -288,7 +289,7 @@ fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
 
 #[test]
 fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
     let polynomial = NurbsCurve::from_lanes(
@@ -346,7 +347,7 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
 
 #[test]
 fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     let rational = surface();
@@ -409,28 +410,28 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
 #[test]
 fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
     let surface = surface();
-    let wire = serde_json::to_value(&surface).expect("serializes");
+    let wire = json::to_value(&surface).expect("serializes");
     assert!(wire.get("u_count").is_none());
     assert!(wire.get("v_count").is_none());
     assert_eq!(wire["poles"]["rows"].as_array().expect("rows").len(), 2);
     assert_eq!(surface.u_count(), 2);
     assert_eq!(surface.v_count(), 2);
     assert_eq!(
-        serde_json::from_value::<NurbsSurface>(wire.clone()).expect("round trip"),
+        json::from_value::<NurbsSurface>(wire.clone()).expect("round trip"),
         surface
     );
 
     let mut restated = wire.clone();
-    restated["u_count"] = serde_json::json!(2);
-    let error = serde_json::from_value::<NurbsSurface>(restated)
+    restated["u_count"] = cadmpeg_core::json!(2);
+    let error = json::from_value::<NurbsSurface>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("u_count"), "{error}");
 
     let mut ragged = wire;
     ragged["poles"]["rows"][1] =
-        serde_json::json!([{"point": {"x": 0.0, "y": 0.0, "z": 0.0}, "weight": 1.0}]);
-    let error = serde_json::from_value::<NurbsSurface>(ragged)
+        cadmpeg_core::json!([{"point": {"x": 0.0, "y": 0.0, "z": 0.0}, "weight": 1.0}]);
+    let error = json::from_value::<NurbsSurface>(ragged)
         .unwrap_err()
         .to_string();
     assert!(error.contains("control_points row"), "{error}");
@@ -490,7 +491,7 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
         }
         let mut moved = point.get();
         moved.z = 3.0;
-        crate::features::FinitePoint3::new(moved)
+        crate::features::geometry::FinitePoint3::new(moved)
             .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
     });
     assert_eq!(
@@ -520,18 +521,18 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .try_map_control_points(|_, point| {
             let mut moved = point.get();
             moved.x = f64::NAN;
-            crate::features::FinitePoint3::new(moved).ok_or(())
+            crate::features::geometry::FinitePoint3::new(moved).ok_or(())
         })
         .is_err());
     assert_eq!(surface, original);
-    let mut wire = serde_json::to_value(&surface).unwrap();
-    wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
-    assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
+    let mut wire = json::to_value(&surface).unwrap();
+    wire["u_knots"] = cadmpeg_core::json!([0.0, 1.0, 0.0, 1.0]);
+    assert!(json::from_value::<BsplineSurface>(wire).is_err());
     surface
         .try_map_control_points(|_, point| {
             let mut moved = point.get();
             moved.z = 2.0;
-            crate::features::FinitePoint3::new(moved).ok_or(())
+            crate::features::geometry::FinitePoint3::new(moved).ok_or(())
         })
         .unwrap();
     assert!(surface
@@ -577,7 +578,9 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     assert_eq!(surface.control_grid(), surface.pole_grid().raw_points());
     assert_eq!(surface.poles(), surface.pole_grid().raw_points().concat());
     assert_eq!(
-        surface.pole(1, 0).map(crate::features::FinitePoint3::get),
+        surface
+            .pole(1, 0)
+            .map(crate::features::geometry::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(surface.pole(2, 0), None);
@@ -633,8 +636,8 @@ fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
     let from_raw = KnotVector::new(raw).unwrap();
     assert_eq!(from_finite, from_raw);
     assert_eq!(
-        serde_json::to_vec(&from_finite).unwrap(),
-        serde_json::to_vec(&from_raw).unwrap()
+        json::to_vec(&from_finite).unwrap(),
+        json::to_vec(&from_raw).unwrap()
     );
     assert!(KnotVector::from_finite_lanes(vec![
         FiniteReal::new(1.0).unwrap(),
@@ -645,7 +648,7 @@ fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
 
 #[test]
 fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{NurbsCurve, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::pcurve::PcurveNurbs;
     use crate::math::Point2;
@@ -737,7 +740,7 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
 
 #[test]
 fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{BsplineSurface, KnotVector};
     use crate::math::Point3;
 
@@ -752,18 +755,15 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
         surface.control_points[1][1],
         FinitePoint3::new(Point3::new(1.0, 1.0, 2.0)).unwrap()
     );
-    let wire = serde_json::to_value(&surface).unwrap();
-    assert_eq!(wire["u_knots"], serde_json::json!(knots));
-    assert_eq!(wire["control_points"], serde_json::json!(points));
-    assert_eq!(
-        serde_json::from_value::<BsplineSurface>(wire).unwrap(),
-        surface
-    );
+    let wire = json::to_value(&surface).unwrap();
+    assert_eq!(wire["u_knots"], cadmpeg_core::json!(knots));
+    assert_eq!(wire["control_points"], cadmpeg_core::json!(points));
+    assert_eq!(json::from_value::<BsplineSurface>(wire).unwrap(), surface);
 }
 
 #[test]
 fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{
         bezier::positive_controls, NurbsCurve, NurbsError, NurbsPoles3, NurbsSurfaceAxis,
         NurbsSurfaceLanes,
@@ -956,7 +956,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
 #[test]
 fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
     use super::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     #[derive(Clone, Copy)]
     struct Pole(Point3);
@@ -1015,11 +1015,11 @@ fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
     assert_eq!(surface.u_count(), 2);
     assert_eq!(surface.v_count(), 2);
     assert_eq!(
-        serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(),
+        json::from_value::<NurbsCurve>(json::to_value(&curve).unwrap()).unwrap(),
         curve
     );
     assert_eq!(
-        serde_json::from_value::<NurbsSurface>(serde_json::to_value(&surface).unwrap()).unwrap(),
+        json::from_value::<NurbsSurface>(json::to_value(&surface).unwrap()).unwrap(),
         surface
     );
 }
@@ -1072,9 +1072,9 @@ fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
             weight: 0.0
         })
     );
-    let wire = serde_json::to_value(&expected).expect("wire");
+    let wire = json::to_value(&expected).expect("wire");
     assert_eq!(
-        serde_json::from_value::<NurbsPoles3<u32>>(wire).expect("standard reconstruction"),
+        json::from_value::<NurbsPoles3<u32>>(wire).expect("standard reconstruction"),
         expected
     );
 }
@@ -1082,7 +1082,7 @@ fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
 #[test]
 fn admitted_pole_conversion_keeps_all_four_owned_storage_shapes() {
     use super::{NurbsPoleGrid, NurbsPoles3, PoleValue, WeightedPole3};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::scalar::NonZeroReal;
     use cadmpeg_core::CodecError;
 
@@ -1192,17 +1192,17 @@ mod knot_admission;
 fn surface_cache_fit_round_trips_and_rejects_invalid_values() {
     let mut surface = surface();
     assert_eq!(surface.cache_fit_tolerance(), None);
-    let fit = crate::geometry::FitTolerance::try_new(0.125).expect("fit");
+    let fit = crate::geometry::legacy_cache::FitTolerance::try_new(0.125).expect("fit");
     surface.set_cache_fit_tolerance(Some(fit));
-    let wire = serde_json::to_value(&surface).expect("wire");
+    let wire = json::to_value(&surface).expect("wire");
     assert_eq!(wire["cache_fit_tolerance"], 0.125);
     assert_eq!(
-        serde_json::from_value::<NurbsSurface>(wire.clone()).expect("surface"),
+        json::from_value::<NurbsSurface>(wire.clone()).expect("surface"),
         surface
     );
-    for invalid in [serde_json::Value::Null, serde_json::json!(-1.0)] {
+    for invalid in [serde_json::Value::Null, cadmpeg_core::json!(-1.0)] {
         let mut wire = wire.clone();
         wire["cache_fit_tolerance"] = invalid;
-        assert!(serde_json::from_value::<NurbsSurface>(wire).is_err());
+        assert!(json::from_value::<NurbsSurface>(wire).is_err());
     }
 }

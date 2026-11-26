@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded polynomial approximation of a native rolling-ball face carrier.
 
-use std::cell::OnceCell;
-
 use super::parameter_cache::memoize;
 
 use cadmpeg_core::convert::f64_from_index;
@@ -10,7 +8,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Point3;
 
@@ -36,20 +35,9 @@ fn surface_evaluator<'a>(
     ir: &'a CadIr,
     carrier: &'a SurfaceGeometry,
 ) -> impl Fn(f64, f64) -> Option<[f64; 3]> + 'a {
-    let index = OnceCell::new();
+    let index = ModelIndex::new_model_only(ir);
     move |u, v| {
-        let point =
-            if carrier.solved_cache().is_some() || carrier.procedural_construction().is_none() {
-                eval::model_surface_point(EvaluationAdmission::Standard, ir, carrier, u, v)
-            } else {
-                eval::model_surface_point_in_index(
-                    EvaluationAdmission::Standard,
-                    index.get_or_init(|| ModelIndex::build(ir)),
-                    carrier,
-                    u,
-                    v,
-                )
-            }
+        let point = eval::model_surface_point(EvaluationAdmission::Standard, &index, carrier, u, v)
             .ok()?
             .get();
         Some([point.x, point.y, point.z])

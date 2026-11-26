@@ -23,7 +23,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(sheet.id.as_str()),
-                format_args!("{}", "spreadsheet feature does not resolve"),
+                crate::rule!(
+                    "spreadsheets.spreadsheet-feature-does-not-resolve",
+                    "{}",
+                    "spreadsheet feature does not resolve"
+                ),
             );
         }
         for cell in sheet.cells() {
@@ -33,7 +37,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(sheet.id.as_str()),
-                    format_args!("{}", "spreadsheet cell does not resolve"),
+                    crate::rule!(
+                        "spreadsheets.spreadsheet-cell-does-not-resolve",
+                        "{}",
+                        "spreadsheet cell does not resolve"
+                    ),
                 );
                 continue;
             };
@@ -44,7 +52,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(sheet.id.as_str()),
-                    format_args!("{}", "spreadsheet cell has a different owner"),
+                    crate::rule!(
+                        "spreadsheets.spreadsheet-cell-different-owner",
+                        "{}",
+                        "spreadsheet cell has a different owner"
+                    ),
                 );
             }
         }
@@ -55,11 +67,12 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
 mod tests {
     use super::check_spreadsheets;
     use crate::document::CadIr;
+    use cadmpeg_core::serde_erase::json;
 
     fn parameter_fixture() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.parameters.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:parameter#cell", "name": "cell", "expression": "7", "ordinal": 0, "dependencies": [], "properties": {}
             }))
             .unwrap(),
@@ -71,7 +84,7 @@ mod tests {
     fn spreadsheet_reference_findings_keep_row_order_and_missing_owner_semantics() {
         let mut ir = parameter_fixture();
         ir.model.spreadsheets.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:spreadsheet#sheet", "feature": "test:model:feature#missing",
                 "cells": [
                     {"address": "A1", "parameter": "test:model:parameter#cell"},
@@ -81,7 +94,7 @@ mod tests {
             }))
             .unwrap(),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         check_spreadsheets(&ir, &mut findings);
         assert_eq!(

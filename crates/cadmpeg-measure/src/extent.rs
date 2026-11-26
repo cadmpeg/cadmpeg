@@ -165,6 +165,14 @@ pub(crate) fn parameter_ranges(
             numeric_error: 0.0,
         }));
     }
+    boundary_parameter_ranges(eval, chart, resolved)
+}
+
+pub(crate) fn boundary_parameter_ranges(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    resolved: &ResolvedFace<'_>,
+) -> Measure<[AxialRange; 2]> {
     let mut ranges = [0, 1].map(|_| AxialRange {
         min: f64::INFINITY,
         max: f64::NEG_INFINITY,

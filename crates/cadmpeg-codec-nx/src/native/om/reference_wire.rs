@@ -72,6 +72,7 @@ pub(super) fn deserialize<'de, D: Deserializer<'de>>(
 #[cfg(test)]
 mod tests {
     use super::super::{DataBlockControlReference, ObjectReference};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn typed_reference_wire_preserves_fields_and_rejects_mismatches() {
@@ -84,7 +85,7 @@ mod tests {
                 r#"{{"id":"r","record":"owner","object_id":1,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
             );
             let record: ObjectReference = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            assert_eq!(json::to_string(&record).unwrap(), json);
         }
         for fields in [
             r#""kind":"persistent_handle","value":1,"target_record":"record#1""#,
@@ -102,7 +103,7 @@ mod tests {
         }
         let json = r#"{"id":"r","data_block":"block","ordinal":0,"kind":"tagged28","value":268435455,"source_offset":10}"#;
         let record: DataBlockControlReference = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(json::to_string(&record).unwrap(), json);
         for json in [
             json.replace("tagged28", "record_ordinal16"),
             json.replace("268435455", "268435456"),

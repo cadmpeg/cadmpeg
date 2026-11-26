@@ -10,15 +10,14 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::{FiniteVector, UnitVector3};
+use cadmpeg_ir::units::FiniteVector;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
@@ -26,7 +25,6 @@ const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 const EPS_OWNED_ROLLING_BALL_RADIUS: f64 = 5.0e-7;
 const EPS_OWNED_ROLLING_BALL_ANGLE: f64 = 5.0e-7;
 const COLLAPSED_RAIL_TOLERANCE_MM: f64 = 0.00005;
-const CONSTRUCTION_RAIL_PROJECTION_MM: f64 = 0.000_002;
 
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
@@ -541,7 +539,6 @@ pub(in crate::families) struct A5FreeformCurve {
     pub(in crate::families) sites: Vec<A5FreeformJet>,
     pub(in crate::families) chart_v_end: f64,
     pub(in crate::families) extended_v_end: Option<f64>,
-    construction_rail_shift_mm: f64,
 }
 
 impl A5FreeformCurve {
@@ -555,17 +552,19 @@ impl A5FreeformCurve {
         let stations = self
             .sites
             .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: Self::DEGREE + 1,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            })
+            .map(
+                |sample| cadmpeg_ir::geometry::blends::RollingBallJetStation {
+                    knot: sample.knot,
+                    multiplicity: Self::DEGREE + 1,
+                    site: rolling_ball_jet_site(
+                        &sample.site,
+                        sample.first_derivatives,
+                        sample.second_derivatives,
+                    ),
+                },
+            )
             .collect();
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(Self::DEGREE, stations)
             .ok()
             .map(ProceduralSurfaceDefinition::RollingBallJet)
     }
@@ -574,7 +573,7 @@ impl A5FreeformCurve {
         mut self,
         radius: f64,
     ) -> Option<(ProceduralSurfaceDefinition, f64)> {
-        let mut max_shift_mm = self.construction_rail_shift_mm;
+        let mut max_shift_mm = 0.0_f64;
         for sample in &mut self.sites {
             let site = &mut sample.site;
             let center = site.center.get();
@@ -827,7 +826,7 @@ fn parse_a5_nurbs_curve(
         };
         knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
-    crate::nurbs::note_refusal(
+    crate::nurbs::give_up_refused(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             degree,
             knots,
@@ -837,6 +836,10 @@ fn parse_a5_nurbs_curve(
         ),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-nurbs-curve-frame"),
+            frame.pos,
+        ),
     )
     .map(|geometry| A5NurbsCurve {
         pos: frame.pos,
@@ -1027,22 +1030,23 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     }
     let mut stations = Vec::new();
 
-    stations.extend(
-        jet.sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: sample.multiplicity,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            }),
-    );
-    cadmpeg_ir::geometry::RollingBallJetStations::from_parts(A8FreeformCurve::DEGREE, stations)
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet)
+    stations.extend(jet.sites.iter().map(|sample| {
+        cadmpeg_ir::geometry::blends::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: rolling_ball_jet_site(
+                &sample.site,
+                sample.first_derivatives,
+                sample.second_derivatives,
+            ),
+        }
+    }));
+    cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+    )
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1192,38 +1196,28 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5FreeformCurve> {
-    a5_rolling_curves(data, records, false, None).collect()
+    a5_rolling_curves(data, records, false).collect()
 }
 
 pub(in crate::families) fn a5_owned_rolling_curves<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = A5FreeformCurve> + 'a {
-    a5_rolling_curves(data, records, true, None).filter(|jet| jet.extended_v_end.is_none())
+    a5_rolling_curves(data, records, true).filter(|jet| jet.extended_v_end.is_none())
 }
 
 pub(in crate::families) fn a5_extended_rolling_curve(
     data: &[u8],
     record: &ConsolidatedRecord,
 ) -> Option<A5FreeformCurve> {
-    a5_rolling_curves(data, std::slice::from_ref(record), true, None)
+    a5_rolling_curves(data, std::slice::from_ref(record), true)
         .find(|jet| jet.extended_v_end.is_some())
-}
-
-pub(in crate::families) fn a5_rolling_curve_on_construction_radius(
-    data: &[u8],
-    record: &ConsolidatedRecord,
-    radius: f64,
-) -> Option<A5FreeformCurve> {
-    a5_rolling_curves(data, std::slice::from_ref(record), true, Some(radius))
-        .find(|jet| jet.extended_v_end.is_none())
 }
 
 fn a5_rolling_curves<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
     owned: bool,
-    construction_radius: Option<f64>,
 ) -> impl Iterator<Item = A5FreeformCurve> + 'a {
     records
         .iter()
@@ -1235,16 +1229,11 @@ fn a5_rolling_curves<'a>(
                 end: record.range()?.end,
                 header_token: record.header_token(),
             };
-            parse_a5_curve(data, frame, owned, construction_radius)
+            parse_a5_curve(data, frame, owned)
         })
 }
 
-fn parse_a5_curve(
-    data: &[u8],
-    frame: ConsolidatedFrame,
-    owned: bool,
-    construction_radius: Option<f64>,
-) -> Option<A5FreeformCurve> {
+fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<A5FreeformCurve> {
     let ConsolidatedFrame {
         pos,
         payload,
@@ -1299,7 +1288,6 @@ fn parse_a5_curve(
         Some((count, knot_start, at, block_bytes, chart_v_end))
     })()?;
     let mut sites = Vec::new();
-    let mut construction_rail_shift_mm = 0.0_f64;
 
     for index in 0..count {
         let offset = index * 80;
@@ -1311,13 +1299,7 @@ fn parse_a5_curve(
         ) else {
             return None;
         };
-        let site = if let Some(radius) = construction_radius {
-            let (site, shift) = project_rolling_ball_rails(positions, radius)?;
-            construction_rail_shift_mm = construction_rail_shift_mm.max(shift);
-            site
-        } else {
-            rolling_ball_site(positions, owned)?
-        };
+        let site = rolling_ball_site(positions, owned)?;
         sites.push(A5FreeformJet {
             knot,
             site,
@@ -1331,7 +1313,6 @@ fn parse_a5_curve(
         sites,
         chart_v_end,
         extended_v_end,
-        construction_rail_shift_mm,
     })
 }
 
@@ -1450,46 +1431,6 @@ fn a5_rolling_ball_tail(
         at += 2;
     }
     (at == data.len()).then_some((v_end, extended_v_end))
-}
-
-fn project_rolling_ball_rails(
-    values: [FiniteReal; 10],
-    radius: f64,
-) -> Option<(RollingBallSite, f64)> {
-    let first = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
-    let second = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
-    let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
-    let theta = values[9];
-    if !radius.is_finite() || radius <= 0.0 || !(0.0..=std::f64::consts::PI).contains(&theta.get())
-    {
-        return None;
-    }
-    let first_direction =
-        UnitVector3::normalized_by_largest_component(first.get().vector_from(center.get()))?;
-    let axis = *first_direction.as_raw();
-    let limit1 = FinitePoint3::new(center.get().translated(axis, radius))?;
-    let limit2 = if theta.get() == 0.0 {
-        limit1
-    } else {
-        let radial = second.get().vector_from(center.get());
-        let transverse =
-            UnitVector3::normalized_by_largest_component(radial - axis.scale(radial.dot(axis)))?;
-        let (sin, cos) = theta.get().sin_cos();
-        let direction = axis.scale(cos) + transverse.as_raw().scale(sin);
-        FinitePoint3::new(center.get().translated(direction, radius))?
-    };
-    let shift = first
-        .distance(limit1.get())
-        .max(second.distance(limit2.get()));
-    (shift <= CONSTRUCTION_RAIL_PROJECTION_MM).then_some((
-        RollingBallSite {
-            limit1,
-            limit2,
-            center,
-            theta,
-        },
-        shift,
-    ))
 }
 
 fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {
@@ -1965,7 +1906,7 @@ fn a5_surface(
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
-    let geometry = crate::nurbs::note_refusal(
+    let geometry = crate::nurbs::give_up_refused(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -1974,14 +1915,15 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
+            pos,
+        ),
     );
     if geometry.is_some()
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
     {
         refusal.push_surface_parameters_not_transferred(pos, parameters);
-    }
-    if geometry.is_some() && inferred_weights {
-        refusal.push_surface_weights_inferred(pos);
     }
     let extrapolation = tail.descriptors.filter(|descriptors| {
         *descriptors != [(0, None); 2]
@@ -1995,6 +1937,9 @@ fn a5_surface(
             tail.flags,
             &tail.continuation,
         );
+    }
+    if geometry.is_some() && inferred_weights {
+        refusal.push_surface_weights_inferred(pos);
     }
     Ok(geometry.map(|geometry| FreeformSurface {
         pos,
@@ -2254,16 +2199,20 @@ fn a8_surface_from_parsed(
     let (u_knots, v_knots) = match header.expanded_knots() {
         Ok(knots) => knots,
         Err(error) => {
-            return Ok(crate::nurbs::note_refusal(
+            return Ok(crate::nurbs::give_up_refused(
                 Err(error),
                 refusal,
                 format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+                    object_id,
+                ),
             ))
         }
     };
     let control_points = grid_rows(control_points, v_count)?;
     let weights = rational.then(|| grid_rows(weights, v_count)).transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    Ok(crate::nurbs::give_up_refused(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -2272,6 +2221,10 @@ fn a8_surface_from_parsed(
         ),
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+            object_id,
+        ),
     )
     .map(|geometry| FreeformSurface {
         pos,
@@ -2332,7 +2285,7 @@ fn a5_array_marker(
         Some([0x0c, ..]) => Some(at + 1),
         Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
-        Some([0x08, code]) if owned && code % 4 == 1 => Some(at + 2),
+        Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,
     }
 }

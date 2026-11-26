@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled curves and polygonal surfaces with checked sample layouts.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 #[cfg(feature = "schema")]
@@ -57,7 +57,7 @@ fn admit_finite_vertices(vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, Geo
 }
 
 /// Source-native polygonal surface with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PolygonalSurface {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<Point3>"))]
@@ -212,7 +212,7 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
 // A source states a raw parameter and point; a `PolylineCurve` holds the
 // admitted sample, whose parameter is a `FiniteReal` and whose point is a
 // `FinitePoint3`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PolylineVertex<R = f64, P = Point3> {
@@ -227,7 +227,14 @@ pub struct PolylineVertex<R = f64, P = Point3> {
 /// A parameterized polyline carries one parameter per sample in the sample
 /// row, so a parameter list that does not match the sample count has no
 /// spelling.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -235,17 +242,17 @@ pub enum PolylineSamples<R = f64, P = Point3> {
     /// Samples the source did not parameterize.
     Unparameterized {
         /// Ordered model-space samples.
-        points: crate::features::NonEmptyMembers<P>,
+        points: crate::features::selections::NonEmptyMembers<P>,
     },
     /// Samples the source parameterized.
     Parameterized {
         /// Ordered samples, each with its source parameter.
-        vertices: crate::features::NonEmptyMembers<PolylineVertex<R, P>>,
+        vertices: crate::features::selections::NonEmptyMembers<PolylineVertex<R, P>>,
     },
 }
 
 /// Source-native polyline with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "PolylineCurveWire"))]
 #[serde(try_from = "PolylineCurveWire")]
@@ -523,7 +530,7 @@ impl PolylineCurve {
     ) -> Result<PolylineSamples<FiniteReal, FinitePoint3>, GeometryLayoutError> {
         fn members<T>(
             values: Vec<T>,
-        ) -> Result<crate::features::NonEmptyMembers<T>, GeometryLayoutError> {
+        ) -> Result<crate::features::selections::NonEmptyMembers<T>, GeometryLayoutError> {
             match values.try_into() {
                 Ok(values) => Ok(values),
                 Err(_) => Err(layout_error("polyline must contain at least two points")),

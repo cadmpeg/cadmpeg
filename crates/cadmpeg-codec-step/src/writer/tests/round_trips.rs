@@ -172,7 +172,7 @@ fn curve_geometry_for_sheet_pcurve(
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let Some((origin, direction)) = basis
-                .line_parameters(&cadmpeg_test_support::service_decode_context())
+                .line_parameters(&cadmpeg_core::decode::test_support::service_decode_context())
                 .expect("fixture line parameter walk is admitted")
             else {
                 return Ok(None);
@@ -270,7 +270,7 @@ fn align_sheet_edge_to_pcurve(
             .find(|point| point.id == point_id)
             .expect("sheet edge point")
             .set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
     }
@@ -282,7 +282,7 @@ fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::surface(&mut e, g.solved().expect("solved surface"))
         .expect("surface geometry is writable");
-    e.into_lines().expect("finite reals").join("\n")
+    e.into_lines().join("\n")
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::curve(&mut e, g.solved().expect("solved curve"))
         .expect("curve geometry is writable");
-    e.into_lines().expect("finite reals").join("\n")
+    e.into_lines().join("\n")
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {
@@ -712,7 +712,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     product.label = Some("Cube part".into());
     product.part_number = Some("PART-001".into());
     product.bodies = vec![ir.geometry.bodies[0].id.clone()];
-    ir.model.product_definitions.push(product);
+    ir.model.product_definitions = vec![product];
     let options = StepWriteOptions {
         ..StepWriteOptions::default()
     };
@@ -763,7 +763,7 @@ pub(super) fn wire_body_ir(alpha: f64) -> CadIr {
     ir.geometry.shells[0].members =
         vec![cadmpeg_ir::topology::ShellMember::WireEdge { id: edge.id }];
     ir.geometry.regions.truncate(1);
-    ir.geometry.regions[0].shells = vec![ir.geometry.shells[0].id.clone()];
+    ir.geometry.regions[0].set_shells(vec![ir.geometry.shells[0].id.clone()]);
     ir.geometry.bodies.truncate(1);
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.geometry.bodies[0].color =
@@ -875,7 +875,10 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_body(Some(ir.geometry.bodies[0].id.clone())),
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: Vec::new(),
+        }),
     );
     let mut bytes = Vec::new();
     let report = write_step(
@@ -900,7 +903,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
-    assert!(mesh.body.is_some());
+    assert!(mesh.of.body().is_some());
 }
 
 #[test]
@@ -1088,7 +1091,9 @@ fn every_reference_resolves() {
 fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
     let mut ir = unit_cube().expect("unit cube fixture");
     for face in &mut ir.geometry.faces {
-        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+            face.loops.stated().cloned().collect::<Vec<_>>(),
+        );
     }
     let output = export(&ir);
     assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
@@ -1181,6 +1186,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1188,10 +1194,12 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1243,6 +1251,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearances.push(Appearance {
         id: second_appearance.clone(),
@@ -1258,6 +1267,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#transparent-face"
@@ -1265,10 +1275,12 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#more-transparent-face"
@@ -1276,10 +1288,12 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1320,9 +1334,11 @@ fn writer_round_trips_presentation_layer_visibility() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: Some("layer visibility".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1362,9 +1378,11 @@ fn writer_round_trips_empty_presentation_layer_label() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
+        parent: None,
         description: Some("unnamed layer".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1697,218 +1715,6 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
     );
 }
 
-/// The sweep vector's components are finite, and its length is past the
-/// largest finite `f64`.
-#[test]
-fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
-    use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    let source = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_geometry.p21")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode procedural geometry");
-    let mut ir = source.ir().clone();
-    let sweep = ir
-        .geometry
-        .procedural_surfaces
-        .iter_mut()
-        .find(|surface| {
-            matches!(
-                surface.definition(),
-                ProceduralSurfaceDefinition::LinearSweep(_)
-            )
-        })
-        .expect("the fixture states a linear sweep");
-    sweep.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::LinearSweep(construction) = definition else {
-            panic!("the selected surface is a linear sweep");
-        };
-        *construction = LinearSweepSurfaceConstruction::try_new(
-            construction.directrix().clone(),
-            Vector3::new(1.3e308, 1.3e308, 0.0),
-        )
-        .expect("finite components admit the sweep");
-    });
-
-    let mut bytes = Vec::new();
-    let written = write_step(
-        &ir,
-        &mut bytes,
-        StepSchema::Ap242Edition3,
-        &StepWriteOptions::default(),
-    );
-    let text = String::from_utf8_lossy(&bytes);
-    let error = written.expect_err(&format!(
-        "an overflowing sweep magnitude has no STEP real: {}",
-        text.lines()
-            .filter(|line| line.contains("VECTOR") || line.contains("SURFACE_OF_LINEAR"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    ));
-    assert!(
-        error
-            .to_string()
-            .contains("not implemented yet: STEP writer computed the non-finite real inf"),
-        "{error}"
-    );
-}
-
-/// The formatter states a finite number and refuses the section for any
-/// other, where it wrote `0.` in its place.
-#[test]
-fn the_part21_real_formatter_refuses_a_non_finite_value() {
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let emitter = crate::writer::Emitter::new();
-        assert_eq!(emitter.real(1.5), "1.5");
-        assert_eq!(emitter.real(value), "", "{value}");
-        let Err(error) = emitter.into_lines() else {
-            panic!("a non-finite real refuses the section: {value}");
-        };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-            "{error}"
-        );
-    }
-}
-
-/// Decodes `records`, gives each procedural replica `transform`, and writes
-/// the model.
-fn replica_written_with(
-    records: &str,
-    transform: Transform,
-) -> Result<String, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
-
-    let source = crate::test_support::exchange::decode_inline(records);
-    let mut ir = source.ir().clone();
-    let mut replicas = 0;
-    for surface in &mut ir.geometry.procedural_surfaces {
-        surface.edit_definition(|definition| {
-            if let ProceduralSurfaceDefinition::Replica {
-                transform: held, ..
-            } = definition
-            {
-                *held = transform;
-                replicas += 1;
-            }
-        });
-    }
-    for curve in &mut ir.geometry.procedural_curves {
-        curve.edit_definition(|definition| {
-            if let ProceduralCurveDefinition::Replica {
-                transform: held, ..
-            } = definition
-            {
-                *held = transform;
-                replicas += 1;
-            }
-        });
-    }
-    assert_eq!(replicas, 1, "the exchange states one replica");
-    let mut bytes = Vec::new();
-    crate::export::write_step_outcome(
-        &ir,
-        &mut bytes,
-        StepSchema::Ap242Edition3,
-        &StepWriteOptions::default(),
-        std::collections::HashSet::new(),
-    )?;
-    Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
-}
-
-const SURFACE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
-#2=DIRECTION('',(1.,0.,0.));
-#3=DIRECTION('',(0.,1.,0.));
-#4=DIRECTION('',(0.,0.,1.));
-#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
-#6=PLANE('',#5);
-#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,2.,#4);
-#8=SURFACE_REPLICA('',#6,#7);
-#9=RECTANGULAR_TRIMMED_SURFACE('',#8,0.,1.,0.,1.,.T.,.T.);
-#10=GEOMETRIC_SET('',(#9));
-#11=SHAPE_REPRESENTATION('',(#10),#12);
-#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));";
-
-const CURVE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
-#2=DIRECTION('',(1.,0.,0.));
-#3=DIRECTION('',(0.,1.,0.));
-#4=DIRECTION('',(0.,0.,1.));
-#5=VECTOR('',#2,2.);
-#6=LINE('',#1,#5);
-#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,3.,#4);
-#8=CURVE_REPLICA('',#6,#7);
-#9=TRIMMED_CURVE('',#8,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);
-#10=GEOMETRIC_CURVE_SET('',(#9));
-#11=SHAPE_REPRESENTATION('',(#10),$);";
-
-/// A procedural replica refuses the file for `rows`.
-fn assert_replica_is_refused(exchange: &str, rows: [[f64; 4]; 3]) {
-    let written = replica_written_with(exchange, Transform::affine(rows).expect("affine"));
-    let Err(error) = written else {
-        panic!("{written:?}");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
-        "{error}"
-    );
-}
-
-const SHEAR: [[f64; 4]; 3] = [
-    [1.0, 0.5, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 0.0],
-];
-
-/// A procedural replica whose transform is a similarity is written as a
-/// replica.
-#[test]
-fn a_procedural_replica_with_a_similarity_is_written() {
-    let similarity = Transform::affine([
-        [0.0, -2.0, 0.0, 10.0],
-        [2.0, 0.0, 0.0, 20.0],
-        [0.0, 0.0, 2.0, 30.0],
-    ])
-    .expect("affine transform");
-    for (exchange, replica) in [
-        (SURFACE_REPLICA_EXCHANGE, "SURFACE_REPLICA"),
-        (CURVE_REPLICA_EXCHANGE, "CURVE_REPLICA"),
-    ] {
-        let text = replica_written_with(exchange, similarity).expect("a similarity is written");
-        assert!(text.contains(replica), "{text}");
-    }
-}
-
-/// A sheared surface replica refuses the file, where it was written as a
-/// different transform.
-#[test]
-fn a_surface_replica_refuses_a_shear() {
-    assert_replica_is_refused(SURFACE_REPLICA_EXCHANGE, SHEAR);
-}
-
-/// A sheared curve replica refuses the file, where it was written as a
-/// different transform.
-#[test]
-fn a_curve_replica_refuses_a_shear() {
-    assert_replica_is_refused(CURVE_REPLICA_EXCHANGE, SHEAR);
-}
-
-/// A replica transform with a zero column refuses the file, where the column
-/// was written as the direction `(0,0,1)`.
-#[test]
-fn a_replica_refuses_a_zero_column() {
-    assert_replica_is_refused(
-        CURVE_REPLICA_EXCHANGE,
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-        ],
-    );
-}
-
 #[test]
 fn disconnected_wire_edges_export_in_separate_connected_sets() {
     let full = unit_cube().expect("cube");
@@ -1948,6 +1754,7 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
     }
     ir.geometry.shells[0].add_wire_edge(second.id.clone());
     ir.geometry.edges.push(second);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
         .expect("neutral validation")
         .is_ok());

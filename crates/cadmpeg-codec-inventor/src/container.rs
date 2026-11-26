@@ -131,7 +131,11 @@ pub(crate) fn deviation_losses(
     snapshot
         .deviations()
         .map(|deviation| {
-            crate::loss::InventorLossCode::ContainerNoncanonical.note(deviation.description())
+            let message = match deviation.stream().and_then(|id| snapshot.stream_by_id(id)) {
+                Some(stream) => format!("{}: {}", stream.path(), deviation.description()),
+                None => deviation.description().to_owned(),
+            };
+            crate::loss::InventorLossCode::ContainerNoncanonical.note(message)
         })
         .collect()
 }

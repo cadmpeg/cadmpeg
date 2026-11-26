@@ -199,8 +199,11 @@ pub(super) fn linked_single_entities(
     Ok(Some(result))
 }
 
-pub(super) fn relation_constraint_is_inactive(
-    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+/// Whether the solved sketch geometry contradicts the typed reading of a
+/// dimensional relation: its operands measure another value than the stored
+/// one, or the stored value has another quantity than the reading measures.
+pub(super) fn relation_contradicts_geometry(
+    parameter: Option<&cadmpeg_ir::features::parameters::DesignParameter>,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -210,7 +213,7 @@ pub(super) fn relation_constraint_is_inactive(
     let entity = |id: &SketchEntityId| find_profile_entity(sketch_entities, id);
     Ok(match definition {
         SketchConstraintDefinitionInput::DistanceLoci { first, second, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -244,7 +247,7 @@ pub(super) fn relation_constraint_is_inactive(
                 .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
         }
         SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -258,7 +261,7 @@ pub(super) fn relation_constraint_is_inactive(
             !same_relation_dimension_length((second.u - first.u).abs(), expected.get())
         }
         SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -272,7 +275,7 @@ pub(super) fn relation_constraint_is_inactive(
             !same_relation_dimension_length((second.v - first.v).abs(), expected.get())
         }
         SketchConstraintDefinitionInput::Distance { entities, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -293,7 +296,7 @@ pub(super) fn relation_constraint_is_inactive(
             .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
         }
         SketchConstraintDefinitionInput::Angle { first, second, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -308,11 +311,21 @@ pub(super) fn relation_constraint_is_inactive(
                     None => return Ok(false),
                 },
             )
-            .is_some_and(|measured| !same_dimension_angle(measured, expected.get()))
+            .is_some_and(|measured| {
+                let expected = expected.get().rem_euclid(std::f64::consts::TAU);
+                ![
+                    measured,
+                    std::f64::consts::PI - measured,
+                    std::f64::consts::PI + measured,
+                    std::f64::consts::TAU - measured,
+                ]
+                .into_iter()
+                .any(|candidate| same_dimension_angle(candidate, expected))
+            })
         }
         SketchConstraintDefinitionInput::Radius { entity: id, .. }
         | SketchConstraintDefinitionInput::Diameter { entity: id, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -335,7 +348,7 @@ pub(super) fn relation_constraint_is_inactive(
         }
         SketchConstraintDefinitionInput::RepeatedRadius { entities, .. }
         | SketchConstraintDefinitionInput::RepeatedDiameter { entities, .. } => {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(true);
@@ -344,7 +357,7 @@ pub(super) fn relation_constraint_is_inactive(
                 definition,
                 SketchConstraintDefinitionInput::RepeatedDiameter { .. }
             );
-            let mut inactive = false;
+            let mut contradicted = false;
             for id in entities {
                 let Some(entity) = entity(id) else {
                     return Ok(false);
@@ -355,9 +368,9 @@ pub(super) fn relation_constraint_is_inactive(
                     _ => return Ok(false),
                 };
                 let measured = if diameter { radius * 2.0 } else { radius };
-                inactive |= !same_dimension_length(measured, expected.get());
+                contradicted |= !same_dimension_length(measured, expected.get());
             }
-            inactive
+            contradicted
         }
         _ => false,
     })
@@ -366,7 +379,7 @@ pub(super) fn relation_constraint_is_inactive(
 pub(super) fn typed_relation_definition(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
-    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+    parameter: Option<&cadmpeg_ir::features::parameters::DesignParameter>,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
@@ -395,7 +408,7 @@ pub(super) struct SketchRelationEntities<'a> {
 pub(super) fn typed_relation_definition_with_profile_axis(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
-    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+    parameter: Option<&cadmpeg_ir::features::parameters::DesignParameter>,
     profile: SketchRelationEntities<'_>,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
@@ -598,41 +611,42 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     };
     let dynamic_point_line_pair = if dynamic && relation.family == PointLineDistance {
         let known_point = point(0)?;
-        let selected = if let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
-            parameter.value.as_ref()
-        {
-            let point_candidates = match known_point {
-                Some(point) => vec![point],
-                None => match relation_operand_marker(relation, 0, sketch, markers_by_id) {
-                    Some(marker) => dynamic_marker_point_candidates(
-                        ctx,
-                        marker,
-                        sketch,
-                        markers_by_id,
-                        loci_by_marker,
-                        sketch_entities,
-                    )?,
-                    None => Vec::new(),
-                },
+        let selected =
+            if let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            {
+                let point_candidates = match known_point {
+                    Some(point) => vec![point],
+                    None => match relation_operand_marker(relation, 0, sketch, markers_by_id) {
+                        Some(marker) => dynamic_marker_point_candidates(
+                            ctx,
+                            marker,
+                            sketch,
+                            markers_by_id,
+                            loci_by_marker,
+                            sketch_entities,
+                        )?,
+                        None => Vec::new(),
+                    },
+                };
+                let line_candidates = dynamic_line_operand_candidates(
+                    ctx,
+                    relation,
+                    1,
+                    sketch,
+                    markers_by_id,
+                    loci_by_marker,
+                    sketch_entities,
+                )?;
+                unique_point_line_candidate_pair(
+                    *expected,
+                    &point_candidates,
+                    &line_candidates,
+                    sketch_entities,
+                )
+            } else {
+                None
             };
-            let line_candidates = dynamic_line_operand_candidates(
-                ctx,
-                relation,
-                1,
-                sketch,
-                markers_by_id,
-                loci_by_marker,
-                sketch_entities,
-            )?;
-            unique_point_line_candidate_pair(
-                *expected,
-                &point_candidates,
-                &line_candidates,
-                sketch_entities,
-            )
-        } else {
-            None
-        };
         match selected {
             Some(pair) => Some(pair),
             None => unique_dynamic_roster_point_line_pair(
@@ -660,7 +674,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         match selected {
             Some(pair) => Some(pair),
             None => (|| -> Result<Option<(SketchEntityId, SketchEntityId)>, cadmpeg_core::CodecError> {
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
                 return Ok(None);
@@ -834,7 +848,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 return Ok(None);
             }
             if !sketch_entities.is_empty() {
-                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                let cadmpeg_ir::features::parameters::ParameterValue::Length(expected) =
                     resolved_or_none!(parameter.value.as_ref())
                 else {
                     return Ok(None);
@@ -943,7 +957,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 return Ok(None);
             }
             if !sketch_entities.is_empty() {
-                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                let cadmpeg_ir::features::parameters::ParameterValue::Length(expected) =
                     resolved_or_none!(parameter.value.as_ref())
                 else {
                     return Ok(None);
@@ -1021,7 +1035,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     }
                 },
             };
-            let cadmpeg_ir::features::ParameterValue::Length(expected) =
+            let cadmpeg_ir::features::parameters::ParameterValue::Length(expected) =
                 resolved_or_none!(parameter.value.as_ref())
             else {
                 return Ok(None);
@@ -1167,7 +1181,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     sketch_entities,
                 ));
             }
-            let cadmpeg_ir::features::ParameterValue::Length(expected) =
+            let cadmpeg_ir::features::parameters::ParameterValue::Length(expected) =
                 resolved_or_none!(parameter.value.as_ref())
             else {
                 return Ok(None);
@@ -1240,7 +1254,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             if first == second {
                 return Ok(None);
             }
-            let cadmpeg_ir::features::ParameterValue::Angle(expected) =
+            let cadmpeg_ir::features::parameters::ParameterValue::Angle(expected) =
                 resolved_or_none!(parameter.value.as_ref())
             else {
                 return Ok(None);
@@ -1279,13 +1293,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 repeated_dimensioned_circular_entities(relation, parameter, sketch, sketch_entities)
             {
                 return Ok(Some(match parameter.display {
-                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
+                    Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => {
                         SketchConstraintDefinitionInput::RepeatedRadius {
                             entities,
                             parameter: parameter_id,
                         }
                     }
-                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
+                    Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
                         SketchConstraintDefinitionInput::RepeatedDiameter {
                             entities,
                             parameter: parameter_id,
@@ -1331,7 +1345,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 None => unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)?,
             });
             if !sketch_entities.is_empty() {
-                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                let cadmpeg_ir::features::parameters::ParameterValue::Length(expected) =
                     resolved_or_none!(parameter.value.as_ref())
                 else {
                     return Ok(None);
@@ -1346,8 +1360,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     _ => return Ok(None),
                 };
                 let expected_radius = match parameter.display {
-                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => expected.get(),
-                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.get() * 0.5,
+                    Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => {
+                        expected.get()
+                    }
+                    Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                        expected.get() * 0.5
+                    }
                     None => return Ok(None),
                 };
                 if !same_dimension_length(radius, expected_radius) && !authoritative {
@@ -1355,13 +1373,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 }
             }
             match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => {
                     Some(SketchConstraintDefinitionInput::Radius {
                         entity,
                         parameter: parameter_id,
                     })
                 }
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
                     Some(SketchConstraintDefinitionInput::Diameter {
                         entity,
                         parameter: parameter_id,
@@ -1434,7 +1452,7 @@ fn solver_line_entity(
 
 fn repeated_dimensioned_circular_entities(
     relation: &FeatureInputRelationInstance,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
 ) -> Option<Vec<SketchEntityId>> {
@@ -1452,12 +1470,14 @@ fn repeated_dimensioned_circular_entities(
     if !repeated_display && relation.parameter_scalar_ref() != parameter_native_ref {
         return None;
     }
-    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+        parameter.value.as_ref()
+    else {
         return None;
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     if !(expected_radius.is_finite() && expected_radius > 0.0) {
@@ -1500,11 +1520,12 @@ fn repeated_dimensioned_circular_entities(
 // only axis of variation between the distance and axis-distance resolvers.
 fn unique_profile_measured_loci_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     measure: impl Fn(&Point2, &Point2) -> f64,
 ) -> Option<(SketchLocus, SketchLocus)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -1564,11 +1585,12 @@ fn unique_repaired_profile_pair(
 fn unique_profile_measured_locus(
     sketch: &SketchId,
     known: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     measure: impl Fn(&Point2, &Point2) -> f64,
 ) -> Option<SketchLocus> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -1594,7 +1616,7 @@ fn unique_profile_measured_locus(
 pub(super) fn unique_profile_distance_locus(
     sketch: &SketchId,
     known: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchLocus> {
     unique_profile_measured_locus(
@@ -1610,12 +1632,13 @@ pub(super) fn doubled_profile_distance_loci(
     relation: &FeatureInputRelationInstance,
     operands: (usize, usize),
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> Option<(SketchLocus, SketchLocus)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -1687,7 +1710,7 @@ fn unique_repaired_profile_distance_loci_pair(
     sketch: &SketchId,
     first: &SketchLocus,
     second: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchLocus)> {
     unique_repaired_profile_pair(first, second, |known| {
@@ -1698,7 +1721,7 @@ fn unique_repaired_profile_distance_loci_pair(
 fn unique_profile_axis_distance_locus(
     sketch: &SketchId,
     known: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
 ) -> Option<SketchLocus> {
@@ -1721,7 +1744,7 @@ fn unique_repaired_profile_axis_distance_pair(
     sketch: &SketchId,
     first: &SketchLocus,
     second: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
 ) -> Option<(SketchLocus, SketchLocus)> {
@@ -1732,7 +1755,7 @@ fn unique_repaired_profile_axis_distance_pair(
 
 fn unique_profile_axis_distance_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
 ) -> Option<(SketchLocus, SketchLocus)> {
@@ -1747,7 +1770,7 @@ fn unique_profile_axis_distance_pair(
 
 fn unique_profile_distance_loci_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchLocus)> {
     unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
@@ -1884,10 +1907,11 @@ fn unique_repaired_entity_pair(
 fn unique_profile_line_distance_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -1902,7 +1926,7 @@ fn unique_marker_line_distance_entity(
     marker: &str,
     profile: SketchRelationEntities<'_>,
     known: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
@@ -1911,7 +1935,8 @@ fn unique_marker_line_distance_entity(
         sketch_entities,
     } = profile;
 
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return Ok(None);
     };
@@ -1938,10 +1963,11 @@ fn unique_marker_line_distance_entity(
 
 fn unique_profile_line_distance_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -1955,7 +1981,7 @@ fn unique_repaired_profile_line_distance_pair(
     sketch: &SketchId,
     first: &SketchEntityId,
     second: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
     unique_repaired_entity_pair(first, second, |known| {
@@ -1990,10 +2016,12 @@ pub(super) fn line_line_distance(first: &SketchEntity, second: &SketchEntity) ->
 fn unique_profile_line_angle_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = parameter.value.as_ref() else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) =
+        parameter.value.as_ref()
+    else {
         return None;
     };
     unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
@@ -2060,12 +2088,13 @@ fn unique_dynamic_marker_line_angle_pair(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<(SketchEntityId, SketchEntityId)>, cadmpeg_core::CodecError> {
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(expected)) =
+        parameter.value.as_ref()
     else {
         return Ok(None);
     };
@@ -2102,10 +2131,11 @@ fn unique_dynamic_marker_line_angle_pair(
 fn unique_dynamic_profile_line_angle_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(expected)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -2117,10 +2147,11 @@ fn unique_dynamic_profile_line_angle_entity(
 
 fn unique_dynamic_roster_line_angle_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(expected)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -2143,7 +2174,7 @@ fn unique_dynamic_marker_point_pair(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     known: (Option<SketchLocus>, Option<SketchLocus>),
     index: &DynamicMarkerPointIndex<'_>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
@@ -2154,7 +2185,8 @@ fn unique_dynamic_marker_point_pair(
         profile_axis,
     } = *index;
     let (known_first, known_second) = known;
-    let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
+        parameter.value.as_ref()
     else {
         return Ok(None);
     };
@@ -2257,7 +2289,7 @@ fn unique_dynamic_marker_point_pair(
 fn unique_dynamic_direct_point_roster_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     profile_axis: Option<ProfileAxis>,
@@ -2322,7 +2354,8 @@ fn unique_dynamic_direct_point_roster_pair(
     sort_profile_loci(&mut loci);
     let point = |locus: &SketchLocus| positions.get(locus_entity(locus)).copied();
     deduplicate_physical_loci(&mut loci, point);
-    let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
+        parameter.value.as_ref()
     else {
         return Ok(None);
     };
@@ -2415,7 +2448,7 @@ impl KnownOperands {
 fn unique_dynamic_roster_point_line_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     known_point: Option<SketchLocus>,
     known_line: Option<SketchEntityId>,
     sketch_entities: &[SketchEntity],
@@ -2441,7 +2474,8 @@ fn unique_dynamic_roster_point_line_pair(
         }
         return unique_roster_point_line_pair(sketch, parameter, sketch_entities);
     };
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -2472,10 +2506,11 @@ fn unique_dynamic_roster_point_line_pair(
 
 fn unique_roster_point_line_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -2526,12 +2561,13 @@ fn unique_dynamic_marker_line_distance_pair(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<(SketchEntityId, SketchEntityId)>, cadmpeg_core::CodecError> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(expected)) =
+        parameter.value.as_ref()
     else {
         return Ok(None);
     };
@@ -2568,7 +2604,7 @@ fn unique_dynamic_marker_line_distance_pair(
 fn unique_dynamic_roster_line_distance_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
     for operand in &relation.operands {
@@ -2827,10 +2863,12 @@ fn collect_marker_identity_ids<'a>(
 
 fn unique_profile_line_angle_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = parameter.value.as_ref() else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) =
+        parameter.value.as_ref()
+    else {
         return None;
     };
     unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
@@ -2843,7 +2881,7 @@ fn unique_repaired_profile_line_angle_pair(
     sketch: &SketchId,
     first: &SketchEntityId,
     second: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchEntityId, SketchEntityId)> {
     unique_repaired_entity_pair(first, second, |known| {
@@ -2967,10 +3005,11 @@ fn select_profile_point_line_pairs(
 fn unique_profile_point_line_entity(
     sketch: &SketchId,
     point: &SketchLocus,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -2994,10 +3033,11 @@ fn unique_profile_point_line_entity(
 fn unique_profile_line_point_locus(
     sketch: &SketchId,
     line: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchLocus> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -3019,10 +3059,11 @@ fn unique_profile_line_point_locus(
 
 fn unique_profile_point_line_pair(
     sketch: &SketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
+        parameter.value.as_ref()
     else {
         return None;
     };
@@ -3035,7 +3076,7 @@ fn unique_repaired_profile_point_line_pair(
     sketch: &SketchId,
     point: &SketchLocus,
     line: &SketchEntityId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let mut selected = None;
@@ -3327,14 +3368,16 @@ fn marker_center_dimensioned_entity(
     marker_id: &str,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+        parameter.value.as_ref()
+    else {
         return Ok(None);
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return Ok(None),
     };
     let center_entity = unique_profile_entity(sketch, sketch_entities, |entity| {
@@ -3372,14 +3415,16 @@ fn marker_center_dimensioned_entity(
 fn unique_dimensioned_circle_entity(
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
-    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+        parameter.value.as_ref()
+    else {
         return Ok(None);
     };
     let expected_radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return Ok(None),
     };
     let selected = unique_profile_entity(sketch, sketch_entities, |entity| {
@@ -4430,7 +4475,12 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
 
     let mut entities_by_sketch = HashMap::<&SketchId, Vec<&SketchEntity>>::new();
     let mut entities_by_native = HashMap::<(&SketchId, &str), Vec<&SketchEntity>>::new();
-    for entity in sketch_entities {
+    // A relation point drawn for a marker that only a list-read record
+    // reaches is no evidence for the transform that places main's geometry.
+    for entity in sketch_entities
+        .iter()
+        .filter(|entity| !super::relation_geometry::is_listed_relation_point(entity))
+    {
         entities_by_sketch
             .entry(&entity.sketch)
             .or_default()
@@ -4506,16 +4556,47 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
             }
             let compatible = |primary_only: bool| -> HashMap<GridPoint, HashSet<GridPoint>> {
                 let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+                // Precompute per-entity quantized loci/anchors once per sketch
+                // instead of recomputing them for every marker.
+                let primary_loci = primary_only.then(|| {
+                    sketch_entities
+                        .iter()
+                        .map(|entity| {
+                            let quantized = sketch_entity_locus_points(entity)
+                                .into_iter()
+                                .flatten()
+                                .map(|(point, _)| quantize(point, QUANTUM))
+                                .collect::<Vec<_>>();
+                            (&entity.geometry, quantized)
+                        })
+                        .filter(|(_, quantized)| !quantized.is_empty())
+                        .collect::<Vec<_>>()
+                });
+                let anchors_by_kind = (!primary_only).then(|| {
+                    [
+                        SketchInputKind::Point,
+                        SketchInputKind::LineOrCircle,
+                        SketchInputKind::Arc,
+                        SketchInputKind::ConstrainedPoint,
+                    ]
+                    .map(|kind| {
+                        let mut loci = Vec::new();
+                        for entity in sketch_entities {
+                            for point in marker_geometry_anchors(kind, &entity.geometry) {
+                                loci.push(quantize(point, QUANTUM));
+                            }
+                        }
+                        loci
+                    })
+                });
                 for marker in &markers {
-                    if !matches!(
-                        marker.kind(),
-                        SketchInputKind::Point
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                            | SketchInputKind::ConstrainedPoint
-                    ) {
-                        continue;
-                    }
+                    let kind_index = match marker.kind() {
+                        SketchInputKind::Point => 0,
+                        SketchInputKind::LineOrCircle => 1,
+                        SketchInputKind::Arc => 2,
+                        SketchInputKind::ConstrainedPoint => 3,
+                        _ => continue,
+                    };
                     let Some([u, v]) = marker
                         .coordinates_m
                         .map(cadmpeg_ir::units::FiniteVector::get)
@@ -4531,30 +4612,23 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                     }
                     let marker_point =
                         quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                    for entity in sketch_entities {
-                        if entity.sketch != **sketch {
-                            continue;
+                    if let Some(primary_loci) = &primary_loci {
+                        for (geometry, quantized) in primary_loci {
+                            if marker_accepts_locus(marker.kind(), geometry) {
+                                points
+                                    .entry(marker_point)
+                                    .or_default()
+                                    .extend(quantized.iter().copied());
+                            }
                         }
-                        if primary_only {
-                            for (point, _) in
-                                sketch_entity_locus_points(entity).into_iter().flatten()
-                            {
-                                if marker_accepts_locus(marker.kind(), &entity.geometry) {
-                                    insert_compatible_locus(
-                                        &mut points,
-                                        marker_point,
-                                        quantize(point, QUANTUM),
-                                    );
-                                }
-                            }
-                        } else {
-                            for point in marker_geometry_anchors(marker.kind(), &entity.geometry) {
-                                insert_compatible_locus(
-                                    &mut points,
-                                    marker_point,
-                                    quantize(point, QUANTUM),
-                                );
-                            }
+                    } else if let Some(loci) =
+                        anchors_by_kind.as_ref().map(|buckets| &buckets[kind_index])
+                    {
+                        if !loci.is_empty() {
+                            points
+                                .entry(marker_point)
+                                .or_default()
+                                .extend(loci.iter().copied());
                         }
                     }
                 }

@@ -106,7 +106,7 @@ fn pole_triangle(first: usize) -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -129,7 +129,7 @@ fn pole_triangle(first: usize) -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
             source_object: None,
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(corners[start]).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(corners[start]).unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(chord).unwrap(),
             ))),
             native_ref: None,
@@ -252,7 +252,8 @@ fn spindle_strip() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
     });
     ir.geometry.points.push(Point::new(
         point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(ring.abs(), 0.0, height)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(ring.abs(), 0.0, height))
+            .unwrap(),
         None,
     ));
     ir.geometry.vertices.push(Vertex {
@@ -379,7 +380,7 @@ fn long_quarter_cylinder() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -541,7 +542,7 @@ fn sphere_less_a_lune() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*pole).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*pole).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -690,7 +691,7 @@ fn half_tube() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -898,7 +899,7 @@ fn tube_band() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let loop_id = LoopId::mint(format!("test:model:loop#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 (big + small) * u.cos(),
                 (big + small) * u.sin(),
                 0.0,
@@ -1049,7 +1050,7 @@ fn quad_on_patch(
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -1071,7 +1072,7 @@ fn quad_on_patch(
             source_object: None,
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(corners[start]).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(corners[start]).unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(chord).unwrap(),
             ))),
             native_ref: None,
@@ -1260,7 +1261,7 @@ fn notched_band(
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -1285,7 +1286,7 @@ fn notched_band(
         let chord = sub(to, from);
         (
             SolvedCurveGeometry::Line(LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(from).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(from).unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(chord).unwrap(),
             )),
             [0.0, chord.norm()],
@@ -1507,7 +1508,7 @@ fn accordion_strip(
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*corner).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*corner).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -1531,7 +1532,7 @@ fn accordion_strip(
     };
     let ruling = |at: Point3| {
         SolvedCurveGeometry::Line(LineCurve::new(
-            cadmpeg_ir::features::FinitePoint3::new(at).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(at).unwrap(),
             cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ))
     };
@@ -1694,7 +1695,7 @@ fn circular_segment() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
         let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(*end).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(*end).unwrap(),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -1799,4 +1800,21 @@ fn a_circular_segment_flatter_than_the_chord_tolerance_meshes_its_triangle() {
         "area {} against {triangle}",
         area(&mesh)
     );
+}
+
+#[test]
+fn a_partial_face_has_no_mesh() {
+    let mut cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let stated = cube.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
+    cube.geometry.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: stated };
+    let face = cube.geometry.faces[0].id.clone();
+    let mut tessellator = Tessellator::new(&cube, Options::default());
+    assert!(tessellator.face(&face).is_err());
+    let other = cube.geometry.faces[1].id.clone();
+    assert!(tessellator.face(&other).is_ok());
 }

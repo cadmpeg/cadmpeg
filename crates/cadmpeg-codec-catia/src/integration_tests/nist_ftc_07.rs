@@ -10,17 +10,46 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::CatiaCodec;
 
+/// One decode of the solid serves every check of its geometry and PMI.
 #[test]
-fn nist_ftc_07_transfers_every_solid_face_carrier() {
+fn nist_ftc_07_agrees_with_its_ap242_model() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
     let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
+    let decoded: EditableDecodeResult = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+        .expect("decode FTC-07 CATPart")
+        .into();
+    nist_ftc_07_transfers_every_solid_face_carrier(&decoded);
+    nist_ftc_07_circular_edge_agrees_with_both_face_curves(&decoded);
+    nist_ftc_07_transfers_all_freeform_boundary_curves(&decoded);
+    nist_ftc_07_transfers_both_planar_sheet_bodies(&decoded);
+    nist_ftc_07_planar_rims_classify_and_counterwind_their_holes(&decoded);
+    nist_ftc_07_plane_semicircle_follows_the_edge_interval(&decoded);
+    nist_ftc_07_solid_measures_the_step_validation_properties(&decoded);
+    nist_ftc_07_transfers_the_semantic_step_geometric_tolerances(&decoded);
+}
+
+fn nist_ftc_07_transfers_every_solid_face_carrier(decoded: &EditableDecodeResult) {
+    let validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        decoded.ir(),
+        &decoded.source_fidelity().annotations,
+        decoded.report().losses.clone(),
+    )
+    .expect("validate FTC-07 exactness paths");
+    let invalid_annotations: Vec<_> = validation
+        .findings
+        .iter()
+        .filter(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
+        .collect();
+    assert!(
+        invalid_annotations.is_empty(),
+        "invalid exactness annotations: {invalid_annotations:#?}",
+    );
     let geometry = &decoded.ir().geometry;
     assert_eq!(
         geometry
@@ -64,16 +93,9 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .all(|loss| loss.message.contains("stored-box excess")));
 }
 
-#[test]
-fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
+fn nist_ftc_07_circular_edge_agrees_with_both_face_curves(decoded: &EditableDecodeResult) {
     const STEP_EDGE_LENGTH_MM: f64 = 2.367_294_783_918_816_3;
     const LENGTH_TOLERANCE_MM: f64 = 2e-3;
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
     let geometry = &decoded.ir().geometry;
     let edge = geometry
         .edges
@@ -123,8 +145,7 @@ fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
     }
 }
 
-#[test]
-fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
+fn nist_ftc_07_transfers_all_freeform_boundary_curves(decoded: &EditableDecodeResult) {
     const ENDPOINT_TOLERANCE_MM: f64 = 2.0e-5;
     const STEP_SAMPLE_TOLERANCE_MM: f64 = 1.0e-4;
     const PLANE_JET_EDGES: [usize; 8] = [418, 425, 436, 443, 700, 728, 753, 761];
@@ -210,12 +231,6 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (764, [139.561_823_278, -104.256_042_271, 70.771_719_768]),
         (809, [139.561_883_141, -104.254_327_504, -70.770_057_607]),
     ];
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
     let geometry = &decoded.ir().geometry;
     let surfaces: HashMap<_, _> = geometry.surfaces.iter().map(|s| (&s.id, s)).collect();
     let freeform_faces: HashSet<_> = geometry
@@ -392,7 +407,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
                         .unwrap_or_else(|| panic!("{id}: {} has no source interval", pcurve.id))
                         .get()
                 },
-                cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
             );
             let mut lifted = Vec::new();
             for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -517,16 +532,9 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     );
 }
 
-#[test]
-fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
+fn nist_ftc_07_transfers_both_planar_sheet_bodies(decoded: &EditableDecodeResult) {
     use cadmpeg_ir::topology::BodyKind;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
     let model = &decoded.ir().model;
     let geometry = &decoded.ir().geometry;
     let solid_faces: HashSet<_> = geometry
@@ -555,10 +563,10 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     assert_eq!(sheets.len(), 2);
     let mut areas = Vec::new();
     for body in sheets {
-        let [region] = geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
+        let [region] = geometry.stated_body_regions(&body.id).collect::<Vec<_>>()[..] else {
             panic!("one region per sheet")
         };
-        let [shell_id] = region.shells.as_slice() else {
+        let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
             panic!("one shell per sheet")
         };
         let shell = geometry
@@ -566,7 +574,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("sheet shell");
-        let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
+        let [face] = geometry.stated_shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
             panic!("one face per sheet")
         };
         let surface = geometry
@@ -639,17 +647,8 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     }
 }
 
-#[test]
-fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
+fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes(decoded: &EditableDecodeResult) {
     use cadmpeg_ir::topology::{FaceLoops, Sense};
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(std::fs::read(path).expect("native part")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode native part");
     let geometry = &decoded.ir().geometry;
     let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = geometry
@@ -732,5 +731,214 @@ fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
                 "rim hole counterwinds the outer boundary"
             );
         }
+    }
+}
+
+fn nist_ftc_07_plane_semicircle_follows_the_edge_interval(decoded: &EditableDecodeResult) {
+    const TOLERANCE_MM: f64 = 2e-3;
+    let model = &decoded.ir().geometry;
+    let edge = model
+        .edges
+        .iter()
+        .find(|e| e.id.as_str() == "catia:standard:edge#28")
+        .expect("edge");
+    let curve = model
+        .curves
+        .iter()
+        .find(|c| Some(&c.id) == edge.curve())
+        .expect("edge curve");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|s| s.id.as_str() == "catia:standard:surf#4")
+        .expect("plane");
+    let pcurve = model
+        .pcurves
+        .iter()
+        .find(|p| p.id.as_str() == "catia:standard:pcurve#4:0:0")
+        .expect("pcurve");
+    let [a, b] = edge.param_range().expect("edge interval").get();
+    let [u, v] = pcurve.parameter_range().expect("pcurve interval").get();
+    let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
+    let expected = cadmpeg_ir::eval::decode::curve_point(admission, &curve.geometry, a.midpoint(b))
+        .expect("edge midpoint")
+        .get();
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(admission, &pcurve.geometry, u.midpoint(v))
+        .expect("pcurve midpoint");
+    let actual = cadmpeg_ir::eval::decode::surface_point(admission, &surface.geometry, uv.u, uv.v)
+        .expect("surface midpoint")
+        .get();
+    assert!(actual.distance(expected) < TOLERANCE_MM);
+}
+
+fn nist_ftc_07_solid_measures_the_step_validation_properties(decoded: &EditableDecodeResult) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
+
+    const MM_PER_INCH: f64 = 25.4;
+    // AP242 geometric validation properties of the STEP twin, in inches.
+    const STEP_AREA_IN2: f64 = 606.626_874;
+    const STEP_VOLUME_IN3: f64 = 105.342_09;
+    const STEP_CENTROID_IN: [f64; 3] = [0.030_217_731_6, -2.541_586_150_6, 0.001_383_17];
+    const AREA_RELATIVE_TOLERANCE: f64 = 1e-6;
+    const VOLUME_RELATIVE_TOLERANCE: f64 = 1e-5;
+    const CENTROID_TOLERANCE_MM: f64 = 1e-3;
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("measure context");
+    let report = Measurer::new(
+        MeasureInput {
+            ir: decoded.ir(),
+            fidelity: None,
+            geometry_transferred: decoded.report().geometry_transferred(),
+        },
+        MeasureOptions::default(),
+    )
+    .measure(&ctx, &Selection::default())
+    .expect("measure FTC-07");
+    let solids: Vec<_> = report
+        .bodies()
+        .iter()
+        .filter(|body| matches!(body.kind(), BodyKind::Solid))
+        .collect();
+    let [solid] = solids.as_slice() else {
+        panic!("one solid body");
+    };
+    assert!(solid.shells().iter().all(|shell| *shell.closed()));
+    let area = solid
+        .area()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured area")
+        .value()
+        .value
+        .get();
+    let volume = solid
+        .volume()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured volume")
+        .value()
+        .value
+        .get();
+    let centroid = solid
+        .centroid()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed solid has a measured centroid")
+        .value()
+        .value
+        .get();
+    let expected_area = STEP_AREA_IN2 * MM_PER_INCH * MM_PER_INCH;
+    let expected_volume = STEP_VOLUME_IN3 * MM_PER_INCH * MM_PER_INCH * MM_PER_INCH;
+    assert!(
+        (area - expected_area).abs() <= AREA_RELATIVE_TOLERANCE * expected_area,
+        "area {area} mm2 vs STEP {expected_area} mm2"
+    );
+    assert!(
+        (volume - expected_volume).abs() <= VOLUME_RELATIVE_TOLERANCE * expected_volume,
+        "volume {volume} mm3 vs STEP {expected_volume} mm3"
+    );
+    let expected_centroid = Point3::new(
+        STEP_CENTROID_IN[0] * MM_PER_INCH,
+        STEP_CENTROID_IN[1] * MM_PER_INCH,
+        STEP_CENTROID_IN[2] * MM_PER_INCH,
+    );
+    assert!(
+        centroid.distance(expected_centroid) <= CENTROID_TOLERANCE_MM,
+        "centroid {centroid:?} vs STEP {expected_centroid:?}"
+    );
+}
+
+fn nist_ftc_07_transfers_the_semantic_step_geometric_tolerances(decoded: &EditableDecodeResult) {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind as Kind, PmiDefinition};
+
+    const MM_PER_INCH: f64 = 25.4;
+    const MAGNITUDE_TOLERANCE_MM: f64 = 1e-9;
+    // STEP twin geometric tolerances (inch magnitudes, datum labels in
+    // precedence order). The general-note profile `.06 | A | B | C` of the
+    // whole part has no semantic CATIA tolerance record and is not listed.
+    const STEP: [(Kind, f64, &[&str]); 26] = [
+        (Kind::Flatness, 0.01, &[]),
+        (Kind::Parallelism, 0.03, &["A"]),
+        (Kind::Perpendicularity, 0.015, &["A"]),
+        (Kind::Position, 0.015, &["A"]),
+        (Kind::Position, 0.02, &["A", "B"]),
+        (Kind::Position, 0.02, &["E", "B", "C"]),
+        (Kind::Position, 0.023, &["A", "B", "C"]),
+        (Kind::Position, 0.023, &["D", "B", "C"]),
+        (Kind::Position, 0.04, &["A", "B", "C"]),
+        (Kind::Position, 0.04, &["A", "B", "C"]),
+        (Kind::Position, 0.045, &["A", "B", "C"]),
+        (Kind::Position, 0.045, &["A", "B", "C"]),
+        (Kind::Position, 0.05, &["A", "B", "C"]),
+        (Kind::Position, 0.06, &["A", "B", "C"]),
+        (Kind::Position, 0.06, &["E", "B", "C"]),
+        (Kind::SurfaceProfile, 0.005, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.006, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.01, &["A"]),
+        (Kind::SurfaceProfile, 0.015, &[]),
+        (Kind::SurfaceProfile, 0.015, &["A"]),
+        (Kind::SurfaceProfile, 0.015, &["A"]),
+        (Kind::SurfaceProfile, 0.03, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.04, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.06, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
+        (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
+    ];
+    let pmi = &decoded.ir().model.pmi;
+    let labels = |system: &cadmpeg_ir::ids::PmiId| -> Vec<String> {
+        let annotation = pmi
+            .iter()
+            .find(|annotation| &annotation.id == system)
+            .expect("datum system");
+        let PmiDefinition::DatumSystem { references } = &annotation.definition else {
+            panic!("datum system definition");
+        };
+        let mut ordered: Vec<_> = references.as_slice().iter().collect();
+        ordered.sort_by_key(|reference| reference.precedence.get());
+        ordered
+            .into_iter()
+            .map(|reference| {
+                let datum = pmi
+                    .iter()
+                    .find(|annotation| annotation.id == reference.datum)
+                    .expect("datum");
+                let PmiDefinition::Datum { identification } = &datum.definition else {
+                    panic!("datum definition");
+                };
+                identification.as_str().to_owned()
+            })
+            .collect()
+    };
+    let mut decoded_tolerances = Vec::new();
+    for annotation in pmi {
+        if let PmiDefinition::GeometricTolerance {
+            tolerance,
+            magnitude,
+            datum_system,
+            ..
+        } = &annotation.definition
+        {
+            decoded_tolerances.push((
+                tolerance.clone(),
+                magnitude.get().value.get(),
+                datum_system.as_ref().map(&labels).unwrap_or_default(),
+            ));
+        }
+    }
+    assert_eq!(decoded_tolerances.len(), STEP.len());
+    for (kind, inches, datums) in STEP {
+        let position = decoded_tolerances
+            .iter()
+            .position(|(tolerance, value, labels)| {
+                *tolerance == kind
+                    && (value - inches * MM_PER_INCH).abs() < MAGNITUDE_TOLERANCE_MM
+                    && labels.iter().map(String::as_str).eq(datums.iter().copied())
+            })
+            .unwrap_or_else(|| panic!("no decoded {kind:?} {inches} in {datums:?}"));
+        decoded_tolerances.swap_remove(position);
     }
 }

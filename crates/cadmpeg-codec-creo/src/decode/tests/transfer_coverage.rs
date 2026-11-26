@@ -9,9 +9,10 @@ use crate::decode::sketch_transfer::profiles::{
     SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -57,13 +58,9 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         )),
         source_object: Some(SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Creo,
+            format: cadmpeg_ir::codec_id!("creo"),
             object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
                 .expect("nonempty source identity"),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
         native_ref: None,
@@ -90,7 +87,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
                 None,
                 Vector3::new(0.0, 0.0, 1.0),
                 None,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .unwrap(),
         ),
@@ -131,13 +128,9 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Creo,
+        format: cadmpeg_ir::codec_id!("creo"),
         object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let curves = vec![

@@ -7,7 +7,8 @@ use super::surface_rows::{Carrier, StateRows};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_ir::features::{FaceMotion, FaceSelection};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeSet, HashSet};
 
@@ -198,9 +199,9 @@ fn shared_surface_selection(
         .iter()
         .filter(|reference| reference.design_reference >= 0)
         .any(|reference| {
-            super::effective_faces(reference)
+            super::face_resolution::effective_faces(reference)
                 .iter()
-                .map(|face| super::stable_ref(face.as_str()))
+                .map(|face| super::body_closures::stable_ref(face.as_str()))
                 .collect::<Option<BTreeSet<_>>>()
                 .is_some_and(|named| named == moved_set)
         })

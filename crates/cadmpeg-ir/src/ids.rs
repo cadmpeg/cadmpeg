@@ -7,7 +7,7 @@
 //! only be unique within their owning state.
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
-//! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
+//! components before `#`, the first a codec id). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
 pub mod comparison;
@@ -28,9 +28,46 @@ use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
 ///
-/// The key is non-empty, contains no `#`, and the whole id has no whitespace.
+/// The format is a codec id (§2.2), the key is non-empty and contains no
+/// `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
+    let format = id.split_once(':').map_or(id, |(format, _)| format);
+    if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+        return false;
+    }
+    let mut separators = 0_u8;
+    let mut key = false;
+    let mut nonempty = false;
+    for &byte in id.as_bytes() {
+        if byte >= 0x80 {
+            return is_valid_identity_unicode(id);
+        }
+        if matches!(byte, b'\t'..=b'\r' | b' ') {
+            return false;
+        }
+        match byte {
+            b'#' if key || !nonempty || separators != 2 => return false,
+            b'#' => {
+                key = true;
+                nonempty = false;
+            }
+            b':' if !key => {
+                if !nonempty || separators == 2 {
+                    return false;
+                }
+                separators += 1;
+                nonempty = false;
+            }
+            _ => nonempty = true,
+        }
+    }
+    key && nonempty
+}
+
+#[cold]
+#[inline(never)]
+fn is_valid_identity_unicode(id: &str) -> bool {
     let mut separators = 0_u8;
     let mut key = false;
     let mut nonempty = false;
@@ -58,7 +95,17 @@ pub fn is_valid_identity(id: &str) -> bool {
 }
 
 /// An entity identity with validated namespace and key grammar.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Deserialize,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[serde(try_from = "String")]
 pub struct Identity(String);
 
@@ -82,7 +129,7 @@ impl schemars::JsonSchema for Identity {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         // A strict end assertion also refuses a trailing line break.
         let pattern = format!(
-            r"^(?:[^:#{SCHEMA_WHITESPACE}]+:){{2}}[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
+            r"^[a-z0-9]+:[^:#{SCHEMA_WHITESPACE}]+:[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
         );
         schemars::json_schema!({"type": "string", "pattern": pattern})
     }
@@ -113,7 +160,12 @@ impl Identity {
     #[must_use]
     pub fn key(&self) -> IdentityKey {
         // Admission guarantees exactly one separator and a nonempty key.
-        IdentityKey(std::borrow::Cow::Owned(self.0.split('#').skip(1).collect()))
+        match self.0.split_once('#') {
+            Some((_, rest)) => IdentityKey(IdentityKeyRepr::from_str_copied(rest)),
+            None => IdentityKey(IdentityKeyRepr::from_string(
+                self.0.split('#').skip(1).collect(),
+            )),
+        }
     }
 
     /// Replace the kind while retaining the admitted format, scope, and key.
@@ -161,6 +213,12 @@ impl Identity {
     }
 }
 
+impl From<&Identity> for Identity {
+    fn from(value: &Identity) -> Self {
+        value.clone()
+    }
+}
+
 impl TryFrom<String> for Identity {
     type Error = IdentityError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -172,6 +230,12 @@ impl TryFrom<&str> for Identity {
     type Error = IdentityError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl AsRef<Identity> for Identity {
+    fn as_ref(&self) -> &Identity {
+        self
     }
 }
 
@@ -404,18 +468,184 @@ impl StaticIdentityKey {
     }
 }
 
+const INLINE_KEY_CAP: usize = 22;
+
+#[derive(Clone)]
+enum IdentityKeyRepr {
+    Borrowed(&'static str),
+    Inline {
+        bytes: [u8; INLINE_KEY_CAP],
+        len: u8,
+    },
+    Owned(Box<str>),
+}
+
+impl IdentityKeyRepr {
+    #[inline]
+    fn from_str_copied(text: &str) -> Self {
+        if text.len() <= INLINE_KEY_CAP {
+            let mut bytes = [0_u8; INLINE_KEY_CAP];
+            bytes[..text.len()].copy_from_slice(text.as_bytes());
+            Self::Inline {
+                bytes,
+                len: u8::try_from(text.len()).unwrap_or(0),
+            }
+        } else {
+            Self::Owned(Box::from(text))
+        }
+    }
+
+    #[inline]
+    fn from_string(text: String) -> Self {
+        if text.len() <= INLINE_KEY_CAP {
+            Self::from_str_copied(&text)
+        } else {
+            Self::Owned(text.into_boxed_str())
+        }
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Borrowed(text) => text,
+            Self::Inline { bytes, len } => {
+                std::str::from_utf8(&bytes[..usize::from(*len)]).unwrap_or("")
+            }
+            Self::Owned(text) => text,
+        }
+    }
+
+    fn into_owned(self) -> String {
+        match self {
+            Self::Borrowed(text) => text.to_owned(),
+            Self::Inline { bytes, len } => std::str::from_utf8(&bytes[..usize::from(len)])
+                .unwrap_or("")
+                .to_owned(),
+            Self::Owned(text) => text.into_string(),
+        }
+    }
+}
+
 /// The `<key>` component of an entity identity.
 ///
 /// The key grammar is: at least one character, and no `#` or Unicode
 /// whitespace. A `:` is part of the grammar because the key follows the `#`
 /// that ends the namespace. A value of this type exists only because that
 /// check passed.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IdentityKey(std::borrow::Cow<'static, str>);
+#[derive(Clone)]
+pub struct IdentityKey(IdentityKeyRepr);
+
+const _: () = assert!(std::mem::size_of::<IdentityKey>() <= 24);
+
+impl fmt::Debug for IdentityKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("IdentityKey").field(&self.as_str()).finish()
+    }
+}
+
+impl PartialEq for IdentityKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for IdentityKey {}
+
+impl PartialOrd for IdentityKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for IdentityKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl std::hash::Hash for IdentityKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
 
 rewrite_scalar!(IdentityKey);
 
 impl IdentityKey {
+    fn from_u64_inline(mut value: u64) -> Self {
+        let mut buf = [0_u8; INLINE_KEY_CAP];
+        let mut pos = INLINE_KEY_CAP;
+        loop {
+            pos -= 1;
+            let digit = u8::try_from(value % 10).unwrap_or(0);
+            buf[pos] = b'0' + digit;
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        let len = INLINE_KEY_CAP - pos;
+        let mut bytes = [0_u8; INLINE_KEY_CAP];
+        bytes[..len].copy_from_slice(&buf[pos..]);
+        Self(IdentityKeyRepr::Inline {
+            bytes,
+            len: u8::try_from(len).unwrap_or(0),
+        })
+    }
+
+    fn from_i64_inline(value: i64) -> Self {
+        let negative = value < 0;
+        let mut mag = value.unsigned_abs();
+        let mut buf = [0_u8; INLINE_KEY_CAP];
+        let mut pos = INLINE_KEY_CAP;
+        loop {
+            pos -= 1;
+            let digit = u8::try_from(mag % 10).unwrap_or(0);
+            buf[pos] = b'0' + digit;
+            mag /= 10;
+            if mag == 0 {
+                break;
+            }
+        }
+        if negative {
+            pos -= 1;
+            buf[pos] = b'-';
+        }
+        let len = INLINE_KEY_CAP - pos;
+        let mut bytes = [0_u8; INLINE_KEY_CAP];
+        bytes[..len].copy_from_slice(&buf[pos..]);
+        Self(IdentityKeyRepr::Inline {
+            bytes,
+            len: u8::try_from(len).unwrap_or(0),
+        })
+    }
+
+    fn concat_with(self, sep: Option<u8>, right: &str) -> Self {
+        let left = self.as_str();
+        let total = left.len() + usize::from(sep.is_some()) + right.len();
+        if total <= INLINE_KEY_CAP {
+            let mut bytes = [0_u8; INLINE_KEY_CAP];
+            bytes[..left.len()].copy_from_slice(left.as_bytes());
+            let mut pos = left.len();
+            if let Some(byte) = sep {
+                bytes[pos] = byte;
+                pos += 1;
+            }
+            bytes[pos..pos + right.len()].copy_from_slice(right.as_bytes());
+            return Self(IdentityKeyRepr::Inline {
+                bytes,
+                len: u8::try_from(total).unwrap_or(0),
+            });
+        }
+        let mut text = String::with_capacity(total);
+        text.push_str(left);
+        if let Some(byte) = sep {
+            text.push(char::from(byte));
+        }
+        text.push_str(right);
+        Self(IdentityKeyRepr::Owned(text.into_boxed_str()))
+    }
+
     /// Encode one source component for use as an identity key.
     ///
     /// ASCII letters, digits, `.`, `_`, `-`, and `/` remain literal. Every other
@@ -426,7 +656,7 @@ impl IdentityKey {
     pub fn encode_segment(value: &str) -> Self {
         const HEX: &[u8; 16] = b"0123456789ABCDEF";
         if value.is_empty() {
-            return Self(std::borrow::Cow::Owned("%EMPTY".to_owned()));
+            return Self(IdentityKeyRepr::Borrowed("%EMPTY"));
         }
         let mut encoded = String::with_capacity(value.len());
         for byte in value.bytes() {
@@ -438,7 +668,7 @@ impl IdentityKey {
                 encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
             }
         }
-        Self(std::borrow::Cow::Owned(encoded))
+        Self(IdentityKeyRepr::from_string(encoded))
     }
 
     /// Encode arbitrary source text as key text, keeping every character the
@@ -455,7 +685,7 @@ impl IdentityKey {
     pub fn encode_key_text(value: &str) -> Self {
         const HEX: &[u8; 16] = b"0123456789ABCDEF";
         if value.is_empty() {
-            return Self(std::borrow::Cow::Owned("%EMPTY".to_owned()));
+            return Self(IdentityKeyRepr::Borrowed("%EMPTY"));
         }
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
@@ -470,13 +700,15 @@ impl IdentityKey {
                 encoded.push(character);
             }
         }
-        Self(std::borrow::Cow::Owned(encoded))
+        Self(IdentityKeyRepr::from_string(encoded))
     }
 
     /// Copy this key with ASCII letters converted to lowercase.
     #[must_use]
     pub fn to_ascii_lowercase(&self) -> Self {
-        Self(std::borrow::Cow::Owned(self.0.to_ascii_lowercase()))
+        Self(IdentityKeyRepr::from_string(
+            self.as_str().to_ascii_lowercase(),
+        ))
     }
 
     /// Consume this key into its text.
@@ -488,15 +720,17 @@ impl IdentityKey {
     /// Construct an unsigned decimal key with a minimum zero-padded width.
     #[must_use]
     pub fn zero_padded(value: u64, width: usize) -> Self {
-        Self(std::borrow::Cow::Owned(format!("{value:0width$}")))
+        Self(IdentityKeyRepr::from_string(format!("{value:0width$}")))
     }
 
     /// Construct a key from the two lowercase hexadecimal digits of a byte.
     #[must_use]
     pub fn hex_byte(value: u8) -> Self {
-        let mut text = String::with_capacity(2);
-        append_hex_bytes(&mut text, &[value]);
-        Self(std::borrow::Cow::Owned(text))
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        let mut bytes = [0_u8; INLINE_KEY_CAP];
+        bytes[0] = DIGITS[usize::from(value >> 4)];
+        bytes[1] = DIGITS[usize::from(value & 0x0f)];
+        Self(IdentityKeyRepr::Inline { bytes, len: 2 })
     }
 
     /// Append two lowercase hexadecimal digits for each byte.
@@ -504,14 +738,14 @@ impl IdentityKey {
     pub fn with_hex_bytes(self, bytes: &[u8]) -> Self {
         let mut text = self.0.into_owned();
         append_hex_bytes(&mut text, bytes);
-        Self(std::borrow::Cow::Owned(text))
+        Self(IdentityKeyRepr::from_string(text))
     }
 
     /// Admit key text and retain the rejected value for the source route.
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
         if valid_key_text(&value) {
-            Ok(Self(std::borrow::Cow::Owned(value)))
+            Ok(Self(IdentityKeyRepr::from_string(value)))
         } else {
             Err(IdentityError::InvalidKey { value })
         }
@@ -520,13 +754,14 @@ impl IdentityKey {
     /// Construct a key from a static proof.
     #[must_use]
     pub const fn from_static(proof: StaticIdentityKey) -> Self {
-        Self(std::borrow::Cow::Borrowed(proof.value))
+        Self(IdentityKeyRepr::Borrowed(proof.value))
     }
 
     /// The key text.
     #[must_use]
+    #[inline]
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -563,14 +798,17 @@ pub struct StaticIdentityNamespace {
 }
 
 impl StaticIdentityNamespace {
-    /// Admit a static namespace, returning `None` for invalid grammar.
+    /// Admit a static namespace whose format is a codec id, returning
+    /// `None` for invalid grammar.
     #[must_use]
     pub const fn new(
         format: &'static str,
         scope: &'static str,
         kind: &'static str,
     ) -> Option<Self> {
-        if valid_component_text(format) && valid_component_text(scope) && valid_component_text(kind)
+        if cadmpeg_core::text::is_codec_id(format.as_bytes())
+            && valid_component_text(scope)
+            && valid_component_text(kind)
         {
             Some(Self {
                 format,
@@ -592,7 +830,8 @@ pub struct IdentityNamespace {
 }
 
 impl IdentityNamespace {
-    /// Admit a namespace assembled from runtime text.
+    /// Admit a namespace assembled from runtime text whose format is a
+    /// codec id.
     pub fn new(
         format: impl Into<String>,
         scope: impl Into<String>,
@@ -601,6 +840,12 @@ impl IdentityNamespace {
         let format = format.into();
         let scope = scope.into();
         let kind = kind.into();
+        if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+            return Err(IdentityError::InvalidComponent {
+                label: "format",
+                value: format,
+            });
+        }
         let format_component = Self::component("format", format)?;
         let scope_component = Self::component("scope", scope)?;
         let kind_component = Self::component("kind", kind)?;
@@ -621,15 +866,15 @@ impl IdentityNamespace {
         }
     }
 
-    /// Combine three already-admitted runtime components.
+    /// Combine a codec's format id with two admitted runtime components.
     #[must_use]
     pub fn from_components(
-        format: &IdentityComponent,
+        format: crate::codec::FormatId,
         scope: &IdentityComponent,
         kind: &IdentityComponent,
     ) -> Self {
         Self {
-            format: format.clone(),
+            format: IdentityComponent(std::borrow::Cow::Borrowed(format.as_str())),
             scope: scope.clone(),
             kind: kind.clone(),
         }
@@ -726,13 +971,32 @@ impl IdentityKeyTail {
         }
     }
 
-    /// Escape identity separators, the escape byte, and Unicode whitespace
-    /// in one source component.
+    /// Escape identity separators, the decode-set qualifier `@`, the escape
+    /// byte, and Unicode whitespace in one source component.
+    #[inline]
     #[must_use]
     pub fn percent_encode(value: &str) -> Self {
+        if value
+            .bytes()
+            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%' | b'@'))
+        {
+            return Self(value.to_owned());
+        }
+        Self::percent_encode_slow(value)
+    }
+
+    /// Whether [`Self::percent_encode`] escapes `character`.
+    #[must_use]
+    pub fn escapes(character: char) -> bool {
+        matches!(character, ':' | '#' | '%' | '@') || character.is_whitespace()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn percent_encode_slow(value: &str) -> Self {
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            if Self::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     const HEX: &[u8; 16] = b"0123456789ABCDEF";
@@ -779,10 +1043,8 @@ impl IdentityKey {
     /// This key, then `-`, then `part`.
     #[must_use]
     pub fn dash(self, part: impl Into<IdentityKey>) -> Self {
-        let mut text = self.0.into_owned();
-        text.push('-');
-        text.push_str(part.into().as_str());
-        Self(std::borrow::Cow::Owned(text))
+        let part = part.into();
+        self.concat_with(Some(b'-'), part.as_str())
     }
 
     /// This key, then `:`, then `part`.
@@ -791,61 +1053,169 @@ impl IdentityKey {
     /// grammar and never splits the identity.
     #[must_use]
     pub fn colon(self, part: impl Into<IdentityKey>) -> Self {
-        let mut text = self.0.into_owned();
-        text.push(':');
-        text.push_str(part.into().as_str());
-        Self(std::borrow::Cow::Owned(text))
+        let part = part.into();
+        self.concat_with(Some(b':'), part.as_str())
     }
 
     /// This key, then `part`, with no separator.
     #[must_use]
     pub fn then(self, part: impl Into<IdentityKey>) -> Self {
-        let mut text = self.0.into_owned();
-        text.push_str(part.into().as_str());
-        Self(std::borrow::Cow::Owned(text))
+        let part = part.into();
+        self.concat_with(None, part.as_str())
     }
 
     /// This key, then `tail`.
     #[must_use]
     pub fn with_tail(self, tail: &IdentityKeyTail) -> Self {
-        let mut text = self.0.into_owned();
-        text.push_str(tail.as_str());
-        Self(std::borrow::Cow::Owned(text))
+        self.concat_with(None, tail.as_str())
     }
 
     /// Prepend admitted text, which may be empty, to this nonempty key.
     #[must_use]
     pub fn with_prefix(self, prefix: &IdentityKeyTail) -> Self {
-        let mut text = String::with_capacity(prefix.as_str().len() + self.0.len());
-        text.push_str(prefix.as_str());
-        text.push_str(self.as_str());
-        Self(std::borrow::Cow::Owned(text))
+        let prefix = prefix.as_str();
+        let rest = self.as_str();
+        let total = prefix.len() + rest.len();
+        if total <= INLINE_KEY_CAP {
+            let mut bytes = [0_u8; INLINE_KEY_CAP];
+            bytes[..prefix.len()].copy_from_slice(prefix.as_bytes());
+            bytes[prefix.len()..total].copy_from_slice(rest.as_bytes());
+            return Self(IdentityKeyRepr::Inline {
+                bytes,
+                len: u8::try_from(total).unwrap_or(0),
+            });
+        }
+        let mut text = String::with_capacity(total);
+        text.push_str(prefix);
+        text.push_str(rest);
+        Self(IdentityKeyRepr::Owned(text.into_boxed_str()))
     }
 }
 
-macro_rules! identity_key_from_number {
+macro_rules! identity_key_from_unsigned {
     ($($number:ty),* $(,)?) => {$(
         impl From<$number> for IdentityKey {
+            #[inline]
             fn from(value: $number) -> Self {
-                Self(std::borrow::Cow::Owned(value.to_string()))
+                Self::from_u64_inline(u64::from(value))
             }
         }
 
         impl From<&$number> for IdentityKey {
+            #[inline]
             fn from(value: &$number) -> Self {
-                Self(std::borrow::Cow::Owned(value.to_string()))
+                Self::from_u64_inline(u64::from(*value))
             }
         }
 
         impl From<&&$number> for IdentityKey {
+            #[inline]
             fn from(value: &&$number) -> Self {
-                Self(std::borrow::Cow::Owned(value.to_string()))
+                Self::from_u64_inline(u64::from(**value))
             }
         }
     )*};
 }
 
-identity_key_from_number!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+macro_rules! identity_key_from_signed {
+    ($($number:ty),* $(,)?) => {$(
+        impl From<$number> for IdentityKey {
+            #[inline]
+            fn from(value: $number) -> Self {
+                Self::from_i64_inline(i64::from(value))
+            }
+        }
+
+        impl From<&$number> for IdentityKey {
+            #[inline]
+            fn from(value: &$number) -> Self {
+                Self::from_i64_inline(i64::from(*value))
+            }
+        }
+
+        impl From<&&$number> for IdentityKey {
+            #[inline]
+            fn from(value: &&$number) -> Self {
+                Self::from_i64_inline(i64::from(**value))
+            }
+        }
+    )*};
+}
+
+identity_key_from_unsigned!(u8, u16, u32, u64);
+identity_key_from_signed!(i8, i16, i32, i64);
+
+impl From<usize> for IdentityKey {
+    #[inline]
+    fn from(value: usize) -> Self {
+        match u64::try_from(value) {
+            Ok(narrow) => Self::from_u64_inline(narrow),
+            Err(_) => Self(IdentityKeyRepr::from_string(value.to_string())),
+        }
+    }
+}
+
+impl From<&usize> for IdentityKey {
+    #[inline]
+    fn from(value: &usize) -> Self {
+        Self::from(*value)
+    }
+}
+
+impl From<&&usize> for IdentityKey {
+    #[inline]
+    fn from(value: &&usize) -> Self {
+        Self::from(**value)
+    }
+}
+
+impl From<isize> for IdentityKey {
+    #[inline]
+    fn from(value: isize) -> Self {
+        match i64::try_from(value) {
+            Ok(narrow) => Self::from_i64_inline(narrow),
+            Err(_) => Self(IdentityKeyRepr::from_string(value.to_string())),
+        }
+    }
+}
+
+impl From<&isize> for IdentityKey {
+    #[inline]
+    fn from(value: &isize) -> Self {
+        Self::from(*value)
+    }
+}
+
+impl From<&&isize> for IdentityKey {
+    #[inline]
+    fn from(value: &&isize) -> Self {
+        Self::from(**value)
+    }
+}
+
+macro_rules! identity_key_from_wide_number {
+    ($($number:ty),* $(,)?) => {$(
+        impl From<$number> for IdentityKey {
+            fn from(value: $number) -> Self {
+                Self(IdentityKeyRepr::from_string(value.to_string()))
+            }
+        }
+
+        impl From<&$number> for IdentityKey {
+            fn from(value: &$number) -> Self {
+                Self(IdentityKeyRepr::from_string(value.to_string()))
+            }
+        }
+
+        impl From<&&$number> for IdentityKey {
+            fn from(value: &&$number) -> Self {
+                Self(IdentityKeyRepr::from_string(value.to_string()))
+            }
+        }
+    )*};
+}
+
+identity_key_from_wide_number!(u128, i128);
 
 impl From<&IdentityKey> for IdentityKey {
     fn from(value: &IdentityKey) -> Self {
@@ -867,7 +1237,7 @@ impl Display for IdentityComponent {
 
 impl Display for IdentityKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(self.as_str())
     }
 }
 
@@ -877,6 +1247,7 @@ impl Identity {
     /// Both arguments carry their own grammar, so this operation cannot
     /// refuse and cannot produce a malformed identity.
     #[must_use]
+    #[inline]
     pub fn compose(namespace: &IdentityNamespace, key: impl Into<IdentityKey>) -> Self {
         let key = key.into();
         let mut value = String::with_capacity(
@@ -900,7 +1271,8 @@ impl Identity {
 /// Failure to mint an entity identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityError {
-    /// A colon-separated namespace component is empty or contains separators.
+    /// A colon-separated namespace component is empty or contains separators,
+    /// or the format component is not a codec id.
     InvalidComponent {
         /// Component name (`format`, `scope`, or `kind`).
         label: &'static str,
@@ -933,24 +1305,31 @@ impl fmt::Display for IdentityError {
 
 impl std::error::Error for IdentityError {}
 
+impl From<IdentityError> for cadmpeg_core::CodecError {
+    fn from(error: IdentityError) -> Self {
+        Self::malformed(format_args!("{error}"))
+    }
+}
+
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident $(, $helper:ident)*) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
 
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                $crate::schema::rewrite::typed::visiting_id_type(std::any::type_name::<Self>(), || {
+                    $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                })
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
         }
@@ -985,8 +1364,24 @@ macro_rules! id_type {
             }
         }
 
+        impl AsRef<$crate::ids::Identity> for $name {
+            fn as_ref(&self) -> &$crate::ids::Identity { &self.0 }
+        }
+
         impl From<$name> for $crate::ids::Identity {
             fn from(value: $name) -> Self { value.0 }
+        }
+
+        impl From<&$name> for $crate::ids::Identity {
+            fn from(value: &$name) -> Self { value.0.clone() }
+        }
+
+        impl From<$name> for $crate::annotations::AnnotationKey {
+            fn from(value: $name) -> Self { Self::from(value.0) }
+        }
+
+        impl From<&$name> for $crate::annotations::AnnotationKey {
+            fn from(value: &$name) -> Self { Self::from(&value.0) }
         }
 
         impl From<$crate::ids::Identity> for $name {
@@ -1042,6 +1437,7 @@ macro_rules! local_id_type {
         $(#[$meta])*
         #[derive(
             Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+            cadmpeg_derive::StructuralOrd,
         )]
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
@@ -1053,8 +1449,7 @@ macro_rules! local_id_type {
             fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 visitor(&self.0)
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("typed rewrite tuple")?;
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
@@ -1200,11 +1595,11 @@ id_type!(
 );
 id_type!(
     /// Identifies a [`crate::subd::SubdSurface`] carrier.
-    SubdId, compose
+    SubdId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
-    PointId, compose
+    PointId, compose, key
 );
 id_type!(
     /// Identifies a passthrough [`crate::unknown::UnknownRecord`].
@@ -1233,10 +1628,10 @@ impl NativeId {
 }
 
 impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         <Identity as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(
             ctx, value, map,
@@ -1251,10 +1646,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map)
             .map(Self)

@@ -70,7 +70,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     let mut base_bytes = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&base, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut base_bytes))
     .unwrap();
@@ -93,7 +93,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         let mut bytes = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&moved, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
@@ -136,7 +136,7 @@ fn decode_encode_decode_reaches_fixpoint() {
     SldprtCodec
         .plan(
             EncodeInput::new(first.ir(), Some(first.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
@@ -236,8 +236,8 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
         .into_parts()
         .0;
 
-    let first_hash = crate::decode::document_local_sha256(first.ir()).unwrap();
-    let second_hash = crate::decode::document_local_sha256(&second).unwrap();
+    let first_hash = crate::test_support::document_local_sha256(first.ir()).unwrap();
+    let second_hash = crate::test_support::document_local_sha256(&second).unwrap();
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.
@@ -254,16 +254,31 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
 }
 
 #[test]
-fn source_less_cube_without_native_envelope_is_refused() {
+fn source_less_cube_writes_a_synthesized_native_envelope() {
     let ir = source_less_cube();
-    let Err(error) = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
-        panic!("source-less input cannot supply native producer framing");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-            if detail == "SLDPRT envelope regeneration needs validated retained local, central and EOCD signature tokens"),
-        "{error}"
-    );
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .unwrap();
+    let residual = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "export"
+                && loss.code.local_code() == "record.residual-unavailable"
+        })
+        .expect("synthesized tokens are charged");
+    for field in ["outer header file_id", "end-of-directory signature"] {
+        assert!(residual.message.contains(field), "{}", residual.message);
+    }
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().geometry.faces.len(), ir.geometry.faces.len());
 }
 
 #[test]
@@ -279,14 +294,14 @@ fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         assert!(!decoded.ir().model.sketch_constraints.is_empty());
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let baselines = &decoded.source_fidelity().codec_digests;
         assert_eq!(
-            baselines["sldprt_neutral_sketch_local_sha256"],
+            baselines["sldprt_neutral_sketch_local_sha256"].as_str(),
             crate::resolved_features::hashes::sketch_hash(&ctx, decoded.ir()).unwrap()
         );
         assert_eq!(
-            baselines["sldprt_neutral_sketch_constraint_local_sha256"],
+            baselines["sldprt_neutral_sketch_constraint_local_sha256"].as_str(),
             crate::resolved_features::hashes::constraint_hash(&ctx, decoded.ir()).unwrap()
         );
     }

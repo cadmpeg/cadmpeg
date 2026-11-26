@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 const EPS_CURVE_INVERSE_WITNESS: f64 = 1.0e-12;
 
@@ -23,12 +23,16 @@ use crate::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 
 use crate::eval::rolling_ball_jet_point;
 use crate::eval::IsolineDirection;
+use crate::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
+use crate::geometry::laws::LawExpression;
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::{
+    RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+};
+use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
-    CurveGeometry, LawExpression, LegacyExtensionFlags, OffsetExtension, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
-    RevisionSurfaceParameterization, RollingBallJetDerivative, RollingBallJetSite,
+    CurveGeometry, LegacyExtensionFlags, OffsetExtension, ProceduralSurface, RecordBounds,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
@@ -48,7 +52,7 @@ macro_rules! procedural_surface {
         let mut definition = $definition;
         definition
             .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                crate::geometry::LegacyCache::try_new(value)
+                crate::geometry::legacy_cache::LegacyCache::try_new(value)
                     .expect("admissible fit tolerance fixture")
             }))
             .expect("valid procedural surface cache fixture");
@@ -67,7 +71,7 @@ macro_rules! procedural_curve {
         match cache_fit_tolerance {
             Some(value) => definition
                 .set_legacy_cache(
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture"),
                 )
                 .expect("valid procedural curve cache fixture"),
@@ -95,10 +99,10 @@ const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 /// A contact track through `point` whose track tangent is `tangent`: the
 /// support's first `u` partial is the tangent and the pcurve runs along `u`.
 fn contact_track(point: Point3, tangent: Vector3) -> crate::eval::ContactTrack {
-    let finite = |vector| crate::features::FiniteVector3::new(vector).unwrap();
+    let finite = |vector| crate::features::geometry::FiniteVector3::new(vector).unwrap();
     crate::eval::ContactTrack {
         support: crate::eval::SurfaceFirstOrder {
-            point: crate::features::FinitePoint3::new(point).unwrap(),
+            point: crate::features::geometry::FinitePoint3::new(point).unwrap(),
             first: Ok([finite(tangent), finite(Vector3::new(0.0, 0.0, 0.0))]),
         },
         uv_tangent: Ok(
@@ -222,10 +226,10 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
         angle: 0.0,
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(
+        crate::geometry::blends::RollingBallJetStations::try_new(
             5,
             vec![
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 2.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -242,7 +246,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                         },
                     },
                 },
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 5.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -327,7 +331,8 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
     terminal.angle = crate::scalar::FiniteReal::ZERO;
     let expected = terminal.first_limit;
     let collapsed = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::from_parts(jet.degree(), stations).unwrap(),
+        crate::geometry::blends::RollingBallJetStations::from_parts(jet.degree(), stations)
+            .unwrap(),
     );
     for fraction in [0.0, 0.5, 1.0] {
         assert_eq!(
@@ -347,7 +352,7 @@ fn rolling_ball_jet_evaluates_sextuple_interior_station() {
     };
     let stations = [0.0, 1.0, 2.0]
         .into_iter()
-        .map(|knot| crate::geometry::RollingBallJetStation {
+        .map(|knot| crate::geometry::blends::RollingBallJetStation {
             knot,
             multiplicity: 6,
             site: RollingBallJetSite {
@@ -361,7 +366,8 @@ fn rolling_ball_jet_evaluates_sextuple_interior_station() {
         })
         .collect();
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(5, stations).expect("three stations"),
+        crate::geometry::blends::RollingBallJetStations::try_new(5, stations)
+            .expect("three stations"),
     );
     let point = rolling_ball_jet_point(&definition, 0.5, 0.5).expect("first span");
     assert!((point.x - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
@@ -379,10 +385,10 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
         angle: 0.0,
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(
+        crate::geometry::blends::RollingBallJetStations::try_new(
             5,
             vec![
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 2.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -394,7 +400,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_derivative: zero,
                     },
                 },
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 5.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -488,7 +494,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
                 0.25,
                 0.75
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
@@ -550,7 +556,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 0.25,
                 2.0
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.0, 2.0))
     );
     assert_eq!(budget.consumed(), 6);
@@ -574,11 +580,11 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
             0.75
         )
         .ok()
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Some(point)
     );
     let bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
@@ -606,7 +612,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
         let bound = nurbs_surface_parameter_segment_chord_bound(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
@@ -646,7 +652,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         .get()
     });
     let bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         parameters,
         endpoints,
@@ -750,7 +756,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             CurveGeometry::Solved(geometry.clone()),
         ));
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point.get(),
@@ -843,7 +849,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             .curves
             .push(bare_curve(id.clone(), CurveGeometry::Solved(geometry)));
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point,
@@ -873,7 +879,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
     assert!(super::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         point,
@@ -882,7 +888,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     .expect("find the model curve parameter near the point")
     .is_none());
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         point,
@@ -930,7 +936,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         CurveGeometry::Solved(geometry.clone()),
     ));
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         point.get(),
@@ -954,7 +960,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         .expect("placed curve"),
     ));
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(0.0, 0.0, 0.0),
@@ -978,7 +984,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let seed = 123.5;
     assert_eq!(
         crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point,
@@ -989,7 +995,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         Some(seed)
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(2.0, 3.0, 5.0),
@@ -1120,7 +1126,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             1.0e16,
             -1.0e16
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
@@ -1138,7 +1144,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             .within_work_slice(&budget, |admission| model_surface_point_by_id(
                 admission, &index, &second_id, 1.0e16, -1.0e16
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
@@ -1333,7 +1339,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(-0.25, 0.5, -2.0))
     );
     let partials = model_surface_partials_by_id(
@@ -1393,7 +1399,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             0.25,
             0.75
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.25, 2.75, 3.0))
     );
     let partials = model_surface_partials_by_id(
@@ -1519,7 +1525,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ));
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::CacheContract::from_form(Some(RevisionSurfaceForm {
+        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::legacy_cache::CacheContract::from_form(Some(RevisionSurfaceForm {
                 revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
@@ -1564,18 +1570,18 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
             0.5,
             0.25
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(expected)
     );
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             0.25
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(expected)
     );
     let partials = model_surface_partials_by_id(
@@ -1690,7 +1696,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::legacy_cache::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
@@ -1740,12 +1746,12 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             definition: ProceduralSurfaceDefinition::Revolution(
                 crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     directrix_id,
-                    (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS),
+                    (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS),
                     [0.0, std::f64::consts::PI],
                     Some([-f64::MAX, f64::MAX]),
                     None,
                     false,
-                    crate::geometry::CacheContract::from_form(None),
+                    crate::geometry::legacy_cache::CacheContract::from_form(None),
                 ).unwrap()
             ),
             cache_fit_tolerance: None,
@@ -1794,13 +1800,13 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.geometry.points.extend([
         Point::new(
             start_point_id.clone(),
-            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             end_point_id.clone(),
-            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 10.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 10.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -1837,7 +1843,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::legacy_cache::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: Some(RecordBounds::try_new([
                     Some(0.0),
@@ -1886,7 +1892,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             point,
             EPS_CURVE_INVERSE_WITNESS,
@@ -1898,7 +1904,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             point,
             EPS_CURVE_INVERSE_WITNESS,
@@ -1910,7 +1916,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             Point3::new(0.5, 1.0, 0.0),
             EPS_CURVE_INVERSE_WITNESS,
@@ -1933,6 +1939,8 @@ mod numerical_followup;
 mod construction_parameters;
 
 mod analytic_ranges;
+
+mod analytic_points;
 
 mod surface_inversion;
 

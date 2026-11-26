@@ -4,7 +4,7 @@
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 An ASM or Spatial ACIS stream serializes one B-rep model as a header, a table of framed records, and an optional construction-history partition. The stream identifies its branch through its binary magic or text terminator. Fusion `.f3d` containers carry ASM streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2. Inventor part carriers can contain the ASM binary branch or the ACIS 217/218 binary branch.
 
@@ -112,7 +112,19 @@ The `asmheader` row participates in RecordTable indexing; the first following en
 
 ### 2.3 Version/product gates
 
-Other pure ACIS and SpaceClaim SAB envelopes use separate version-gated record layouts and string interning. The byte layouts in §§5–6 apply to ASM streams and the ACIS 217/218 Inventor carrier envelope. Other ACIS save-format bands are not admitted by this grammar.
+SpaceClaim SAB envelopes use separate version-gated record layouts. The byte layouts in §§5–6 apply to ASM streams, the ACIS 217/218 Inventor carrier envelope, and the interned ACIS binary streams of §2.4.
+
+### 2.4 Interned ACIS binary streams
+
+An interned ACIS binary stream has the 31-byte ACIS prefix and the string region of §1. A header extension follows the three doubles: the token `0x0A` and one string. The first identifier token after the header extension defines name id 1; this identifies the interned form.
+
+Each `0x0D` and `0x0E` payload is the identifier text, the byte `%`, and a little-endian `u32` name id. The 1-byte length counts all three parts. Name ids start at 1 and increase by one in stream order. A token with non-empty text defines the next name id. A token with empty text repeats the text of the name id that it holds. Record names and payload identifiers share one name table. The `End-of-ACIS-data` identifier holds its text only.
+
+RecordTable index 0 is the first record after the header extension. The stream stores no `asmheader` record. The stream ends with the `End-of-ACIS-data` identifier, which no `0x11` follows.
+
+A record whose fields 1 and 2 are integers and whose field 3 is a reference has the extended entity prefix of §7.6: the attribute reference, the entity-id integer, the extension integer, and the pattern reference. The shared entity prefix of §§5–6 is this prefix without the extension integer. An attribute record stores the attribute reference, one integer, and its chain references; its field 2 is a reference. A `body` record stores one integer between the pattern reference and the first lump. The fields of §5.2 follow these integers. A `vertex` record stores no endpoint-index integer, and a `coedge` record stores no reserved integer (§7.4).
+
+In `body`, `lump`, `shell`, `face`, `loop`, and `edge` records, a tail follows the fields of §5.2. A tail starts with a boolean; when it is `TRUE`, two positions follow. A `face` tail continues with a second boolean; when it is `TRUE`, four doubles follow. A `loop` tail continues with an enumeration value; when it is nonzero, a reference and a boolean follow.
 
 ---
 
@@ -145,7 +157,7 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 11
 ```
 
-`stream_size == stream_size_duplicate`. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
+`stream_size_duplicate` is equal to `stream_size` or larger. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
 
 An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
@@ -160,15 +172,17 @@ Each history node is a linked construction state:
 04 i64 = 0               (constant)
 0c ref prev_state        (-1 on head)
 0c ref next_state        (-1 on tail)
-0c ref node_index        (0,1,2,... sequential)
+0c ref node_index        (distinct in the chain)
 0c ref = -1
 0c ref = 0
 0b                       (false sentinel)
 ```
 
+`prev_state` and `next_state` are node indices. The head state is the state whose `prev_state` is `-1`, and the tail state is the state whose `next_state` is `-1`. These links give the order of the chain from the head state to the tail state. The position of a `delta_state` record in the stream does not give its place in the chain. The order in which an application writes the records is given in the specification of its format.
+
 Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
-The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On a non-tail state, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The tail state is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. An `End-of-ASM-History-Section` name chain immediately followed by an entity name chain wraps that snapshot record. The embedded name contains one or more components. The fields after its terminal identifier use the ordinary payload layout. Their ordered `0x0c` entity-reference tokens, including `-1` null references, use the construction-history revision namespace and are retained independently of the snapshot's local record ordinal. The old references across the BulletinBoard changes form a unique contiguous interval immediately after the active RecordTable. Snapshot local ordinal zero has the interval's first revision identity, and each following snapshot record increments that identity by one. `End-of-ASM-data` is excluded from the interval.
+The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On every `delta_state` record but the last, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The last `delta_state` record is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. An `End-of-ASM-History-Section` name chain immediately followed by an entity name chain wraps that snapshot record. The embedded name contains one or more components. The fields after its terminal identifier use the ordinary payload layout. Their ordered `0x0c` entity-reference tokens, including `-1` null references, use the construction-history revision namespace and are retained independently of the snapshot's local record ordinal. The old references across the BulletinBoard changes form a unique contiguous interval immediately after the active RecordTable. Snapshot local ordinal zero has the interval's first revision identity, and each following snapshot record increments that identity by one. `End-of-ASM-data` is excluded from the interval.
 
 The linked `delta_state` chain runs from the current model toward the initial model. Historical entity membership is reconstructed from the identity map of the active RecordTable. Reversing an update `old -> new` keeps stable entity slot `new` and changes its record revision to `old`. Reversing an insertion `null -> new` removes slot `new`. Reversing a deletion `old -> null` adds slot `old` with record revision `old`. A complete chain accepts every transition without a missing slot or record revision and terminates at the singleton map `0 -> 0` for `asmheader`. The entity-slot-to-record-revision map of a state is the map before its own changes are reversed.
 
@@ -257,6 +271,8 @@ The sense token is relative to the native surface carrier. Decoding a reversed s
 **Loop (61 B):** `chunk[3]` @+34 = next_loop (`-1` terminates the chain), `chunk[4]` @+43 = first_coedge, `chunk[5]` @+52 = owner_face. Loop order is defined by the `next_loop` references, not stream position; the first loop is not an outer-loop marker.
 
 An untrimmed closed analytic face stores `-1` in `chunk[4]` (first_loop) and owns no loops, coedges, edges, or vertices. Full spheres and tori use this loopless form; the closed surface carries no seam, pole, or periphery loop and no degenerate edge. A single-sided loopless face bounds the volume on one side of its closed surface, so a body whose faces are all single-sided loopless faces is a solid. A double-sided loopless face is a sheet. A `degenerate_curve` never bounds a loopless closed face; it occurs only as an edge curve at a cone apex or sphere pole of a trimmed face, or nested inside a procedural-surface construction.
+
+A face whose `chunk[4]` (first_loop) is `-1` on a plane, cylinder, or cone states no boundary, because the surface domain is unbounded. The face is stated partial with the loss `topology.face-boundary-unstated`.
 
 **CoEdge (100 B):**
 

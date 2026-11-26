@@ -3,12 +3,13 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::design::units::Quantity;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{OccurrenceId, SolverSettingsId};
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 use cadmpeg_ir::products::JointId;
 use cadmpeg_ir::scalar::FiniteReal;
 
-use super::{lines, placeholder, resolve};
+use super::{joint_placeholder, lines, placeholder, resolve};
 
 fn joint_settings(values: Vec<(&str, SolverValue)>) -> SolverSettings {
     SolverSettings {
@@ -16,7 +17,7 @@ fn joint_settings(values: Vec<(&str, SolverValue)>) -> SolverSettings {
         solver: "physx".to_owned(),
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
-            joint: JointId::mint("test:model:joint#0").unwrap(),
+            joint: FeatureId::mint("test:model:feature#joint").unwrap(),
         }
         .into(),
         values: values
@@ -47,7 +48,7 @@ fn values_return_to_scene_units_by_their_dimension() {
             },
         ),
     ]);
-    let (schema, written, unwritten) = lines(&settings);
+    let (schema, written, unwritten) = lines(&settings, super::super::MILLIMETRES_PER_METRE);
     assert_eq!(schema, "prepend apiSchemas = [\"PhysxJointAPI\"]");
     assert_eq!(unwritten, 0);
     assert!(
@@ -72,7 +73,7 @@ fn a_value_with_no_attribute_or_unit_is_not_written() {
             },
         ),
     ]);
-    let (_, written, unwritten) = lines(&settings);
+    let (_, written, unwritten) = lines(&settings, super::super::MILLIMETRES_PER_METRE);
     assert!(written.is_empty());
     assert_eq!(unwritten, 2);
 }
@@ -83,7 +84,7 @@ fn placeholders_resolve_to_paths_and_unresolved_lines_are_dropped() {
         occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
     };
     let joint = SolverTarget::Joint {
-        joint: JointId::mint("test:model:joint#0").unwrap(),
+        joint: FeatureId::mint("test:model:joint#0").unwrap(),
     };
     let text = format!(
         "rel a = [<{}>]\nrel b = [<{}>]\n",
@@ -94,4 +95,17 @@ fn placeholders_resolve_to_paths_and_unresolved_lines_are_dropped() {
     let (resolved, unresolved) = resolve(&text, &paths);
     assert_eq!(resolved, "rel a = [</World/Arm>]\n");
     assert_eq!(unresolved, 1);
+}
+
+#[test]
+fn a_joint_feature_target_is_the_prim_of_the_joint_that_shares_its_id() {
+    let id = "test:model:joint#0";
+    let feature = SolverTarget::Joint {
+        joint: FeatureId::mint(id).unwrap(),
+    };
+    let joint = JointId::mint(id).unwrap();
+    assert_eq!(
+        placeholder(&feature),
+        Some(joint_placeholder(joint.as_str()))
+    );
 }

@@ -6,7 +6,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FiniteVector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::BTreeMap;
 
@@ -160,8 +160,7 @@ pub(crate) fn enrich_history_move_face_translations(
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveFace)
-                || feature.properties.contains_key("Mode")
-                || feature.properties.contains_key("Direction")
+                || feature.states_any(&crate::records::MOVE_FACE_PROPERTIES)
             {
                 continue;
             }
@@ -356,11 +355,12 @@ mod tests {
     };
 
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::geometry::FiniteVector3;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::{
-        features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
-        scalar::{FiniteReal, Length},
-    };
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::BTreeMap;
 
     fn enrich_history_move_face_translations_test(
@@ -514,6 +514,7 @@ mod tests {
                 role: FeatureInputScalarRole::Driving,
                 operands: Vec::new(),
                 archive_class: None,
+                archive_object_id: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: Vec::new(),

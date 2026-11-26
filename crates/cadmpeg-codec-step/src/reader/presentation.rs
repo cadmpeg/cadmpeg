@@ -2,10 +2,11 @@
 //! STEP presentation style and topology color decoding.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -107,9 +108,11 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            );
+            ));
             continue;
         };
         let mut supported = true;
@@ -177,15 +180,23 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                )),
+            ));
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                )),
+            ));
             continue;
         }
         let Some(name) =
@@ -200,9 +211,13 @@ pub(super) fn decode(
                 )
             })
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
+                )),
+            ));
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -224,9 +239,11 @@ pub(super) fn decode(
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
+            parent: None,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
+            native_ref: None,
         });
         typed.insert(layer_id);
     }
@@ -247,6 +264,7 @@ pub(super) fn decode(
     let mut scalar_color_candidates =
         BTreeMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
     let mut style_domains = BTreeMap::new();
+    let mut bindings_by_style: HashMap<u64, Vec<usize>> = HashMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -257,10 +275,12 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                style_id,
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            );
+            ));
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -294,7 +314,11 @@ pub(super) fn decode(
         }
         if !context_style_ids.is_empty() {
             let message = context_style_message(style_id, &context_style_ids, exchange);
-            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(message));
+            losses.extend(give_up_instance(
+                exchange,
+                style_id,
+                StepLossCode::ContextDependentStyleUnresolved.note(message),
+            ));
             continue;
         }
         let color = combine_color_resolutions(style_references.iter().copied().map(|reference| {
@@ -333,17 +357,25 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    style_id,
+                    StepLossCode::ConflictingScalarColors.note(format!(
+                        "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
+                    )),
+                ));
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, ctx)? {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "STYLED_ITEM #{style_id} has no resolved surface color"
-                    )));
+                    losses.extend(give_up_instance(
+                        exchange,
+                        style_id,
+                        StepLossCode::DecodeWarning.note(format!(
+                            "STYLED_ITEM #{style_id} has no resolved surface color"
+                        )),
+                    ));
                 }
                 continue;
             }
@@ -380,12 +412,15 @@ pub(super) fn decode(
                 base_color: Some(color),
                 textures: Vec::new(),
                 properties: BTreeMap::new(),
+                native_ref: None,
             });
             appearance_ids.insert(appearance_key, id.clone());
             id
         };
         let target_steps =
             expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), ctx)?;
+        let mut style_hidden_cached: Option<Option<bool>> =
+            hidden_style_ids.is_empty().then_some(None);
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let targets = appearance_targets(target_step, exchange, topology, &entity_ids, indices);
             if targets.is_empty() {
@@ -394,8 +429,26 @@ pub(super) fn decode(
                 )));
                 continue;
             }
+            let visible = if let Some(cached) = style_hidden_cached {
+                cached
+            } else {
+                let computed = style_is_hidden(
+                    style_id,
+                    &hidden_style_ids,
+                    exchange,
+                    &mut BTreeSet::new(),
+                    ctx,
+                )?
+                .then_some(false);
+                style_hidden_cached = Some(computed);
+                computed
+            };
             for (target_ordinal, target) in targets.into_iter().enumerate() {
                 push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color)?;
+                bindings_by_style
+                    .entry(style_id)
+                    .or_default()
+                    .push(ir.model.appearance_bindings.len());
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
                         kind!("binding"),
@@ -406,17 +459,12 @@ pub(super) fn decode(
                     .into(),
                     target: target.into(),
                     appearance: appearance_id.clone(),
-                    source_entity_id: Some(format!("#{style_id}")),
+                    precedence: None,
+                    source_entity_id: Some(format!("#{target_step}")),
                     object_type: None,
-                    visible: style_is_hidden(
-                        style_id,
-                        &hidden_style_ids,
-                        exchange,
-                        &mut BTreeSet::new(),
-                        ctx,
-                    )?
-                    .then_some(false),
+                    visible,
                     channels: BTreeMap::new(),
+                    native_ref: None,
                 });
             }
         }
@@ -431,55 +479,65 @@ pub(super) fn decode(
         }
         typed.insert(color_id);
     }
-    for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
-        for style_id in style_targets {
-            let mut matched = false;
-            for binding in &mut ir.model.appearance_bindings {
-                let Some(binding_style_id) = binding
-                    .source_entity_id
-                    .as_deref()
-                    .and_then(|source_id| source_id.strip_prefix('#'))
-                    .and_then(|source_id| source_id.parse::<u64>().ok())
-                else {
-                    continue;
+    if !deferred_invisibility.is_empty() {
+        let mut styles_by_ancestor: HashMap<u64, Vec<u64>> =
+            HashMap::with_capacity(bindings_by_style.len());
+        let mut active = Vec::new();
+        for &binding_style_id in bindings_by_style.keys() {
+            active.clear();
+            collect_style_ancestors(
+                binding_style_id,
+                binding_style_id,
+                exchange,
+                &mut active,
+                &mut styles_by_ancestor,
+                ctx,
+            )?;
+        }
+        let layer_indices: HashMap<String, usize> = ir
+            .model
+            .presentation_layers
+            .iter()
+            .enumerate()
+            .map(|(index, layer)| (layer.id.as_str().to_owned(), index))
+            .collect();
+        for (invisibility_id, (mut supported, style_targets, layer_targets)) in
+            deferred_invisibility
+        {
+            for style_id in style_targets {
+                let matched = if let Some(descendants) = styles_by_ancestor.get(&style_id) {
+                    for &descendant in descendants {
+                        if let Some(indices) = bindings_by_style.get(&descendant) {
+                            for &index in indices {
+                                ir.model.appearance_bindings[index].visible = Some(false);
+                            }
+                        }
+                    }
+                    true
+                } else {
+                    false
                 };
-                if style_inherits_from(
-                    binding_style_id,
-                    style_id,
-                    exchange,
-                    &mut BTreeSet::new(),
-                    ctx,
-                )? {
-                    binding.visible = Some(false);
-                    matched = true;
+                if !matched {
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                        "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
+                    )));
+                    supported = false;
                 }
             }
-            if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                )));
-                supported = false;
-            }
-        }
-        for layer_id in layer_targets {
-            let expected_id = ids::presentation(kind!("layer"), layer_id);
-            let mut matched = false;
-            for layer in &mut ir.model.presentation_layers {
-                if layer.id.as_str() == expected_id.as_str() {
-                    layer.visible = Some(false);
-                    matched = true;
-                    break;
+            for layer_id in layer_targets {
+                let expected_id = ids::presentation(kind!("layer"), layer_id);
+                if let Some(&index) = layer_indices.get(expected_id.as_str()) {
+                    ir.model.presentation_layers[index].visible = Some(false);
+                } else {
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                        "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
+                    )));
+                    supported = false;
                 }
             }
-            if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                )));
-                supported = false;
+            if supported {
+                typed.insert(invisibility_id);
             }
-        }
-        if supported {
-            typed.insert(invisibility_id);
         }
     }
     for (target, candidates) in scalar_color_candidates {
@@ -749,9 +807,7 @@ fn appearance_targets(
             tessellation_id.into_string(),
         ))
     } else if exchange.records().contains_key(&id) {
-        Some(AppearanceTarget::Source {
-            source_id: format!("#{id}"),
-        })
+        Some(AppearanceTarget::Unresolved)
     } else {
         None
     };
@@ -1761,25 +1817,26 @@ fn style_is_hidden(
     Ok(hidden)
 }
 
-fn style_inherits_from(
-    id: u64,
-    ancestor: u64,
+fn collect_style_ancestors(
+    origin: u64,
+    current: u64,
     exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
+    active: &mut Vec<u64>,
+    styles_by_ancestor: &mut HashMap<u64, Vec<u64>>,
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    if id == ancestor || active.contains(&id) {
-        return Ok(id == ancestor);
+) -> Result<(), CodecError> {
+    if active.contains(&current) {
+        return Ok(());
     }
-    let _nested = ctx.enter_nested("step_presentation_style_inheritance_walk")?;
-    active.insert(id);
-    let inherits = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
-        style_inherits_from(base, ancestor, exchange, active, ctx)?
-    } else {
-        false
+    styles_by_ancestor.entry(current).or_default().push(origin);
+    let Some(base) = exchange.records().get(&current).and_then(overridden_style) else {
+        return Ok(());
     };
-    active.remove(&id);
-    Ok(inherits)
+    let _nested = ctx.enter_nested("step_presentation_style_inheritance_walk")?;
+    active.push(current);
+    collect_style_ancestors(origin, base, exchange, active, styles_by_ancestor, ctx)?;
+    active.pop();
+    Ok(())
 }
 
 fn contains_null_style(

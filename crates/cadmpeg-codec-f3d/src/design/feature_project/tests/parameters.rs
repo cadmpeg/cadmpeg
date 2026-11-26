@@ -11,9 +11,10 @@ use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudeStart;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignScopePayload;
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::scalar::Length;
 
@@ -542,7 +543,7 @@ fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
             parameter
         })
         .collect::<Vec<_>>();
-    let source = serde_json::to_value(&native).unwrap();
+    let source = json::to_value(&native).unwrap();
     let project = |native: &[_]| {
         crate::test_support::with_decode_context(|ctx| {
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -593,7 +594,7 @@ fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
             owner.map(|index| index.to_string()).as_ref()
         );
     }
-    assert_eq!(serde_json::to_value(&native).unwrap(), source);
+    assert_eq!(json::to_value(&native).unwrap(), source);
 
     let mut native = native;
     native[0].source_ordinal = u32::MAX - 1;
@@ -1060,7 +1061,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );

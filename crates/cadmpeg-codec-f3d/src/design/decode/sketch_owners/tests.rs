@@ -3,6 +3,7 @@
 use super::{assign, parse_collection};
 use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::sketches::SketchId;
 
@@ -42,7 +43,7 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
             reference(&mut bytes, 2, false);
             reference(&mut bytes, 7, typed);
             let collection = parse_collection(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 View::over_retained(&bytes),
                 version,
             )
@@ -51,7 +52,7 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
             assert_eq!(collection.owner, Some(7));
             bytes.extend([0xff; 3]);
             let collection = parse_collection(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 View::over_retained(&bytes),
                 version,
             )
@@ -68,8 +69,8 @@ fn collection_ownership_assigns_a_component_and_reports_an_unresolved_link() {
     let owned = SketchId::mint("test:model:sketch#owned").unwrap();
     let unresolved = SketchId::mint("test:model:sketch#unresolved").unwrap();
     let root = SketchId::mint("test:model:sketch#root").unwrap();
-    let mut definitions = [serde_json::from_value(serde_json::json!({
-        "id": product, "kind": "part", "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+    let mut definitions = [json::from_value(cadmpeg_core::json!({
+        "id": product, "kind": "part", "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
     }))
     .unwrap()];
     let owners = [(owned.clone(), Some(product)), (unresolved.clone(), None)]

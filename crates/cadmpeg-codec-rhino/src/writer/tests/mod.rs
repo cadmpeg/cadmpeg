@@ -12,13 +12,18 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+mod cages;
 mod computed_values;
 mod coverage;
+mod edge_forms;
 mod encoding;
+mod exact_forms;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod partial;
 mod planar;
+mod reported_writes;
 mod targets;
 
 #[test]
@@ -36,6 +41,28 @@ fn frame_admission_refuses_nonfinite_axes() {
 #[test]
 fn empty_point_cloud_cannot_emit_infinite_bounds() {
     assert!(super::point_cloud_payload(&[]).is_err());
+}
+
+/// Writes `ir` as archive version 8 and reads the archive back: the decoded
+/// document and each write loss as `namespace/code: message`.
+fn written(ir: &CadIr) -> (CadIr, Vec<String>) {
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes the document");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    let losses = report
+        .losses
+        .iter()
+        .map(|loss| format!("{}: {}", loss.code, loss.message))
+        .collect();
+    (decoded.ir().clone(), losses)
 }
 
 fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
@@ -163,13 +190,11 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     ir.geometry.faces.push(Face {
         id: face.clone(),
@@ -215,7 +240,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(points[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -309,7 +334,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         .collect::<Vec<_>>();
     let face_loops = ir.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id.clone()))
         .collect();
@@ -334,7 +359,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         let length = delta.norm();
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(points[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -463,13 +488,11 @@ fn adjacent_quad_sheet() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..2 {
         ir.geometry.faces.push(Face {
@@ -518,7 +541,7 @@ fn adjacent_quad_sheet() -> CadIr {
     for index in 0..positions.len() {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(positions[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -683,18 +706,16 @@ fn planar_tetrahedron() -> CadIr {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..4 {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(positions[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -938,7 +959,7 @@ fn rectangular_nurbs_patch() -> CadIr {
                 None,
                 Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
@@ -1045,7 +1066,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
                 None,
                 Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
@@ -1136,7 +1157,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
                 None,
                 Some(domain),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.0001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.0001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),

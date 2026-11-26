@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity admission for the three legacy parameter packet forms.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::CadIr;
 
 fn legacy_values() -> crate::native::CatiaNative {
@@ -128,15 +129,15 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
 #[test]
 fn legacy_types_follow_unique_selector_chains() {
     let descriptor = |entity_id: u32, value: serde_json::Value| {
-        serde_json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(serde_json::json!({
+        json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(cadmpeg_core::json!({
             "byte_offset": 0,
             "entity_id": entity_id,
             "value": value,
         }))
         .expect("descriptor wire")
     };
-    let name = |value: &str| serde_json::json!({ "Name": { "value": value } });
-    let selector = |value: u32| serde_json::json!({ "Selector": { "value": value } });
+    let name = |value: &str| cadmpeg_core::json!({ "Name": { "value": value } });
+    let selector = |value: u32| cadmpeg_core::json!({ "Selector": { "value": value } });
     let descriptors = [
         descriptor(1, name("Length")),
         descriptor(2, selector(1)),
@@ -238,7 +239,8 @@ fn symbol_heads_bind_exactly_the_materialised_input_forms() {
         words
     };
     let inputs = words(4);
-    for symbol in &inputs {
+    let symbols = words(3);
+    for symbol in &symbols {
         let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
         let forms = materialised_symbol_input_forms(symbol);
         for input in &inputs {
@@ -249,7 +251,6 @@ fn symbol_heads_bind_exactly_the_materialised_input_forms() {
             );
         }
     }
-    let symbols = words(3);
     let heads = super::super::LegacySymbolHeads::new(symbols.iter().map(String::as_str));
     let forms = symbols
         .iter()

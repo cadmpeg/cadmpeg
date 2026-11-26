@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
-use crate::geometry::{CurveOffsetRange, OffsetSide, ProceduralCurve, ProceduralCurveDefinition};
+use crate::geometry::curve_offsets::{CurveOffsetRange, OffsetSide};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::ProceduralCurve;
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::Vector3;
 
@@ -30,27 +33,26 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
     let mut definition = subset([1.0, 1.0]);
     definition
-        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
+        .set_legacy_cache(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition);
-    let wire = serde_json::to_value(&curve).unwrap();
+    let wire = json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["parameter_range"],
-        serde_json::json!([1.0, 1.0])
+        cadmpeg_core::json!([1.0, 1.0])
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
         curve
     );
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(SubsetCurveConstruction::try_new(source(), range, false, None).is_err());
         let mut invalid = wire.clone();
-        invalid["definition"]["parameter_range"] = serde_json::json!(range);
+        invalid["definition"]["parameter_range"] = cadmpeg_core::json!(range);
         assert!(
-            serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone())
-                .is_err()
+            json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
         );
-        assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+        assert!(json::from_value::<ProceduralCurve>(invalid).is_err());
     }
 }
 
@@ -70,31 +72,31 @@ fn a_distance_law_without_its_parameter_range_has_no_encoding() {
         )
         .unwrap(),
     );
-    let wire = serde_json::to_value(&uniform).unwrap();
+    let wire = json::to_value(&uniform).unwrap();
     assert_eq!(wire["range"]["kind"], "uniform");
     assert!(wire["range"].get("distance_law").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         uniform
     );
 
     let absent = ProceduralCurveDefinition::Offset(
         OffsetCurveConstruction::try_new(source(), -2.0, side, None).unwrap(),
     );
-    let absent_wire = serde_json::to_value(&absent).unwrap();
+    let absent_wire = json::to_value(&absent).unwrap();
     assert!(absent_wire.get("range").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(absent_wire).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(absent_wire).unwrap(),
         absent
     );
 
     let mut law_without_range = wire.clone();
-    law_without_range["range"] = serde_json::json!({"kind": "variable"});
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(law_without_range).is_err());
+    law_without_range["range"] = cadmpeg_core::json!({"kind": "variable"});
+    assert!(json::from_value::<ProceduralCurveDefinition>(law_without_range).is_err());
 
     let mut bogus = wire;
-    bogus["range"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<ProceduralCurveDefinition>(bogus)
+    bogus["range"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<ProceduralCurveDefinition>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -118,13 +120,15 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
             .and_then(|range| definition(direction.clone(), Some(range)));
         assert_eq!(
             refused,
-            Err(crate::geometry::ProceduralGeometryError::Payload(
-                "curve offset distance, side, range, or law is invalid"
-            ))
+            Err(
+                crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "curve offset distance, side, range, or law is invalid"
+                )
+            )
         );
-        let mut wire = serde_json::to_value(&valid).unwrap();
-        wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
-        let error = serde_json::from_value::<ProceduralCurveDefinition>(wire).unwrap_err();
+        let mut wire = json::to_value(&valid).unwrap();
+        wire["range"] = cadmpeg_core::json!({"kind": "uniform", "parameter_range": range});
+        let error = json::from_value::<ProceduralCurveDefinition>(wire).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -161,7 +165,7 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
 
 #[test]
 fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide};
+    use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
     use crate::ids::SurfaceId;
 
     let mut curve = ProceduralCurve::new(
@@ -177,7 +181,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             )
             .unwrap(),
             discontinuity_flag: false,
-            cache: Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()),
+            cache: Some(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap()),
         },
     );
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
@@ -191,7 +195,11 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 0.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
@@ -199,7 +207,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     assert_eq!(
         curve
             .cache_fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
     assert!(ProceduralCurve::new(id(), subset([0.0, 1.0]))
@@ -210,7 +218,8 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
 #[test]
 fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draft() {
     use crate::geometry::curve_payloads::SilhouetteCurveConstruction;
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use crate::geometry::surface_curves::SilhouetteKind;
     use crate::ids::SurfaceId;
     use crate::scalar::FiniteReal;
 
@@ -238,13 +247,13 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
     )
     .unwrap();
     let curve = ProceduralCurve::new(id(), valid);
-    let wire = serde_json::to_value(&curve).unwrap();
+    let wire = json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["silhouette"]["draft_factor"],
-        serde_json::json!(0.5)
+        cadmpeg_core::json!(0.5)
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
         curve
     );
     for light_direction in [
@@ -254,33 +263,30 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
     ] {
         assert!(silhouette(SilhouetteKind::Standard {}, light_direction).is_err());
         let mut invalid = wire.clone();
-        invalid["definition"]["light_direction"] = serde_json::to_value(light_direction).unwrap();
+        invalid["definition"]["light_direction"] = json::to_value(light_direction).unwrap();
         assert!(
-            serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone())
-                .is_err()
+            json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
         );
-        assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+        assert!(json::from_value::<ProceduralCurve>(invalid).is_err());
     }
     assert!(FiniteReal::new(f64::NAN).is_none());
     let mut invalid = wire;
-    invalid["definition"]["silhouette"]["draft_factor"] = serde_json::json!("nan");
-    assert!(
-        serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
-    );
-    assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+    invalid["definition"]["silhouette"]["draft_factor"] = cadmpeg_core::json!("nan");
+    assert!(json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err());
+    assert!(json::from_value::<ProceduralCurve>(invalid).is_err());
 }
 
 #[test]
 fn rejected_curve_definition_replacements_preserve_serialized_owner() {
     let mut definition = subset([0.0, 1.0]);
     definition
-        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
+        .set_legacy_cache(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition);
-    let before = serde_json::to_vec(&curve).unwrap();
+    let before = json::to_vec(&curve).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
-        assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());
-        assert_eq!(serde_json::to_vec(&curve).unwrap(), before);
+        assert!(crate::geometry::legacy_cache::LegacyCache::try_new(tolerance).is_err());
+        assert_eq!(json::to_vec(&curve).unwrap(), before);
     }
 }
 
@@ -300,31 +306,31 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
         support: None,
     });
 
-    let normal_wire = serde_json::to_value(&normal).unwrap();
+    let normal_wire = json::to_value(&normal).unwrap();
     assert_eq!(normal_wire["side"]["kind"], "plane_normal");
     assert!(normal_wire["side"].get("direction").is_none());
-    let direction_wire = serde_json::to_value(&direction).unwrap();
+    let direction_wire = json::to_value(&direction).unwrap();
     assert_eq!(direction_wire["side"]["kind"], "direction");
     assert!(direction_wire["side"].get("normal").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(normal_wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(normal_wire.clone()).unwrap(),
         normal
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(direction_wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(direction_wire.clone()).unwrap(),
         direction
     );
 
     let mut both = normal_wire;
-    both["direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0});
-    let error = serde_json::from_value::<ProceduralCurveDefinition>(both)
+    both["direction"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0});
+    let error = json::from_value::<ProceduralCurveDefinition>(both)
         .unwrap_err()
         .to_string();
     assert!(error.contains("direction"), "{error}");
 
-    let mut stray_support = serde_json::to_value(&normal).unwrap();
-    stray_support["support"] = serde_json::json!("test:model:surface#0");
-    let error = serde_json::from_value::<ProceduralCurveDefinition>(stray_support)
+    let mut stray_support = json::to_value(&normal).unwrap();
+    stray_support["support"] = cadmpeg_core::json!("test:model:surface#0");
+    let error = json::from_value::<ProceduralCurveDefinition>(stray_support)
         .unwrap_err()
         .to_string();
     assert!(error.contains("support"), "{error}");
@@ -332,44 +338,56 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
 
 #[test]
 fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
-    let admitted = crate::geometry::LawCurveVersionForm::try_new(20_900, 0, [Some(-1.0), None])
-        .expect("finite law curve version form");
+    let admitted = crate::geometry::intersection_curves::LawCurveVersionForm::try_new(
+        20_900,
+        0,
+        [Some(-1.0), None],
+    )
+    .expect("finite law curve version form");
     assert_eq!(
         admitted.parameter_range(),
         [crate::scalar::FiniteReal::new(-1.0), None]
     );
-    let wire = serde_json::to_value(&admitted).unwrap();
-    assert_eq!(wire["stamp"], serde_json::json!(20_900));
-    assert_eq!(wire["post_enum"], serde_json::json!(0));
-    assert_eq!(wire["parameter_range"], serde_json::json!([-1.0, null]));
+    let wire = json::to_value(&admitted).unwrap();
+    assert_eq!(wire["stamp"], cadmpeg_core::json!(20_900));
+    assert_eq!(wire["post_enum"], cadmpeg_core::json!(0));
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([-1.0, null]));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawCurveVersionForm>(wire).unwrap(),
+        json::from_value::<crate::geometry::intersection_curves::LawCurveVersionForm>(wire)
+            .unwrap(),
         admitted
     );
 
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for range in [[Some(value), None], [None, Some(value)]] {
-            assert!(crate::geometry::LawCurveVersionForm::try_new(20_900, 0, range).is_err());
-            assert!(crate::geometry::LawCurveVersionForm::try_from(
-                crate::geometry::LawCurveVersionFormWire {
-                    stamp: 20_900,
-                    post_enum: 0,
-                    parameter_range: range,
-                }
-            )
-            .is_err());
+            assert!(
+                crate::geometry::intersection_curves::LawCurveVersionForm::try_new(
+                    20_900, 0, range
+                )
+                .is_err()
+            );
+            assert!(
+                crate::geometry::intersection_curves::LawCurveVersionForm::try_from(
+                    crate::geometry::intersection_curves::LawCurveVersionFormWire {
+                        stamp: 20_900,
+                        post_enum: 0,
+                        parameter_range: range,
+                    }
+                )
+                .is_err()
+            );
         }
     }
 }
 
-fn law_support_context() -> crate::geometry::IntcurveSupportContext {
-    crate::geometry::IntcurveSupportContext::try_new(
+fn law_support_context() -> crate::geometry::intersection_curves::IntcurveSupportContext {
+    crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
         [
-            crate::geometry::IntcurveSupportSide {
+            crate::geometry::intersection_curves::IntcurveSupportSide {
                 surface: None,
                 pcurve: None,
             },
-            crate::geometry::IntcurveSupportSide {
+            crate::geometry::intersection_curves::IntcurveSupportSide {
                 surface: None,
                 pcurve: None,
             },
@@ -380,16 +398,16 @@ fn law_support_context() -> crate::geometry::IntcurveSupportContext {
     .expect("finite ordered support context")
 }
 
-fn named_law(variable: crate::geometry::LawExpression) -> crate::geometry::LawFormula {
-    crate::geometry::LawFormula::Named {
+fn named_law(variable: crate::geometry::laws::LawExpression) -> crate::geometry::laws::LawFormula {
+    crate::geometry::laws::LawFormula::Named {
         name: cadmpeg_core::nonblank_literal!("primary_law"),
         variables: vec![variable],
     }
 }
 
 fn law_definition(
-    primary: crate::geometry::FiniteLawFormula,
-    additional: Vec<crate::geometry::FiniteLawFormula>,
+    primary: crate::geometry::laws::FiniteLawFormula,
+    additional: Vec<crate::geometry::laws::FiniteLawFormula>,
 ) -> ProceduralCurveDefinition {
     ProceduralCurveDefinition::Law {
         context: law_support_context(),
@@ -403,8 +421,8 @@ fn law_definition(
 
 /// Every law-expression shape that carries a scalar, each with one slot set to
 /// the degenerate value and the rest admitted.
-fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression> {
-    use crate::geometry::LawExpression;
+fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::laws::LawExpression> {
+    use crate::geometry::laws::LawExpression;
     let mut scalars = [0.0; 13];
     scalars[7] = value;
     vec![
@@ -440,7 +458,7 @@ fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression>
             flags: [false; 3],
         },
         LawExpression::Edge {
-            curve: crate::geometry::LoftPathCurve {
+            curve: crate::geometry::lofts::LoftPathCurve {
                 id: source(),
                 endpoints: None,
             },
@@ -479,10 +497,10 @@ fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression>
 
 #[test]
 fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
-    use crate::geometry::{FiniteLawFormula, LawExpression, LawFormula};
+    use crate::geometry::laws::{FiniteLawFormula, LawExpression, LawFormula};
 
     let primary = named_law(LawExpression::Edge {
-        curve: crate::geometry::LoftPathCurve {
+        curve: crate::geometry::lofts::LoftPathCurve {
             id: source(),
             endpoints: None,
         },
@@ -494,18 +512,18 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
     );
 
     // The carrier is transparent: the wire states the formula itself.
-    let wire = serde_json::to_value(&admitted).expect("serializes");
+    let wire = json::to_value(&admitted).expect("serializes");
     assert_eq!(wire["kind"], "law");
-    assert_eq!(wire["extension"], serde_json::json!(3));
+    assert_eq!(wire["extension"], cadmpeg_core::json!(3));
     assert_eq!(wire["primary"]["kind"], "named");
     assert_eq!(wire["primary"]["name"], "primary_law");
     assert_eq!(
         wire["primary"]["variables"][0]["parameters"],
-        serde_json::json!([-0.5, 1.5])
+        cadmpeg_core::json!([-0.5, 1.5])
     );
-    assert_eq!(wire["additional"], serde_json::json!([{"kind": "null"}]));
+    assert_eq!(wire["additional"], cadmpeg_core::json!([{"kind": "null"}]));
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).expect("round trip"),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).expect("round trip"),
         admitted
     );
 
@@ -541,16 +559,16 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
         assert!(error.contains("number out of range"), "{literal}: {error}");
     }
     assert!(serde_json::Number::from_f64(f64::NAN).is_none());
-    let error =
-        serde_json::from_str::<LawFormula>(&serde_json::to_string(&deep).expect("serializes"))
-            .expect_err("past the reader recursion limit")
-            .to_string();
+    let error = serde_json::from_str::<LawFormula>(&json::to_string(&deep).expect("serializes"))
+        .expect_err("past the reader recursion limit")
+        .to_string();
     assert!(error.contains("recursion limit exceeded"), "{error}");
 }
 
 #[test]
 fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
-    use crate::geometry::{FiniteLawFormula, LawExpression, LoftPathCurve};
+    use crate::geometry::laws::{FiniteLawFormula, LawExpression};
+    use crate::geometry::lofts::LoftPathCurve;
 
     for endpoints in [None, Some([None, Some(1.0)]), Some([Some(0.0), None])] {
         let formula = named_law(LawExpression::Edge {
@@ -582,10 +600,10 @@ fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
 /// The recursion bound the law-expression walk states.
 const LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST: usize = 64;
 
-fn nested_algebraic_law(depth: usize) -> crate::geometry::LawFormula {
-    let mut expression = crate::geometry::LawExpression::Double { value: 1.0 };
+fn nested_algebraic_law(depth: usize) -> crate::geometry::laws::LawFormula {
+    let mut expression = crate::geometry::laws::LawExpression::Double { value: 1.0 };
     for _ in 0..depth {
-        expression = crate::geometry::LawExpression::Algebraic {
+        expression = crate::geometry::laws::LawExpression::Algebraic {
             operator: "+".to_owned(),
             operands: vec![expression],
         };
@@ -595,7 +613,7 @@ fn nested_algebraic_law(depth: usize) -> crate::geometry::LawFormula {
 
 #[test]
 fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
-    use crate::geometry::FiniteLawFormula;
+    use crate::geometry::laws::FiniteLawFormula;
 
     assert!(
         FiniteLawFormula::try_new(nested_algebraic_law(LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST))
@@ -609,7 +627,8 @@ fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
 
 #[test]
 fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
-    use crate::geometry::{CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralGeometryError};
+    use crate::geometry::curve_offsets::{CurveOffsetDistanceLaw, CurveOffsetLawBasis};
+    use crate::geometry::legacy_cache::ProceduralGeometryError;
 
     let refusal = Err(ProceduralGeometryError::Payload(
         "curve offset distance, side, range, or law is invalid",
@@ -630,14 +649,14 @@ fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
         panic!("a variable range");
     };
     assert_eq!(parameter_range.endpoints(), [0.0, 1.0]);
-    let wire = serde_json::to_value(&range).unwrap();
-    assert_eq!(wire["parameter_range"], serde_json::json!([0.0, 1.0]));
+    let wire = json::to_value(&range).unwrap();
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([0.0, 1.0]));
     assert_eq!(
         wire["distance_law"]["control_range"],
-        serde_json::json!([0.0, 10.0])
+        cadmpeg_core::json!([0.0, 10.0])
     );
     assert_eq!(
-        serde_json::from_value::<CurveOffsetRange>(wire.clone()).unwrap(),
+        json::from_value::<CurveOffsetRange>(wire.clone()).unwrap(),
         range
     );
     for invalid in [
@@ -657,8 +676,8 @@ fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
         );
     }
     let mut decreasing = wire;
-    decreasing["distance_law"]["control_range"] = serde_json::json!([10.0, 0.0]);
-    let error = serde_json::from_value::<CurveOffsetRange>(decreasing).unwrap_err();
+    decreasing["distance_law"]["control_range"] = cadmpeg_core::json!([10.0, 0.0]);
+    let error = json::from_value::<CurveOffsetRange>(decreasing).unwrap_err();
     assert!(
         error
             .to_string()

@@ -6,15 +6,25 @@ use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_ope
 
 #[test]
 fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
-    assert_compact_slider(5, false);
+    assert_compact_slider(5, false, None);
 }
 
 #[test]
 fn legacy_placement_as_built_projects_a_slider_with_an_ordinary_locator() {
-    assert_compact_slider(4, true);
+    assert_compact_slider(4, true, None);
 }
 
-fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
+#[test]
+fn compact_as_built_empty_properties_shift_the_locator_and_owner_run() {
+    assert_compact_slider(4, true, Some(&[70, 72, 73, 75, 50, 53, 56, 59, 76]));
+    assert_compact_slider(5, true, Some(&[70, 72, 73, 75, 76, 77, 50, 53, 56, 59, 78]));
+}
+
+fn assert_compact_slider(
+    joint_version: u32,
+    ordinary_locator: bool,
+    shifted_table: Option<&[u32]>,
+) {
     use crate::design::assembly::{project_assembly_joints_with_paths, AS_BUILT_SCOPE_TYPE_GUID};
     use crate::design::components::paths::LocalOccurrencePaths;
     use crate::design::components::ComponentInserts;
@@ -22,6 +32,7 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
     use crate::design::decode::sketch::IndexedRecordOffsets;
+    use crate::layout::assembly_as_built_scope_381_403_prefix as shifted;
     use crate::layout::assembly_wide_operand_path_identity_locator as wide;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     use crate::records::feature::assembly_features::{
@@ -39,8 +50,13 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     let mut bytes = Vec::new();
     push_header(&mut bytes, b"405", 10);
     bytes.extend_from_slice(&[0; 10]);
+    if shifted_table.is_some() {
+        bytes[shifted::PROPERTY_PRESENCE] = shifted::PROPERTY_PRESENCE_VALUE;
+        bytes.extend_from_slice(&shifted::PROPERTY_COUNT_VALUE.to_le_bytes());
+    }
     push_marked(&mut bytes, 70);
     push_marked(&mut bytes, 71);
+    let owner_count_offset = bytes.len();
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&2_u32.to_le_bytes());
     push_marked(&mut bytes, 64);
@@ -48,7 +64,9 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     push_marked(&mut bytes, 9);
     push_lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     bytes.extend_from_slice(&[0; 3]);
-    let members: &[u32] = if ordinary_locator {
+    let members: &[u32] = if let Some(table) = shifted_table {
+        table
+    } else if ordinary_locator {
         &[70, 72, 73, 75, 76, 50, 53, 56, 59]
     } else {
         &[70, 72, 73, 50, 53, 56, 59]
@@ -139,13 +157,22 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
         (67, (locator_type, 3)),
         (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
     ]);
-    let read = |types: &std::collections::HashMap<u64, (&str, u32)>| {
+    let read = |bytes: &[u8], types: &std::collections::HashMap<u64, (&str, u32)>| {
         crate::test_support::with_decode_context(|ctx| {
-            exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &owners, types)
+            exact_assembly_alignment_with_types(ctx, bytes, &records, &scope, &owners, types)
                 .unwrap()
         })
     };
-    let alignment = read(&types).expect("compact placement alignment");
+    let alignment = read(&bytes, &types).expect("compact placement alignment");
+    assert_eq!(
+        alignment
+            .additional_owner_run
+            .as_ref()
+            .unwrap()
+            .count
+            .offset,
+        u64::try_from(owner_count_offset).unwrap(),
+    );
     assert!(alignment.angle().abs() < f64::EPSILON);
     assert!(alignment
         .offset()
@@ -162,8 +189,13 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
         [if ordinary_locator { 75 } else { 64 }, 67]
     );
 
+    if shifted_table.is_some() {
+        let mut bad_property_count = bytes.clone();
+        bad_property_count[shifted::PROPERTY_COUNT] = 1;
+        assert!(read(&bad_property_count, &types).is_none());
+    }
     types.remove(&9);
-    assert!(read(&types).is_none());
+    assert!(read(&bytes, &types).is_none());
 
     let mut occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
         DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
@@ -968,16 +1000,32 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
         );
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &ParameterScopeSources::default(),
             )
             .unwrap();
             assert!(decoded.scopes.is_empty());
-            assert_eq!(decoded.losses.len(), 1);
             assert_eq!(
-                decoded.losses[0].code,
-                crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()
+                crate::test_support::loss_codes(&decoded.losses),
+                [crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()]
+            );
+            // §3.3: the record header through the paired header is the frame
+            // the decoder gives up as a part.
+            let [part] = decoded.given_up.as_slice() else {
+                panic!("one given-up part: {:?}", decoded.given_up);
+            };
+            assert_eq!(
+                part.kind(),
+                crate::design::decode::record::DESIGN_RECORD_PART
+            );
+            assert!(
+                part.loss().message.starts_with(&format!(
+                    "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=0 length={frame} record={}: ",
+                    part.id()
+                )),
+                "{}",
+                part.loss().message
             );
         });
     }

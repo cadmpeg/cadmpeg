@@ -32,7 +32,7 @@ fn native_validation_rejects_broken_feature_graph() {
             });
     });
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -82,7 +82,7 @@ fn native_validation_rejects_broken_history_root_graph() {
     });
 
     let findings = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
     )
     .unwrap();
@@ -154,7 +154,7 @@ fn native_validation_reports_omitted_history_roots_in_record_order() {
     assert!(expected.len() >= 7, "{expected:?}");
 
     let omitted = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
     )
     .unwrap()
@@ -182,7 +182,7 @@ fn native_validation_rejects_orphan_history_records() {
     let orphan = decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(cadmpeg_ir::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("features")
         .unwrap()[0]
@@ -195,7 +195,7 @@ fn native_validation_rejects_orphan_history_records() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(cadmpeg_ir::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(
@@ -204,7 +204,7 @@ fn native_validation_rejects_orphan_history_records() {
     )
     .expect("valid native identity");
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -232,7 +232,7 @@ fn native_validation_rejects_edited_relation_binding() {
     });
 
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -242,15 +242,9 @@ fn native_validation_rejects_edited_relation_binding() {
             .message
             .contains("relation bindings do not match the native payload")
     }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("relation bindings do not match the native payload"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("relation bindings do not match the native payload"));
 }
 
 #[test]
@@ -272,7 +266,7 @@ fn native_validation_rejects_edited_relation_instance() {
     });
 
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -282,15 +276,9 @@ fn native_validation_rejects_edited_relation_instance() {
             .message
             .contains("relation instances do not match the native payload")
     }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("relation instances do not match the native payload"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("relation instances do not match the native payload"));
 }
 
 #[test]

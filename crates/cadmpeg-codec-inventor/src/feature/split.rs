@@ -3,10 +3,11 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::direct_edit::{SplitBodyTool, SplitFaceTool};
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, FaceSelection, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology, SplitBodyTool,
-    SplitFaceTool,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::native::bytes::NativeBytes;
 
@@ -427,6 +428,7 @@ pub(crate) mod tests {
         PmDcFeaturePropertyPayload,
     };
     use crate::test_support::test_fixtures::{content_at, parse};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     fn header(version: u8) -> Vec<u8> {
@@ -475,9 +477,9 @@ pub(crate) mod tests {
                             value,
                         }
                     );
-                    let wire = serde_json::to_value(&property).expect("serialize property");
+                    let wire = json::to_value(&property).expect("serialize property");
                     assert_eq!(
-                        serde_json::from_value::<PmDcFeaturePropertyPayload>(wire)
+                        json::from_value::<PmDcFeaturePropertyPayload>(wire)
                             .expect("deserialize property"),
                         property
                     );
@@ -627,10 +629,9 @@ pub(crate) mod tests {
     }
 
     pub(crate) mod solid {
-        use cadmpeg_ir::features::{
-            BodySelection, FaceSelection, FeatureDefinition, FeatureId, FeatureOperation,
-            SplitBodyTool,
-        };
+        use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+        use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
         use super::definition;
         use crate::feature::tests::{reference, test_feature, test_property};

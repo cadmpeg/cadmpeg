@@ -202,11 +202,25 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignReverseNormalOperation {
     pub(crate) body_group: Located<u32>,
+    /// GUID shared by the linked Reverse Normal scopes of one timeline item,
+    /// one per component; absent for the null GUID of an unlinked scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_normal_link"
+    )]
+    pub(crate) link: Option<Located<crate::records::mesh::DesignRelaxedGuidText>>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_reverse_normal_link,
+    Located<crate::records::mesh::DesignRelaxedGuidText>,
+    "link"
+);
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, PartialEq, Deserialize)]
@@ -535,6 +549,7 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
 
     fn operation() -> DesignCopyPasteBodiesOperation {
         serde_json::from_str(r#"{"body_group_record_index":501,"body_group_class_tag":"264","body_group_byte_offset":100,"body_operand_record_indices":[502,504],"body_operand_record_offsets":[126,137],"relation_record_index":503,"relation_class_tag":"264","relation_byte_offset":200,"source_body_entity_suffixes":[11,13],"source_body_entity_suffix_offsets":[225,255],"copied_body_entity_suffixes":[12,14],"copied_body_entity_suffix_offsets":[240,270]}"#).unwrap()
@@ -545,8 +560,8 @@ mod tests {
         let operation = operation();
         let owned = DesignCopyPasteBodiesOperationWire::from(operation.clone());
         assert_eq!(
-            serde_json::to_vec(&operation).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&operation).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 

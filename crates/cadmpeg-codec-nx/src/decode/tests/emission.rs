@@ -322,6 +322,40 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
 }
 
 #[test]
+fn decode_keeps_a_closed_edge_whose_partner_fin_has_no_links() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 12, 1);
+    put_ref(&mut stream, fin + 14, 20);
+
+    let mut partner = record(17, 23);
+    put_ref(&mut partner, 2, 20);
+    put_ref(&mut partner, 6, 1); // not a loop member
+    put_ref(&mut partner, 8, 1); // no forward link
+    put_ref(&mut partner, 10, 1); // no backward link
+    put_ref(&mut partner, 12, 1); // null vertex
+    put_ref(&mut partner, 14, 7); // partner fin
+    put_ref(&mut partner, 16, 8); // same edge
+    put_ref(&mut partner, 18, 9); // same curve
+    partner[22] = b'-';
+    stream.extend(partner);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = result.ir().geometry.edges.first().expect("closed edge");
+    assert!(edge.start().is_some());
+    assert_eq!(edge.start(), edge.end());
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
+}
+
+#[test]
 fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
     let mut stream = topology_partition_stream();
     let fin = stream
@@ -423,7 +457,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         graph
             .get(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     );
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -701,7 +735,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     assert_eq!(
         result.ir().geometry.pcurves[0]
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.01)
     );
     assert_eq!(
@@ -859,7 +893,7 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     assert_eq!(
         result.ir().geometry.coedges[0].pcurves[0]
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
     assert!(
@@ -927,12 +961,12 @@ fn decode_preserves_multiple_shells_in_one_region() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.regions.len(), 1);
     assert_eq!(result.ir().geometry.shells.len(), 2);
-    assert_eq!(result.ir().geometry.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(
         result
             .ir()
             .geometry
-            .body_regions(&result.ir().geometry.bodies[0].id)
+            .stated_body_regions(&result.ir().geometry.bodies[0].id)
             .count(),
         1
     );
@@ -1214,7 +1248,10 @@ fn decode_emits_connected_primitive_brep() {
         cadmpeg_ir::topology::BodyKind::Sheet
     );
     assert_eq!(
-        result.ir().geometry.faces[0].loops,
+        result.ir().geometry.faces[0]
+            .loops
+            .boundary()
+            .expect("a complete face"),
         vec![result.ir().geometry.loops[0].id.clone()]
     );
     assert_eq!(
@@ -1224,19 +1261,19 @@ fn decode_emits_connected_primitive_brep() {
     assert_eq!(
         result.ir().geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.1)
     );
     assert_eq!(
         result.ir().geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.3)
     );
     assert_eq!(
         result.ir().geometry.faces[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.2)
     );
     assert_eq!(

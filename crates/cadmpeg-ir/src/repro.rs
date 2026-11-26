@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed CADIR fragments and stable finding signatures.
 
+use crate::attributes::AttributeJson;
+use crate::design::names::CodecId;
+use crate::hash::finite_json::{
+    admission::CanonicalAdmission, write_serde_json, CanonicalJsonError,
+};
+use crate::scalar::FiniteReal;
 use crate::{report::check::Finding, CadIr};
+use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -45,11 +54,11 @@ impl Default for CutOptions {
 #[serde(deny_unknown_fields)]
 pub struct ManifestEntry {
     /// Dotted arena address.
-    pub arena: String,
+    pub arena: NonBlankString,
     /// Retained rows.
-    pub rows: usize,
+    pub rows: u64,
     /// Compact JSON array size in bytes.
-    pub serialized_bytes: usize,
+    pub serialized_bytes: u64,
     /// One-line arena description.
     pub description: String,
 }
@@ -81,8 +90,7 @@ pub struct BundleMetadata {
     /// Stripped root identities.
     pub roots: Vec<String>,
     /// Opaque application data.
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
-    pub context: Map<String, Value>,
+    pub context: AttributeJson,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,
     /// Reason this cut exceeds its resource bound or requires global context.
@@ -91,7 +99,54 @@ pub struct BundleMetadata {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_incomplete_reason"
     )]
-    pub incomplete_reason: Option<String>,
+    pub incomplete_reason: Option<NonBlankString>,
+}
+
+/// A JSON value as the typed value a bundle's `context` holds: an integer
+/// that fits `i64` as `Integer`, a larger one as `Unsigned`.
+fn typed_json(value: &Value) -> AttributeJson {
+    match value {
+        Value::Null => AttributeJson::Null,
+        Value::Bool(value) => AttributeJson::Boolean(*value),
+        Value::Number(number) => number
+            .as_i64()
+            .map(AttributeJson::Integer)
+            .or_else(|| number.as_u64().map(AttributeJson::Unsigned))
+            .or_else(|| {
+                number
+                    .as_f64()
+                    .and_then(FiniteReal::new)
+                    .map(AttributeJson::Float)
+            })
+            .unwrap_or(AttributeJson::Null),
+        Value::String(text) => AttributeJson::String(text.clone()),
+        Value::Array(items) => AttributeJson::Array(items.iter().map(typed_json).collect()),
+        Value::Object(members) => AttributeJson::Object(
+            members
+                .iter()
+                .map(|(key, member)| (key.clone(), typed_json(member)))
+                .collect(),
+        ),
+    }
+}
+
+/// The JSON value a typed `context` value holds.
+fn plain_json(value: &AttributeJson) -> Value {
+    match value {
+        AttributeJson::Null => Value::Null,
+        AttributeJson::Boolean(value) => Value::Bool(*value),
+        AttributeJson::Integer(value) => Value::from(*value),
+        AttributeJson::Unsigned(value) => Value::from(*value),
+        AttributeJson::Float(value) => Value::from(value.get()),
+        AttributeJson::String(text) => Value::String(text.clone()),
+        AttributeJson::Array(items) => Value::Array(items.iter().map(plain_json).collect()),
+        AttributeJson::Object(members) => Value::Object(
+            members
+                .iter()
+                .map(|(key, member)| (key.clone(), plain_json(member)))
+                .collect(),
+        ),
+    }
 }
 
 impl Serialize for Bundle {
@@ -100,9 +155,9 @@ impl Serialize for Bundle {
         document.repro = Some(Box::new(BundleMetadata {
             signature: self.signature.clone(),
             roots: self.roots.clone(),
-            context: self.context.clone(),
+            context: typed_json(&Value::Object(self.context.clone())),
             manifest: self.manifest.clone(),
-            incomplete_reason: self.incomplete_reason.clone(),
+            incomplete_reason: self.incomplete_reason.clone().and_then(NonBlankString::new),
         }));
         document.serialize(serializer)
     }
@@ -122,11 +177,23 @@ impl<'de> Deserialize<'de> for Bundle {
             document,
             signature: metadata.signature,
             roots: metadata.roots,
-            context: metadata.context,
+            context: match plain_json(&metadata.context) {
+                Value::Object(context) => context,
+                _ => return Err(serde::de::Error::custom("bundle context is an object")),
+            },
             manifest: metadata.manifest,
-            incomplete_reason: metadata.incomplete_reason,
+            incomplete_reason: metadata.incomplete_reason.map(NonBlankString::into_string),
         })
     }
+}
+
+/// The codec whose document a finding is in: the source's codec, or
+/// `cadir` for a document with no source.
+fn finding_codec(document: &Document) -> CodecId {
+    document.source.as_ref().map_or_else(
+        || crate::codec_id!("cadir"),
+        |source| source.classification().codec(),
+    )
 }
 
 /// A row address within a document projection.
@@ -224,10 +291,10 @@ pub fn retain(value: &mut Value, rows: &[Row], keep: &BTreeSet<usize>) {
 
 /// Measure a bounded serialized document before validation.
 pub fn projection_size(document: &Document, options: &CutOptions) -> Result<usize, CodecError> {
-    Ok(project(document, options)?.bytes.len())
+    Ok(project(document, options)?.len())
 }
 
-fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjection, CodecError> {
+fn project(document: &Document, options: &CutOptions) -> Result<Vec<u8>, CodecError> {
     let mut count = document.entity_count();
     for namespace in document.native.0.values() {
         for arena in namespace.arenas().values() {
@@ -241,12 +308,28 @@ fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjectio
             "fragment row limit exceeded".into(),
         ));
     }
-    let mut projection = LimitedProjection {
+    compact_json(document, options.max_serialized_bytes)
+}
+
+/// The bytes `serde_json::to_writer` writes for `value`, refused past `limit`.
+fn compact_json<T: Serialize + ?Sized>(value: &T, limit: usize) -> Result<Vec<u8>, CodecError> {
+    let mut projection = CompactProjection {
         bytes: Vec::new(),
-        limit: options.max_serialized_bytes,
+        limit,
+        in_string: false,
+        escaped: false,
     };
-    serde_json::to_writer(&mut projection, document).map_err(CodecError::malformed)?;
-    Ok(projection)
+    write_serde_json(
+        CanonicalAdmission::unlimited(),
+        None,
+        &mut projection,
+        value,
+    )
+    .map_err(|error| match error {
+        CanonicalJsonError::Serialize(error) => CodecError::malformed(error),
+        error => CodecError::malformed(error),
+    })?;
+    Ok(projection.bytes)
 }
 
 /// Build the reference closure and required topology context of a finding.
@@ -282,8 +365,7 @@ pub fn cut_with_native(
     native_text_replacements: &BTreeMap<String, String>,
 ) -> Result<Bundle, CodecError> {
     let projection = project(document, options)?;
-    let mut value: Value =
-        serde_json::from_slice(&projection.bytes).map_err(CodecError::malformed)?;
+    let mut value: Value = json::from_slice(&projection).map_err(CodecError::malformed)?;
     let roots: Vec<String> = finding
         .entity
         .iter()
@@ -302,11 +384,7 @@ pub fn cut_with_native(
     if let Some(object) = value.as_object_mut() {
         object.remove("repro");
     }
-    let codec = document
-        .source
-        .as_ref()
-        .map_or("cadir", |source| source.format());
-    let signature = Signature::new(finding, codec, Stage::Check);
+    let signature = Signature::new(finding, finding_codec(document), Stage::Check);
     let (value, roots) = privacy::strip(
         value,
         roots,
@@ -317,8 +395,7 @@ pub fn cut_with_native(
             .as_ref()
             .map(crate::document::SourceMeta::format),
     )?;
-    let mut document: Document =
-        serde_json::from_str(&value.to_string()).map_err(CodecError::malformed)?;
+    let mut document = Document::from_projection(value).map_err(CodecError::malformed)?;
     if finding.check != crate::report::check::Check::ArenaOrder {
         document.finalize();
     }
@@ -349,13 +426,9 @@ impl Bundle {
             .source
             .as_ref()
             .map(crate::document::SourceMeta::repro_header);
-        let codec = document
-            .source
-            .as_ref()
-            .map_or("cadir", |source| source.format());
         Self {
             document: fragment,
-            signature: Signature::new(finding, codec, Stage::Check),
+            signature: Signature::new(finding, finding_codec(document), Stage::Check),
             roots: Vec::new(),
             context: options.context.clone(),
             manifest: Vec::new(),
@@ -365,7 +438,8 @@ impl Bundle {
 
     /// Recalculate the inventory after row removal.
     pub fn refresh_manifest(&mut self) -> Result<(), CodecError> {
-        let value = serde_json::to_value(&self.document).map_err(CodecError::malformed)?;
+        let value = crate::hash::finite_json::to_json_value(&self.document)
+            .map_err(CodecError::malformed)?;
         let arenas: BTreeSet<String> = rows(&value).into_iter().map(|row| row.arena).collect();
         self.manifest = arenas
             .into_iter()
@@ -373,11 +447,12 @@ impl Bundle {
                 let values = value.pointer(&arena).unwrap_or(&Value::Null);
                 Ok(ManifestEntry {
                     description: format!("{} records", arena.rsplit('/').next().unwrap_or("arena")),
-                    arena: arena.trim_start_matches('/').replace('/', "."),
-                    rows: values.as_array().map_or(0, Vec::len),
-                    serialized_bytes: serde_json::to_vec(values)
-                        .map_err(CodecError::malformed)?
-                        .len(),
+                    arena: NonBlankString::new(arena.trim_start_matches('/').replace('/', "."))
+                        .ok_or_else(|| CodecError::malformed("an arena address is blank"))?,
+                    rows: u64_from_index(values.as_array().map_or(0, Vec::len)),
+                    serialized_bytes: u64_from_index(
+                        json::to_vec(values).map_err(CodecError::malformed)?.len(),
+                    ),
                 })
             })
             .collect::<Result<_, CodecError>>()?;
@@ -388,21 +463,35 @@ impl Bundle {
 #[cfg(test)]
 mod tests;
 
-struct LimitedProjection {
+/// Compact JSON kept from the pretty JSON text written into it: the bytes
+/// outside string literals, less spaces and line feeds.
+struct CompactProjection {
     bytes: Vec<u8>,
     limit: usize,
+    in_string: bool,
+    escaped: bool,
 }
-impl std::io::Write for LimitedProjection {
+impl std::io::Write for CompactProjection {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let total = self
-            .bytes
-            .len()
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("fragment byte count overflow"))?;
-        if total > self.limit {
-            return Err(std::io::Error::other("fragment byte limit exceeded"));
+        for &byte in bytes {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+            } else if byte == b' ' || byte == b'\n' {
+                continue;
+            } else if byte == b'"' {
+                self.in_string = true;
+            }
+            if self.bytes.len() == self.limit {
+                return Err(std::io::Error::other("fragment byte limit exceeded"));
+            }
+            self.bytes.push(byte);
         }
-        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -410,4 +499,8 @@ impl std::io::Write for LimitedProjection {
     }
 }
 
-cadmpeg_core::named_optional_field!(deserialize_incomplete_reason, String, "incomplete_reason");
+cadmpeg_core::named_optional_field!(
+    deserialize_incomplete_reason,
+    NonBlankString,
+    "incomplete_reason"
+);

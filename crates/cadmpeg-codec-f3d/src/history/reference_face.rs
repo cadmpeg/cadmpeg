@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{
-    effective_faces, face_boundary_contexts_for_slots, selection, stable_ref,
-    AsmHistoricalTopology, SideOneEdge, TopologyQueryCache,
-};
+use super::body_closures::stable_ref;
+use super::edge_operand_history::SideOneEdge;
+use super::face_boundaries::face_boundary_contexts_for_slots;
+use super::face_resolution::effective_faces;
+use super::selection;
+use crate::history::topology_cache::TopologyQueryCache;
+use crate::history_records::AsmHistoricalTopology;
 
 /// The one edge of `topology` that every face named by the first side of a
 /// standard edge recipe bounds and that the recipe's candidate faces bound.
@@ -108,10 +111,11 @@ pub(super) fn side_one_reference_face_edge<'a>(
 mod tests {
     use super::*;
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn deleted_singleton_support_edge_has_transition_proof() {
-        let structure = serde_json::from_value(serde_json::json!({
+        let structure = json::from_value(cadmpeg_core::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 1, "scalars": [0, 2],
@@ -122,7 +126,7 @@ mod tests {
         }))
         .unwrap();
         let references = [10, 20].map(|face| {
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "selector": 1, "selector_offset": face, "token": "1", "token_integer": 0,
                 "token_offset": face + 4, "design_reference": 1,
                 "design_reference_offset": face + 8,

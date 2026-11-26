@@ -22,10 +22,11 @@ use crate::native::attach::feature_projection::ProjectionArenas;
 use crate::native::attach::feature_projection::SolidBodyIndex;
 use crate::native::attach::preceding_operation_dependency;
 use crate::test_support::test_bytes::attach_test_body_surface;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
-use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::ProceduralSurfaceId;
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use std::collections::BTreeMap;
@@ -64,18 +65,15 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Topology};
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{
-            holes::{HoleKind, HolePlacement},
-            FeatureDefinition, FeatureOperation, LinearTermination,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::scalar::Length;
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
@@ -227,13 +225,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    geometry.regions.push(Region {
-        id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
-        body: body.clone(),
-        shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
-        native_ref: None,
-    });
+    geometry.regions.push(Region::new(
+        RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
+        body.clone(),
+        vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
+    ));
     geometry.shells.push(Shell::new(
         ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
@@ -272,11 +270,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             BTreeMap::from([(
                 operation.clone(),
                 HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0)
+                    )
                     .unwrap(),
                 },
             )])
@@ -288,11 +288,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             None,
             HoleProjection {
                 placements: vec![HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                 }],
                 diameter: Some(Length::new(4.0).unwrap()),
@@ -315,8 +317,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (placements.as_deref() == Some(&[HolePlacement::Directed {
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0)));
 
         let mut missing_cap = ir.clone();
@@ -588,13 +590,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        geometry.regions.push(Region {
-            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            body: body.clone(),
-            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-            native_ref: None,
-        });
+        geometry.regions.push(Region::new(
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body.clone(),
+            vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        ));
         geometry.shells.push(Shell::new(
             ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             RegionId::mint("test:model:entity#region").expect("identity grammar"),
@@ -653,10 +655,14 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             BTreeMap::from([(
                 operation.clone(),
                 HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0
+                    ))
+                    .unwrap(),
+                    axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0
+                    ))
+                    .unwrap(),
                 },
             )])
         );
@@ -667,10 +673,14 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             None,
             HoleProjection {
                 placements: vec![HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                    axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 }],
                 diameter: Some(Length::new(4.0).unwrap()),
                 counterbore: projection.counterbores.get(&operation).copied(),
@@ -683,7 +693,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             placements,
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -693,8 +703,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 },
                 ..
             }, Some(actual_diameter_2),) if (placements.as_deref() == Some(&[HolePlacement::Axis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0)));
 
         let mut missing_shoulder = ir.clone();
@@ -731,7 +741,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
 #[test]
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     ({
         let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
@@ -984,7 +995,9 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
 #[test]
 fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
+    use cadmpeg_ir::features::direct_edit::ThickenSide;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -1158,7 +1171,7 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
             let mut region = cube.geometry.regions[0].clone();
             region.id = region_id.clone();
             region.body = body_id.clone();
-            region.shells = vec![shell_id.clone()];
+            region.set_shells(vec![shell_id.clone()]);
             ir.geometry.regions.push(region);
         }
         ir.geometry
@@ -1182,23 +1195,26 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
     }
     let scan = |body_id: &BodyId, connected_solid: bool| {
         let body = ir.geometry.bodies.iter().find(|body| body.id == *body_id)?;
-        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let regions = ir
+            .geometry
+            .stated_body_regions(&body.id)
+            .collect::<Vec<_>>();
         if connected_solid && (body.kind != BodyKind::Solid || regions.len() != 1) {
             return None;
         }
         let mut faces = Vec::new();
         for region in regions {
-            if connected_solid && region.shells.len() != 1 {
+            if connected_solid && region.stated_shells().count() != 1 {
                 return None;
             }
-            for shell_id in &region.shells {
+            for shell_id in &region.stated_shells().cloned().collect::<Vec<_>>() {
                 let shell = ir
                     .geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
                 let mut seen = std::collections::HashSet::new();
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     if seen.insert(&face.id) {
                         faces.push((face.id.clone(), face.surface.clone()));
                     }

@@ -11,18 +11,20 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, LoopBoundary, Sense};
+use cadmpeg_ir::topology::{AnchoredVertexUse, Body, BodyKind, Coedge, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use cadmpeg_tessellate::{CoedgeTrace, FaceMesh, Tessellator};
+use cadmpeg_tessellate::{CoedgeTrace, Tessellator};
+
+use super::brep::FaceMeshes;
 
 use crate::brep::nurbs::{harmonic_arc, Nurbs};
 use crate::brep::{
@@ -597,8 +599,8 @@ struct Exporter<'t, 'ir> {
     tessellator: &'t mut Tessellator<'ir>,
     /// Every face needs a mesh: the body has no tessellation of its own.
     meshes_wanted: bool,
-    /// The mesh of each face record, when it has one.
-    meshes: Vec<Option<FaceMesh>>,
+    /// The tessellation of each face that has one.
+    meshes: FaceMeshes,
     brep: Brep,
     vertices: BTreeMap<VertexId, usize>,
     edges: BTreeMap<EdgeId, usize>,
@@ -621,7 +623,7 @@ pub(super) struct Unwritten {
     pub(super) edges: usize,
     /// Oriented edges on non-planar faces with no pcurve.
     pub(super) pcurves: usize,
-    /// Loops whose pole-vertex uses were dropped.
+    /// Poles of ring loops with no trim curve, which are not written.
     pub(super) pole_uses: usize,
     /// Faces with no mesh, with the reason.
     pub(super) unmeshed: Vec<String>,
@@ -633,6 +635,8 @@ pub(super) struct Exported {
     /// The IR face of each face record.
     pub(super) faces: Vec<FaceId>,
     pub(super) unwritten: Unwritten,
+    /// The tessellation of each face that has one.
+    pub(super) meshes: FaceMeshes,
 }
 
 impl<'t, 'ir> Exporter<'t, 'ir> {
@@ -647,7 +651,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             index,
             tessellator,
             meshes_wanted,
-            meshes: Vec::new(),
+            meshes: FaceMeshes::new(),
             brep: Brep {
                 tolerance: ir.tolerances.linear.get(),
                 angle_scale: 1.0,
@@ -849,7 +853,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let tolerance = edge
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .filter(|tolerance| *tolerance > self.brep.tolerance);
         self.brep.edges.push(EdgeRecord {
             tolerance,
@@ -938,6 +942,52 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         Some([first, last])
     }
 
+    /// The oriented edge of pole `pole` (spec §17.2): a use of an edge whose
+    /// ends are the pole vertex and whose curve stays there, with the
+    /// collapsed side of the face domain as its trim curve. A pole with no
+    /// trim curve, such as one with no pcurve or a line pcurve with no range,
+    /// has none and pushes no record.
+    fn pole_edgeuse(&mut self, pole: &AnchoredVertexUse, chart: Chart) -> Option<usize> {
+        let [use_] = pole.pcurves.as_slice() else {
+            return None;
+        };
+        let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
+        let range = use_
+            .parameter_range
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints);
+        let curve = pcurve_nurbs(&pcurve.geometry, range)?.map(|point| chart.apply(point));
+        let vertex = self.vertex(&pole.vertex)?;
+        let position = *self.brep.vertices.get(vertex)?;
+        self.brep.nurbs_pcurves.push(NurbsCurveRecord {
+            order: curve.degree + 1,
+            points: curve.points,
+            weights: curve.weights,
+            knots: curve.knots,
+            form: Form::Open,
+        });
+        let pcurve = (Catalog::Nurbs, self.brep.nurbs_pcurves.len() - 1);
+        self.brep.nurbs_curves.push(NurbsCurveRecord {
+            order: 2,
+            points: vec![position, position],
+            weights: vec![1.0, 1.0],
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            form: Form::Open,
+        });
+        self.brep.edges.push(EdgeRecord {
+            vertices: [vertex, vertex],
+            curve: Some((Catalog::Nurbs, self.brep.nurbs_curves.len() - 1)),
+            range: [0.0, 1.0],
+            same_sense: true,
+            tolerance: None,
+        });
+        self.brep.oriented_edges.push(OrientedEdgeRecord {
+            edge: self.brep.edges.len() - 1,
+            orientation: true,
+            pcurve: Some(pcurve),
+        });
+        Some(self.brep.oriented_edges.len() - 1)
+    }
+
     /// The pcurve record of a coedge on a face with chart `chart`, traversed
     /// in the coedge direction.
     fn pcurve(&mut self, coedge: &Coedge, chart: Chart, planar: bool) -> Option<Reference> {
@@ -949,7 +999,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         // coedge direction.
         let range = use_
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
             .or_else(|| {
                 let [start, end] = *self.edge_ranges.get(&coedge.edge)?;
                 Some(if coedge.sense == Sense::Forward {
@@ -958,65 +1008,20 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     [end, start]
                 })
             });
-        let curve = match &pcurve.geometry {
-            PcurveGeometry::Nurbs { nurbs } => {
-                let curve = Nurbs::<2> {
-                    degree: usize::try_from(nurbs.degree()).ok()?,
-                    knots: nurbs.knots().as_slice().to_vec(),
-                    points: nurbs
-                        .control_points()
-                        .into_iter()
-                        .map(|point| [point.get().u, point.get().v])
-                        .collect(),
-                    weights: nurbs.weights().map_or_else(
-                        || std::iter::repeat_n(1.0, nurbs.control_points().len()).collect(),
-                        |weights| weights.iter().map(|weight| weight.get()).collect(),
-                    ),
-                };
-                let range = range.filter(|[start, end]| {
-                    curve.domain().is_some_and(|[low, high]| {
-                        start.min(*end) >= low && start.max(*end) <= high
-                    })
-                });
-                match range {
-                    None => curve,
-                    Some([start, end]) if start < end => {
-                        if Some([start, end]) == curve.domain() {
-                            curve
-                        } else {
-                            curve.segment(start, end)?
-                        }
-                    }
-                    Some([start, end]) => curve.segment(end, start)?.reversed()?,
-                }
-            }
-            PcurveGeometry::Line(line) => {
-                let [start, end] = range?;
-                let origin = line.origin().get();
-                let direction = *line.direction().as_raw();
-                let at = |t: f64| [origin.u + t * direction.u, origin.v + t * direction.v];
-                Nurbs::<2> {
-                    degree: 1,
-                    knots: vec![0.0, 0.0, 1.0, 1.0],
-                    points: vec![at(start), at(end)],
-                    weights: vec![1.0, 1.0],
-                }
-            }
-            geometry @ (PcurveGeometry::Circle(_)
+        if planar {
+            if let geometry @ (PcurveGeometry::Circle(_)
             | PcurveGeometry::Ellipse(_)
-            | PcurveGeometry::Harmonic(_)) => {
+            | PcurveGeometry::Harmonic(_)) = &pcurve.geometry
+            {
                 let (center, a, b) = harmonic(geometry)?;
                 let [start, end] = range.unwrap_or([0.0, std::f64::consts::TAU]);
-                if planar {
-                    if let Some(analytic) = analytic_pcurve(center, a, b, [start, end]) {
-                        self.brep.analytic_pcurves.push(analytic);
-                        return Some((Catalog::Analytic, self.brep.analytic_pcurves.len() - 1));
-                    }
+                if let Some(analytic) = analytic_pcurve(center, a, b, [start, end]) {
+                    self.brep.analytic_pcurves.push(analytic);
+                    return Some((Catalog::Analytic, self.brep.analytic_pcurves.len() - 1));
                 }
-                harmonic_arc(center, a, b, start, end)?
             }
-            _ => return None,
-        };
+        }
+        let curve = pcurve_nurbs(&pcurve.geometry, range)?;
         let mapped = curve.map(|point| chart.apply(point));
         self.brep.nurbs_pcurves.push(NurbsCurveRecord {
             order: mapped.degree + 1,
@@ -1039,21 +1044,15 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let planar = matches!(surface, (Catalog::Analytic, index)
             if self.brep.analytic_surfaces[index].kind == SurfaceKind::Plane);
-        let mesh = if self.meshes_wanted || !planar {
-            match self.tessellator.face(face_id) {
-                Ok(mesh) => Some(mesh),
-                Err(refusal) => {
-                    self.unwritten
-                        .unmeshed
-                        .push(format!("{face_id}: {refusal}"));
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let tessellated = (self.meshes_wanted || !planar).then(|| self.tessellator.face(face_id));
+        if let Some(Err(refusal)) = &tessellated {
+            self.unwritten
+                .unmeshed
+                .push(format!("{face_id}: {refusal}"));
+        }
+        let mesh = tessellated.as_ref().and_then(|result| result.as_ref().ok());
         let mut loops = Vec::new();
-        for loop_id in &face.loops {
+        for loop_id in face.loops.boundary().into_iter().flatten() {
             let Some(loop_) = self.index.loops(loop_id.as_str(), StandardIndex) else {
                 continue;
             };
@@ -1063,12 +1062,10 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     self.brep.loops.push(LoopRecord {
                         oriented_edges: Vec::new(),
                         vertex,
+                        poles: Vec::new(),
                     });
                 }
                 LoopBoundary::Ring(ring) => {
-                    if !ring.vertex_uses().is_empty() {
-                        self.unwritten.pole_uses += 1;
-                    }
                     let mut oriented = Vec::new();
                     for coedge_id in ring.coedges() {
                         let Some(coedge) = self.index.coedges(coedge_id.as_str(), StandardIndex)
@@ -1102,11 +1099,22 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                             pcurve,
                         });
                         oriented.push(self.brep.oriented_edges.len() - 1);
+                        for pole in ring
+                            .vertex_uses()
+                            .iter()
+                            .filter(|pole| &pole.after == coedge_id)
+                        {
+                            match self.pole_edgeuse(pole, chart) {
+                                Some(edgeuse) => oriented.push(edgeuse),
+                                None => self.unwritten.pole_uses += 1,
+                            }
+                        }
                     }
                     self.join_pcurves(&mut oriented, surface);
                     self.brep.loops.push(LoopRecord {
                         oriented_edges: oriented,
                         vertex: None,
+                        poles: Vec::new(),
                     });
                 }
             }
@@ -1124,7 +1132,9 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             id,
         });
         self.faces.push(face_id.clone());
-        self.meshes.push(mesh);
+        if let Some(tessellated) = tessellated {
+            self.meshes.insert(face_id.clone(), tessellated);
+        }
     }
 
     /// The period of each record parameter of a surface record.
@@ -1342,18 +1352,21 @@ pub(super) fn export<'ir>(
     tessellator: &mut Tessellator<'ir>,
     meshes_wanted: bool,
 ) -> Option<Exported> {
+    let geometry = &index.ir().geometry;
+    let lists = geometry.child_lists();
+    let regions = lists.complete_body_regions(&body.id)?;
+    let complete = regions
+        .iter()
+        .map(|region| lists.complete_shells(region))
+        .collect::<Option<Vec<_>>>()?;
     let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
-    for region in index.ir().geometry.body_regions(&body.id) {
+    for shells in complete {
         let mut region_shells = Vec::new();
-        for shell_id in &region.shells {
+        for shell_id in shells {
             let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
-            let shell_faces = index
-                .ir()
-                .geometry
-                .shell_faces(&shell.id)
-                .collect::<Vec<_>>();
+            let shell_faces = lists.stated_shell_faces(&shell.id);
             if shell_faces.is_empty() {
                 continue;
             }
@@ -1409,7 +1422,7 @@ pub(super) fn export<'ir>(
     }
     // A source whose vertices and edges lie off their surfaces states that
     // distance as its tolerance.
-    for mesh in exporter.meshes.iter().flatten() {
+    for mesh in exporter.meshes.values().flatten() {
         tolerance = tolerance.max(mesh.deviation * DEVIATION_MARGIN);
     }
     exporter.brep.tolerance = tolerance;
@@ -1420,5 +1433,65 @@ pub(super) fn export<'ir>(
         brep: exporter.brep,
         faces: exporter.faces,
         unwritten: exporter.unwritten,
+        meshes: exporter.meshes,
     })
+}
+
+/// The NURBS form of pcurve `geometry` on the directed parameter range
+/// `range`, traversed from its start to its end; on its whole domain when
+/// `range` is `None` or does not lie in the domain.
+pub(super) fn pcurve_nurbs(geometry: &PcurveGeometry, range: Option<[f64; 2]>) -> Option<Nurbs<2>> {
+    match geometry {
+        PcurveGeometry::Nurbs { nurbs } => {
+            let curve = Nurbs::<2> {
+                degree: usize::try_from(nurbs.degree()).ok()?,
+                knots: nurbs.knots().as_slice().to_vec(),
+                points: nurbs
+                    .control_points()
+                    .into_iter()
+                    .map(|point| [point.get().u, point.get().v])
+                    .collect(),
+                weights: nurbs.weights().map_or_else(
+                    || std::iter::repeat_n(1.0, nurbs.control_points().len()).collect(),
+                    |weights| weights.iter().map(|weight| weight.get()).collect(),
+                ),
+            };
+            let range = range.filter(|[start, end]| {
+                curve
+                    .domain()
+                    .is_some_and(|[low, high]| start.min(*end) >= low && start.max(*end) <= high)
+            });
+            match range {
+                None => Some(curve),
+                Some([start, end]) if start < end => {
+                    if Some([start, end]) == curve.domain() {
+                        Some(curve)
+                    } else {
+                        curve.segment(start, end)
+                    }
+                }
+                Some([start, end]) => curve.segment(end, start)?.reversed(),
+            }
+        }
+        PcurveGeometry::Line(line) => {
+            let [start, end] = range?;
+            let origin = line.origin().get();
+            let direction = *line.direction().as_raw();
+            let at = |t: f64| [origin.u + t * direction.u, origin.v + t * direction.v];
+            Some(Nurbs::<2> {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                points: vec![at(start), at(end)],
+                weights: vec![1.0, 1.0],
+            })
+        }
+        geometry @ (PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)) => {
+            let (center, a, b) = harmonic(geometry)?;
+            let [start, end] = range.unwrap_or([0.0, std::f64::consts::TAU]);
+            harmonic_arc(center, a, b, start, end)
+        }
+        _ => None,
+    }
 }

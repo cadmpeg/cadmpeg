@@ -2,10 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, GeneratedSweepSection, PathRef,
-    SolidSweepOperation, SweepCircularRegion, SweepPathExtent, SweepSection, SweepShape,
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::{
+    GeneratedSweepSection, SolidSweepOperation, SweepCircularRegion, SweepPathExtent, SweepSection,
+    SweepShape,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Fraction, PositiveLength};
 
@@ -180,7 +182,7 @@ fn project_fallback(
     };
     put(
         "source",
-        serde_json::to_string(&evidence).map_err(CodecError::malformed)?,
+        cadmpeg_core::serde_erase::to_json_string(&evidence).map_err(CodecError::malformed)?,
     )?;
     let mut losses = Vec::new();
     let mut note = |code: F3dLossCode, reason: &str| {
@@ -245,7 +247,7 @@ fn project_fallback(
             }
             SweepShape::Solid {
                 op,
-                section: circular.map_or(SweepSection::Unresolved(None), SweepSection::Generated),
+                section: circular.map_or(SweepSection::Unresolved, SweepSection::Generated),
                 sections: Vec::new(),
             }
         }
@@ -254,7 +256,7 @@ fn project_fallback(
                 F3dLossCode::FeaturePipeOperationUnresolved,
                 "the Pipe result operation is unresolved",
             );
-            SweepShape::unresolved(None)
+            SweepShape::unresolved()
         }
     };
     if section_unresolved {
@@ -283,8 +285,14 @@ fn project_fallback(
             against_fraction: Fraction::new(against)?,
         })
     });
+    let open_path = construction.is_some_and(|construction| construction.point_selection.is_none())
+        && observation.is_none_or(|observation| observation.point_records.is_empty())
+        && values[0] == Some(1.0)
+        && values[1] == Some(1.0);
     if path_extent.is_some() {
-        note(F3dLossCode::FeaturePipePathParameterizationAssumed, "Pipe forward and reverse fractions are assumed to be the neutral along and against fractions; native origin and orientation remain unresolved");
+        if !open_path {
+            note(F3dLossCode::FeaturePipePathParameterizationAssumed, "Pipe forward and reverse fractions are assumed to be the neutral along and against fractions; native origin and orientation remain unresolved");
+        }
     } else {
         note(F3dLossCode::FeaturePipePathExtentUnresolved, "the Pipe fractions cannot form a unique bounded neutral extent; decoded source values are retained");
     }

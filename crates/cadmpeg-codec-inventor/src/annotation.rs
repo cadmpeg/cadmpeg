@@ -532,10 +532,16 @@ fn dimension(
     let mut definition = PmiDimension::new(kind);
     match value.display {
         1 if stated.is_none() && nominal.is_some() => stated = Some(DimensionTolerance::Basic),
-        1 => definition
-            .modifiers
-            .push(DimensionModifier::Other("theoretical".to_owned())),
-        2 => definition.modifiers.push(DimensionModifier::Reference),
+        1 => {
+            definition
+                .modifiers
+                .insert(DimensionModifier::Other(cadmpeg_core::nonblank_literal!(
+                    "theoretical"
+                )));
+        }
+        2 => {
+            definition.modifiers.insert(DimensionModifier::Reference);
+        }
         _ => {}
     }
     definition.nominal = nominal.map(Dimension::Literal);
@@ -554,7 +560,7 @@ fn dimension(
     annotation.name = name.map(str::to_owned);
     if displayed_form {
         annotation.source_settings.insert(
-            cadmpeg_core::nonblank_literal!("inventor:tol_type"),
+            cadmpeg_ir::codec_name!("inventor:tol_type"),
             NativeOption::Integer(Dimension::Literal(i64::from(value.tolerance))),
         );
     }

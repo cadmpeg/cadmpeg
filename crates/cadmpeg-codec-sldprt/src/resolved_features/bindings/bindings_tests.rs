@@ -109,6 +109,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -153,9 +154,10 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     };
 
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -216,12 +218,12 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_MIRROR,
@@ -485,12 +487,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED_CIRCULAR,
@@ -504,12 +506,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED,
@@ -634,16 +636,15 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-            "synthetic:test:id#seed",
-        )
-        .expect("identity grammar")])
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
+        ])
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
                     FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
@@ -870,6 +871,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let entity = |id: &str, offset| {
         let marker_id: String = id.into();
@@ -913,7 +915,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     };
 
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
@@ -941,7 +943,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     let mut ambiguous_history = history;
     ambiguous_history.features.push(second);
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,

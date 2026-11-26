@@ -6,19 +6,16 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation, FeatureSourceContent, ParameterId,
 };
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
-        FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, FeatureSourceContent,
-        ParameterId, ParameterValue,
-    },
-    scalar::Length,
-};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -97,9 +94,9 @@ fn curve_expression_helix_definition(
         tangent_direction
     };
     Some(ProceduralCurveDefinition::Helix(
-        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+        cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
-            cadmpeg_ir::geometry::HelixFrame {
+            cadmpeg_ir::geometry::helix::HelixFrame {
                 center: Point3::new(
                     origin.x + axis.x * helix.z_start.get(),
                     origin.y + axis.y * helix.z_start.get(),
@@ -143,9 +140,9 @@ fn curve_expression_helix_feature_definition(
     let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Operation(IrFeatureOperation::Helix {
         axis_origin: *helix_payload.center(),
-        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis.get())?,
+        axis_direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(axis.get())?,
         radius: helix.radius,
-        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+        shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch },
         revolutions: helix.revolutions,
         start_angle: helix.start_angle,
         clockwise: helix.clockwise,
@@ -657,7 +654,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                parameter_id.as_str(),
+                &parameter_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(assignment.offset),
                 "curve_expression_assignment",
@@ -695,8 +692,10 @@ pub(super) fn transfer_curve_expression_features(
                     expression: assignment.expression.clone(),
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                        .map_err(cadmpeg_core::CodecError::from)?,
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                        dependencies,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?,
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: Some(curve_expression_record_id(record)),
@@ -753,7 +752,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                curve_id.as_str(),
+                &curve_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_carrier",
@@ -761,7 +760,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                procedural_id.as_str(),
+                &procedural_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_helix",
@@ -811,7 +810,7 @@ pub(super) fn transfer_curve_expression_features(
         };
         annotate(
             annotations,
-            feature_id.as_str(),
+            &feature_id,
             &source_section,
             cadmpeg_core::decode::u64_from_index(record.expression_offset),
             "curve_expression_feature",
@@ -828,14 +827,16 @@ pub(super) fn transfer_curve_expression_features(
                 ordinal,
                 name: Some(name),
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
                 source_text: Some(curve_expression_source_text(&record.lines)),
                 source_content: cadmpeg_ir::features::FeatureContent::try_from(source_content)
                     .map_err(cadmpeg_core::CodecError::from)?,
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                    definition,
+                ),
                 native_ref: Some(curve_expression_record_id(record)),
             },
         )?;

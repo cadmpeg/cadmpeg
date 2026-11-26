@@ -5,6 +5,7 @@
 //! already hold the identity grammar, so a two-component id such as
 //! `step:signature#0` cannot be produced and no mint path can fail.
 
+use cadmpeg_ir::codec::FormatId;
 use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespace, UnknownId};
 
 /// The `<kind>` component of a STEP identity.
@@ -16,7 +17,7 @@ use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespac
 pub(crate) type IdentityKind = IdentityComponent;
 
 /// The `<format>` component of every STEP identity.
-static FORMAT: IdentityComponent = cadmpeg_ir::identity_component!("step");
+const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
 /// The `<scope>` component of a file-level identity.
 static SCOPE_FILE: IdentityComponent = cadmpeg_ir::identity_component!("file");
@@ -41,6 +42,9 @@ static SCOPE_DRAWING: IdentityComponent = cadmpeg_ir::identity_component!("drawi
 
 /// The `<scope>` component of a body derived from a CSG item.
 static SCOPE_CSG: IdentityComponent = cadmpeg_ir::identity_component!("csg");
+
+/// The `<scope>` component of an ANCHOR-section identity.
+static SCOPE_ANCHOR: IdentityComponent = cadmpeg_ir::identity_component!("anchor");
 
 /// The `<scope>` component of a design-layer identity.
 static SCOPE_DESIGN: IdentityComponent = cadmpeg_ir::identity_component!("design");
@@ -76,19 +80,19 @@ pub(crate) use key_word;
 /// File-level signature opaque record: `step:file:signature#{index}`.
 #[must_use]
 pub(crate) fn signature(index: usize) -> UnknownId {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("signature"));
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_FILE, kind!("signature"));
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(index)))
 }
 
 /// Retained nonconforming header record, keyed by source byte offset.
 pub(crate) fn header(offset: usize) -> UnknownId {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("header"));
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_FILE, kind!("header"));
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
 }
 
 /// Omitted exchange statement, keyed by its source byte offset.
 pub(crate) fn omitted_record(offset: usize) -> UnknownId {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("omitted"));
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_FILE, kind!("omitted"));
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
 }
 
@@ -96,64 +100,71 @@ pub(crate) fn omitted_record(offset: usize) -> UnknownId {
 #[must_use]
 pub(crate) fn zip_declaration(offset: u64) -> UnknownId {
     let namespace =
-        IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("zip-declaration"));
+        IdentityNamespace::from_components(FORMAT, &SCOPE_FILE, kind!("zip-declaration"));
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
 }
 
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
 pub(crate) fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DATA, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_DATA, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Product structure identity: `step:product:{kind}#{key}`.
 #[must_use]
 pub(crate) fn product(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRODUCT, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_PRODUCT, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Presentation / PMI identity: `step:presentation:{kind}#{key}`.
 #[must_use]
 pub(crate) fn presentation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRESENTATION, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_PRESENTATION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Construction / procedural identity: `step:construction:{kind}#{key}`.
 #[must_use]
 pub(crate) fn construction(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_CONSTRUCTION, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_CONSTRUCTION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Tessellation identity: `step:tessellation:{kind}#{key}`.
 #[must_use]
 pub(crate) fn tessellation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_TESSELLATION, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_TESSELLATION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Drawing graph identity: `step:drawing:{kind}#{key}`.
 #[must_use]
 pub(crate) fn drawing(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DRAWING, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_DRAWING, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Record of a body derived from a CSG item: `step:csg:{kind}#{key}`.
 #[must_use]
 pub(crate) fn csg(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_CSG, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_CSG, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Design-layer identity: `step:design:{kind}#{key}`.
 #[must_use]
 pub(crate) fn design(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
-    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DESIGN, kind);
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_DESIGN, kind);
     Identity::compose(&namespace, key)
+}
+
+/// ANCHOR-section statement named `name` as written: `step:anchor:name#{name}`.
+#[must_use]
+pub(crate) fn anchor(name: &str) -> Identity {
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_ANCHOR, kind!("name"));
+    Identity::compose(&namespace, IdentityKey::encode_key_text(name))
 }
 
 #[cfg(test)]

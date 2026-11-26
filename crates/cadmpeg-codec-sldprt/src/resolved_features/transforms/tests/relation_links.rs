@@ -1,4 +1,4 @@
-//! Relation link identity and inactive-constraint tests.
+//! Relation link identity tests.
 
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
@@ -10,7 +10,6 @@ use crate::resolved_features::endpoints::inferred_point_coordinates_by_index;
 use crate::resolved_features::relation_loci::relation_operand_loci;
 use crate::resolved_features::typed_relations::legacy_terminal_profile_indexed_endpoints;
 use crate::resolved_features::typed_relations::marker_owns_constraint;
-use crate::resolved_features::typed_relations::marker_relation_is_inactive;
 use crate::resolved_features::typed_relations::relation_owner_markers;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
@@ -53,7 +52,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     );
     let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new(),
@@ -103,7 +102,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new()
@@ -136,7 +135,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new()
@@ -196,7 +195,7 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     assert!(marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &entities,
@@ -241,7 +240,7 @@ fn object_index_collision_remains_a_forward_curve_operand() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -298,7 +297,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -367,7 +366,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
 
     assert_eq!(
         relation_operand_loci(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -423,7 +422,7 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
     let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     }) = typed_marker_relation_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &markers,
         &loci,
@@ -482,7 +481,7 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &entities,
@@ -537,7 +536,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
@@ -584,7 +583,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
     ]);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &[point_entity],
@@ -594,168 +593,6 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
-}
-
-#[test]
-fn resolved_wrong_family_relation_is_inactive() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(
-        SketchRelationKind::EllipseAngle180,
-    ));
-    let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
-    let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:34").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities: vec![entity_id.clone()],
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let entities = vec![SketchEntity::new(
-        entity_id,
-        SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0),
-            end: Point2::new(1.0, 0.0),
-        })
-        .unwrap(),
-    )];
-
-    assert!(marker_relation_is_inactive(&relation, &definition, &entities).unwrap());
-}
-
-#[test]
-fn geometrically_contradicted_point_coincidence_is_inactive() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Coincident));
-    let ids = [
-        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
-        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-    ];
-    let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:9").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities: ids.to_vec(),
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let point = |id: SketchEntityId, position| {
-        SketchEntity::new(
-            id,
-            SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
-        )
-    };
-    let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
-    let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
-    let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
-
-    assert!(
-        !marker_relation_is_inactive(&relation, &definition, &[first.clone(), coincident],)
-            .unwrap()
-    );
-    assert!(marker_relation_is_inactive(&relation, &definition, &[first, distinct],).unwrap());
-}
-
-#[test]
-fn horizontal_relation_requires_one_line_or_two_points() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
-    let entity = |id: &str, geometry| {
-        SketchEntity::new(
-            SketchEntityId::mint(id).unwrap(),
-            SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            geometry,
-        )
-    };
-    let definition = |entities| SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities,
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let point = entity(
-        "synthetic:test:id#point",
-        SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(0.0, 0.0),
-        })
-        .unwrap(),
-    );
-    let line = entity(
-        "synthetic:test:id#line",
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0),
-            end: Point2::new(1.0, 0.0),
-        })
-        .unwrap(),
-    );
-
-    assert!(marker_relation_is_inactive(
-        &relation,
-        &definition(vec![point.id().clone()]),
-        std::slice::from_ref(&point),
-    )
-    .unwrap());
-    assert!(!marker_relation_is_inactive(
-        &relation,
-        &definition(vec![line.id().clone()]),
-        std::slice::from_ref(&line),
-    )
-    .unwrap());
-    assert!(!marker_relation_is_inactive(
-        &relation,
-        &definition(vec![
-            point.id().clone(),
-            SketchEntityId::mint("synthetic:test:id#second").unwrap()
-        ]),
-        &[
-            point,
-            entity(
-                "synthetic:test:id#second",
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-        ],
-    )
-    .unwrap());
-    assert!(marker_relation_is_inactive(
-        &relation,
-        &SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")
-                .unwrap(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: None,
-            operands: vec![
-                SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
-                    field: None,
-                    object_index: Some(3),
-                    native_ref: Some("same-marker".into()),
-                },
-                SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
-                    field: None,
-                    object_index: Some(3),
-                    native_ref: Some("same-marker".into()),
-                },
-            ],
-        },
-        &[],
-    )
-    .unwrap());
 }
 
 #[test]
@@ -788,6 +625,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             role: FeatureInputScalarRole::Driving,
             operands,
             archive_class: None,
+            archive_object_id: None,
         };
         let lane = FeatureInputLane {
             id: "lane".into(),
@@ -824,7 +662,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
 
         assert_eq!(
             inferred_point_coordinates_by_index(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &lane,
                 "feature-native"
             )
@@ -872,6 +710,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
             role: FeatureInputScalarRole::Driving,
             operands: vec![operand(12), operand(13)],
             archive_class: None,
+            archive_object_id: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -884,7 +723,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     };
 
     assert!(inferred_point_coordinates_by_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &lane,
         "feature-native"
     )

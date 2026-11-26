@@ -15,13 +15,15 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::edit::Value;
 use cadmpeg_ir::design::expr::{
-    self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Function, Neutral, Node,
+    self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Function, MulOp, Neutral, Node,
     UnaryOp,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::projection::fields::{ModelParameterField, ParameterField};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DesignParameter as LegacyParameter, FeatureId, ParameterId};
+use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
@@ -65,6 +67,35 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
     }
     ir.design.parameters.extend(parameters);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
+/// The model parameter fields [`project`] reads to build `field`. The
+/// declared unit is in `properties`; the names a formula resolves are those
+/// of the parameters with its owner.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Properties,
+            ModelParameterField::Owner,
+        ],
+        ParameterField::Value => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
 }
 
 /// A parameter's declared quantity and unit, from its expression header.
@@ -420,28 +451,43 @@ fn typed(
             let a = typed(left, lookup)?;
             let b = typed(right, lookup)?;
             match op {
-                BinaryOp::Add | BinaryOp::Subtract => (a == b).then_some(a),
-                BinaryOp::Multiply => combine(a, b, i8::checked_add),
-                BinaryOp::Divide => combine(a, b, i8::checked_sub),
                 BinaryOp::Power if a == Quantity::REAL && b == Quantity::REAL => {
                     Some(Quantity::REAL)
                 }
                 _ => None,
             }
         }
+        Node::Sum { first, rest } => {
+            let a = typed(first, lookup)?;
+            for (_, operand) in rest.iter_mut() {
+                (typed(operand, lookup)? == a).then_some(())?;
+            }
+            Some(a)
+        }
+        Node::Product { first, rest } => {
+            let mut held = typed(first, lookup)?;
+            for (op, operand) in rest.iter_mut() {
+                let b = typed(operand, lookup)?;
+                held = match op {
+                    MulOp::Multiply => combine(held, b, i8::checked_add),
+                    MulOp::Divide => combine(held, b, i8::checked_sub),
+                }?;
+            }
+            Some(held)
+        }
         Node::Call { function, args } => match (function, args.as_mut_slice()) {
             (Function::Sin | Function::Cos, [argument]) => {
                 let quantity = typed(argument, lookup)?;
                 if quantity == Quantity::REAL {
                     let operand = std::mem::replace(argument, Node::Constant(expr::Constant::Pi));
-                    *argument = Node::Binary {
-                        op: BinaryOp::Multiply,
-                        left: Box::new(operand),
-                        right: Box::new(Node::Number {
+                    *argument = Node::mul(
+                        operand,
+                        MulOp::Multiply,
+                        Node::Number {
                             value: NonNegativeReal::new(1.0)?,
                             unit: unit_of(UnitSymbol::Deg)?,
-                        }),
-                    };
+                        },
+                    );
                 } else if quantity != Quantity::ANGLE {
                     return None;
                 }

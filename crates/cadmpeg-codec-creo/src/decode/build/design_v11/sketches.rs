@@ -248,7 +248,10 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
         plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
             inputs,
             resolved,
-            ..Construction::default()
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved_in: BTreeMap::new(),
         })),
         solve: SketchSolve {
             state: None,

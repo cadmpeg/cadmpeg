@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
-use crate::design::decode::operands::parse_construction_operand_dual_transform;
-use crate::design::decode::operands::parse_construction_operand_flag;
-use crate::design::decode::operands::parse_construction_operand_path;
-use crate::design::decode::operands::parse_construction_operand_transform;
-use crate::design::decode::operands::parse_construction_tracking_path;
-use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_dual_transform;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_flag;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_path;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_transform;
+use crate::design::decode::operands::construction_groups::parse_construction_tracking_path;
+use crate::design::decode::operands::loft_carriers::parse_loft_legacy_body_carrier;
 
 use crate::records::decal::DesignRecordHeader;
 use crate::test_support::indexed_header;
@@ -40,10 +41,9 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
         ),
     ] {
         let fixture: serde_json::Value = serde_json::from_str(&fixture).unwrap();
-        let raw: NativeBytes<Vec<u8>> =
-            serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
+        let raw: NativeBytes<Vec<u8>> = json::from_value(fixture["source_bytes"].clone()).unwrap();
         let expected: DesignConstructionOperandTransform =
-            serde_json::from_value(fixture["native"].clone()).unwrap();
+            json::from_value(fixture["native"].clone()).unwrap();
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&raw);
         let header = DesignRecordHeader {
@@ -55,9 +55,9 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
         let actual = parse_construction_operand_transform(&bytes, &header)
             .expect("source transform with an independent following index");
         assert_eq!(actual, expected);
-        let wire = serde_json::to_value(&actual).unwrap();
+        let wire = json::to_value(&actual).unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignConstructionOperandTransform>(wire).unwrap(),
+            json::from_value::<DesignConstructionOperandTransform>(wire).unwrap(),
             actual
         );
         bytes[176..180].copy_from_slice(&header.record_index.to_le_bytes());
@@ -281,10 +281,10 @@ fn construction_operand_auxiliary_paths_decode_the_extended_prefix() {
     assert_eq!(transformed.scope_record_index_offset(), 198);
     assert_eq!(transformed.following_byte_offset(), 225);
 
-    let wire = serde_json::to_value(&transformed).unwrap();
+    let wire = json::to_value(&transformed).unwrap();
     assert_eq!(wire["entity_ref_offset"], 57);
     assert_eq!(wire["transform_offset"], 68);
-    let restored: DesignConstructionOperandPath = serde_json::from_value(wire).unwrap();
+    let restored: DesignConstructionOperandPath = json::from_value(wire).unwrap();
     assert_eq!(restored.following_byte_offset(), 225);
 
     // Prefix word 2 reads the same way; any other word is refused.
@@ -469,10 +469,10 @@ fn assert_loft_carrier(length: usize, tail: Option<u64>) {
         carrier.next_reference_offset,
         if length == 100 { 77 } else { 76 }
     );
-    let wire = serde_json::to_value(&carrier).unwrap();
+    let wire = json::to_value(&carrier).unwrap();
     assert_eq!(wire["flags"], if length == 100 { "010000" } else { "0000" });
     let decoded: crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier =
-        serde_json::from_value(wire).unwrap();
+        json::from_value(wire).unwrap();
     assert_eq!(decoded.next_reference_offset, carrier.next_reference_offset);
 }
 
@@ -595,8 +595,10 @@ fn tracking_path_headers_are_named_by_the_path_after_unrelated_wrappers() {
         })
         .unwrap();
     assert_eq!(
-        crate::design::decode::operands::tracking_path_record_indices(&[identity])
-            .collect::<Vec<_>>(),
+        crate::design::decode::operands::entity_selections::tracking_path_record_indices(&[
+            identity
+        ])
+        .collect::<Vec<_>>(),
         vec![
             ("f3d:Design/BulkStream.dat", 2947),
             ("f3d:Design/BulkStream.dat", 2948),

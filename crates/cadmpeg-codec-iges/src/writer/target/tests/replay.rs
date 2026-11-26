@@ -3,7 +3,6 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
@@ -69,7 +68,13 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("version displacement is charged");
     assert!(displacement
         .message
@@ -88,7 +93,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let source = unclassified.source.take().expect("decoded source exists");
     let format = source.format().to_owned();
     unclassified.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
@@ -162,7 +167,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{id}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -187,6 +192,53 @@ fn a_synthesized_export_states_the_target_it_wrote() {
     }
 }
 
+/// A retained image marked `untyped` replays as an unmarked one does, and the
+/// report carries `export:source.carried` naming the image (§3.4).
+#[test]
+fn an_unrepresented_source_replays_and_is_reported() {
+    let mut decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .expect("point fixture decodes"),
+    );
+    decoded
+        .source_fidelity_mut()
+        .mark_untyped(
+            crate::SOURCE_IMAGE_ID,
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )
+        .expect("the decode retains its source image");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("an unrepresented source plans");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+    let carried: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .collect();
+    assert_eq!(carried.len(), 1, "{carried:?}");
+    assert_eq!(carried[0].code.local_code(), "source.carried");
+    assert_eq!(carried[0].severity, cadmpeg_ir::report::Severity::Info);
+    assert!(
+        carried[0]
+            .message
+            .contains(&format!("{} (model)", crate::SOURCE_IMAGE_ID)),
+        "{}",
+        carried[0].message
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("the replay writes");
+    assert!(written == point_file(), "the replay reproduces the source");
+}
+
 #[test]
 fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let decoded = EditableDecodeResult::from(
@@ -197,7 +249,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let mut edited = decoded.ir().clone();
     edited.geometry.points.push(Point::new(
         PointId::mint("test:model:point#edited").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0))
             .expect("a finite position is a point"),
         None,
     ));

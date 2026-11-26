@@ -3,9 +3,10 @@
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadConstructionWire, DesignThreadDiameters,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn thread_wire() -> serde_json::Value {
-    serde_json::json!({"form":"standard", "designation_offset":38, "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "modeled":false, "face_group_record_indices":[10]})
+    cadmpeg_core::json!({"form":"standard", "designation_offset":38, "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "modeled":false, "face_group_record_indices":[10]})
 }
 
 #[test]
@@ -16,14 +17,14 @@ fn thread_construction_native_writer_refuses_retained_limit_before_record_comple
         construction: &'a DesignThreadConstruction,
     }
 
-    let construction: DesignThreadConstruction = serde_json::from_value(thread_wire()).unwrap();
+    let construction: DesignThreadConstruction = json::from_value(thread_wire()).unwrap();
     let record = Record {
         id: "f3d:design:thread#1",
         construction: &construction,
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "construction": thread_wire()}),
+        cadmpeg_core::json!({"id": record.id, "construction": thread_wire()}),
     );
 }
 
@@ -35,8 +36,7 @@ fn thread_diameters_require_strict_order_and_positive_finite_values() {
     }
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for lane in 0..4 {
-            let mut wire: DesignThreadConstructionWire =
-                serde_json::from_value(thread_wire()).unwrap();
+            let mut wire: DesignThreadConstructionWire = json::from_value(thread_wire()).unwrap();
             *[
                 &mut wire.major_diameter,
                 &mut wire.minor_diameter,
@@ -53,13 +53,13 @@ fn thread_wire_rejects_blank_names_and_invalid_dimensions() {
     for field in ["designation", "profile"] {
         for blank in ["", " "] {
             let mut wire = thread_wire();
-            wire[field] = serde_json::json!(blank);
-            assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+            wire[field] = cadmpeg_core::json!(blank);
+            assert!(json::from_value::<DesignThreadConstruction>(wire).is_err());
         }
         let mut wire = thread_wire();
-        wire[field] = serde_json::json!(" a ");
-        let admitted: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        wire[field] = cadmpeg_core::json!(" a ");
+        let admitted: DesignThreadConstruction = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(admitted).unwrap(), wire);
     }
     for (field, invalid) in [
         ("major_diameter", 0.75),
@@ -68,8 +68,8 @@ fn thread_wire_rejects_blank_names_and_invalid_dimensions() {
         ("pitch", 0.0),
     ] {
         let mut wire = thread_wire();
-        wire[field] = serde_json::json!(invalid);
-        assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+        wire[field] = cadmpeg_core::json!(invalid);
+        assert!(json::from_value::<DesignThreadConstruction>(wire).is_err());
     }
 }
 
@@ -78,14 +78,14 @@ fn standard_compact_form_round_trips_and_refuses_a_trailing_reference() {
     use crate::records::feature::thread::DesignThreadForm;
 
     let mut wire = thread_wire();
-    wire["form"] = serde_json::json!("standard_compact");
-    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    wire["form"] = cadmpeg_core::json!("standard_compact");
+    let construction: DesignThreadConstruction = json::from_value(wire.clone()).unwrap();
     assert_eq!(construction.form, DesignThreadForm::StandardCompact);
-    assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+    assert_eq!(json::to_value(&construction).unwrap(), wire);
 
-    wire["trailing_reference_record_index"] = serde_json::json!(7);
-    wire["trailing_reference_offset"] = serde_json::json!(99);
-    assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+    wire["trailing_reference_record_index"] = cadmpeg_core::json!(7);
+    wire["trailing_reference_offset"] = cadmpeg_core::json!(99);
+    assert!(json::from_value::<DesignThreadConstruction>(wire).is_err());
 }
 
 #[test]
@@ -112,31 +112,31 @@ fn reference_table_shape_follows_the_form() {
 fn extended_standard_form_round_trips_and_refuses_a_hole_reference() {
     use crate::records::feature::thread::DesignThreadForm;
     let mut wire = thread_wire();
-    wire["form"] = serde_json::json!("standard_extended");
-    wire["designation_offset"] = serde_json::json!(46);
-    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    wire["form"] = cadmpeg_core::json!("standard_extended");
+    wire["designation_offset"] = cadmpeg_core::json!(46);
+    let construction: DesignThreadConstruction = json::from_value(wire.clone()).unwrap();
     assert_eq!(construction.form, DesignThreadForm::StandardExtended);
-    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
-    wire["trailing_reference_record_index"] = serde_json::json!(7);
-    wire["trailing_reference_offset"] = serde_json::json!(99);
-    assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+    assert_eq!(json::to_value(construction).unwrap(), wire);
+    wire["trailing_reference_record_index"] = cadmpeg_core::json!(7);
+    wire["trailing_reference_offset"] = cadmpeg_core::json!(99);
+    assert!(json::from_value::<DesignThreadConstruction>(wire).is_err());
 }
 
 #[test]
 fn extended_compact_form_round_trips_its_hole_reference() {
     use crate::records::feature::thread::DesignThreadForm;
     let mut wire = thread_wire();
-    wire["form"] = serde_json::json!("compact_extended");
-    wire["designation_offset"] = serde_json::json!(46);
-    assert!(serde_json::from_value::<DesignThreadConstruction>(wire.clone()).is_err());
-    wire["trailing_reference_record_index"] = serde_json::json!(7);
-    wire["trailing_reference_offset"] = serde_json::json!(99);
-    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    wire["form"] = cadmpeg_core::json!("compact_extended");
+    wire["designation_offset"] = cadmpeg_core::json!(46);
+    assert!(json::from_value::<DesignThreadConstruction>(wire.clone()).is_err());
+    wire["trailing_reference_record_index"] = cadmpeg_core::json!(7);
+    wire["trailing_reference_offset"] = cadmpeg_core::json!(99);
+    let construction: DesignThreadConstruction = json::from_value(wire.clone()).unwrap();
     assert!(matches!(
         construction.form,
         DesignThreadForm::CompactExtended(_)
     ));
-    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+    assert_eq!(json::to_value(construction).unwrap(), wire);
 }
 
 #[test]
@@ -156,18 +156,36 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         ),
     ] {
         let mut wire = thread_wire();
-        wire["form"] = serde_json::json!(name);
-        wire["designation_offset"] = serde_json::json!(46);
-        let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+        wire["form"] = cadmpeg_core::json!(name);
+        wire["designation_offset"] = cadmpeg_core::json!(46);
+        let construction: DesignThreadConstruction = json::from_value(wire.clone()).unwrap();
         assert_eq!(construction.form, form);
-        assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+        assert_eq!(construction.class(), Some("6H"));
+        assert_eq!(construction.external(), None);
+        assert_eq!(json::to_value(&construction).unwrap(), wire);
         assert!(form.designation_offset_holds(46, 0));
         assert!(!form.designation_offset_holds(42, 0));
         assert!(form.reference_count_holds(4));
         assert!(!form.reference_count_holds(2));
         assert_eq!(form.face_groups(&references), [101]);
-        wire["trailing_reference_record_index"] = serde_json::json!(7);
-        wire["trailing_reference_offset"] = serde_json::json!(99);
-        assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+        wire["trailing_reference_record_index"] = cadmpeg_core::json!(7);
+        wire["trailing_reference_offset"] = cadmpeg_core::json!(99);
+        assert!(json::from_value::<DesignThreadConstruction>(wire).is_err());
+    }
+}
+
+#[test]
+fn thread_class_follows_the_prefix_token() {
+    for (form, class) in [
+        ("standard", "6g"),
+        ("standard_legacy", "6g"),
+        ("standard_compact", "6g"),
+        ("compact", "6H"),
+        ("compact_legacy", "6H"),
+    ] {
+        let mut wire = thread_wire();
+        wire["form"] = cadmpeg_core::json!(form);
+        let construction: DesignThreadConstruction = json::from_value(wire).unwrap();
+        assert_eq!(construction.class(), Some(class));
     }
 }

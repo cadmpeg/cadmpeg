@@ -45,12 +45,12 @@ use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::test_support::test_e5::{append_e5_record, e5_d8_rolling_ball_stream, e5_torus_stream};
 use cadmpeg_ir::document::CadIr;
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -151,7 +151,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
 
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &admitted,
             &surface
         ),
@@ -159,7 +159,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
     );
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &outside_parameter_domain,
             &surface
         ),
@@ -167,7 +167,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
     );
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &clipped_model_bounds,
             &surface
         ),
@@ -450,13 +450,13 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     let points = [
         Point::new(
             PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 7.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, 4.0, 7.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.01, 7.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, 4.01, 7.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -477,14 +477,14 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("catia:test:point#other-occurrence".to_string())
                 .expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -520,14 +520,14 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, 4.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("catia:test:point#other-occurrence".to_string())
                 .expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, -4.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -626,13 +626,13 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
         Point::new(
             PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.01, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.01, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -788,7 +788,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 #[test]
 fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
@@ -796,21 +796,21 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     .expect("surface evaluator accepts the fixture"));
     let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
         None,
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
         None,
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &nurbs,
         None,
@@ -958,13 +958,13 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 1.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 1.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -1004,7 +1004,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
 
 #[test]
 fn point_face_membership_matches_a_dense_face_point_table() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let finite = crate::test_support::test_b5::finite;
     let length = crate::test_support::test_b5::nonnegative_length;
     let mut ir = CadIr::empty();
@@ -1160,21 +1160,21 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(2.0, 4.0, 6.0),
         &surface,
         Some(bounds),
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(3.01, 3.0, 4.0),
         &surface,
         Some(bounds),
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(3.0, 5.0, 7.0),
         &surface,
         Some(bounds),
@@ -1228,13 +1228,13 @@ fn standard_emission_reverses_face_pcurve_range() {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -1365,7 +1365,7 @@ fn standard_emission_reverses_face_pcurve_range() {
         assert_eq!(
             pcurve
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
             reversed.then_some([1.0, 0.0])
         );
     }
@@ -1410,6 +1410,7 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),

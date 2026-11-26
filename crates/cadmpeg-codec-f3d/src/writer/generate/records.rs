@@ -21,11 +21,35 @@ use super::{
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use std::collections::BTreeSet;
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
+#[derive(Default)]
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+    /// The record indices of the indexed records the stream holds with no
+    /// primary index entry.
+    pub(super) without_primary: BTreeSet<u64>,
+}
+
+impl EncodedDesignBulkStream {
+    /// The record index of every indexed record the stream holds.
+    fn written(&self) -> BTreeSet<u64> {
+        self.primary_records
+            .iter()
+            .map(|record| record.entity_id)
+            .chain(self.without_primary.iter().copied())
+            .collect()
+    }
+}
+
+/// Design parameter records and their record indices, which the stream
+/// holds with no primary index entry.
+#[derive(Default)]
+pub(in crate::writer::generate) struct ParameterRecords {
+    pub(in crate::writer::generate) bytes: Vec<u8>,
+    pub(in crate::writer::generate) indices: Vec<u32>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -119,53 +143,9 @@ pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
-    parameter_bytes: Vec<u8>,
+    parameters: ParameterRecords,
+    neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
-    let projected_parameters =
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native.design_parameters,
-                source_parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                scopes: &native.design_parameter_scopes,
-                timelines: &native.design_feature_timelines,
-                construction_groups: &native.design_construction_operand_groups,
-                fillet_radius_groups: &native.design_fillet_radius_groups,
-                edge_operands: &native.design_edge_operands,
-                edge_identity_operands: &native.design_edge_identity_operands,
-                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
-                entity_selection_operands: &native.design_entity_selection_operands,
-                design_types: &native.design_types,
-                curve_identities: &native.sketch_curve_identities,
-                face_operands: &native.design_face_operands,
-                face_source_groups: &native.design_face_source_groups,
-                body_recipe_operands: &native.design_body_recipe_operands,
-                placements: &native.design_sketch_placements,
-                placement_constructions: &native.design_placement_constructions,
-                body_bindings: &native.design_body_bindings,
-                component_naming_spaces: &native.design_component_naming_spaces,
-                histories: &native.asm_histories,
-                face_boundaries: &native.asm_face_boundaries,
-                sheet_metal_settings: &native.design_sheet_metal_settings,
-                construction_recipes: &native.construction_recipes,
-                persistent_subentity_tags: &native.persistent_subentity_tags,
-            },
-        )?
-        .parameters;
-    if target.model.parameters != projected_parameters {
-        return Err(CodecError::Malformed(
-            "neutral F3D parameters must equal the projection of native Design parameters".into(),
-        ));
-    }
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
@@ -191,7 +171,9 @@ pub(super) fn encode_design_bulkstream(
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
-    if native.design_parameters.is_empty()
+    if neutral.is_none()
+        && native.design_parameters.is_empty()
+        && parameters.bytes.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -209,8 +191,13 @@ pub(super) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = parameter_bytes;
+    let mut out = parameters.bytes;
     let mut primary_records = Vec::new();
+    let mut without_primary = parameters
+        .indices
+        .into_iter()
+        .map(u64::from)
+        .collect::<BTreeSet<_>>();
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -230,6 +217,19 @@ pub(super) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        without_primary.extend(
+            records
+                .secondaries
+                .iter()
+                .map(|&(record_index, _)| u64::from(record_index)),
+        );
+        out.extend_from_slice(&records.bytes);
+    }
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -251,6 +251,7 @@ pub(super) fn encode_design_bulkstream(
             ));
         };
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
+        without_primary.insert(u64::from(record_index.value.cast_unsigned()));
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
@@ -283,6 +284,7 @@ pub(super) fn encode_design_bulkstream(
     for header in &native.design_record_headers {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
+        without_primary.insert(u64::from(header.record_index));
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -405,16 +407,19 @@ pub(super) fn encode_design_bulkstream(
         } else {
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
+            without_primary.insert(u64::from(reference.record_index));
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+        without_primary.insert(u64::from(reference.next_record_index));
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
+        without_primary,
     }))
 }
 
@@ -437,27 +442,16 @@ fn primary_record_u64(
     })
 }
 
+/// The document parameters as Design records whose tails name the parameter
+/// collection `collection_record_index`.
 pub(super) fn encode_document_parameters(
     parameters: &[crate::records::parameters::DesignParameter],
-) -> Result<Vec<u8>, CodecError> {
+    collection_record_index: u32,
+) -> Result<ParameterRecords, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
     for parameter in parameters {
-        let expected_discriminator =
-            crate::design::decode::parameters::design_parameter_discriminator(
-                parameter.source_kind_str(),
-            );
-        if parameter
-            .family_discriminator()
-            .map(|value| value.value.code())
-            != Some(expected_discriminator)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
-            )));
-        }
         let crate::records::parameters::DesignParameterSource::User {
             family_discriminator: Some(family_discriminator),
             ..
@@ -477,14 +471,18 @@ pub(super) fn encode_document_parameters(
         }
         native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
         out.extend_from_slice(&parameter.record_index.to_le_bytes());
+        // The eleven-byte discriminated form of the written type version 8
+        // (f3d.md §3.1): u32 family discriminator, a zero byte, the comment
+        // (empty when none), the ordinal, the null owner, the expression, the
+        // ten-byte trailer with the document flag, and the empty text value.
         out.extend_from_slice(&[0; 11]);
         out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
         out.push(0);
+        native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(0);
         native_lp_utf16(&mut out, parameter.expression())?;
-        out.extend_from_slice(&[0; 8]);
-        out.push(1);
+        out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
         if let Some(unit) = parameter.unit() {
@@ -494,9 +492,17 @@ pub(super) fn encode_document_parameters(
         }
         native_lp_utf16(&mut out, parameter.name())?;
         out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
-        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&[0, 1]);
+        out.extend_from_slice(&collection_record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
     }
-    Ok(out)
+    Ok(ParameterRecords {
+        bytes: out,
+        indices: parameters
+            .iter()
+            .map(|parameter| parameter.record_index)
+            .collect(),
+    })
 }
 
 fn encode_sketch_record_header(
@@ -702,7 +708,7 @@ fn encode_sketch_curve_identity(
             return Err(CodecError::NotImplemented(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
-            )))
+            )));
         }
     }
     write_reference(&mut record, owner_reference);
@@ -901,6 +907,32 @@ fn write_reference(out: &mut Vec<u8>, target: u32) {
     out.extend_from_slice(&[0, 0]);
 }
 
+/// Append the `DesignConfigurationRoot` record `record_index` of type
+/// `class_tag`, which names row `row_id` of table `table_id` (f3d.md §1.2).
+pub(super) fn encode_configuration_root(
+    bulk: &mut EncodedDesignBulkStream,
+    class_tag: &crate::records::references::DesignClassTag,
+    record_index: u32,
+    table_id: &str,
+    row_id: &str,
+) -> Result<(), CodecError> {
+    use crate::layout::configuration_root_prefix as root;
+
+    let out = &mut bulk.bytes;
+    bulk.primary_records
+        .push(primary_record(record_index, out.len())?);
+    native_lp_ascii(out, class_tag.as_str())?;
+    out.extend_from_slice(&record_index.to_le_bytes());
+    out.extend_from_slice(&root::ZERO_U32_VALUE.to_le_bytes());
+    native_lp_ascii(out, crate::design::decode::configuration_root::ROOT_KEY)?;
+    out.extend_from_slice(&[0; root::CONSTANT_ONE - root::ZERO_RUN_11]);
+    out.extend_from_slice(&root::CONSTANT_ONE_VALUE.to_le_bytes());
+    native_lp_utf16(out, table_id)?;
+    native_lp_utf16(out, row_id)?;
+    out.extend_from_slice(&0u32.to_le_bytes());
+    Ok(())
+}
+
 fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {
     match kind {
         ConstructionRecipeKind::Body => b"body_recipe_data",
@@ -919,13 +951,20 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
+/// The Design `MetaStream` of `registry`'s types and the primary index of
+/// `bulk`, the sibling `BulkStream`. Each type lists only the records `bulk`
+/// holds (f3d.md §3.1).
 pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
-    primary_records: &[crate::metastream::RecordIndexEntry],
+    bulk: Option<&EncodedDesignBulkStream>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if registry.types.is_empty() {
         return Ok(None);
     }
+    let written = bulk
+        .map(EncodedDesignBulkStream::written)
+        .unwrap_or_default();
+    let primary_records = bulk.map_or(&[][..], |bulk| bulk.primary_records.as_slice());
 
     // A generated segment writes the modern header shape, the type table, and
     // the primary offsets captured while writing its sibling BulkStream.
@@ -960,11 +999,16 @@ pub(super) fn encode_design_metastream(
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
-        let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
+        let entity_ids = design_type
+            .entity_ids
+            .iter()
+            .filter(|entity_id| written.contains(entity_id))
+            .collect::<Vec<_>>();
+        let count = u32::try_from(entity_ids.len()).map_err(|_| {
             CodecError::NotImplemented("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
-        for entity_id in &design_type.entity_ids {
+        for entity_id in entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
             let next = entity_id.checked_add(1).ok_or_else(|| {
                 CodecError::Malformed("generated Design next entity id overflows".into())
@@ -1082,8 +1126,8 @@ mod tests {
     };
 
     fn registry_with_entity(entity_id: u64) -> super::GeneratedDesignRegistry {
-        super::GeneratedDesignRegistry {
-            types: vec![super::super::presentation::GeneratedDesignType {
+        super::GeneratedDesignRegistry::from_types(vec![
+            super::super::presentation::GeneratedDesignType {
                 type_guid: "11111111-2222-3333-4444-555555555555"
                     .to_owned()
                     .try_into()
@@ -1092,16 +1136,40 @@ mod tests {
                 version: 1,
                 module: "Fusion".into(),
                 entity_ids: vec![entity_id],
+            },
+        ])
+    }
+
+    /// A stream holding one primary record of `entity_id`.
+    fn written_record(entity_id: u64) -> super::EncodedDesignBulkStream {
+        super::EncodedDesignBulkStream {
+            primary_records: vec![crate::metastream::RecordIndexEntry {
+                entity_id,
+                bulk_offset: 0,
             }],
-            body_map: None,
-            browser_nodes: None,
+            ..Default::default()
         }
     }
 
     #[test]
+    fn metastream_lists_only_written_records() {
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(7),
+            Some(&super::EncodedDesignBulkStream::default()),
+        )
+        .unwrap()
+        .unwrap();
+        let meta = crate::metastream::parse(&bytes, "MetaStream.dat").unwrap();
+        assert_eq!(meta.types[0].entities.values().count(), 0);
+    }
+
+    #[test]
     fn metastream_rejects_overflowed_next_entity_id() {
-        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
-            .expect_err("the next identity cannot be represented");
+        let error = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX),
+            Some(&written_record(u64::MAX)),
+        )
+        .expect_err("the next identity cannot be represented");
         assert!(
             matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
             if message == "generated Design next entity id overflows")
@@ -1110,9 +1178,12 @@ mod tests {
 
     #[test]
     fn metastream_preserves_largest_representable_next_entity_id() {
-        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
-            .unwrap()
-            .unwrap();
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX - 1),
+            Some(&written_record(u64::MAX - 1)),
+        )
+        .unwrap()
+        .unwrap();
         let next_offset = bytes.len() - 16;
         assert_eq!(
             cadmpeg_core::decode::View::u64_le_at(&bytes, next_offset),

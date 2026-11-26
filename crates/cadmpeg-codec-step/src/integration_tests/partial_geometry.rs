@@ -6,7 +6,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, PcurveUse};
@@ -130,11 +131,11 @@ fn a_mesh_only_export_is_not_reported_as_empty() {
 #[test]
 fn a_fitting_resource_limit_is_reported_by_the_encoder() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
     use cadmpeg_ir::geometry::pcurve::PlacedPcurve;
-    use cadmpeg_ir::geometry::{
-        CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, SupportPcurve, SurfaceCurveFamily, MAX_GEOMETRY_NESTING,
-    };
+    use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurve, MAX_GEOMETRY_NESTING};
     use cadmpeg_ir::ids::ProceduralCurveId;
 
     let mut ir = unit_cube().unwrap();
@@ -179,10 +180,10 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
         construction,
         cache: None,
     };
-    let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed);
     assert!(matches!(
         result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
     ));
 }
@@ -190,7 +191,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
 #[test]
 fn a_face_with_an_unwritable_inner_boundary_is_not_filled_in() {
     let mut ir = unit_cube().unwrap();
-    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
+    let outer = ir.geometry.faces[0].loops.stated().next().unwrap().clone();
     let inner = cadmpeg_ir::ids::LoopId::mint("test:recovery:loop#missing").unwrap();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let mut output = Vec::new();
@@ -343,4 +344,72 @@ fn a_pcurve_recovers_a_missing_cube_edge_in_both_directions() {
         )
         .unwrap();
     }
+}
+
+fn charges(report: &cadmpeg_ir::report::export::ExportReport, code: &str) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == code)
+}
+
+fn write_ap242(ir: &cadmpeg_ir::CadIr) -> (Vec<u8>, cadmpeg_ir::report::export::ExportReport) {
+    let mut output = Vec::new();
+    let report = write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    (output, report)
+}
+
+/// A document that states nothing STEP holds is written as the writer's own
+/// product structure, with `export:output.empty` in place of the
+/// no-geometry loss.
+#[test]
+fn a_document_that_states_nothing_is_written_empty() {
+    let (output, report) = write_ap242(&cadmpeg_ir::CadIr::empty());
+    assert!(output.starts_with(b"ISO-10303-21"));
+    assert!(
+        charges(&report, "export/output.empty"),
+        "{:#?}",
+        report.losses
+    );
+    assert!(!charges(&report, "step/export.no-geometry-written"));
+}
+
+/// Product structure the document states reaches the file, so a write with
+/// no geometry is not empty.
+#[test]
+fn stated_structure_without_geometry_is_not_empty() {
+    use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut root = ProductDefinition::root(
+        "test:model:product-definition#bracket".try_into().unwrap(),
+        ExternalDocument::default(),
+    );
+    root.source_name = Some("bracket".into());
+    ir.model.product_definitions.push(root);
+    let (output, report) = write_ap242(&ir);
+    assert!(String::from_utf8(output).unwrap().contains("'bracket'"));
+    assert!(charges(&report, "step/export.no-geometry-written"));
+    assert!(
+        !charges(&report, "export/output.empty"),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_document_with_a_body_is_not_empty() {
+    let (_, report) = write_ap242(&unit_cube().unwrap());
+    assert!(
+        !charges(&report, "export/output.empty"),
+        "{:#?}",
+        report.losses
+    );
+    assert!(!charges(&report, "step/export.no-geometry-written"));
 }

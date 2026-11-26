@@ -18,7 +18,7 @@ use super::refs::Member;
 
 /// A container of features: an ordered history that builds one cumulative
 /// state, or an unordered set whose members each have their own result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -37,8 +37,14 @@ pub enum Container {
         members: Vec<Member>,
         /// Display groupings of contiguous runs of the members.
         folders: Vec<Folder>,
-        /// The rollback position.
-        rollback: Rollback,
+        /// How far the source builds the container. `None` where no stored
+        /// fact the decoder read fixes it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_rollback"
+        )]
+        rollback: Option<Rollback>,
         /// The placement the source applies to the whole of the container's
         /// result, as a construction whose components can be bound. `None`
         /// where the source has none.
@@ -78,10 +84,14 @@ impl Container {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum OrderedKind {
-    /// A history timeline.
+    /// A history of any number of bodies.
     Timeline,
-    /// An ordered container of one body's features.
+    /// An ordered container whose solid features build one body and act on
+    /// it (a `FreeCAD` `PartDesign` body, a CATIA body).
     Body,
+    /// A CATIA ordered geometrical set: wireframe and surface features in
+    /// order, each result a body of its own.
+    GeometricalSet,
 }
 
 /// What an unordered container is.
@@ -116,7 +126,7 @@ pub struct Folder {
 }
 
 /// An ordered container's rollback position.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -134,3 +144,4 @@ pub enum Rollback {
 
 cadmpeg_core::named_optional_field!(deserialize_name<T>, T, "name");
 cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");
+cadmpeg_core::named_optional_field!(deserialize_rollback<T>, T, "rollback");

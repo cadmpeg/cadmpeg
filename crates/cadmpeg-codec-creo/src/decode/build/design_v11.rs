@@ -10,12 +10,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -25,10 +25,13 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchId;
 
 use crate::container::ContainerScan;
 
+mod names;
+mod operations;
 mod parameters;
 mod sketches;
 
@@ -36,21 +39,24 @@ const TIMELINE: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "mod
 
 /// States the design scope of the model's root definition, its timeline,
 /// its features, its parameters, and its sketches, where the decoder reads a
-/// feature list.
+/// feature list, and adds to `losses` what the projection drops.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if ir.model.features.is_empty() {
         return Ok(());
     }
     let definition = definition.clone();
-    parameters::project(ctx, ir, &definition)?;
+    parameters::project(ctx, ir, &definition, losses)?;
     let sketches = sketches::project(ctx, scan, ir)?;
     parameters::omit_measured_display(ir);
-    project_timeline(ctx, ir, &definition, &sketches)?;
+    let names = names::Names::new(scan, regeneration_order(ir).map(|feature| &feature.id));
+    project_timeline(ctx, ir, &definition, &sketches, &names)?;
+    ir.design.names = names.table(ctx, ir)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(())
@@ -114,30 +120,42 @@ fn definition_bodies(ir: &CadIr, definition: &ProductDefinitionId) -> Vec<BodyId
         .collect()
 }
 
+/// The model features in regeneration order.
+fn regeneration_order(ir: &CadIr) -> impl Iterator<Item = &LegacyFeature> {
+    let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
+    ordered.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
+    ordered.into_iter()
+}
+
 /// One ordered timeline holding every model feature in regeneration order.
-/// The decoder reads no insert position, so the timeline ends at its last
-/// member, which holds the current geometry.
+/// The decoder reads no insert position (part 11, entry B.95), so the
+/// rollback of a timeline with members is unstated and the current geometry
+/// is its current state at `After(Container(timeline))` (§5.3). A timeline
+/// with no member has no member to stand before: it is built through its end,
+/// and its current state is at its start.
 fn project_timeline(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
     sketches: &BTreeSet<SketchId>,
+    names: &names::Names,
 ) -> Result<(), CodecError> {
-    let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
-    ordered.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
+    let ordered = regeneration_order(ir).collect::<Vec<_>>();
     let timeline = crate::identity::compose_checked::<ContainerId>(&TIMELINE, "root")?;
     let members = ordered
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(timeline.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let (rollback, at) = if members.is_empty() {
+        (Some(Rollback::End), Position::Start(timeline.clone()))
+    } else {
+        (None, Position::After(Member::Container(timeline.clone())))
+    };
+    let stated = operations::Stated::new(&ir.design.sketches, names);
     let mut features = Vec::new();
     for feature in &ordered {
         ctx.charge_entities(1, "project Creo v11 feature")?;
-        features.push(project_feature(feature, sketches)?);
+        features.push(project_feature(feature, sketches, &stated)?);
     }
     ctx.charge_entities(1, "project Creo v11 timeline")?;
     ctx.charge_entities(1, "project Creo v11 scope")?;
@@ -154,7 +172,7 @@ fn project_timeline(
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     });
     ir.design.scopes.push(DesignScope {
@@ -164,6 +182,7 @@ fn project_timeline(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: vec![current],
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }
@@ -173,6 +192,7 @@ fn project_timeline(
 fn project_feature(
     feature: &LegacyFeature,
     sketches: &BTreeSet<SketchId>,
+    stated: &operations::Stated<'_>,
 ) -> Result<Feature, CodecError> {
     let (operation, refine) = match feature.evaluation.definition() {
         LegacyDefinition::Operation(operation) => (operation, None),
@@ -185,7 +205,11 @@ fn project_feature(
         name: feature.name.clone(),
         suppressed: None,
         definition: FeatureDefinition {
-            operation: self::operation(operation, sketches)?,
+            operation: match operations::typed(operation, &feature.id, stated) {
+                Some(typed) => typed,
+                None => self::operation(operation, sketches)?,
+            },
+            assembly: None,
             refine,
             fuzzy_tolerance: None,
         },
@@ -198,7 +222,7 @@ fn project_feature(
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("creo:{kind}"))
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("creo"), kind)
             .ok_or_else(|| CodecError::malformed("Creo v11 operation kind is blank"))?,
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
@@ -312,9 +336,10 @@ fn operation(
             OperationFamily::Pattern
         }
         LegacyOperation::Thicken { .. } => OperationFamily::Thicken,
-        LegacyOperation::KnitSurface { .. } | LegacyOperation::SewBodies { .. } => {
-            OperationFamily::Knit
-        }
+        // A Creo merge is a knit in join mode and a mutual split in intersect
+        // mode; its role codes are not read, so it stays native (§6.6 Knit).
+        LegacyOperation::KnitSurface { .. } => return native("merge"),
+        LegacyOperation::SewBodies { .. } => OperationFamily::Knit,
         LegacyOperation::UnstitchFaces { .. } => OperationFamily::UnsewFaces,
         LegacyOperation::TrimSurface { .. }
         | LegacyOperation::CutWithSurface { .. }

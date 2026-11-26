@@ -13,7 +13,7 @@ use super::operands::{
 use super::relation_loci::{
     line_line_angle, line_line_distance, marker_point_locus,
     marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
-    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
+    profile_loci_by_marker, profile_locus_point, relation_contradicts_geometry,
     relation_operand_marker, same_dimension_angle, same_dimension_length,
     typed_relation_definition, typed_relation_definition_with_profile_axis,
     unoriented_line_line_angle,
@@ -21,14 +21,17 @@ use super::relation_loci::{
 use super::relation_records::{
     relation_uses_dynamic_operands, relation_uses_solver_points, CircleHandleDrivers,
 };
+use super::sketch_lists::curve_record_markers;
 use super::transforms::{
     feature_sketch_marker_transform, marker_entities, sketch_entity_locus_points,
-    MarkerEntityFilter, ProfileAxis,
+    MarkerEntityFilter, ProfileAxis, SketchLocusRole,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
-    marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
+    marker_relation_contradicts_geometry, native_marker_relation_definition,
+    typed_marker_relation_definition_in_sketch,
 };
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -45,7 +48,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
 pub(super) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
@@ -54,7 +57,7 @@ pub(super) const RELATION_PARAMETER_ROLE_DRIVING: &str = "driving";
 pub(super) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
 
 pub(crate) fn is_reference_relation_parameter(
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
 ) -> bool {
     parameter
         .properties
@@ -139,13 +142,13 @@ fn ensure_spatial_relation_point(
 fn spatial_relation_point_line_entities(
     relation: &FeatureInputRelationInstance,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     lane: &FeatureInputLane,
     entities: &mut Vec<SpatialSketchEntity>,
 ) -> Option<(SpatialSketchEntityId, SpatialSketchEntityId)> {
     let value = parameter.value.as_ref()?;
     let expected = match value {
-        cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
+        cadmpeg_ir::features::parameters::ParameterValue::Length(length) => length.get().abs(),
         _ => return None,
     };
     let point_candidates = lane
@@ -260,7 +263,7 @@ pub(crate) fn project_spatial_relation_bindings(
     entities: &mut Vec<SpatialSketchEntity>,
     sketches: &[SpatialSketch],
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) {
     let mut spatial_sketch_ids = HashSet::new();
@@ -389,16 +392,131 @@ pub(crate) fn project_spatial_relation_bindings(
     }
 }
 
+/// Adds every marker linked to or from a member of `referenced` until no
+/// marker is added.
+fn close_over_links<'a>(
+    markers_by_id: &HashMap<&'a str, &'a SketchInputEntity>,
+    referenced: &mut HashSet<&'a str>,
+) {
+    loop {
+        let mut linked = Vec::new();
+        for marker in markers_by_id.values() {
+            let marker_referenced = referenced.contains(marker.id());
+            for link in marker.links() {
+                let adjacent = if marker_referenced {
+                    Some(link.entity_ref.as_str())
+                } else if referenced.contains(link.entity_ref.as_str()) {
+                    Some(marker.id())
+                } else {
+                    None
+                };
+                if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
+                    linked.push(id);
+                }
+            }
+        }
+        if linked.is_empty() {
+            break;
+        }
+        referenced.extend(linked);
+    }
+}
+
+/// The decision of [`project_relation_point_geometry`] on each point marker
+/// it reaches: the sketch entities hold the point, or a note says why they
+/// do not.
+#[derive(Debug, Default)]
+pub(crate) struct RelationPointNotes(BTreeMap<String, Option<cadmpeg_ir::report::loss::LossNote>>);
+
+impl RelationPointNotes {
+    /// The sketch entities hold the marker's point.
+    fn hold(&mut self, marker: &str) {
+        self.0.insert(marker.to_owned(), None);
+    }
+
+    fn charge(&mut self, marker: &str, note: cadmpeg_ir::report::loss::LossNote) {
+        self.0.insert(marker.to_owned(), Some(note));
+    }
+
+    /// Takes the decisions of a later pass: its decision on a marker replaces
+    /// the one held, so a marker the later pass draws loses its note.
+    pub(crate) fn extend(&mut self, later: Self) {
+        self.0.extend(later.0);
+    }
+
+    /// The notes of the markers whose points are not drawn, in marker order.
+    pub(crate) fn into_notes(self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> {
+        self.0.into_values().flatten()
+    }
+}
+
+/// The id prefix of a relation point that [`project_relation_point_geometry`]
+/// draws.
+pub(super) const RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:";
+
+/// The id prefix of a relation point drawn for a marker that only a
+/// list-read record whose stored code is a relation reaches.
+const LISTED_RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:listed:";
+
+/// Whether `entity` is a relation point drawn for a marker that only a
+/// list-read record reaches.
+pub(super) fn is_listed_relation_point(entity: &SketchEntity) -> bool {
+    entity
+        .id()
+        .as_str()
+        .starts_with(LISTED_RELATION_POINT_PREFIX)
+}
+
+/// The markers a relation reaches without a list-read record: each relation
+/// operand, each marker of relation kind, and the markers linked to them.
+fn main_relation_reach(lanes: &[FeatureInputLane]) -> HashSet<&str> {
+    let mut markers_by_id = HashMap::new();
+    let mut reach = HashSet::new();
+    for lane in lanes {
+        for marker in &lane.sketch_entities {
+            markers_by_id.insert(marker.id(), marker);
+            if matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                reach.insert(marker.id());
+            }
+        }
+        for operand in lane
+            .relation_instances
+            .iter()
+            .flat_map(|relation| &relation.operands)
+        {
+            if let Some(id) = operand.entity_ref.as_deref() {
+                reach.insert(id);
+            }
+        }
+    }
+    close_over_links(&markers_by_id, &mut reach);
+    reach
+}
+
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
+///
+/// A point marker that a relation reaches as on main (a relation operand, a
+/// marker of relation kind, and the markers linked to them) is placed as on
+/// main: at the unique fitted marker-transform place, else at the sketch
+/// frame's reading. A point marker reached only through a list-read record
+/// whose stored code is a relation (DI-77) is drawn only in a sketch read
+/// from its own lane. It is placed where the two readings agree within the
+/// linear resolution, or where only one exists, by a fit that leaves out the
+/// relation points already drawn; where they differ, at the one place that
+/// a curve end or centre of its sketch or a vertex or circular-edge centre of
+/// `solid` marks. A marker whose feature's sketch is found and whose point
+/// is not drawn gets a note.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) {
+    solid: &super::stream_readings::SolidEdges,
+) -> RelationPointNotes {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
+    let mut decisions = RelationPointNotes::default();
     let mut sketches_by_feature = HashMap::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -416,13 +534,27 @@ pub(crate) fn project_relation_point_geometry(
         sketches_by_feature.insert(native_ref, sketch_id);
     }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    // The fit of an added point leaves out every relation point drawn before,
+    // which come from the same markers.
+    let added_transforms = entities
+        .iter()
+        .any(|entity| entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
+        .then(|| {
+            let independent = entities
+                .iter()
+                .filter(|entity| !entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
+                .cloned()
+                .collect::<Vec<_>>();
+            marker_transform_candidates_by_feature(features, sketches, &independent, lanes)
+        });
+    let mut frame_transforms = HashMap::new();
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         markers_by_id.insert(marker.id(), marker);
     }
     let mut point_operands = HashSet::new();
     let mut curve_operands = HashSet::new();
-    let mut referenced = HashSet::new();
+    let mut listed_relations = Vec::new();
     for lane in lanes {
         for relation in &lane.relation_instances {
             let count = match relation.family {
@@ -450,45 +582,22 @@ pub(crate) fn project_relation_point_geometry(
                 };
                 curve_operands.insert(id);
             }
-            for operand in &relation.operands {
-                let Some(id) = operand.entity_ref.as_deref() else {
-                    continue;
-                };
-                referenced.insert(id);
-            }
         }
         for marker in &lane.sketch_entities {
-            if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
-                continue;
-            }
-            let id = marker.id();
-            referenced.insert(id);
-        }
-    }
-    loop {
-        let mut linked = Vec::new();
-        for marker in markers_by_id.values() {
-            let marker_referenced = referenced.contains(marker.id());
-            for link in marker.links() {
-                let adjacent = if marker_referenced {
-                    Some(link.entity_ref.as_str())
-                } else if referenced.contains(link.entity_ref.as_str()) {
-                    Some(marker.id())
-                } else {
-                    None
-                };
-                if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
-                    linked.push(id);
-                }
+            // A list-curve reading (DI-77) replaces the kind, not the stored
+            // relation code: the points the record's links reach stay drawn,
+            // and the record itself stays a curve.
+            if !matches!(marker.kind(), SketchInputKind::Relation(_))
+                && matches!(marker.stored_kind(), SketchInputKind::Relation(_))
+            {
+                listed_relations.push(marker.id());
             }
         }
-        if linked.is_empty() {
-            break;
-        }
-        for id in linked {
-            referenced.insert(id);
-        }
     }
+    let referenced = main_relation_reach(lanes);
+    let mut point_reach = referenced.clone();
+    point_reach.extend(listed_relations);
+    close_over_links(&markers_by_id, &mut point_reach);
     for lane in lanes {
         let lane_key = lane
             .id
@@ -504,7 +613,7 @@ pub(crate) fn project_relation_point_geometry(
                         SketchGeometryDefinition::Point { .. }
                     )
             });
-            if !referenced.contains(marker.id())
+            if !point_reach.contains(marker.id())
                 || !(qualified_point
                     && matches!(
                         marker.kind(),
@@ -517,7 +626,10 @@ pub(crate) fn project_relation_point_geometry(
                         marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
-                || has_existing_point
+            {
+                continue;
+            }
+            if has_existing_point
                 || entities.iter().any(|entity| {
                     entity
                         .endpoint_refs
@@ -525,6 +637,7 @@ pub(crate) fn project_relation_point_geometry(
                         .any(|reference| reference == marker.id())
                 })
             {
+                decisions.hold(marker.id());
                 continue;
             }
             let (Some(feature), Some([u, v])) = (
@@ -550,10 +663,31 @@ pub(crate) fn project_relation_point_geometry(
             {
                 continue;
             }
+            let main_reach = referenced.contains(marker.id());
+            let record = sketches.iter().find(|candidate| candidate.id == *sketch);
+            if let Some(owner) = record
+                .and_then(|record| record.native_ref.as_deref())
+                .filter(|owner| !main_reach && *owner != lane.id)
+            {
+                decisions.charge(
+                    marker.id(),
+                    crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.note(format!(
+                        "sketch {} marker {}: the sketch that the marker's feature binds is read from feature-input lane {owner}, and the marker belongs to lane {}, so its relation point is not drawn in it",
+                        sketch.as_str(),
+                        marker.id(),
+                        lane.id,
+                    )),
+                );
+                continue;
+            }
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+            let fit = match &added_transforms {
+                Some(added) if !main_reach => added,
+                _ => &transforms,
+            };
             let mut unique_position = None;
             let mut ambiguous = false;
-            for transform in transforms.get(feature).into_iter().flatten() {
+            for transform in fit.get(feature).into_iter().flatten() {
                 let Some(position) = transform.apply(native) else {
                     continue;
                 };
@@ -563,28 +697,113 @@ pub(crate) fn project_relation_point_geometry(
                     unique_position = Some(position);
                 }
             }
-            let position = if ambiguous || unique_position.is_none() {
-                sketches
-                    .iter()
-                    .find(|candidate| candidate.id == *sketch)
-                    .and_then(|sketch| feature_sketch_marker_transform(sketch, QUANTUM, features))
-                    .and_then(|transform| transform.apply(native))
+            let to_point = |(position_u, position_v): (i64, i64)| {
+                Some(Point2::new(
+                    f64_from_i64(position_u)? * QUANTUM,
+                    f64_from_i64(position_v)? * QUANTUM,
+                ))
+            };
+            let fitted = unique_position.filter(|_| !ambiguous).and_then(to_point);
+            let framed = frame_transforms
+                .entry(sketch)
+                .or_insert_with(|| {
+                    record.and_then(|sketch| {
+                        feature_sketch_marker_transform(sketch, QUANTUM, features)
+                    })
+                })
+                .and_then(|transform| transform.apply(native))
+                .and_then(to_point);
+            if fitted.or(framed).is_none() {
+                decisions.charge(
+                    marker.id(),
+                    crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.note(format!(
+                        "sketch {} marker {}: no unique fitted marker transform and no sketch frame places the relation point, so the point is not drawn",
+                        sketch.as_str(),
+                        marker.id(),
+                    )),
+                );
+                continue;
+            }
+            if [u, v]
+                .into_iter()
+                .any(|value| value != 0.0 && !value.is_normal())
+            {
+                decisions.charge(
+                    marker.id(),
+                    crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.note(format!(
+                        "sketch marker {}: the 16 bytes its record form reads as a coordinate pair hold a subnormal value ({u:e}, {v:e}), so its relation point is not drawn",
+                        marker.id()
+                    )),
+                );
+                continue;
+            }
+            let position = match (fitted, framed) {
+                (Some(fitted), Some(framed))
+                    if !main_reach
+                        && (fitted.u - framed.u).hypot(fitted.v - framed.v)
+                            > LINEAR_RESOLUTION_MM =>
+                {
+                    let witnessed = |position: Point2| {
+                        entities
+                            .iter()
+                            .filter(|entity| entity.sketch == *sketch)
+                            .flat_map(|entity| {
+                                sketch_entity_locus_points(entity).into_iter().flatten()
+                            })
+                            .any(|(locus, role)| {
+                                role != SketchLocusRole::Entity
+                                    && (locus.u - position.u).hypot(locus.v - position.v)
+                                        <= LINEAR_RESOLUTION_MM
+                            })
+                            || record
+                                .and_then(cadmpeg_ir::sketches::Sketch::resolved_placement)
+                                .and_then(|(origin, normal, u_axis)| {
+                                    let (normal, u_axis) = (normal.get(), u_axis.get());
+                                    Some(
+                                        origin
+                                            .get()
+                                            .translated(u_axis, position.u)
+                                            .translated(normal.unit()?.cross(u_axis), position.v),
+                                    )
+                                })
+                                .is_some_and(|point| solid.marks(point))
+                    };
+                    match (witnessed(fitted), witnessed(framed)) {
+                        (true, false) => fitted,
+                        (false, true) => framed,
+                        (both, _) => {
+                            let witnesses = match (both, solid.is_empty()) {
+                                (true, false) => "a curve end or centre of the sketch, or a vertex or circular-edge centre of the solid, lies on each of them",
+                                (true, true) => "a curve end or centre of the sketch lies on each of them",
+                                (false, false) => "when the decoder places the sketch's relation points, no curve end or centre of the sketch and no vertex or circular-edge centre of the solid lies on either of them",
+                                (false, true) => "when the decoder places the sketch's relation points, no curve end or centre of the sketch lies on either of them, and the decode holds no solid vertex or circular edge to compare",
+                            };
+                            decisions.charge(
+                                marker.id(),
+                                crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled
+                                    .note(format!(
+                                        "sketch {} marker {}: the sketch's fitted marker transform places the relation point at ({}, {}) mm and the sketch frame places it at ({}, {}) mm; {witnesses}, so its place is not settled between the two readings and the point is not drawn",
+                                        sketch.as_str(),
+                                        marker.id(),
+                                        fitted.u,
+                                        fitted.v,
+                                        framed.u,
+                                        framed.v,
+                                    )),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                (Some(position), _) | (None, Some(position)) => position,
+                (None, None) => continue,
+            };
+            let id_prefix = if main_reach {
+                RELATION_POINT_PREFIX
             } else {
-                unique_position
+                LISTED_RELATION_POINT_PREFIX
             };
-            let Some(position) = position else {
-                continue;
-            };
-            let (Some(position_u), Some(position_v)) =
-                (f64_from_i64(position.0), f64_from_i64(position.1))
-            else {
-                continue;
-            };
-            let position = Point2::new(position_u * QUANTUM, position_v * QUANTUM);
-            let id_text = format!(
-                "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                marker.offset()
-            );
+            let id_text = format!("{id_prefix}{lane_key}:{}", marker.offset());
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
             };
@@ -617,6 +836,7 @@ pub(crate) fn project_relation_point_geometry(
                     .with_native_ref(native_ref)
                     .with_geometry_ref(geometry_ref),
             );
+            decisions.hold(marker.id());
         }
         let mut markers_by_id = HashMap::new();
         let mut marker_roster = Vec::new();
@@ -809,6 +1029,7 @@ pub(crate) fn project_relation_point_geometry(
             );
         }
     }
+    decisions
 }
 
 fn indexed_geometry_ref_matches(value: &str, owner: &str, kind: &str, index: usize) -> bool {
@@ -866,7 +1087,7 @@ pub(crate) fn project_relation_solved_line_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -970,11 +1191,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                 (
                     FeatureInputRelationFamily::LineLineDistance
                     | FeatureInputRelationFamily::PointLineDistance,
-                    cadmpeg_ir::features::ParameterValue::Length(expected),
+                    cadmpeg_ir::features::parameters::ParameterValue::Length(expected),
                 ) => expected.get(),
                 (
                     FeatureInputRelationFamily::Angle,
-                    cadmpeg_ir::features::ParameterValue::Angle(expected),
+                    cadmpeg_ir::features::parameters::ParameterValue::Angle(expected),
                 ) => expected.get(),
                 _ => continue,
             };
@@ -1490,7 +1711,7 @@ pub(crate) fn project_relation_solved_point_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -1543,7 +1764,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                 .and_then(Option::as_ref)
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(distance)) =
                 parameter.and_then(|parameter| parameter.value.as_ref())
             else {
                 continue;
@@ -2507,13 +2728,43 @@ fn declared_entity_handle_linked_pairs<'a>(
     pairs
 }
 
+/// Whether every sketch entity that `definition` names belongs to `sketch`,
+/// by `owners`, the sketch of each entity. A string of the definition's wire
+/// form that is no entity id names no entity.
+fn names_only_own_entities(
+    definition: &SketchConstraintDefinitionInput,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    owners: &HashMap<&str, &cadmpeg_ir::sketches::SketchId>,
+) -> bool {
+    let Ok(value) = cadmpeg_core::serde_erase::to_json_value(definition) else {
+        return false;
+    };
+    let mut pending = vec![&value];
+    while let Some(value) = pending.pop() {
+        match value {
+            serde_json::Value::String(text) => {
+                if owners
+                    .get(text.as_str())
+                    .is_some_and(|owner| *owner != sketch)
+                {
+                    return false;
+                }
+            }
+            serde_json::Value::Array(values) => pending.extend(values),
+            serde_json::Value::Object(fields) => pending.extend(fields.values()),
+            _ => {}
+        }
+    }
+    true
+}
+
 pub(crate) fn project_relation_bindings(
     ctx: &DecodeContext<'_>,
     constraints: &mut Vec<SketchConstraint>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut sketches_by_feature = HashMap::new();
@@ -2539,6 +2790,10 @@ pub(crate) fn project_relation_bindings(
         markers_by_id.insert(marker.id(), marker);
     }
     let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let entity_sketches = sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), &entity.sketch))
+        .collect::<HashMap<_, _>>();
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
         parameters_by_id.insert(&parameter.id, parameter);
@@ -2560,6 +2815,7 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         let ids = LaneIds::new(lane);
+        let curve_markers = curve_record_markers(lane);
         for relation in &lane.relation_instances {
             let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
@@ -2580,15 +2836,6 @@ pub(crate) fn project_relation_bindings(
                 .as_ref()
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let measured_parameter = parameter.is_some_and(|parameter| {
-                parameter
-                    .properties
-                    .get(RELATION_PARAMETER_ROLE_PROPERTY)
-                    .is_some_and(|role| {
-                        role == RELATION_PARAMETER_ROLE_REFERENCE
-                            || role == RELATION_PARAMETER_ROLE_DRIVING
-                    })
-            });
             let native_kind = relation_native_kind(relation.family);
             let mut entities = Vec::new();
             for marker in relation
@@ -2608,6 +2855,10 @@ pub(crate) fn project_relation_bindings(
             }
             entities.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
+            // A marker can also have an entity in a sketch the feature does
+            // not bind, such as its unbound marker sketch beside a stream
+            // circle; the constraint names only entities of its own sketch.
+            entities.retain(|entity| entity_sketches.get(entity.as_str()) == Some(sketch));
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
@@ -2644,14 +2895,11 @@ pub(crate) fn project_relation_bindings(
                     &loci_by_marker,
                 )?,
             };
+            let typed_definition = typed_definition
+                .filter(|definition| names_only_own_entities(definition, sketch, &entity_sketches));
             let typed_definition = match typed_definition {
                 Some(definition)
-                    if measured_parameter
-                        && relation_constraint_is_inactive(
-                            parameter,
-                            &definition,
-                            sketch_entities,
-                        )? =>
+                    if relation_contradicts_geometry(parameter, &definition, sketch_entities)? =>
                 {
                     None
                 }
@@ -2680,8 +2928,6 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)?
-                .then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(relation, &ids).is_some();
             let Ok(definition) =
@@ -2705,7 +2951,7 @@ pub(crate) fn project_relation_bindings(
                     .parameter_scalar_ref()
                     .map(|_| true)
                     .or_else(|| has_display_scalar.then_some(false)),
-                active,
+                active: None,
                 virtual_space: None,
                 visible: None,
                 orientation: None,
@@ -2728,6 +2974,9 @@ pub(crate) fn project_relation_bindings(
             }
         }
         for marker in &lane.sketch_entities {
+            if curve_markers.contains(marker.id()) {
+                continue;
+            }
             let existing = constraints_by_native_ref.get(marker.id()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
@@ -2744,7 +2993,7 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let Some(definition) = typed_marker_relation_definition_in_sketch(
+            let Some(mut definition) = typed_marker_relation_definition_in_sketch(
                 ctx,
                 marker,
                 sketch,
@@ -2755,8 +3004,16 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let active =
-                marker_relation_is_inactive(marker, &definition, sketch_entities)?.then_some(false);
+            if !matches!(definition, SketchConstraintDefinitionInput::Native { .. })
+                && marker_relation_contradicts_geometry(marker, &definition, sketch_entities)?
+            {
+                definition = native_marker_relation_definition(
+                    ctx,
+                    marker,
+                    &markers_by_id,
+                    &loci_by_marker,
+                )?;
+            }
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {
@@ -2775,7 +3032,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: None,
-                active,
+                active: None,
                 virtual_space: None,
                 visible: None,
                 orientation: None,
@@ -2810,7 +3067,7 @@ pub(crate) fn project_relation_bindings(
 
 pub(crate) fn owned_relation_parameters<'a>(
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
 ) -> HashMap<String, Option<cadmpeg_ir::features::ParameterId>> {
     let mut lane_refs = Vec::new();
@@ -2958,16 +3215,16 @@ pub(super) struct RelationParameters<'a> {
     owners: HashMap<&'a str, &'a cadmpeg_ir::features::FeatureId>,
     by_owner_name: HashMap<
         &'a cadmpeg_ir::features::FeatureId,
-        HashMap<&'a str, Vec<&'a cadmpeg_ir::features::DesignParameter>>,
+        HashMap<&'a str, Vec<&'a cadmpeg_ir::features::parameters::DesignParameter>>,
     >,
     /// Reference relation parameters by their recorded relation id.
-    by_relation_id: HashMap<&'a str, Vec<&'a cadmpeg_ir::features::DesignParameter>>,
+    by_relation_id: HashMap<&'a str, Vec<&'a cadmpeg_ir::features::parameters::DesignParameter>>,
 }
 
 impl<'a> RelationParameters<'a> {
     pub(super) fn new(
         features: &'a [cadmpeg_ir::features::Feature],
-        parameters: &'a [cadmpeg_ir::features::DesignParameter],
+        parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
     ) -> Self {
         let mut owners = HashMap::new();
         for feature in features {
@@ -3008,7 +3265,7 @@ impl<'a> RelationParameters<'a> {
         &self,
         relation: &FeatureInputRelationInstance,
         name: &str,
-    ) -> Option<&[&'a cadmpeg_ir::features::DesignParameter]> {
+    ) -> Option<&[&'a cadmpeg_ir::features::parameters::DesignParameter]> {
         let owner = self.owners.get(relation.feature_ref.as_str())?;
         Some(
             self.by_owner_name
@@ -3021,7 +3278,7 @@ impl<'a> RelationParameters<'a> {
     fn by_relation_id(
         &self,
         relation: &FeatureInputRelationInstance,
-    ) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+    ) -> Option<&'a cadmpeg_ir::features::parameters::DesignParameter> {
         match self.by_relation_id.get(relation.id.as_str())?.as_slice() {
             [parameter] => Some(*parameter),
             _ => None,
@@ -3102,16 +3359,16 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
 }
 
 fn relation_parameter_matches_display_scalar(
-    parameter: &cadmpeg_ir::features::DesignParameter,
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
     family: FeatureInputRelationFamily,
     scalar: &FeatureInputScalar,
 ) -> bool {
     match family {
         FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
-            Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
+            Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(value)) => {
                 same_dimension_angle(value.get(), scalar.value.get())
             }
-            Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
+            Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) => {
                 same_dimension_angle(value.get(), scalar.value.get())
             }
             _ => false,
@@ -3123,17 +3380,17 @@ fn relation_parameter_matches_display_scalar(
         | FeatureInputRelationFamily::PointPointHorizontalDistance
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             match parameter.value.as_ref() {
-                Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) => {
                     same_dimension_length(value.get(), scalar.value.get() * 1000.0)
                 }
-                Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(value)) => {
                     crate::history::parameters::eval::exact_integer_f64(*value).is_some_and(
                         |value| same_dimension_length(value, scalar.value.get() * 1000.0),
                     )
                 }
                 // An untyped native real is still in the source scalar's SI
                 // units until relation typing applies the family unit.
-                Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) => {
                     same_dimension_length(value.get(), scalar.value.get())
                 }
                 _ => false,
@@ -3146,7 +3403,7 @@ fn relation_parameter_by_driving_name<'a>(
     relation: &FeatureInputRelationInstance,
     ids: &LaneIds<'_>,
     named: &RelationParameters<'a>,
-) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+) -> Option<&'a cadmpeg_ir::features::parameters::DesignParameter> {
     let mut driving_names = relation
         .parameter_scalar_ref()
         .into_iter()
@@ -3168,7 +3425,7 @@ pub(super) fn relation_parameter_by_display_name<'a>(
     relation: &FeatureInputRelationInstance,
     ids: &LaneIds<'_>,
     named: &RelationParameters<'a>,
-) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+) -> Option<&'a cadmpeg_ir::features::parameters::DesignParameter> {
     let display_scalar = relation_display_scalar_for_parameter(relation, ids)?;
     let name = ids.last_name(&display_scalar.name)?;
     let (first, rest) = named.named(relation, name)?.split_first()?;
@@ -3232,14 +3489,12 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_point_relation_projects_graph_resolved_operands() {
-        use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
-        use cadmpeg_ir::{
-            features::{
-                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-                ParameterValue,
-            },
-            scalar::Length,
+        use cadmpeg_ir::features::parameters::ParameterValue;
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
         };
+        use cadmpeg_ir::scalar::Length;
+        use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
         use std::collections::BTreeMap;
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -3257,12 +3512,12 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                         sketch.clone(),
@@ -3298,6 +3553,7 @@ mod relation_geometry_tests {
                 role: FeatureInputScalarRole::Driving,
                 operands,
                 archive_class: None,
+                archive_object_id: None,
             };
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
@@ -3350,7 +3606,7 @@ mod relation_geometry_tests {
                 marker("second-center", 3, 3, Some([0.0015, 0.0])),
             ],
         };
-        let parameter = cadmpeg_ir::features::DesignParameter {
+        let parameter = cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
@@ -3359,7 +3615,7 @@ mod relation_geometry_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("terminal".into()),
@@ -3433,15 +3689,13 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_line_relation_prefers_marker_endpoint_join() {
-        use cadmpeg_ir::math::{Point3, Vector3};
-        use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
-        use cadmpeg_ir::{
-            features::{
-                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-                ParameterValue,
-            },
-            scalar::Length,
+        use cadmpeg_ir::features::parameters::ParameterValue;
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
         };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::scalar::Length;
+        use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
         use std::collections::BTreeMap;
         const FEATURE: &str = "feature-native";
         const LANE: &str = "lane#test";
@@ -3453,12 +3707,12 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                         sketch_id.clone(),
@@ -3562,6 +3816,7 @@ mod relation_geometry_tests {
                 role: FeatureInputScalarRole::Driving,
                 operands: relation.operands.clone(),
                 archive_class: None,
+                archive_object_id: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: vec![relation],
@@ -3581,7 +3836,7 @@ mod relation_geometry_tests {
                 second_line,
             ],
         };
-        let parameter = cadmpeg_ir::features::DesignParameter {
+        let parameter = cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
             owner: Some(feature.id.clone()),
@@ -3590,7 +3845,7 @@ mod relation_geometry_tests {
             expression: "5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3654,7 +3909,7 @@ mod relation_geometry_tests {
                 _ => {}
             }
         }
-        let fallback_parameter = cadmpeg_ir::features::DesignParameter {
+        let fallback_parameter = cadmpeg_ir::features::parameters::DesignParameter {
             id: ParameterId::mint("synthetic:test:id#fallback-distance").expect("identity grammar"),
             native_ref: Some("fallback-scalar".into()),
             ..parameter.clone()
@@ -3776,16 +4031,14 @@ mod relation_geometry_tests {
 
     #[test]
     fn spatial_point_line_relation_uses_unique_tagged_marker_roster() {
+        use cadmpeg_ir::features::parameters::ParameterValue;
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        };
+        use cadmpeg_ir::scalar::Length;
         use cadmpeg_ir::sketches::{
             SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchGeometryDefinition,
             SpatialSketchId,
-        };
-        use cadmpeg_ir::{
-            features::{
-                Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-                ParameterValue,
-            },
-            scalar::Length,
         };
         use std::collections::BTreeMap;
         fn marker(
@@ -3863,6 +4116,7 @@ mod relation_geometry_tests {
             role: FeatureInputScalarRole::Driving,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         };
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),
@@ -3917,19 +4171,19 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                     sketch: Some(sketch.id.clone()),
                 }),
             ),
             native_ref: Some(FEATURE.into()),
         };
-        let parameter = cadmpeg_ir::features::DesignParameter {
+        let parameter = cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             owner: Some(feature.id.clone()),
@@ -3938,7 +4192,7 @@ mod relation_geometry_tests {
             expression: "6.5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3995,6 +4249,46 @@ mod relation_geometry_tests {
 }
 
 #[cfg(test)]
+mod constraint_ownership_tests {
+    use std::collections::HashMap;
+
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
+
+    use super::names_only_own_entities;
+
+    /// A typed distance whose entities are those of an unbound marker sketch
+    /// does not project onto the stream sketch its feature binds.
+    #[test]
+    fn a_typed_constraint_naming_another_sketch_s_entities_is_not_its_sketch_s() {
+        let stream = SketchId::mint("synthetic:test:id#stream").unwrap();
+        let marker = SketchId::mint("synthetic:test:id#marker").unwrap();
+        let [own, other] = ["own", "other"]
+            .map(|name| SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap());
+        let owners = HashMap::from([(own.as_str(), &stream), (other.as_str(), &marker)]);
+        let distance = |entities: Vec<SketchEntityId>| SketchConstraintDefinitionInput::Distance {
+            entities,
+            parameter: ParameterId::mint("synthetic:test:id#length").unwrap(),
+        };
+        assert!(names_only_own_entities(
+            &distance(vec![own.clone()]),
+            &stream,
+            &owners
+        ));
+        assert!(!names_only_own_entities(
+            &distance(vec![own.clone(), other.clone()]),
+            &stream,
+            &owners
+        ));
+        assert!(names_only_own_entities(
+            &distance(vec![own, other]),
+            &stream,
+            &HashMap::new()
+        ));
+    }
+}
+
+#[cfg(test)]
 mod point_point_distance_family_tests {
     use super::{FeatureInputRelationFamily, PointPointDistanceFamily};
 
@@ -4028,6 +4322,9 @@ mod ownership_tests;
 
 #[cfg(test)]
 mod planar_projection_tests;
+
+#[cfg(test)]
+mod point_coordinate_tests;
 
 #[cfg(test)]
 mod spatial_projection_tests;

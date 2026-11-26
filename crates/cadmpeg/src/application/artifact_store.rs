@@ -3,8 +3,10 @@
 //!
 //! CADIR and its decode-fidelity sidecar are written as two separate atomic
 //! renames. Those renames are not transactional: a crash between them can leave
-//! a stale sidecar beside a newer CADIR. Digest verification failing closed on
-//! the next load is what saves the caller, not a transactional pair.
+//! a stale sidecar beside a newer CADIR. Digest verification on the next load
+//! is what saves the caller, not a transactional pair: a sidecar that does not
+//! describe the CADIR bytes is ignored with `sidecar.stale`, and the document
+//! loads without it.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -16,6 +18,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::ExportPlan;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::source_fidelity::sidecar_stale_kind;
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
 
@@ -142,14 +147,31 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, C
     Ok(text)
 }
 
+/// The decode sidecar beside a CADIR document.
+#[derive(Debug)]
+pub(crate) enum SidecarLoad {
+    /// No sidecar is beside the document.
+    Absent,
+    /// The sidecar describes the document's bytes.
+    Matching(Box<DecodeSidecar>),
+    /// The sidecar is ignored: the loss says why.
+    Stale(LossNote),
+}
+
 /// Load and parse a decode sidecar, verifying it against CADIR bytes.
 ///
-/// Mismatch is a hard error (fail-closed).
+/// A sidecar that cannot be read, does not parse, or describes other bytes
+/// is ignored with `sidecar.stale`.
+///
+/// # Errors
+///
+/// A CADIR path that names no file, or a resource refusal while reading the
+/// sidecar.
 pub(crate) fn load_matching_sidecar(
     cadir_path: &Path,
     cadir_bytes: &[u8],
     max_bytes: u64,
-) -> Result<Option<DecodeSidecar>, ApplicationError> {
+) -> Result<SidecarLoad, ApplicationError> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
@@ -158,20 +180,33 @@ pub(crate) fn load_matching_sidecar(
         .into());
     };
     if !path.exists() {
-        return Ok(None);
+        return Ok(SidecarLoad::Absent);
     }
-    let text = read_bounded_text(&path, max_bytes)?;
-    let sidecar = DecodeSidecar::from_json(&text)
-        .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
-    if !sidecar.matches(cadir_bytes) {
-        return Err(anyhow!(
-            "decode sidecar {} does not match {}",
-            path.display(),
-            cadir_path.display()
+    let stale = |reason: String| {
+        SidecarLoad::Stale(
+            LossNote::new(
+                sidecar_stale_kind(),
+                format!("decode sidecar {} is ignored: {reason}", path.display()),
+            )
+            .with_severity(Severity::Warning),
         )
-        .into());
+    };
+    let text = match read_bounded_text(&path, max_bytes) {
+        Ok(text) => text,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
+        Err(error) => return Ok(stale(error.to_string())),
+    };
+    let sidecar = match DecodeSidecar::from_json(&text) {
+        Ok(sidecar) => sidecar,
+        Err(error) => return Ok(stale(format!("it does not parse: {error}"))),
+    };
+    if !sidecar.matches(cadir_bytes) {
+        return Ok(stale(format!(
+            "it does not describe the bytes of {}",
+            cadir_path.display()
+        )));
     }
-    Ok(Some(sidecar))
+    Ok(SidecarLoad::Matching(Box::new(sidecar)))
 }
 
 /// Refuse to overwrite the input path, or an existing output without force.
@@ -282,10 +317,14 @@ pub(super) fn write_plan_atomic(
 /// A decoded origin causes a second atomic rename after the CADIR write.
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
+/// The sidecar holds `annotations`, the plan's annotations of the written
+/// document, which a CADIR plan states for every document with a decode
+/// origin.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
+    annotations: Option<cadmpeg_ir::Annotations>,
 ) -> Result<SidecarPersistOutcome> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
@@ -297,12 +336,18 @@ pub(super) fn persist_decode_sidecar(
         LoadOrigin::Decoded {
             report, fidelity, ..
         }
-        | LoadOrigin::Restored { report, fidelity } => {
-            let sidecar = DecodeSidecar::bind_sha256(
-                cadir_sha256.clone(),
-                report.clone(),
-                fidelity.as_ref().clone(),
-            );
+        | LoadOrigin::Restored { report, fidelity }
+        | LoadOrigin::Read { report, fidelity } => {
+            let Some(annotations) = annotations else {
+                return Err(anyhow!(
+                    "the CADIR plan for {} states no annotations of the written document",
+                    cadir_path.display()
+                ));
+            };
+            let mut fidelity = fidelity.as_ref().clone();
+            fidelity.annotations = annotations;
+            let sidecar =
+                DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;
@@ -355,6 +400,7 @@ impl Write for TempFileWriter<'_> {
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
     use std::fs::File;
     #[cfg(feature = "nx")]
@@ -363,10 +409,12 @@ mod tests {
 
     use super::{
         check_output_path, load_matching_sidecar, read_bounded_text, FileDestination,
-        OptionalFileDestination, OutputDestinations,
+        OptionalFileDestination, OutputDestinations, SidecarLoad,
     };
     #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::source_fidelity::sidecar_stale_kind;
     use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
     use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
     use cadmpeg_registry::DETECTION_PREFIX_LEN;
@@ -488,12 +536,12 @@ mod tests {
     }
 
     #[test]
-    fn matching_sidecar_loads_and_mismatch_fails_closed() {
+    fn matching_sidecar_loads_and_a_mismatch_is_stale() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},
@@ -514,12 +562,32 @@ mod tests {
         .unwrap();
 
         let loaded = load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
-        assert!(loaded.is_some());
+        assert!(matches!(loaded, SidecarLoad::Matching(_)));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error =
-            load_matching_sidecar(&path, format!("{text}\n").as_bytes(), 1024 * 1024).unwrap_err();
-        assert!(error.to_string().contains("does not match"));
+        let loaded =
+            load_matching_sidecar(&path, format!("{text}\n").as_bytes(), 1024 * 1024).unwrap();
+        let SidecarLoad::Stale(loss) = loaded else {
+            panic!("a sidecar of other bytes is stale, got {loaded:?}");
+        };
+        assert_eq!(loss.code, sidecar_stale_kind());
+        assert_eq!(loss.severity, Severity::Warning);
+        assert!(loss.message.contains("does not describe the bytes of"));
+    }
+
+    #[test]
+    fn a_sidecar_that_does_not_parse_is_ignored_as_stale() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.cadir.json");
+        let text = CadIr::empty().to_canonical_json().unwrap();
+        std::fs::write(&path, &text).unwrap();
+        std::fs::write(decode_sidecar_path(&path).unwrap(), "{\"edited\": true}").unwrap();
+        let loaded = load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
+        let SidecarLoad::Stale(loss) = loaded else {
+            panic!("an unparsable sidecar is stale, got {loaded:?}");
+        };
+        assert_eq!(loss.code, sidecar_stale_kind());
+        assert!(loss.message.contains("does not parse"));
     }
 
     #[test]

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Supported constructions remain writable without a solved surface cache.
 
-use cadmpeg_ir::{
-    codec::{Codec, DecodeOptions},
-    geometry::{
-        analytic::LineCurve, surface_payloads::LinearSweepSurfaceConstruction, Curve,
-        CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
-    },
-    ids::{CurveId, ProceduralSurfaceId},
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::analytic::LineCurve;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 use std::io::Cursor;
 
 #[test]
@@ -51,6 +51,7 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
             panic!("construction owner")
         };
         *cache = opaque_cache.then_some(SolvedSurfaceGeometry::Unknown { record: None });
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let checked = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
         let mut bytes = Vec::new();

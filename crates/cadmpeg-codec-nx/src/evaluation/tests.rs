@@ -2,20 +2,23 @@ mod body_operations;
 mod history;
 mod patterns;
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::FeatureOperation;
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{
-    holes::{HoleKind, HolePlacement},
-    ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, LinearTermination, PlanarProfileRef,
-    ProfileRef,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+use cadmpeg_ir::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{ConfigurationId, Feature};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureId};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::ids::BodyId;
 
 fn model_body(id: &str) -> Body {
@@ -27,6 +30,7 @@ fn model_body(id: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 
@@ -40,23 +44,23 @@ fn complete_block_ir() -> CadIr {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
                 ]),
-                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
+                placement: Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     });
@@ -72,8 +76,8 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
             (
                 feature.id.clone(),
                 ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::try_from(
+                    evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                             feature.evaluation.outputs().clone(),
                         )
                         .unwrap(),
@@ -95,7 +99,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::try_from(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 ir.geometry
                     .bodies
                     .iter()
@@ -117,24 +121,26 @@ fn complete_hole(body: BodyId) -> Feature {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
                 direction: None,
                 placements: Some(vec![HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                 }]),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
@@ -149,7 +155,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 taper_angle: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     }
@@ -167,15 +173,15 @@ fn body_preserving_feature(
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     }
@@ -188,13 +194,15 @@ fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: None,
     }
 }
@@ -232,7 +240,7 @@ fn complete_extrude_feature(
     feature.dependencies.insert(profile);
     feature
         .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap());
+        .set_outputs(cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs).unwrap());
     feature
 }
 
@@ -243,30 +251,30 @@ fn body_census_result_rejects_noncanonical_and_contradictory_wire_states() {
     let b = BodyId::mint("test:model:entity#b").unwrap();
     for bodies in [vec![a.clone(), a.clone()], vec![b.clone(), a.clone()]] {
         assert!(BodyCensusEvaluation::verified(bodies.clone()).is_err());
-        assert!(serde_json::from_value::<BodyCensusEvaluation>(
-            serde_json::json!({"kind": "verified", "bodies": bodies})
+        assert!(json::from_value::<BodyCensusEvaluation>(
+            cadmpeg_core::json!({"kind": "verified", "bodies": bodies})
         )
         .is_err());
     }
     for invalid in [vec![a.clone(), a.clone()], vec![b.clone(), a.clone()]] {
         for (rederived, saved) in [(invalid.clone(), vec![]), (vec![], invalid)] {
             assert!(BodyCensusEvaluation::mismatch(rederived.clone(), saved.clone()).is_err());
-            assert!(serde_json::from_value::<BodyCensusEvaluation>(
-                serde_json::json!({"kind": "mismatch", "rederived": rederived, "saved": saved})
+            assert!(json::from_value::<BodyCensusEvaluation>(
+                cadmpeg_core::json!({"kind": "mismatch", "rederived": rederived, "saved": saved})
             )
             .is_err());
         }
     }
     assert!(BodyCensusEvaluation::mismatch(vec![a.clone()], vec![a.clone()]).is_err());
-    assert!(serde_json::from_value::<BodyCensusEvaluation>(
-        serde_json::json!({"kind": "mismatch", "rederived": [a.clone()], "saved": [a.clone()]})
+    assert!(json::from_value::<BodyCensusEvaluation>(
+        cadmpeg_core::json!({"kind": "mismatch", "rederived": [a.clone()], "saved": [a.clone()]})
     )
     .is_err());
     for wire in [
-        serde_json::json!({"kind": "verified", "bodies": [a.clone(), b.clone()]}),
-        serde_json::json!({"kind": "mismatch", "rederived": [a], "saved": [b]}),
+        cadmpeg_core::json!({"kind": "verified", "bodies": [a.clone(), b.clone()]}),
+        cadmpeg_core::json!({"kind": "mismatch", "rederived": [a], "saved": [b]}),
     ] {
-        let result: BodyCensusEvaluation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(result).unwrap(), wire);
+        let result: BodyCensusEvaluation = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(result).unwrap(), wire);
     }
 }

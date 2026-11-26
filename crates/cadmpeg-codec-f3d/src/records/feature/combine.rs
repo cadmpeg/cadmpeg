@@ -541,7 +541,7 @@ pub(crate) struct DesignCombineOperation {
     /// Serialized scope-prologue form.
     pub(crate) form: DesignCombineForm,
     /// Join, cut, or intersect operation.
-    pub(crate) operation: cadmpeg_ir::features::BooleanKind,
+    pub(crate) operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
@@ -555,6 +555,11 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) target_body_node: Option<DesignCombineBodyNode>,
     /// Boolean tool body selectors in source order.
     pub(crate) tools: DesignCombineTools,
+    /// Browser-node records of the bodies that the operation creates.
+    pub(crate) created_body_nodes: Vec<u32>,
+    /// Browser-node records of the tool bodies that the operation consumes
+    /// in its own component.
+    pub(crate) consumed_body_nodes: Vec<u32>,
 }
 
 #[cfg(test)]
@@ -576,6 +581,8 @@ impl Clone for DesignCombineOperation {
             target_record_index: self.target_record_index,
             target_body_node: self.target_body_node,
             tools: self.tools.clone(),
+            created_body_nodes: self.created_body_nodes.clone(),
+            consumed_body_nodes: self.consumed_body_nodes.clone(),
         }
     }
 }
@@ -591,7 +598,7 @@ impl Serialize for DesignCombineToolsRef<'_> {
 #[derive(Serialize)]
 struct DesignCombineOperationRef<'a> {
     form: DesignCombineForm,
-    operation: cadmpeg_ir::features::BooleanKind,
+    operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     operation_offset: u64,
     keep_tools: bool,
     keep_tools_offset: u64,
@@ -599,6 +606,10 @@ struct DesignCombineOperationRef<'a> {
     destination: DesignCombineDestination,
     target: DesignCombineBodySelection,
     tools: DesignCombineToolsRef<'a>,
+    #[serde(skip_serializing_if = "<[u32]>::is_empty")]
+    created_body_nodes: &'a [u32],
+    #[serde(skip_serializing_if = "<[u32]>::is_empty")]
+    consumed_body_nodes: &'a [u32],
 }
 
 impl Serialize for DesignCombineOperation {
@@ -616,6 +627,8 @@ impl Serialize for DesignCombineOperation {
                 body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
+            created_body_nodes: &self.created_body_nodes,
+            consumed_body_nodes: &self.consumed_body_nodes,
         }
         .serialize(serializer)
     }
@@ -641,7 +654,7 @@ struct DesignCombineOperationWire {
     form: DesignCombineForm,
     /// Join, cut, or intersect operation.
     #[serde(deserialize_with = "deserialize_combine_operation_kind")]
-    operation: cadmpeg_ir::features::BooleanKind,
+    operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     /// Byte offset of the operation u32.
     operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
@@ -654,12 +667,16 @@ struct DesignCombineOperationWire {
     target: DesignCombineBodySelection,
     /// Boolean tool body selectors in source order.
     tools: Vec<DesignCombineBodySelection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    created_body_nodes: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    consumed_body_nodes: Vec<u32>,
 }
 
 fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<cadmpeg_ir::features::BooleanKind, D::Error> {
-    cadmpeg_ir::features::BooleanKind::deserialize(deserializer)
+) -> Result<cadmpeg_ir::features::operation_settings::BooleanKind, D::Error> {
+    cadmpeg_ir::features::operation_settings::BooleanKind::deserialize(deserializer)
         .map_err(|error| serde::de::Error::custom(format!("operation: {error}")))
 }
 
@@ -686,6 +703,8 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
                 first,
                 additional: tools.collect(),
             },
+            created_body_nodes: wire.created_body_nodes,
+            consumed_body_nodes: wire.consumed_body_nodes,
         })
     }
 }
@@ -708,6 +727,8 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             tools: std::iter::once(operation.tools.first)
                 .chain(operation.tools.additional)
                 .collect(),
+            created_body_nodes: operation.created_body_nodes,
+            consumed_body_nodes: operation.consumed_body_nodes,
         }
     }
 }
@@ -719,6 +740,7 @@ mod tests {
         DesignCombineOperation, DesignCombineOperationWire, COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT,
         COMBINE_OPERATION_CLONE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[derive(serde::Serialize)]
     struct NestedRecord<'a, T: serde::Serialize> {
@@ -733,7 +755,7 @@ mod tests {
             value.destination = super::DesignCombineDestination::NewComponent {
                 browser_node_record_index,
             };
-            let wire = serde_json::to_value(&value).unwrap();
+            let wire = json::to_value(&value).unwrap();
             assert_eq!(wire["destination"]["kind"], "new_component");
             if browser_node_record_index.is_some() {
                 assert_eq!(wire["destination"]["browser_node_record_index"], 777);
@@ -743,15 +765,33 @@ mod tests {
                     .is_none());
             }
             assert_eq!(
-                serde_json::from_value::<DesignCombineOperation>(wire).unwrap(),
+                json::from_value::<DesignCombineOperation>(wire).unwrap(),
                 value
             );
             assert_eq!(value.clone().destination, value.destination);
         }
     }
 
+    #[test]
+    fn combine_body_node_lists_round_trip_and_omit_empty_lists() {
+        let mut value = operation(false);
+        let wire = json::to_value(&value).unwrap();
+        assert!(wire.get("created_body_nodes").is_none());
+        assert!(wire.get("consumed_body_nodes").is_none());
+        value.created_body_nodes = vec![541, 546];
+        value.consumed_body_nodes = vec![510];
+        let wire = json::to_value(&value).unwrap();
+        assert_eq!(wire["created_body_nodes"], cadmpeg_core::json!([541, 546]));
+        assert_eq!(wire["consumed_body_nodes"], cadmpeg_core::json!([510]));
+        assert_eq!(
+            json::from_value::<DesignCombineOperation>(wire).unwrap(),
+            value
+        );
+        assert_eq!(value.clone(), value);
+    }
+
     fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "selector_asset_id": "00000004-1111-4111-8111-111111111111",
             "selector_asset_id_offset": 44,
             "selector_context_id": "00000005-1111-4111-8111-111111111111",
@@ -771,17 +811,17 @@ mod tests {
         });
         if version {
             wire["external_property_key"] =
-                serde_json::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-            wire["external_property_key_offset"] = serde_json::json!(327);
-            wire["external_version_urn"] = serde_json::json!("urn");
-            wire["external_version_urn_offset"] = serde_json::json!(403);
-            wire["tail_value_offsets"] = serde_json::json!([415, 427]);
+                cadmpeg_core::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            wire["external_property_key_offset"] = cadmpeg_core::json!(327);
+            wire["external_version_urn"] = cadmpeg_core::json!("urn");
+            wire["external_version_urn_offset"] = cadmpeg_core::json!(403);
+            wire["tail_value_offsets"] = cadmpeg_core::json!([415, 427]);
         }
-        serde_json::from_value(wire).unwrap()
+        json::from_value(wire).unwrap()
     }
 
     fn operation(version: bool) -> DesignCombineOperation {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "form": "standard",
             "operation": "join",
             "operation_offset": 20,
@@ -798,8 +838,8 @@ mod tests {
         for identity in [external_identity(false), external_identity(true)] {
             let owned = DesignCombineExternalBodyIdentityWire::from(identity.clone());
             assert_eq!(
-                serde_json::to_vec(&identity).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&identity).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -832,9 +872,9 @@ mod tests {
             external_identity: None,
             body_node: Some(node),
         };
-        let wire = serde_json::to_value(&selection).unwrap();
+        let wire = json::to_value(&selection).unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             selection
         );
 
@@ -842,14 +882,14 @@ mod tests {
             body_node: None,
             ..selection
         };
-        let wire = serde_json::to_value(&without).unwrap();
-        assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
+        let wire = json::to_value(&without).unwrap();
+        assert_eq!(wire, cadmpeg_core::json!({ "record_index": 363 }));
         assert_eq!(
-            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             without
         );
 
-        let error = serde_json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+        let error = json::from_value::<DesignCombineBodySelection>(cadmpeg_core::json!({
             "record_index": 363,
             "body_node": null,
         }))
@@ -869,8 +909,8 @@ mod tests {
         value.form = super::DesignCombineForm::OperandLists;
         value.target_body_node = Some(node(10));
         value.tools.first.body_node = Some(node(20));
-        let wire = serde_json::to_value(&value).unwrap();
-        let read: DesignCombineOperation = serde_json::from_value(wire).unwrap();
+        let wire = json::to_value(&value).unwrap();
+        let read: DesignCombineOperation = json::from_value(wire).unwrap();
         assert_eq!(read, value);
     }
 
@@ -879,8 +919,8 @@ mod tests {
         for record in [operation(false), operation(true)] {
             let owned = DesignCombineOperationWire::from(record.clone());
             assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&record).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }

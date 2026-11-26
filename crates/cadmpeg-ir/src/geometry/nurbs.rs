@@ -8,7 +8,7 @@ pub mod bounds;
 
 pub(super) mod admitted;
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_derive::DeserializeName;
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// A NURBS store admits its knots through [`Self::new`], so a reader holds
 /// the guarantee and the raw values through [`Self::as_slice`] or deref.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[serde(transparent)]
 pub struct KnotVector(Vec<f64>);
 
@@ -162,7 +162,7 @@ pub(super) fn admit_knots<K: KnotValue>(knots: K, prefix: &str) -> Result<KnotVe
 /// One rational pole in model space: its position and its weight.
 // A source states a raw position; a NURBS store holds the admitted row, whose
 // position is a `FinitePoint3`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WeightedPole3<P = Point3> {
@@ -179,7 +179,14 @@ pub struct WeightedPole3<P = Point3> {
 /// exactly one spelling.
 // A source states raw positions; a `NurbsCurve` holds the admitted poles,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -497,7 +504,14 @@ impl<P: Copy> NurbsPoles3<P> {
 /// ```
 // A source states raw positions; a `NurbsSurface` holds the admitted grid,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -689,7 +703,7 @@ impl<P: Copy> NurbsPoleGrid<P> {
 /// The control grid is stored as rows: the outer index is u, the inner index
 /// is v, so the grid states both pole counts. `weights == None` denotes a
 /// non-rational surface.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsSurface {
     /// Degree in the u parametric direction.
@@ -713,7 +727,7 @@ pub struct NurbsSurface {
     v_periodic: bool,
     /// Fit tolerance of the source approximation cache, in model length units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<super::FitTolerance>,
+    cache_fit_tolerance: Option<super::legacy_cache::FitTolerance>,
 }
 
 /// Polynomial tensor-product B-spline surface with a rectangular control grid.
@@ -1147,12 +1161,15 @@ impl NurbsSurface {
     }
 
     /// Fit tolerance of the source approximation cache.
-    pub const fn cache_fit_tolerance(&self) -> Option<super::FitTolerance> {
+    pub const fn cache_fit_tolerance(&self) -> Option<super::legacy_cache::FitTolerance> {
         self.cache_fit_tolerance
     }
 
     /// Retain the fit tolerance of the source approximation cache.
-    pub fn set_cache_fit_tolerance(&mut self, tolerance: Option<super::FitTolerance>) {
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        tolerance: Option<super::legacy_cache::FitTolerance>,
+    ) {
         self.cache_fit_tolerance = tolerance;
     }
 
@@ -1353,7 +1370,7 @@ impl NurbsSurface {
 #[serde(deny_unknown_fields)]
 struct NurbsSurfaceWire {
     #[serde(default, deserialize_with = "deserialize_cache_fit_tolerance")]
-    cache_fit_tolerance: Option<super::FitTolerance>,
+    cache_fit_tolerance: Option<super::legacy_cache::FitTolerance>,
     u_degree: u32,
     v_degree: u32,
     u_knots: Vec<f64>,
@@ -1395,7 +1412,7 @@ pub enum SurfaceParameterAxis {
 }
 
 /// A NURBS curve knot/pole payload.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsCurve {
     /// Curve degree.
@@ -1684,6 +1701,6 @@ mod identity_rewrite;
 
 cadmpeg_core::named_optional_field!(
     deserialize_cache_fit_tolerance,
-    super::FitTolerance,
+    super::legacy_cache::FitTolerance,
     "cache_fit_tolerance"
 );

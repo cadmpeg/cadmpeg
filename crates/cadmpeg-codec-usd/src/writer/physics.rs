@@ -10,40 +10,83 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId};
 use cadmpeg_ir::physics::solver::SolverTarget;
 use cadmpeg_ir::physics::{ColliderShape, MassProperties, PhysicsTarget};
 use cadmpeg_ir::products::{
-    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointId, JointLimits,
-    JointOperands, OperandContainer, PairedJointKind,
+    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointLimits, JointOperands,
+    OperandContainer, PairedJointKind,
 };
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use super::text::{quoted, real32, tuple32, Names};
-use super::{Writer, MILLIMETRES_PER_UNIT};
+use super::text::{float, floats, quoted, Names};
+use super::Writer;
 
 /// Name of the scope that holds physical materials and joints.
 pub(super) const PHYSICS: &str = "Physics";
-/// Scene-unit density per kilogram per cubic millimetre.
-fn density_scale() -> f64 {
-    MILLIMETRES_PER_UNIT.powi(3)
+/// Scene-unit density per kilogram per cubic millimetre, for `length`
+/// millimetres per scene unit.
+fn density_scale(length: f64) -> f64 {
+    length.powi(3)
 }
 
 /// The schemas and properties of one prim.
 pub(super) type PrimPhysics = (Vec<String>, Vec<String>);
 
+/// The initial velocities of a rigid body: linear in scene units per
+/// second and angular in degrees per second, in the coordinates of the
+/// model.
+#[derive(Debug, Clone, Copy, Default)]
+struct Velocity {
+    linear: Option<[f64; 3]>,
+    angular: Option<[f64; 3]>,
+}
+
+impl Velocity {
+    /// The velocity attributes of a prim whose transform turns its parent
+    /// space by `turn` from the model's.
+    fn lines(self, turn: Option<f64>) -> Vec<String> {
+        let mut lines = Vec::new();
+        if let Some(linear) = self.linear {
+            lines.push(format!(
+                "vector3f physics:velocity = {}",
+                floats(&super::turned(turn, linear))
+            ));
+        }
+        if let Some(angular) = self.angular {
+            lines.push(format!(
+                "vector3f physics:angularVelocity = {}",
+                floats(&super::turned(turn, angular))
+            ));
+        }
+        lines
+    }
+}
+
 /// The physics schemas the writer applies to occurrence and body prims.
 pub(super) struct Plan {
     occurrences: BTreeMap<OccurrenceId, PrimPhysics>,
     bodies: BTreeMap<BodyId, PrimPhysics>,
+    /// The initial velocities of the rigid bodies on occurrence and body
+    /// prims.
+    occurrence_velocities: BTreeMap<OccurrenceId, Velocity>,
+    body_velocities: BTreeMap<BodyId, Velocity>,
     /// The collision schemas of each body.
     colliders: BTreeMap<BodyId, PrimPhysics>,
     /// Material names in the `Physics` scope.
     materials: BTreeMap<PhysicalMaterialId, String>,
-    /// The solver settings of each joint, physical material, and scene.
-    joint_settings: BTreeMap<JointId, PrimPhysics>,
+    /// The joints to write, each with the name of its prim.
+    pub(super) joints: Vec<(AssemblyJoint, Option<String>)>,
+    /// Design joint features with no assembly-joint form.
+    pub(super) unwritten_joints: usize,
+    /// Values of design joint features with no assembly-joint field.
+    pub(super) unwritten_joint_properties: usize,
+    /// The solver settings of each joint, by the id of its design joint
+    /// feature, and of each physical material and scene.
+    joint_settings: BTreeMap<String, PrimPhysics>,
     material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics>,
     scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics>,
     /// Solver properties with no prim or attribute to write.
@@ -115,22 +158,7 @@ fn quaternion(transform: &Transform) -> [f64; 4] {
     components.map(|value| value / norm)
 }
 
-/// A `float` attribute value: `value` rounded to binary32.
-fn float(value: f64) -> String {
-    real32(crate::text::value::round_f32(value))
-}
-
-/// A `float` tuple value, each component rounded to binary32.
-fn floats(values: &[f64]) -> String {
-    tuple32(
-        &values
-            .iter()
-            .map(|value| crate::text::value::round_f32(*value))
-            .collect::<Vec<_>>(),
-    )
-}
-
-fn mass_lines(mass: &MassProperties) -> Vec<String> {
+fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(value) = mass.mass {
         lines.push(format!("float physics:mass = {}", float(value.get())));
@@ -138,14 +166,14 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
     if let Some(value) = mass.density {
         lines.push(format!(
             "float physics:density = {}",
-            float(value.get() * density_scale())
+            float(value.get() * density_scale(length))
         ));
     }
     if let Some(point) = mass.center_of_mass {
         let point = point.get();
         lines.push(format!(
             "point3f physics:centerOfMass = {}",
-            floats(&[point.x, point.y, point.z].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[point.x, point.y, point.z].map(|value| value / length))
         ));
     }
     if let Some(inertia) = &mass.inertia {
@@ -154,7 +182,7 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
             floats(
                 &inertia
                     .moments
-                    .map(|moment| moment.get() / (MILLIMETRES_PER_UNIT * MILLIMETRES_PER_UNIT))
+                    .map(|moment| moment.get() / (length * length))
             )
         ));
         let axes = inertia
@@ -166,6 +194,50 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
     lines
 }
 
+/// The joints the writer writes, each with the name of its prim: the
+/// model's assembly joints, each in the form of the design joint feature
+/// that restates it, then the design joint features that restate no
+/// assembly joint. Also the count of joint features with no assembly-joint
+/// form and the count of joint values with no assembly-joint field.
+fn joint_list(ir: &CadIr) -> (Vec<(AssemblyJoint, Option<String>)>, usize, usize) {
+    let mut unconverted = 0;
+    let mut dropped = 0;
+    let mut restated = BTreeSet::new();
+    let mut converted = BTreeMap::new();
+    for feature in &ir.design.features {
+        let FeatureOperation::Joint(joint) = &feature.definition.operation else {
+            continue;
+        };
+        restated.insert(feature.id.as_str());
+        let Some(assembly) = crate::joint::assembly(&feature.id, joint) else {
+            unconverted += 1;
+            continue;
+        };
+        let mut written = assembly.joint;
+        dropped += assembly.dropped;
+        written.suppressed = match &feature.suppressed {
+            None => false,
+            Some(Dimension::Literal(suppressed)) => *suppressed,
+            Some(_) => {
+                dropped += 1;
+                false
+            }
+        };
+        written.native_ref.clone_from(&feature.native_ref);
+        converted.insert(feature.id.as_str(), (written, feature.name.clone()));
+    }
+    let mut joints = Vec::new();
+    for joint in &ir.model.assembly_joints {
+        if let Some(written) = converted.remove(joint.id.as_str()) {
+            joints.push(written);
+        } else if !restated.contains(joint.id.as_str()) {
+            joints.push((joint.clone(), None));
+        }
+    }
+    joints.extend(converted.into_values());
+    (joints, unconverted, dropped)
+}
+
 impl Plan {
     /// Whether the layer has a `Physics` scope or physics schemas.
     pub(super) fn is_empty(&self) -> bool {
@@ -175,11 +247,14 @@ impl Plan {
             && self.materials.is_empty()
     }
 
-    pub(super) fn new(ir: &CadIr) -> Self {
+    /// The plan of `ir`, in scene units of `length` millimetres.
+    pub(super) fn new(ir: &CadIr, length: f64) -> Self {
         let model = &ir.model;
         let mut occurrences: BTreeMap<OccurrenceId, PrimPhysics> = BTreeMap::new();
         let mut bodies: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
         let mut colliders: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
+        let mut occurrence_velocities: BTreeMap<OccurrenceId, Velocity> = BTreeMap::new();
+        let mut body_velocities: BTreeMap<BodyId, Velocity> = BTreeMap::new();
         let mut names = Names::default();
         let materials: BTreeMap<PhysicalMaterialId, String> = model
             .physical_materials
@@ -222,6 +297,7 @@ impl Plan {
             entry.0.push(schemas(&[schema]));
             entry.1.extend(lines);
         };
+        let (joints, unwritten_joints, unwritten_joint_properties) = joint_list(ir);
         let mut rigid: BTreeSet<OccurrenceId> = BTreeSet::new();
         for body in &model.rigid_bodies {
             if let PhysicsTarget::Occurrence { occurrence } = &body.target.entity {
@@ -234,29 +310,41 @@ impl Plan {
             if !body.enabled {
                 lines.push("bool physics:rigidBodyEnabled = 0".to_owned());
             }
-            if let Some(velocity) = body.linear_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:velocity = {}",
-                    floats(
-                        &[velocity.x, velocity.y, velocity.z]
-                            .map(|value| value / MILLIMETRES_PER_UNIT)
-                    )
-                ));
-            }
-            if let Some(velocity) = body.angular_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:angularVelocity = {}",
-                    floats(&[velocity.x, velocity.y, velocity.z].map(f64::to_degrees))
-                ));
+            let velocity = Velocity {
+                linear: body.linear_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(|value| value / length)
+                }),
+                angular: body.angular_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(f64::to_degrees)
+                }),
+            };
+            if velocity.linear.is_some() || velocity.angular.is_some() {
+                match &body.target.entity {
+                    PhysicsTarget::Occurrence { occurrence } => {
+                        occurrence_velocities.insert(occurrence.clone(), velocity);
+                    }
+                    PhysicsTarget::Body { body } => {
+                        body_velocities.insert(body.clone(), velocity);
+                    }
+                    PhysicsTarget::Definition { definition } => {
+                        for occurrence in model
+                            .occurrences
+                            .iter()
+                            .filter(|occurrence| &occurrence.prototype == definition)
+                        {
+                            occurrence_velocities.insert(occurrence.id.clone(), velocity);
+                        }
+                    }
+                }
             }
             if body.starts_asleep {
                 lines.push("bool physics:startsAsleep = 1".to_owned());
             }
             add(&body.target.entity, "PhysicsRigidBodyAPI", lines);
         }
-        for joint in &model.assembly_joints {
+        for (joint, _) in &joints {
             for connector in joint.connectors() {
                 if let OperandContainer::Occurrence { occurrence, .. } =
                     &connector.operand.container
@@ -281,7 +369,11 @@ impl Plan {
             );
         }
         for mass in &model.mass_properties {
-            add(&mass.target.entity, "PhysicsMassAPI", mass_lines(mass));
+            add(
+                &mass.target.entity,
+                "PhysicsMassAPI",
+                mass_lines(mass, length),
+            );
         }
         let scope_path = String::new();
         for collider in &model.colliders {
@@ -319,7 +411,7 @@ impl Plan {
                 );
             }
         }
-        let mut joint_settings: BTreeMap<JointId, PrimPhysics> = BTreeMap::new();
+        let mut joint_settings: BTreeMap<String, PrimPhysics> = BTreeMap::new();
         let mut material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics> = BTreeMap::new();
         let mut scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics> = BTreeMap::new();
         let mut unwritten_settings = 0;
@@ -328,7 +420,7 @@ impl Plan {
                 unwritten_settings += settings.values.len().max(1);
                 continue;
             }
-            let (schema, lines, unwritten) = super::physx::lines(settings);
+            let (schema, lines, unwritten) = super::physx::lines(settings, length);
             unwritten_settings += unwritten;
             let onto = |entry: &mut PrimPhysics| {
                 entry.0.push(schema.clone());
@@ -353,7 +445,7 @@ impl Plan {
                     .find(|record| &record.id == articulation)
                     .map(|record| record.root.entity.clone()),
                 SolverTarget::Joint { joint } => {
-                    onto(joint_settings.entry(joint.clone()).or_default());
+                    onto(joint_settings.entry(joint.as_str().to_owned()).or_default());
                     None
                 }
                 SolverTarget::PhysicalMaterial { material } => {
@@ -372,8 +464,13 @@ impl Plan {
         Self {
             occurrences,
             bodies,
+            occurrence_velocities,
+            body_velocities,
             colliders,
             materials,
+            joints,
+            unwritten_joints,
+            unwritten_joint_properties,
             joint_settings,
             material_settings,
             scene_settings,
@@ -405,12 +502,24 @@ impl Plan {
         parent.clone_into(&mut self.scope);
     }
 
-    pub(super) fn occurrence(&self, id: &OccurrenceId) -> PrimPhysics {
-        self.occurrences.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of occurrence `id`, whose transform turns
+    /// its parent space by `turn`.
+    pub(super) fn occurrence(&self, id: &OccurrenceId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.occurrences.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.occurrence_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
-    pub(super) fn body(&self, id: &BodyId) -> PrimPhysics {
-        self.bodies.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of body `id`, whose transform turns its
+    /// parent space by `turn`.
+    pub(super) fn body(&self, id: &BodyId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.bodies.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.body_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
     /// The collision schemas of body `id`, for the prim of its collision
@@ -496,7 +605,7 @@ impl Writer<'_> {
         let [r0, r1, r2] = frame.affine_rows();
         self.out.line(&format!(
             "point3f physics:localPos{side} = {}",
-            floats(&[r0[3], r1[3], r2[3]].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[r0[3], r1[3], r2[3]].map(|value| value / self.millimetres_per_unit))
         ));
         self.out.line(&format!(
             "quatf physics:localRot{side} = {}",
@@ -607,13 +716,51 @@ impl Writer<'_> {
             } => &["transZ", "rotX", "rotY"],
             _ => &[],
         };
-        for axis in limit_axes {
+        let limit =
+            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
+                match limits {
+                    None => [None, None],
+                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
+                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
+                    Some(JointLimits::Range(range)) => [
+                        Some(convert(range.minimum().get())),
+                        Some(convert(range.maximum().get())),
+                    ],
+                }
+            };
+        let degrees = |value: f64| value * (180.0 / std::f64::consts::PI);
+        let millimetres_per_unit = self.millimetres_per_unit;
+        let length = |value: f64| value / millimetres_per_unit;
+        // The limits of the degrees of freedom a generic joint leaves free.
+        let free_limits: Vec<(&str, [Option<f64>; 2])> = match joint.operands() {
+            JointOperands::Pair {
+                kind:
+                    PairedJointKind::Cylindrical {
+                        angular_limits,
+                        linear_limits,
+                        ..
+                    },
+                ..
+            } => [
+                ("rotZ", limit(angular_limits, &degrees)),
+                ("transZ", limit(linear_limits, &length)),
+            ]
+            .into_iter()
+            .filter(|(_, bounds)| bounds.iter().any(Option::is_some))
+            .collect(),
+            _ => Vec::new(),
+        };
+        for axis in limit_axes
+            .iter()
+            .copied()
+            .chain(free_limits.iter().map(|(axis, _)| *axis))
+        {
             applied.push(format!("PhysicsLimitAPI:{axis}"));
         }
         let (settings_schemas, settings_lines) = self
             .physics
             .joint_settings
-            .get(&joint.id)
+            .get(joint.id.as_str())
             .cloned()
             .unwrap_or_default();
         let mut metadata = if applied.is_empty() {
@@ -631,11 +778,10 @@ impl Writer<'_> {
         metadata.extend(settings_schemas);
         self.prim_head(&format!("def {joint_type}"), &name, &metadata);
         self.out.open();
-        if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-            joint: joint.id.clone(),
-        }) {
-            self.target_paths.insert(key, self.out.path());
-        }
+        self.target_paths.insert(
+            super::physx::joint_placeholder(joint.id.as_str()),
+            self.out.path(),
+        );
         for line in &settings_lines {
             self.out.line(line);
         }
@@ -649,30 +795,14 @@ impl Writer<'_> {
             self.out.line("bool physics:jointEnabled = 0");
         }
         self.coupling_lines(joint);
-        let limit =
-            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
-                match limits {
-                    None => [None, None],
-                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
-                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
-                    Some(JointLimits::Range(range)) => [
-                        Some(convert(range.minimum().get())),
-                        Some(convert(range.maximum().get())),
-                    ],
-                }
-            };
         let (axis_limits, distance) = match joint.operands() {
             JointOperands::Pair { kind, .. } => match kind {
-                PairedJointKind::Revolute { angular_limits, .. } => (
-                    limit(angular_limits, &|value| {
-                        value * (180.0 / std::f64::consts::PI)
-                    }),
-                    None,
-                ),
-                PairedJointKind::Slider { linear_limits, .. } => (
-                    limit(linear_limits, &|value| value / MILLIMETRES_PER_UNIT),
-                    None,
-                ),
+                PairedJointKind::Revolute { angular_limits, .. } => {
+                    (limit(angular_limits, &degrees), None)
+                }
+                PairedJointKind::Slider { linear_limits, .. } => {
+                    (limit(linear_limits, &length), None)
+                }
                 PairedJointKind::Distance { distance } => ([None, None], *distance),
                 _ => ([None, None], None),
             },
@@ -690,7 +820,7 @@ impl Writer<'_> {
             }
         }
         if let Some(distance) = distance {
-            let value = float(distance.get() / MILLIMETRES_PER_UNIT);
+            let value = float(distance.get() / self.millimetres_per_unit);
             self.out
                 .line(&format!("float physics:minDistance = {value}"));
             self.out
@@ -703,11 +833,23 @@ impl Writer<'_> {
             self.out
                 .line(&format!("float limit:{axis}:physics:high = -1"));
         }
+        for (axis, [low, high]) in &free_limits {
+            if let Some(low) = low {
+                self.out
+                    .line(&format!("float limit:{axis}:physics:low = {}", float(*low)));
+            }
+            if let Some(high) = high {
+                self.out.line(&format!(
+                    "float limit:{axis}:physics:high = {}",
+                    float(*high)
+                ));
+            }
+        }
         for (instance, drive) in drives {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
             let degrees = 180.0 / std::f64::consts::PI;
             // See the reader for the inverse factors.
-            let millimetres = MILLIMETRES_PER_UNIT;
+            let millimetres = self.millimetres_per_unit;
             let (position, response, force) = if rotation {
                 (
                     degrees,
@@ -783,7 +925,9 @@ impl Writer<'_> {
                 ratio,
                 coupled_joints,
             } => (
-                ratio.map(PositiveReal::get).or_else(|| {
+                // PhysX turns the second hinge the other way for a positive
+                // ratio.
+                ratio.map(|ratio| -ratio.get()).or_else(|| {
                     let (first, second) = ((*distance)?.get(), (*distance2)?.get());
                     (second != 0.0).then(|| (first / second).abs())
                 }),
@@ -795,7 +939,7 @@ impl Writer<'_> {
                 coupled_joints,
                 ..
             } => (
-                ratio.map(|ratio| (ratio.get() * MILLIMETRES_PER_UNIT).to_degrees()),
+                ratio.map(|ratio| (ratio.get() * self.millimetres_per_unit).to_degrees()),
                 coupled_joints,
                 ["physics:ratio", "physics:hinge", "physics:prismatic"],
             ),
@@ -810,11 +954,8 @@ impl Writer<'_> {
             None => self.unwritten.joint_properties += 1,
         }
         for (name, coupled) in names[1..].iter().zip(coupled) {
-            if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-                joint: coupled.clone(),
-            }) {
-                self.out.line(&format!("rel {name} = <{key}>"));
-            }
+            let key = super::physx::joint_placeholder(coupled.as_str());
+            self.out.line(&format!("rel {name} = <{key}>"));
         }
     }
 
@@ -822,7 +963,7 @@ impl Writer<'_> {
     pub(super) fn joints(&mut self, names: &mut Names) {
         let model = &self.ir.model;
         if model.physical_materials.is_empty()
-            && model.assembly_joints.is_empty()
+            && self.physics.joints.is_empty()
             && model.physics_scenes.is_empty()
         {
             return;
@@ -845,13 +986,16 @@ impl Writer<'_> {
                 let direction = cadmpeg_ir::math::Vector3::from(direction);
                 self.out.line(&format!(
                     "vector3f physics:gravityDirection = {}",
-                    floats(&[direction.x, direction.y, direction.z])
+                    floats(&super::turned(
+                        self.turn,
+                        [direction.x, direction.y, direction.z]
+                    ))
                 ));
             }
             if let Some(magnitude) = scene.gravity_magnitude {
                 self.out.line(&format!(
                     "float physics:gravityMagnitude = {}",
-                    float(magnitude.get() / MILLIMETRES_PER_UNIT)
+                    float(magnitude.get() / self.millimetres_per_unit)
                 ));
             }
             for line in &settings_lines {
@@ -883,7 +1027,9 @@ impl Writer<'_> {
             for (field, value) in [
                 (
                     "density",
-                    material.density.map(|value| value.get() * density_scale()),
+                    material
+                        .density
+                        .map(|value| value.get() * density_scale(self.millimetres_per_unit)),
                 ),
                 (
                     "staticFriction",
@@ -911,8 +1057,8 @@ impl Writer<'_> {
             }
             self.out.close();
         }
-        for joint in &model.assembly_joints {
-            if !self.joint(joint, &mut children, None) {
+        for (joint, name) in std::mem::take(&mut self.physics.joints) {
+            if !self.joint(&joint, &mut children, name.as_deref()) {
                 self.unwritten.joints += 1;
             }
         }

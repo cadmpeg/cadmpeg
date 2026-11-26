@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::document::CadIr;
-use crate::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
-};
+use crate::features::evaluation::FeatureEvaluation;
+use crate::features::selections::DistinctMembers;
+use crate::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use crate::report::check::Finding;
+use cadmpeg_core::serde_erase::json;
 
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
     ir.geometry.bodies.push(crate::topology::Body {
+        unstated: None,
         id: "test:model:body#result".try_into().unwrap(),
         kind: crate::topology::BodyKind::Solid,
         transform: None,
@@ -19,8 +20,8 @@ fn model() -> CadIr {
         native_ref: None,
     });
     ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+        json::from_value(cadmpeg_core::json!({
+            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap(),
     );
@@ -50,10 +51,12 @@ fn model() -> CadIr {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let mut findings = Vec::new();
     super::super::check_products(
-        &cadmpeg_test_support::service_decode_context(),
-        ir,
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
         &mut findings,
     )
     .unwrap();
@@ -64,17 +67,11 @@ fn findings(ir: &CadIr) -> Vec<Finding> {
 fn product_history_owner_accepts_owned_outputs_and_absent_links() {
     let mut ir = model();
     assert!(findings(&ir).is_empty());
-    let json = serde_json::to_value(&ir.model.features[0]).unwrap();
+    let json = json::to_value(&ir.model.features[0]).unwrap();
     assert_eq!(json["product_definition"], "test:model:product#owner");
-    let read: Feature = serde_json::from_value(json).unwrap();
+    let read: Feature = json::from_value(json).unwrap();
     assert_eq!(
         read.product_definition,
-        ir.model.features[0].product_definition
-    );
-    let wire = serde_json::to_value(&ir.model).unwrap();
-    let restored: crate::document::Model = serde_json::from_value(wire).unwrap();
-    assert_eq!(
-        restored.features[0].product_definition,
         ir.model.features[0].product_definition
     );
     ir.model.features[0].product_definition = None;
@@ -102,20 +99,22 @@ fn product_history_owner_rejects_inconsistent_output_owner() {
 #[test]
 fn product_history_owner_validates_parameter_definition() {
     let mut ir = model();
-    ir.model.parameters.push(crate::features::DesignParameter {
-        id: "test:model:parameter#distance".try_into().unwrap(),
-        product_definition: Some(ir.model.product_definitions[0].id.clone()),
-        owner: None,
-        ordinal: 0,
-        name: "distance".into(),
-        expression: "2".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        properties: std::collections::BTreeMap::default(),
-        pmi: None,
-        native_ref: None,
-    });
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            id: "test:model:parameter#distance".try_into().unwrap(),
+            product_definition: Some(ir.model.product_definitions[0].id.clone()),
+            owner: None,
+            ordinal: 0,
+            name: "distance".into(),
+            expression: "2".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::default(),
+            pmi: None,
+            native_ref: None,
+        });
     assert!(findings(&ir).is_empty());
     ir.model.parameters[0].product_definition =
         Some("test:model:product#missing".try_into().unwrap());

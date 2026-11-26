@@ -14,7 +14,7 @@ use crate::ids::ProductDefinitionId;
 
 /// A value that a parameter can drive: a literal, or a binding to a
 /// parameter. A bound dimension stores no value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -23,7 +23,7 @@ use crate::ids::ProductDefinitionId;
     deny_unknown_fields,
     bound(
         serialize = "T: Serialize, P: Serialize",
-        deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"
+        deserialize = "T: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
     )
 )]
 pub enum Dimension<T, P = ParameterId> {
@@ -55,7 +55,7 @@ pub struct ParameterRef {
 }
 
 /// The parameter that a [`ParameterRef`] names.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -78,7 +78,7 @@ pub enum RefTarget {
 
 /// A reference from a process expression or a process dimension: a process
 /// parameter or a design parameter.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

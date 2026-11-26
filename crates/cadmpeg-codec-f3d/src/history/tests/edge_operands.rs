@@ -2,7 +2,8 @@
 //! Historical edge-operand binding tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::bind_edge_operand_history_candidates;
+use crate::history::edge_operand_history::bind_edge_operand_history_candidates;
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 #[test]
@@ -23,7 +24,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         })
         .unwrap();
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
             "scope_reference_ordinal": 0,
@@ -97,7 +98,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&scope),
         &[],
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &scope_histories,
     )
     .unwrap();
@@ -112,7 +113,7 @@ fn a_rebind_that_stops_before_the_transition_clears_its_deleted_edges() {
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
             "scope_reference_ordinal": 0,
@@ -173,7 +174,7 @@ fn a_rebind_that_stops_before_the_transition_clears_its_deleted_edges() {
         std::slice::from_mut(&mut operand),
         &[],
         &[],
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::new(),
     )
     .unwrap();
@@ -214,7 +215,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                 })
                 .unwrap();
             let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": format!("{stream}:design-edge-operand#20"),
                     "scope_record_index": 10,
                     "scope_reference_ordinal": 0,
@@ -237,11 +238,12 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                     "next_record_index": 24,
                     "next_byte_offset": 160
                 })).unwrap();
-            operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-                &cadmpeg_test_support::service_decode_context(),
-                &program,
-            )
-            .unwrap();
+            operand.recipe_structure =
+                crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    &program,
+                )
+                .unwrap();
             assert!(operand.recipe_structure.is_some());
             let relation = |owner_ref, member_refs| AsmHistoricalRelation {
                 owner_ref,
@@ -348,7 +350,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                 std::slice::from_mut(&mut operand),
                 &[scope],
                 &[recipe],
-                crate::history::BindingHistories::Shared(&[history]),
+                crate::history::binding_histories::BindingHistories::Shared(&[history]),
                 &owners,
             )
             .unwrap();
@@ -397,9 +399,9 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let reference = |token: &str| serde_json::json!({"selector": 1, "selector_offset": 0, "token": token, "token_offset": 0, "design_reference": 50, "design_reference_offset": 0});
+        let reference = |token: &str| cadmpeg_core::json!({"selector": 1, "selector_offset": 0, "token": token, "token_offset": 0, "design_reference": 50, "design_reference_offset": 0});
         let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{stream}:design-edge-operand#20"),
                 "scope_record_index": 10,
                 "scope_reference_ordinal": 0,
@@ -420,11 +422,12 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
                 "next_byte_offset": 160
             }))
             .unwrap();
-        operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
-            &program,
-        )
-        .unwrap();
+        operand.recipe_structure =
+            crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &program,
+            )
+            .unwrap();
         let relation = |owner_ref, member_refs| AsmHistoricalRelation {
             owner_ref,
             member_refs,
@@ -547,7 +550,7 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
             std::slice::from_mut(&mut operand),
             &[scope],
             &[recipe],
-            crate::history::BindingHistories::Shared(&[history]),
+            crate::history::binding_histories::BindingHistories::Shared(&[history]),
             &owners,
         )
         .unwrap();
@@ -556,8 +559,10 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
             operand.resolved_axis,
             expected.and_then(
                 |_| crate::records::feature::patterns::DesignAxis::from_parts(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))?,
-                    cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 1.0, 0.0))?,
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))?,
+                    cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+                        0.0, 1.0, 0.0
+                    ))?,
                 )
             ),
             "{second_token}"
@@ -576,8 +581,8 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0, -1,
         0, 0, -1,
     ];
-    let structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
+    let structure = crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
     .unwrap()
@@ -662,7 +667,11 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
 
 #[test]
 fn an_inferred_side_one_edge_names_its_operand_state_and_slot() {
-    let note = crate::history::inferred_edge_selection_note("f3d:test:operand#20", 7, 31);
+    let note = crate::history::edge_operand_history::inferred_edge_selection_note(
+        "f3d:test:operand#20",
+        7,
+        31,
+    );
     assert_eq!(
         note.code,
         crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.kind()

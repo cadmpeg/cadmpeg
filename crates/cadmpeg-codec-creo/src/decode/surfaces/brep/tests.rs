@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -75,13 +76,29 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         source_object: None,
         native_ref: None,
     };
+    let model_curves = |ir: &CadIr| {
+        crate::decode::uniqueness::NumberedIdentityPositions::new(
+            ir.geometry.curves.iter().map(|curve| curve.id.as_str()),
+            "creo:visibgeom:curve#",
+        )
+    };
     ir.geometry.curves.push(curve.clone());
-    let one = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
+    let one = BrepEdgeIndexes::from_rows(
+        &rows,
+        &native_vertices,
+        &solved_vertices,
+        &model_curves(&ir),
+    );
     assert_eq!(one.edge_vertices[&10], [1, 2]);
     assert_eq!(one.model_curve_counts[&10], 1);
     assert_eq!(one.admitted_edge_curves, BTreeSet::from([10]));
     ir.geometry.curves.push(curve);
-    let duplicate = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
+    let duplicate = BrepEdgeIndexes::from_rows(
+        &rows,
+        &native_vertices,
+        &solved_vertices,
+        &model_curves(&ir),
+    );
     assert_eq!(duplicate.model_curve_counts[&10], 2);
     assert!(duplicate.admitted_edge_curves.is_empty());
 }
@@ -250,7 +267,8 @@ fn ordered_native_parameter_face_loops_service<'a>(
 #[test]
 fn infinite_point_cannot_match_a_finite_point() {
     assert!(
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0)).is_none()
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0))
+            .is_none()
     );
 }
 
@@ -1284,25 +1302,25 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
 fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     let mut native = CadIr::empty();
     native.geometry.bodies.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "creo:visibgeom:body#2", "kind": "solid"
         }))
         .expect("native body"),
     );
     native.geometry.regions.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "creo:visibgeom:region#3", "body": "creo:visibgeom:body#2", "shells": ["creo:visibgeom:shell#6"]
         }))
         .expect("native region"),
     );
     native.geometry.shells.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": []
         }))
         .expect("native shell"),
     );
     native.geometry.faces.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "creo:visibgeom:face#1", "shell": "creo:visibgeom:shell#6", "surface": "creo:visibgeom:surface#1",
             "sense": "forward", "loops": {"kind": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
         }))

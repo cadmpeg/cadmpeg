@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::history::resolve_draft_face_by_surface_transition;
+use crate::history::face_resolution::resolve_draft_face_by_surface_transition;
 use crate::history_records::AsmHistoricalTopology;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn face_transition_requires_one_changed_surface_geometry() {
@@ -29,7 +30,7 @@ fn face_transition_requires_one_changed_surface_geometry() {
         alternate_selector_edges: Vec::new(),
         operand_offset: None,
     };
-    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#1",
         "scope_record_index": 10,
         "scope_reference_ordinal": 0,

@@ -2,7 +2,7 @@
 //! A solid revolved about `+z` over a finite angle, for tests of analytic
 //! faces with closed parameter directions.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
@@ -234,12 +234,11 @@ impl Builder {
             id(ShellId::mint, "shell", "wedge"),
             id(RegionId::mint, "region", "wedge"),
         ));
-        self.ir.geometry.regions.push(Region {
-            id: id(RegionId::mint, "region", "wedge"),
-            body: id(BodyId::mint, "body", "wedge"),
-            shells: vec![id(ShellId::mint, "shell", "wedge")],
-            native_ref: None,
-        });
+        self.ir.geometry.regions.push(Region::new(
+            id(RegionId::mint, "region", "wedge"),
+            id(BodyId::mint, "body", "wedge"),
+            vec![id(ShellId::mint, "shell", "wedge")],
+        ));
         self.ir.geometry.bodies.push(Body {
             id: id(BodyId::mint, "body", "wedge"),
             kind: BodyKind::Solid,
@@ -248,6 +247,7 @@ impl Builder {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 }

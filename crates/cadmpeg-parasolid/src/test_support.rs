@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub mod owned_deltas;
+pub mod replay;
 pub mod test_pmarks;
 pub mod world;
 

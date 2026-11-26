@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::feature_project::delete_face::project_delete_face;
+use crate::design::feature_project::direct_face::project_split;
+use crate::design::feature_project::selected_work_planes;
 use crate::design::feature_project::split_face::project_split_face;
-use crate::design::feature_project::{project_split, selected_work_planes};
 use crate::ids::feature_input_topology_id;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -160,7 +162,7 @@ fn split_body_path_tool_keeps_group_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref tool)), ..
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(ref tool)), ..
         }) if tool == &groups[0].id
     ));
 }
@@ -184,14 +186,14 @@ fn split_body_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref native)), ..
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(ref native)), ..
         }) if native == &tool.id
     ));
 }
 
 #[test]
 fn split_body_face_tool_group_resolves_every_member_or_retains_the_group() {
-    use cadmpeg_ir::features::SplitBodyTool;
+    use cadmpeg_ir::features::direct_edit::SplitBodyTool;
     let mut scope = split_body_scope_referencing(vec![100, 101, 201, 102, 103]);
     scope
         .try_edit(|draft| {
@@ -261,7 +263,9 @@ fn split_body_admits_zero_terminal_face_tool_with_an_assumption() {
         .unwrap();
     assert_eq!(
         split_body_tool(&definition),
-        &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(groups[0].id.clone()))
+        &cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+            groups[0].id.clone()
+        ))
     );
     assert_eq!(
         losses[0].code,
@@ -295,7 +299,7 @@ fn split_body_historical_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { ref native, .. }), ..
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Historical { ref native, .. }), ..
         }) if native.as_str() == tool.id
     ));
 }
@@ -717,7 +721,8 @@ fn split_face_native_operation(
 
 #[test]
 fn role_nine_tool_group_projects_as_a_face_tool() {
-    use cadmpeg_ir::features::{FaceSelection, SplitFaceTool};
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let (scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);
     let projected = project_split_face(
@@ -990,7 +995,9 @@ fn missing_direction_definition_keeps_the_reference_in_the_default_native_stream
 
 #[test]
 fn missing_split_face_definition_stays_typed_with_named_losses() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureOperation, SplitFaceTool};
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::FeatureOperation;
 
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
@@ -1100,7 +1107,9 @@ fn selected_work_planes_select_target_plane() {
     assert_eq!(selected[0].record_index, plane.record_index);
 }
 
-fn split_body_tool(definition: &FeatureDefinition) -> &cadmpeg_ir::features::SplitBodyTool {
+fn split_body_tool(
+    definition: &FeatureDefinition,
+) -> &cadmpeg_ir::features::direct_edit::SplitBodyTool {
     let FeatureDefinition::Operation(FeatureOperation::SplitBody { tool, .. }) = definition else {
         panic!("expected a SplitBody operation");
     };
@@ -1124,18 +1133,18 @@ fn split_body_projects_tool_extension_independently_of_native_tool_selection() {
             .unwrap();
         assert_eq!(
             split_body_tool(&definition),
-            &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+            &cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
                 groups[0].id.clone()
             )),
         );
-        let wire = serde_json::to_value(&definition).unwrap();
+        let wire = json::to_value(&definition).unwrap();
         let operation = &wire["value"];
         assert_eq!(
             operation["value"].get("extend_tool"),
             extend_tool.map(serde_json::Value::Bool).as_ref(),
         );
         assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            json::from_value::<FeatureDefinition>(wire).unwrap(),
             definition
         );
     }
@@ -1159,7 +1168,7 @@ fn split_body_work_plane_tool_selects_the_plane_feature() {
     .unwrap();
     assert_eq!(
         split_body_tool(&definition),
-        &cadmpeg_ir::features::SplitBodyTool::Plane {
+        &cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
             plane: crate::ids::neutral_feature_id(&plane),
         }
     );
@@ -1168,7 +1177,9 @@ fn split_body_work_plane_tool_selects_the_plane_feature() {
 #[test]
 fn split_body_tool_without_exactly_one_work_plane_keeps_the_group() {
     let native = |group: &DesignConstructionOperandGroup| {
-        cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(group.id.clone()))
+        cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+            group.id.clone(),
+        ))
     };
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
@@ -1243,7 +1254,7 @@ fn a_split_body_plane_tool_is_a_dependency_of_the_split() {
         .expect("projected Split");
     assert_eq!(
         split_body_tool(split_feature.evaluation.definition()),
-        &cadmpeg_ir::features::SplitBodyTool::Plane {
+        &cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
             plane: plane_feature.clone(),
         }
     );
@@ -1337,11 +1348,13 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     .definition;
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         tool:
-            cadmpeg_ir::features::SplitFaceTool::Path(cadmpeg_ir::features::PathRef::HistoricalEdges {
-                state,
-                edges,
-                native,
-            }),
+            cadmpeg_ir::features::direct_edit::SplitFaceTool::Path(
+                cadmpeg_ir::features::profiles::PathRef::HistoricalEdges {
+                    state,
+                    edges,
+                    native,
+                },
+            ),
         ..
     }) = definition
     else {
@@ -1619,7 +1632,7 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
     )
     .unwrap()
     .unwrap();
-    let cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical {
+    let cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Historical {
         state,
         faces,
         native,
@@ -1653,7 +1666,9 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
     .unwrap();
     assert_eq!(
         split_body_tool(&definition),
-        &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(mixed[0].id.clone()))
+        &cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+            mixed[0].id.clone()
+        ))
     );
     let scope = split_body_scope();
 
@@ -1670,6 +1685,8 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
     .unwrap();
     assert_eq!(
         split_body_tool(&definition),
-        &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(groups[0].id.clone()))
+        &cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+            groups[0].id.clone()
+        ))
     );
 }

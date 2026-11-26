@@ -6,10 +6,10 @@ use crate::decode::feature_completeness;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    patterns::PatternSeed, BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition,
-    FeatureId, FeatureOperation, UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BooleanOp};
+use cadmpeg_ir::features::patterns::PatternSeed;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use cadmpeg_ir::ids::BodyId;
 
 use crate::decode::feature_completeness::{
@@ -260,7 +260,7 @@ fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary 
     FeatureBoundary {
         id: feature.id.clone(),
         name: feature.name.clone(),
-        family: serde_json::to_value(feature.evaluation.definition())
+        family: cadmpeg_ir::hash::finite_json::to_json_value(feature.evaluation.definition())
             .ok()
             .and_then(|definition| {
                 let family = match definition.get("kind")?.as_str()? {
@@ -523,9 +523,9 @@ fn rederived_body_census(
             FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 let mode = shape.mode();
                 let op = match mode {
-                    cadmpeg_ir::features::SweepMode::Solid { op } => op.into(),
-                    cadmpeg_ir::features::SweepMode::Surface {} => BooleanOp::NewBody,
-                    cadmpeg_ir::features::SweepMode::Unresolved {} => BooleanOp::Unresolved,
+                    cadmpeg_ir::features::sweeps::SweepMode::Solid { op } => op.into(),
+                    cadmpeg_ir::features::sweeps::SweepMode::Surface {} => BooleanOp::NewBody,
+                    cadmpeg_ir::features::sweeps::SweepMode::Unresolved {} => BooleanOp::Unresolved,
                 };
                 apply_complete_boolean_outputs(
                     feature,
@@ -1319,6 +1319,7 @@ fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => return None,

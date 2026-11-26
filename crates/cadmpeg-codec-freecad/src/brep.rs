@@ -10,12 +10,13 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Vector3};
@@ -5777,13 +5778,9 @@ pub(crate) fn transfer_text_curves(
             });
         let association = SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
@@ -6031,13 +6028,9 @@ pub(crate) fn transfer_text_surfaces(
             });
         let association = SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         for (index, surface) in surfaces.iter().enumerate() {
@@ -6249,7 +6242,7 @@ fn append_text_surface(
                         None,
                         None,
                         true,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;

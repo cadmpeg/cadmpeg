@@ -116,8 +116,12 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     for index in 0..138 {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                f64::from(index),
+                0.0,
+                0.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
     }
@@ -235,7 +239,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -315,7 +319,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -397,7 +401,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -523,7 +527,7 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
     let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
     assert_eq!(
         native_support_circle_param_range(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             Point3::new(0.0, 0.0, 0.0),
             1.0,
@@ -545,15 +549,19 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
             Point::new(
                 PointId::mint(format!("catia:test:point#overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
         .collect::<Vec<_>>();
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -587,15 +595,19 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
             Point::new(
                 PointId::mint(format!("catia:test:point#placed-overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
         .collect::<Vec<_>>();
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -701,9 +713,82 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
         "catia:standard:shell#0-0"
     );
     assert_eq!(
-        ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+        ir.geometry
+            .stated_shell_faces(&ir.geometry.shells[0].id)
+            .count(),
         1
     );
+}
+
+#[test]
+fn standard_face_on_a_plane_with_no_loop_is_stated_partial_and_charged() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let surface_id = SurfaceId::mint("catia:test:surface#plane").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.geometry.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    let bindings = [(surface_id, true, 0)];
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    assert_eq!(
+        ir.geometry.faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let mut losses = Vec::new();
+    crate::assemble::state_loopless_faces(&mut ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CatiaLossCode::TopologyFaceBoundaryUnstated.kind()
+    );
+    assert!(losses[0].message.contains("catia:standard:face#0"));
+}
+
+#[test]
+fn loopless_face_on_an_absent_surface_is_not_charged() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#absent").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    let mut losses = Vec::new();
+    crate::assemble::state_loopless_faces(&mut ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -764,7 +849,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
     assert_eq!(
         base_ir
             .geometry
-            .shell_faces(&base_ir.geometry.shells[1].id)
+            .stated_shell_faces(&base_ir.geometry.shells[1].id)
             .next()
             .expect("shell face")
             .id
@@ -777,15 +862,18 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
 fn extrusion_definition_copy_equals_the_source_definition() {
     let directrix =
         cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
-    let direction =
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite direction");
+    let direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+    )
+    .expect("finite direction");
     let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
         directrix, None, direction, None, None,
     );
     let copied = { copy_standard_extrusion_definition(&definition) };
     assert_eq!(
         copied,
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition
+        ),
     );
 }

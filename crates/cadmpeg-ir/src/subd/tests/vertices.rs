@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::subd::{SubdError, SubdVertex, SubdVertexTag};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn vertex_admission_and_point_edits_require_finite_coordinates() {
@@ -18,17 +19,17 @@ fn vertex_admission_and_point_edits_require_finite_coordinates() {
             assert!(SubdVertex::new(point, SubdVertexTag::Smooth, None).is_err());
             assert!(FinitePoint3::new(point).is_none());
             assert_eq!(vertex, original);
-            let mut wire = serde_json::to_value(&vertex).unwrap();
-            wire["point"] = serde_json::json!(point);
-            assert!(serde_json::from_value::<SubdVertex>(wire).is_err());
+            let mut wire = json::to_value(&vertex).unwrap();
+            wire["point"] = cadmpeg_core::json!(point);
+            assert!(json::from_value::<SubdVertex>(wire).is_err());
         }
     }
     let point = Point3::new(f64::MAX, -f64::MAX, 0.0);
     vertex.set_point(FinitePoint3::new(point).unwrap());
     assert_eq!(vertex.point(), point);
-    let wire = serde_json::to_value(&vertex).unwrap();
-    assert_eq!(wire, serde_json::json!({"point": point, "tag": "smooth"}));
-    assert_eq!(serde_json::from_value::<SubdVertex>(wire).unwrap(), vertex);
+    let wire = json::to_value(&vertex).unwrap();
+    assert_eq!(wire, cadmpeg_core::json!({"point": point, "tag": "smooth"}));
+    assert_eq!(json::from_value::<SubdVertex>(wire).unwrap(), vertex);
 }
 
 #[test]

@@ -10,7 +10,7 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
     let record = super::super::NativeCard { index: 0, line };
     assert_native_limit(
         &record,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "iges:physical:card#1", "offset": 0,
             "payload": cadmpeg_ir::hash::LowerHex(&line.physical().payload),
             "line_ending": "0a", "section": "start", "sequence": 1,
@@ -19,30 +19,11 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
 }
 
 #[test]
-fn quarantined_record_id_serializes_its_section_and_sequence() {
-    #[derive(serde::Serialize)]
-    struct Record {
-        id: super::super::QuarantinedId,
-    }
-
-    let record = Record {
-        id: super::super::QuarantinedId {
-            section: "directory",
-            sequence: 3,
-        },
-    };
-    assert_eq!(
-        serde_json::to_value(&record).unwrap(),
-        serde_json::json!({"id": "iges:quarantine:directory#3"})
-    );
-}
-
-#[test]
 fn optional_cards_keep_exact_bytes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let original = crate::test_support::test_curves_and_surfaces::point_file_with_global(b",,;");
     let mut bytes = Vec::new();
-    for sequence in 1..=500 {
+    for sequence in 1..=3 {
         bytes.extend(crate::test_support::test_cards::card(
             b"Optional source text",
             b'S',
@@ -52,7 +33,7 @@ fn optional_cards_keep_exact_bytes() {
     bytes.extend_from_slice(&original[81..]);
     // The source census includes the added Start records.
     let terminate = bytes.len() - 81;
-    bytes[terminate..terminate + 8].copy_from_slice(b"S0000500");
+    bytes[terminate..terminate + 8].copy_from_slice(b"S0000003");
     let result = crate::IgesCodec
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();

@@ -112,7 +112,7 @@ pub(crate) struct DisplayPose {
     pub(crate) stream: String,
     pub(crate) byte_offset: u64,
     pub(crate) path: ScenePath,
-    /// First element of the tagged path suffix.
+    /// First tagged element; zero means that the complete path is tagged.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -226,19 +226,19 @@ fn row(
         match high {
             UNTAGGED_HIGH_WORD if tagged_from.is_none() => {}
             TAGGED_HIGH_WORD if tagged_from.is_some() => {}
-            TAGGED_HIGH_WORD if position > 0 && position.is_multiple_of(2) => {
+            TAGGED_HIGH_WORD if position.is_multiple_of(2) => {
                 tagged_from = Some(u64_from_index(position));
             }
             _ => {
                 return Err(RowError::Grammar(
-                    "override element requires a record index in an untagged prefix or tagged pair suffix",
+                    "override element requires a record index in an untagged path, tagged path, or tagged pair suffix",
                 ));
             }
         }
         *index = (u64::from(middle) << 32) | u64::from(low);
     }
     Ok(DisplayPose {
-        id: format!("f3d:{stream}:display-pose#{offset}"),
+        id: crate::ids::native_scoped_id(stream, "display-pose", offset),
         stream: stream.to_owned(),
         byte_offset: offset,
         path: ScenePath(path),
@@ -304,7 +304,7 @@ pub(crate) fn collect(
     }
     let present = !rows.is_empty();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "display_poses", &rows)?;
     Ok(present)
 }
@@ -358,6 +358,7 @@ pub(crate) fn bind(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     sources: &Sources,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let Some(native) = ir.native.namespace("f3d") else {
@@ -367,15 +368,48 @@ pub(crate) fn bind(
     if rows.is_empty() {
         return Ok(());
     }
-    let occurrences = ir
-        .model
+    // Expand shared definitions so that each insertion has its own path,
+    // and bind each path to the occurrence the definition owns.
+    // A refused expansion binds on the unexpanded tree, as before expansion.
+    let expanded = match crate::tree::expand(
+        &ctx.policy().limits,
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    ) {
+        Ok(expanded) => expanded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => crate::tree::Expanded {
+            definitions: ir.model.product_definitions.clone(),
+            parents: crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences),
+            occurrences: ir.model.occurrences.clone(),
+            occurrence_of: ir
+                .model
+                .occurrences
+                .iter()
+                .map(|record| (record.id.clone(), record.id.clone()))
+                .collect(),
+        },
+    };
+    let occurrences = expanded
         .occurrences
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
-    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let parents = &expanded.parents;
     let mut paths = BTreeMap::<Vec<u64>, Option<OccurrenceId>>::new();
-    for occurrence in &ir.model.occurrences {
+    for occurrence in &expanded.occurrences {
+        let Some(target) = expanded.occurrence_of.get(&occurrence.id) else {
+            continue;
+        };
+        // The final path pair is the occurrence's own carrier.
+        if !occurrence
+            .native_ref
+            .as_ref()
+            .is_some_and(|reference| sources.contains_key(reference))
+        {
+            continue;
+        }
         let mut chain = Vec::new();
         let mut seen = BTreeSet::new();
         let mut current = Some(occurrence);
@@ -409,13 +443,13 @@ pub(crate) fn bind(
             paths
                 .entry(path)
                 .and_modify(|id| *id = None)
-                .or_insert_with(|| Some(occurrence.id.clone()));
+                .or_insert_with(|| Some(target.clone()));
         }
     }
     let mut unbound = 0;
     let mut ambiguous = 0;
     for record in &mut rows {
-        if record.tagged_from.is_some() {
+        if record.tagged_from.is_some_and(|first| first != 0) {
             unbound += 1;
             record.binding = SceneBinding::Unbound {};
             continue;
@@ -441,7 +475,7 @@ pub(crate) fn bind(
         losses.push(F3dLossCode::SceneOverrideAmbiguous.note(format!("{ambiguous} display override row(s) share their alternating record-index path with multiple neutral occurrences")));
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "display_poses", &rows)?;
     Ok(())
 }
@@ -470,7 +504,7 @@ pub(crate) fn rename_bound(
     }
     if changed {
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(ctx, "display_poses", &rows)?;
     }
     Ok(())
@@ -488,12 +522,12 @@ pub(crate) fn validate(
     rows.iter()
         .filter_map(|row| {
             let tagged_valid = row.tagged_from.is_none_or(|first| {
-                first > 0 && first.is_multiple_of(2) && first < u64_from_index(row.path.0.len())
+                first.is_multiple_of(2) && first < u64_from_index(row.path.0.len())
             });
             let message = if !tagged_valid {
                 "Fusion displayed pose has an invalid tagged path suffix"
             } else if let SceneBinding::Bound { occurrence } = &row.binding {
-                if row.tagged_from.is_some() {
+                if row.tagged_from.is_some_and(|first| first != 0) {
                     "Fusion displayed pose binds a tagged path"
                 } else if occurrences.contains(occurrence) {
                     return None;
@@ -506,6 +540,7 @@ pub(crate) fn validate(
             Some(cadmpeg_ir::report::check::Finding {
                 related: Vec::new(),
                 check: cadmpeg_ir::report::check::Check::NativeLinks,
+                rule: cadmpeg_ir::rule_name!("f3d/scene.displayed-pose-binding"),
                 severity: cadmpeg_ir::report::Severity::Error,
                 message: message.to_owned(),
                 entity: Some(row.id.clone()),

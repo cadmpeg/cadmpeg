@@ -7,6 +7,7 @@ use super::sketch_edges::{
     EndpointConstraintSource,
 };
 use crate::container::ContainerScan;
+use cadmpeg_core::decode::{u64_from_index, ArenaClass};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{
@@ -14,10 +15,12 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet};
 
 /// Sketches and their projected entities and constraints.
+#[derive(Default)]
 pub(crate) struct ProjectedSketches {
     pub(crate) sketches: Vec<Sketch>,
     pub(crate) entities: Vec<SketchEntity>,
@@ -25,15 +28,15 @@ pub(crate) struct ProjectedSketches {
 }
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
+/// A nested stream that does not decode is given up into `given_up`.
 pub(crate) fn sketches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {
-    let mut sketches = Vec::new();
-    let mut entities = Vec::new();
-    let mut constraints = Vec::new();
+    let mut projected = ProjectedSketches::default();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -63,9 +66,27 @@ pub(crate) fn sketches(
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep =
-                crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            if stream.header.description.starts_with(": TRANSMIT FILE")
+            let brep = match ctx.run_part(|| {
+                crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)
+            })? {
+                Ok(brep) => brep,
+                Err(error) => {
+                    let part = Part::at(
+                        "sldprt",
+                        "feature-input-parasolid-stream",
+                        u64_from_index(stream.offset),
+                        &stream.payload,
+                        [ArenaClass::Design],
+                    )
+                    .named(stream.header.description.as_str())
+                    .in_stream(source_stream.clone())
+                    .costing(format!("{native_ref} states no sketch from this stream"))
+                    .digest_only();
+                    given_up.push(ctx.give_up_part(part, error)?);
+                    continue;
+                }
+            };
+            if is_kernel_transmit_header(&stream.header.description)
                 && !brep.stats.synthetic_body_grouping
                 && brep
                     .bodies
@@ -94,17 +115,41 @@ pub(crate) fn sketches(
                     native_ref: &native_ref,
                 },
                 annotations,
-                &mut sketches,
-                &mut entities,
-                &mut constraints,
+                losses,
+                &mut projected,
             )?;
         }
     }
-    Ok(ProjectedSketches {
-        sketches,
-        entities,
-        constraints,
-    })
+    Ok(projected)
+}
+
+/// Whether a nested stream's Parasolid description is the kernel transmit
+/// header, which names no sketch.
+fn is_kernel_transmit_header(description: &str) -> bool {
+    description.starts_with(": TRANSMIT FILE")
+}
+
+/// The id of the sketch that planar face `face_ordinal` of nested stream
+/// `stream_ordinal` in the section at `block_offset` gives.
+fn profile_stream_sketch_id(
+    block_offset: usize,
+    stream_ordinal: usize,
+    face_ordinal: usize,
+) -> Option<SketchId> {
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
+    ))
+    .ok()
+}
+
+/// Whether `id` is the id of a sketch that a planar face of a nested profile
+/// stream gives.
+pub(crate) fn is_profile_stream_sketch(id: &SketchId) -> bool {
+    id.as_str()
+        .strip_prefix("sldprt:model:sketch#")
+        .is_some_and(|key| {
+            key.split(':').count() == 3 && key.split(':').all(|part| part.parse::<usize>().is_ok())
+        })
 }
 
 /// Where one decoded B-rep stream sits in its section and how its sketch is named.
@@ -123,10 +168,14 @@ fn project_brep(
     brep: &crate::brep::graph::Brep,
     source: &BrepSketchSource<'_>,
     annotations: &mut Annotations,
-    sketches: &mut Vec<Sketch>,
-    entities: &mut Vec<SketchEntity>,
-    constraints: &mut Vec<SketchConstraint>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    projected: &mut ProjectedSketches,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let ProjectedSketches {
+        sketches,
+        entities,
+        constraints,
+    } = projected;
     let BrepSketchSource {
         block_offset,
         stream_ordinal,
@@ -167,7 +216,9 @@ fn project_brep(
         .map(|vertex| {
             (
                 &vertex.id,
-                vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+                vertex
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -191,9 +242,8 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let Ok(sketch_id) = SketchId::mint(format!(
-            "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        )) else {
+        let Some(sketch_id) = profile_stream_sketch_id(block_offset, stream_ordinal, face_ordinal)
+        else {
             continue;
         };
         let Ok(placement) =
@@ -206,7 +256,18 @@ fn project_brep(
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, (SketchEntityId, bool)>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
-        for loop_id in &face.loops {
+        // Each refused edge with its loop and the entity it would have been.
+        // The face's profiles end before the first refused loop, so no later
+        // loop takes its position.
+        let mut refusals = Vec::new();
+        let mut refused_edges = HashSet::<&cadmpeg_ir::ids::EdgeId>::new();
+        // The next entity ordinal of the face's edges. A refused edge keeps
+        // its ordinal, so no later edge takes it.
+        let mut minted = 0_usize;
+        let Some(face_loops) = face.loops.boundary() else {
+            continue;
+        };
+        for loop_id in face_loops {
             let Some(loop_) = loops.get(loop_id) else {
                 continue;
             };
@@ -221,6 +282,9 @@ fn project_brep(
                 for vertex_id in edge.vertices() {
                     used_vertices.insert(vertex_id);
                 }
+                if refused_edges.contains(&edge.id) {
+                    continue;
+                }
                 let (entity_id, start_aligned) = if let Some((id, start_aligned)) =
                     edge_entities.get(&edge.id)
                 {
@@ -230,9 +294,9 @@ fn project_brep(
                         *start_aligned,
                     )
                 } else {
+                    let ordinal = minted;
                     let Ok(id) = SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-                        edge_entities.len()
+                        "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{ordinal}"
                     )) else { continue };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let nurbs_trim = nurbs_edge_trim_range(
@@ -258,9 +322,11 @@ fn project_brep(
                     );
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
-                        return Err(cadmpeg_core::CodecError::Malformed(
-                            edge_refusals.join("; "),
-                        ));
+                        let record = edge_refusals.join("; ");
+                        refusals.push((record, loop_id, id));
+                        refused_edges.insert(&edge.id);
+                        minted += 1;
+                        continue;
                     }
                     let Some((geometry, start_aligned)) = projected else {
                         continue;
@@ -274,7 +340,7 @@ fn project_brep(
                     };
                     crate::annotations::note(
                         annotations,
-                        id.as_str(),
+                        &id,
                         source_stream,
                         0,
                         "feature_input_profile_edge",
@@ -301,6 +367,7 @@ fn project_brep(
                     );
                     let index_id = id.clone();
                     edge_entities.insert(&edge.id, (index_id, start_aligned));
+                    minted += 1;
                     (id, start_aligned)
                 };
                 if edge.curve().is_some()
@@ -315,7 +382,7 @@ fn project_brep(
                     });
                 }
             }
-            if !profile.is_empty() {
+            if refusals.is_empty() && !profile.is_empty() {
                 orient_closed_profile_by_topology(&mut profile, &entities[first_entity..]);
                 profiles.push(profile);
             }
@@ -329,7 +396,7 @@ fn project_brep(
             };
             let Ok(id) = SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-                edge_entities.len() + (entities.len() - first_entity)
+                minted + (entities.len() - first_entity)
             )) else {
                 continue;
             };
@@ -340,7 +407,7 @@ fn project_brep(
             };
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                &id,
                 source_stream,
                 0,
                 "feature_input_profile_point",
@@ -356,15 +423,53 @@ fn project_brep(
                     .with_endpoint_refs(endpoint_refs),
             );
         }
-        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
+        let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
+            .ok()
+            .filter(|profiles| !profiles.is_empty() || entities.len() > first_entity);
+        if profiles.is_none() && !refusals.is_empty() {
+            losses.push(
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    sketch_id.clone(),
+                    format_args!(
+                        "{}: no edge of its face projects to a sketch entity",
+                        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+                    ),
+                )
+                .at(cadmpeg_ir::SourceProvenance::in_stream(
+                    "sldprt",
+                    source_stream.clone(),
+                    cadmpeg_core::decode::u64_from_index(stream_offset),
+                ))
+                .dropping(refusals.iter().map(|(_, _, entity)| entity.clone()))
+                .loss(),
+            );
+        }
+        for (record, loop_id, entity) in refusals {
+            let consequence = match profiles {
+                Some(_) => format!(
+                    "sketch {sketch_id} states no entity for the edge and no profile for loop \
+                     {loop_id} or a later loop of face {}",
+                    face.id
+                ),
+                None => format!(
+                    "face {} of the feature-input stream states no sketch",
+                    face.id
+                ),
+            };
+            let why = crate::loss::SldprtLossCode::SketchProfileRejected
+                .note(format!("{record}; {consequence}"));
+            let given_up = profiles
+                .is_some()
+                .then(|| cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(entity, &why).loss());
+            losses.push(why);
+            losses.extend(given_up);
+        }
+        let Some(profiles) = profiles else {
             continue;
         };
-        if profiles.is_empty() && entities.len() == first_entity {
-            continue;
-        }
         crate::annotations::note(
             annotations,
-            sketch_id.as_str(),
+            &sketch_id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(stream_offset),
             "feature_input_profile",
@@ -382,7 +487,8 @@ fn project_brep(
             annotations,
             constraints,
         )?;
-        let name = (!sketch_name.is_empty()).then(|| sketch_name.to_owned());
+        let name = (!sketch_name.is_empty() && !is_kernel_transmit_header(sketch_name))
+            .then(|| sketch_name.to_owned());
         let configuration = configuration.map(str::to_owned);
         let native_ref = native_ref.to_owned();
         sketches.push(Sketch {
@@ -510,7 +616,7 @@ mod projected_profile_orientation_tests {
 
 #[cfg(test)]
 mod projected_brep_output_tests {
-    use super::{project_brep, BrepSketchSource};
+    use super::{project_brep, BrepSketchSource, ProjectedSketches};
     use cadmpeg_ir::geometry::{
         analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -554,7 +660,7 @@ mod projected_brep_output_tests {
             }],
             points: vec![Point::new(
                 point_id,
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("finite position"),
                 None,
             )],
@@ -598,13 +704,14 @@ mod projected_brep_output_tests {
             })
             .unwrap(),
         );
-        let mut entities = vec![prior];
-        let mut sketches = Vec::new();
-        let mut constraints = Vec::new();
+        let mut projected = ProjectedSketches {
+            entities: vec![prior],
+            ..ProjectedSketches::default()
+        };
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 7,
@@ -616,11 +723,13 @@ mod projected_brep_output_tests {
                 native_ref: "native:points",
             },
             &mut annotations,
-            &mut sketches,
-            &mut entities,
-            &mut constraints,
+            &mut Vec::new(),
+            &mut projected,
         )
         .unwrap();
+        let ProjectedSketches {
+            sketches, entities, ..
+        } = projected;
 
         assert_eq!(sketches.len(), 2);
         assert_eq!(entities.len(), 65);
@@ -641,11 +750,9 @@ mod projected_brep_output_tests {
         let brep = point_brep();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-        let mut sketches = Vec::new();
-        let mut entities = Vec::new();
-        let mut constraints = Vec::new();
+        let mut projected = ProjectedSketches::default();
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,
@@ -657,11 +764,13 @@ mod projected_brep_output_tests {
                 native_ref: "native:point",
             },
             &mut annotations,
-            &mut sketches,
-            &mut entities,
-            &mut constraints,
+            &mut Vec::new(),
+            &mut projected,
         )
         .expect("project B-rep");
+        let ProjectedSketches {
+            sketches, entities, ..
+        } = projected;
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 1);
         assert_eq!(sketches[0].name.as_deref(), Some("point sketch"));
@@ -671,3 +780,24 @@ mod projected_brep_output_tests {
 
 #[cfg(test)]
 mod sketch_projection_tests;
+
+#[cfg(test)]
+mod stream_sketch_id_tests {
+    use super::{is_profile_stream_sketch, profile_stream_sketch_id};
+    use cadmpeg_ir::sketches::SketchId;
+
+    #[test]
+    fn a_stream_face_id_is_a_profile_stream_sketch_and_reader_ids_are_not() {
+        assert!(is_profile_stream_sketch(
+            &profile_stream_sketch_id(184_117, 0, 3).unwrap()
+        ));
+        for other in [
+            "sldprt:model:sketch#markers:184117:31",
+            "sldprt:model:sketch#compact:184117:31",
+            "sldprt:model:sketch#184117:0",
+            "sldprt:model:sketch#184117:0:0:1",
+        ] {
+            assert!(!is_profile_stream_sketch(&SketchId::mint(other).unwrap()));
+        }
+    }
+}

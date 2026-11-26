@@ -9,6 +9,9 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::work_axes::{DesignWorkAxisConstruction, DesignWorkAxisSource};
 use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
+use cadmpeg_ir::design::construction::InputReference;
+use cadmpeg_ir::design::names::{Base64Bytes, NativeNameValue};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::FeatureOperation;
 
 const CARRIER: u32 = 40;
@@ -212,7 +215,9 @@ fn read(bytes: &[u8], types: &HashMap<u64, (&str, u32)>) -> ReadAxis {
     ir.model.features = projected.features;
     let mut native = crate::native::F3dNative::default();
     native.design_parameter_scopes.push(scope);
-    native.store(&ctx, ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(&ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
+        .unwrap();
     let mut fidelity = cadmpeg_ir::SourceFidelity::for_root(source);
     let mut losses = projected.projection_losses;
     for part in parts {
@@ -398,7 +403,7 @@ fn two_point_rule_reads_the_point_data_endpoints() {
 }
 
 #[test]
-fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
+fn qualified_axis_input_keeps_the_solved_axis_and_is_named_by_its_stored_reference() {
     for reference_type in [12, 18] {
         let mut bytes = Vec::new();
         Carrier {
@@ -420,11 +425,11 @@ fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
         {
             assert!((actual - expected).abs() < 1.0e-12);
         }
-        let [local, qualified] = axis.inputs() else {
-            panic!("two input occurrences");
+        let [local, qualified_input] = axis.inputs() else {
+            panic!("two stated inputs");
         };
         assert!(local.reference.is_some() && local.role.is_none());
-        assert!(qualified.reference.is_none() && qualified.role.is_none());
+        assert!(qualified_input.role.is_none());
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &read.evidence.candidates[0].source
         else {
@@ -433,6 +438,25 @@ fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
         let qualified = &inputs.references[1];
         assert_eq!(qualified.target, ReadField::Value(u64::from(SECOND_INPUT)));
         assert_eq!(qualified.segment, ReadField::Value(7));
+        let Some(InputReference::Picks(selection)) = &qualified_input.reference else {
+            panic!("a selection");
+        };
+        let Picks::Named(picks) = &selection.picks else {
+            panic!("named picks");
+        };
+        let [pick] = picks.as_slice() else {
+            panic!("one pick");
+        };
+        assert!(matches!(pick.target, PickTarget::Native { within: None }));
+        assert!(pick.witness.is_none());
+        let mut stored = vec![1];
+        stored.extend_from_slice(&u64::from(SECOND_INPUT).to_le_bytes());
+        stored.extend_from_slice(&[0, 1]);
+        stored.extend_from_slice(&7u32.to_le_bytes());
+        assert_eq!(
+            pick.native.as_ref().map(|name| &name.value),
+            Some(&NativeNameValue::Bytes(Base64Bytes(stored)))
+        );
     }
 }
 
@@ -498,22 +522,22 @@ fn point_direction_work_axis_requires_the_registered_carrier_type() {
 }
 
 #[test]
-fn independently_valid_axis_components_survive_zero_direction_and_length_overflow() {
-    for (values, origin, direction) in [
-        ([1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0], true, false),
-        ([f64::MAX, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], false, true),
-        (
-            [1.0, 2.0, 3.0, f64::MAX, f64::MAX, 0.0, 0.0, 0.0],
-            true,
-            true,
-        ),
+fn an_axis_states_its_stored_line_whole_or_not_at_all() {
+    for (values, whole) in [
+        ([1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0], false),
+        ([f64::MAX, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], false),
+        ([1.0, 2.0, 3.0, f64::MAX, f64::MAX, 0.0, 0.0, 0.0], true),
     ] {
         let mut bytes = Vec::new();
         Carrier::new(values, 19).write(&mut bytes);
         let read = read(&bytes, &carrier_types(1));
         let axis = read.axis().unwrap();
-        assert_eq!(axis.origin().is_some(), origin);
-        assert_eq!(axis.direction().is_some(), direction);
+        assert_eq!(axis.origin().is_some(), whole);
+        assert_eq!(axis.direction().is_some(), whole);
+        assert_eq!(
+            read.has_loss(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable),
+            !whole
+        );
         assert_eq!(
             read.evidence.candidates[0].origin[0]
                 .value()
@@ -530,8 +554,16 @@ fn malformed_scalar_retains_later_fields_and_commits_one_real_unknown_part() {
     let mut bytes = Vec::new();
     Carrier::new([1.0, 2.0, 3.0, f64::NAN, 0.0, 1.0, -1.5, -1.0], 19).write(&mut bytes);
     let read = read(&bytes, &carrier_types(1));
-    assert!(read.axis().unwrap().origin().is_some());
+    assert!(read.axis().unwrap().origin().is_none());
     assert!(read.axis().unwrap().direction().is_none());
+    assert!(read.has_loss(F3dLossCode::FeatureWorkAxisPartialLineNative));
+    assert_eq!(
+        read.evidence.candidates[0]
+            .origin
+            .map(|field| field.value().map(|value| value.get())),
+        [Some(1.0), Some(2.0), Some(3.0)],
+        "the origin read stays in the scope's native record"
+    );
     assert!(
         matches!(&read.evidence.candidates[0].source, Some(DesignWorkAxisSource::PointDirection {point_parameters, reference_type: ReadField::Value(19), ..}) if point_parameters[0].value().is_some_and(|value| (value.get() + 1.5).abs() < 1.0e-12))
     );
@@ -621,8 +653,9 @@ fn repeated_operands_remain_separate_and_tiny_directions_keep_the_parent_boundar
     let mut bytes = Vec::new();
     Carrier::new([1.0, 2.0, 3.0, 1e-300, 0.0, 0.0, 0.0, 0.0], 19).write(&mut bytes);
     let read = read(&bytes, &carrier_types(1));
-    assert!(read.axis().unwrap().origin().is_some());
+    assert!(read.axis().unwrap().origin().is_none());
     assert!(read.axis().unwrap().direction().is_none());
+    assert!(read.has_loss(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable));
     assert_eq!(
         read.evidence.candidates[0].displacement[0]
             .value()
@@ -855,7 +888,12 @@ fn work_axis_damaged_counts_keep_neutral_input_occurrences_and_native_fields() {
         bytes.extend_from_slice(&paired);
         let result = read(&bytes, &carrier_types(1));
         assert!(result.axis().unwrap().geometry().is_some());
-        assert_eq!(result.axis().unwrap().inputs().len(), 1);
+        let neutral = result.axis().unwrap().inputs();
+        assert_eq!(neutral.len(), usize::from(reference[0]) + 1);
+        assert!(matches!(
+            neutral.last().and_then(|input| input.reference.as_ref()),
+            Some(InputReference::Picks(selection)) if matches!(selection.picks, Picks::Unread)
+        ));
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &result.evidence.candidates[0].source
         else {

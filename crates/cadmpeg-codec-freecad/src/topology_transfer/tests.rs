@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
-    is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
+    bounded_pcurve_range, close_radial_rings, edge_endpoint_uses, is_identity,
+    normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
     pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
     source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, Located,
     Locations, OccurrenceKey, PcurveSelection, SourceOccurrenceKey, Tables,
@@ -21,7 +21,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Cursor;
 
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
@@ -38,7 +38,7 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
 }
 
 fn test_indexed_polygon(
-    nodes: Vec<cadmpeg_ir::features::FinitePoint3>,
+    nodes: Vec<cadmpeg_ir::features::geometry::FinitePoint3>,
     parameters: Option<Vec<FiniteReal>>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<IndexedPolygon, CodecError> {
@@ -49,7 +49,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
             tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            point: cadmpeg_ir::features::FinitePoint3::ZERO,
+            point: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
             representations: Vec::new(),
         },
         TextShapeKind::Edge => TextTShapeGeometry::Edge {
@@ -78,7 +78,7 @@ const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn indexed_polygon_pairs_checked_samples() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let node = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
     let polygon = test_indexed_polygon(
         vec![node],
         Some(vec![
@@ -105,7 +105,7 @@ fn indexed_polygon_pairs_checked_samples() {
 
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let node = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
     let deflection = cadmpeg_ir::scalar::NonNegativeReal::ZERO;
     assert!(test_indexed_polygon(vec![node], Some(vec![]), deflection).is_err());
     let polygon = test_indexed_polygon(
@@ -512,8 +512,11 @@ fn edge_representation_selection_follows_family_rules() {
         },
         _ => panic!("test helper kind {kind}"),
     };
-    let point = |x, y, z| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
-    let vector = |x, y, z| cadmpeg_ir::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
+    let point =
+        |x, y, z| cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
+    let vector = |x, y, z| {
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(x, y, z)).unwrap()
+    };
     let curves = [
         TextCurve::Line {
             origin: point(0.0, 0.0, 0.0),
@@ -895,118 +898,12 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
 }
 
 #[test]
-fn face_connectivity_partitions_transitively_without_reordering() {
-    let sets = [
-        HashSet::from(["edge-a".to_owned()]),
-        HashSet::from(["edge-b".to_owned()]),
-        HashSet::from(["edge-a".to_owned(), "edge-c".to_owned()]),
-        HashSet::from(["edge-c".to_owned()]),
-        HashSet::new(),
-    ];
-
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert_eq!(
-        connected_components(&ctx, &sets).expect("connected-component allocation"),
-        vec![vec![0, 2, 3], vec![1], vec![4]]
-    );
-    assert!(connected_components(&ctx, &[])
-        .expect("connected-component allocation")
-        .is_empty());
-}
-
-/// The pairwise search `connected_components` replaced, kept as an oracle.
-fn pairwise_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
-    let mut assigned = vec![false; connectivity.len()];
-    let mut components = Vec::new();
-    for seed in 0..connectivity.len() {
-        if assigned[seed] {
-            continue;
-        }
-        assigned[seed] = true;
-        let mut component = Vec::new();
-        let mut stack = vec![seed];
-        while let Some(current) = stack.pop() {
-            component.push(current);
-            for candidate in 0..connectivity.len() {
-                if !assigned[candidate]
-                    && !connectivity[current].is_disjoint(&connectivity[candidate])
-                {
-                    assigned[candidate] = true;
-                    stack.push(candidate);
-                }
-            }
-        }
-        component.sort_unstable();
-        components.push(component);
-    }
-    components
-}
-
-#[test]
-fn face_connectivity_matches_the_pairwise_partition() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
-    let mut next = |bound: u64| {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        usize::try_from(state % bound).expect("bounded test value")
-    };
-    for (faces, key_pool) in [(1, 1), (8, 4), (40, 30), (200, 150), (200, 400), (300, 60)] {
-        let sets = (0..faces)
-            .map(|_| {
-                (0..next(4))
-                    .map(|_| format!("edge:{}", next(key_pool)))
-                    .collect::<HashSet<_>>()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            connected_components(&ctx, &sets).expect("connected-component allocation"),
-            pairwise_components(&sets),
-            "{faces} faces over {key_pool} keys"
-        );
-    }
-}
-
-#[test]
-fn mesh_scale_face_connectivity_is_linear() {
-    // Two interleaved strips: face `i` shares an edge with face `i + 2`, and
-    // every fourth face also touches one shared hub vertex of its strip. The
-    // pairwise search needs about 2^33 set probes for this shell.
-    const FACES: usize = 1 << 17;
-    let sets = (0..FACES)
-        .map(|face| {
-            let mut keys = HashSet::from([format!("edge:{face}"), format!("edge:{}", face + 2)]);
-            if face % 4 < 2 {
-                keys.insert(format!("vertex:hub-{}", face % 2));
-            }
-            keys
-        })
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert_eq!(
-        connected_components(&ctx, &sets).expect("connected-component allocation"),
-        vec![
-            (0..FACES).step_by(2).collect::<Vec<_>>(),
-            (1..FACES).step_by(2).collect::<Vec<_>>(),
-        ]
-    );
-}
-
-#[test]
 fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
-    let origin = cadmpeg_ir::features::FinitePoint3::ZERO;
-    let axis = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
-    let reference = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
+    let axis =
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let reference =
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     let surface = TextSurface::Sphere {
         center: origin,
         axis,
@@ -1419,6 +1316,105 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 }
 
 #[test]
+fn states_a_wireless_planar_face_partial() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 2
+Fa 0 0.001 1 0 1001000 *
+Sh 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("wireless planar face");
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    assert!(matches!(
+        &faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } if loops.is_empty()
+    ));
+    let code = crate::loss::FreecadLossCode::TopologyFaceBoundaryUnstated
+        .note("")
+        .code;
+    let losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains(faces[0].id.as_str()));
+    assert!(losses[0].message.contains("plane"));
+}
+
+#[test]
+fn names_the_wire_of_a_planar_face_that_bounds_nothing() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    // The face's one wire holds its edge as an internal use.
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 6
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +6 0 -5 0 *
+Wi 1001000 i4 0 *
+Fa 0 0.001 1 0 1001000 +3 0 *
+Sh 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("planar face with an internal wire");
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    assert!(matches!(
+        &faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } if loops.is_empty()
+    ));
+    let code = crate::loss::FreecadLossCode::TopologyFaceBoundaryUnstated
+        .note("")
+        .code;
+    let messages: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(
+        messages[0].contains(
+            "states no boundary wire (wire shape 4 holds no boundary edge use) on a plane"
+        ),
+        "{}",
+        messages[0]
+    );
+    assert!(messages[0].contains(faces[0].id.as_str()));
+}
+
+#[test]
 fn accepts_equivalent_repeated_exact_curve_records() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
@@ -1515,7 +1511,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 #[test]
 fn preserves_an_unbounded_edge_as_a_free_exact_curve() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="PartDesign::Line" name="Axis" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Feature" name="Axis" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Axis"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Axis.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
@@ -1587,7 +1583,7 @@ Co 1001000 +2 1 +2 3 *
         result
             .ir()
             .geometry
-            .body_regions(&result.ir().geometry.bodies[0].id)
+            .stated_body_regions(&result.ir().geometry.bodies[0].id)
             .count(),
         2
     );
@@ -1780,7 +1776,7 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
         assert_eq!(super::uniform_scale(similarity).unwrap().get(), a);
         assert_eq!(
             super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.))
-                .map(cadmpeg_ir::features::FiniteVector3::get),
+                .map(cadmpeg_ir::features::geometry::FiniteVector3::get),
             Some(Vector3::new(1., 0., 0.))
         );
         assert_eq!(

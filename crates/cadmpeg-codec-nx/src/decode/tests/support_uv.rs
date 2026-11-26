@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support-UV admission and invalidation tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::decode::support_uv::SerializedSupportUv;
@@ -14,7 +15,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::model_surface_point_by_id;
-use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::ids::ProceduralCurveId;
 use cadmpeg_ir::math::Point3;
 
@@ -72,7 +74,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                         let discontinuities =
                             cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                         {
-                            let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                            let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                                 &mut sides;
 
                             let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
@@ -91,7 +93,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                                 })
                                 .unwrap();
                         };
-                        cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                             sides,
                             range,
                             discontinuities,
@@ -331,9 +333,11 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
 
 #[test]
 fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        nurbs::NurbsSurface, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
-        ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
         SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -496,7 +500,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 None,
             ]),
         )];
-        let limited_ctx = cadmpeg_test_support::service_decode_context();
+        let limited_ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut limited = ir.clone();
         // The original slice cannot admit the typed carrier walk: the lane
         // reports its exhausted geometry work and the session continues.
@@ -578,7 +582,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         0.01,
         SerializedSupportUv::default(),
     )];
-    let lanes_before = serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap();
+    let lanes_before = json::to_value(&result.ir().geometry.procedural_curves).unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
@@ -601,7 +605,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         assert!(ctx.resource_refusal().is_none());
     });
     assert_eq!(
-        serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap(),
+        json::to_value(&result.ir().geometry.procedural_curves).unwrap(),
         lanes_before
     );
     // A loose-fit/prior-validation certificate cannot rescue a structural

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::products::{
@@ -47,7 +47,7 @@ fn cube_with(occurrences: Vec<Occurrence>) -> CadIr {
         .iter()
         .map(|occurrence| occurrence.id.clone())
         .collect();
-    cube.model.product_definitions.extend([definition, root]);
+    cube.model.product_definitions = vec![definition, root];
     cube.model.occurrences = occurrences;
     cube
 }

@@ -10,12 +10,12 @@
 //! error. A saved-cache disagreement or an unavailable comparison is a
 //! warning.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
@@ -92,6 +92,102 @@ struct Reading<T> {
     model_uncertainty: f64,
 }
 
+/// Resolved targets and required body scope for a document's declared measures.
+pub(crate) struct ResolvedDeclared<'ir> {
+    members: Vec<Result<Vec<&'ir Body>, Unmeasured>>,
+    pub(crate) scope: BTreeSet<&'ir str>,
+}
+
+/// Resolve each declared measure of `ir` to its member bodies and collect the
+/// union of body ids that must be measured.
+pub(crate) fn resolve_declared(ir: &CadIr) -> ResolvedDeclared<'_> {
+    let bodies: HashMap<&str, &Body> = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| (body.id.as_str(), body))
+        .collect();
+    let definitions: HashMap<&str, &cadmpeg_ir::products::ProductDefinition> = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect();
+    let members: Vec<Result<Vec<&Body>, Unmeasured>> = ir
+        .model
+        .declared_measures
+        .iter()
+        .map(|measure| member_bodies(&bodies, &definitions, measure))
+        .collect();
+    let scope: BTreeSet<&str> = members
+        .iter()
+        .flatten()
+        .flatten()
+        .map(|body| body.id.as_str())
+        .collect();
+    ResolvedDeclared { members, scope }
+}
+
+/// Compare each declared measure of `ir` against precomputed body rows.
+pub(crate) fn findings_from_rows(
+    ir: &CadIr,
+    resolved: ResolvedDeclared<'_>,
+    rows: &BTreeMap<&str, &BodyMeasures>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (measure, members) in ir.model.declared_measures.iter().zip(resolved.members) {
+        let related = members.as_ref().map_or_else(
+            |_| target_ids(&measure.target),
+            |bodies| {
+                if bodies.is_empty() {
+                    target_ids(&measure.target)
+                } else {
+                    bodies.iter().map(|body| body.id.to_string()).collect()
+                }
+            },
+        );
+        let outcome = members.and_then(|bodies| compare(measure, &bodies, rows));
+        let finding = match outcome {
+            Ok(None) => continue,
+            Ok(Some(message)) => Finding {
+                check: Check::DeclaredMeasure,
+                rule: cadmpeg_ir::rule_name!("measure/declared.declared-quantity-differs"),
+                severity: match measure.basis {
+                    Some(MeasureBasis::Cache) => Severity::Warning,
+                    None | Some(MeasureBasis::Validation) => Severity::Error,
+                },
+                message,
+                entity: Some(measure.id.to_string()),
+                related,
+            },
+            Err(unmeasured) => {
+                let mut related = related;
+                if let Some(entity) = unmeasured.entity {
+                    if !related.contains(&entity) {
+                        related.push(entity);
+                    }
+                }
+                Finding {
+                    rule: cadmpeg_ir::rule_name!("measure/declared.declared-not-compared"),
+                    check: Check::DeclaredMeasure,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "declared {} {} is not compared ({}): {}",
+                        quantity_description(measure),
+                        declared_text(&measure.quantity),
+                        unmeasured.code,
+                        unmeasured.message
+                    ),
+                    entity: Some(measure.id.to_string()),
+                    related,
+                }
+            }
+        };
+        findings.push(finding);
+    }
+    findings
+}
+
 /// The `check` findings that compare each declared measure of `ir` with
 /// the measured quantity of its member bodies, under one measurement pass
 /// of `options`. A document without declared measures is not measured. A
@@ -101,25 +197,25 @@ pub fn declared_findings(
     ir: &CadIr,
     options: MeasureOptions,
 ) -> Result<Vec<Finding>, CodecError> {
-    let declared = &ir.model.declared_measures;
-    if declared.is_empty() {
+    if ir.model.declared_measures.is_empty() {
         return Ok(Vec::new());
     }
-    let members: Vec<Result<Vec<&Body>, Unmeasured>> = declared
-        .iter()
-        .map(|measure| member_bodies(ir, measure))
-        .collect();
-    let scope: BTreeSet<&BodyId> = members
-        .iter()
-        .flatten()
-        .flatten()
-        .map(|body| &body.id)
-        .collect();
-    let report = if scope.is_empty() {
+    let resolved = resolve_declared(ir);
+    let report = if resolved.scope.is_empty() {
         None
     } else {
         let selection = Selection {
-            bodies: scope.into_iter().cloned().collect(),
+            bodies: resolved
+                .scope
+                .iter()
+                .filter_map(|id| {
+                    ir.geometry
+                        .bodies
+                        .iter()
+                        .find(|body| body.id.as_str() == *id)
+                        .map(|body| body.id.clone())
+                })
+                .collect(),
             ..Selection::default()
         };
         let input = MeasureInput {
@@ -141,57 +237,7 @@ pub fn declared_findings(
         .flat_map(MeasureReport::bodies)
         .map(|row| (row.body().as_str(), row))
         .collect();
-    let mut findings = Vec::new();
-    for (measure, members) in declared.iter().zip(members) {
-        let related = members.as_ref().map_or_else(
-            |_| target_ids(&measure.target),
-            |bodies| {
-                if bodies.is_empty() {
-                    target_ids(&measure.target)
-                } else {
-                    bodies.iter().map(|body| body.id.to_string()).collect()
-                }
-            },
-        );
-        let outcome = members.and_then(|bodies| compare(measure, &bodies, &rows));
-        let finding = match outcome {
-            Ok(None) => continue,
-            Ok(Some(message)) => Finding {
-                check: Check::DeclaredMeasure,
-                severity: match measure.provenance {
-                    DeclaredMeasureProvenance::SavedCache => Severity::Warning,
-                    DeclaredMeasureProvenance::SourceDeclaration
-                    | DeclaredMeasureProvenance::ValidationProperty => Severity::Error,
-                },
-                message,
-                entity: Some(measure.id.to_string()),
-                related,
-            },
-            Err(unmeasured) => {
-                let mut related = related;
-                if let Some(entity) = unmeasured.entity {
-                    if !related.contains(&entity) {
-                        related.push(entity);
-                    }
-                }
-                Finding {
-                    check: Check::DeclaredMeasure,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "declared {} {} is not compared ({}): {}",
-                        quantity_description(measure),
-                        declared_text(&measure.quantity),
-                        unmeasured.code,
-                        unmeasured.message
-                    ),
-                    entity: Some(measure.id.to_string()),
-                    related,
-                }
-            }
-        };
-        findings.push(finding);
-    }
-    Ok(findings)
+    Ok(findings_from_rows(ir, resolved, &rows))
 }
 
 /// The identities the target names.
@@ -205,10 +251,11 @@ fn target_ids(target: &DeclaredTarget) -> Vec<String> {
 
 /// The bodies a declared measure covers.
 fn member_bodies<'ir>(
-    ir: &'ir CadIr,
+    bodies_by_id: &HashMap<&'ir str, &'ir Body>,
+    definitions_by_id: &HashMap<&'ir str, &'ir cadmpeg_ir::products::ProductDefinition>,
     measure: &DeclaredMeasure,
 ) -> Result<Vec<&'ir Body>, Unmeasured> {
-    let body = |id: &BodyId| ir.geometry.bodies.iter().find(|body| &body.id == id);
+    let body = |id: &BodyId| bodies_by_id.get(id.as_str()).copied();
     match &measure.target {
         DeclaredTarget::Unresolved => Err(Unmeasured::gap(
             Gap::TargetUnresolved,
@@ -240,12 +287,7 @@ fn member_bodies<'ir>(
                 .collect()
         }
         DeclaredTarget::Definition { definition } => {
-            let Some(found) = ir
-                .model
-                .product_definitions
-                .iter()
-                .find(|candidate| &candidate.id == definition)
-            else {
+            let Some(found) = definitions_by_id.get(definition.as_str()).copied() else {
                 return Err(Unmeasured::gap(
                     Gap::TargetUnresolved,
                     format!("the target definition {definition} is not in the document"),
@@ -323,7 +365,7 @@ fn compare(
         .collect::<Result<_, _>>()?;
     let name = quantity_description(measure);
     let source_error = measure
-        .source_error
+        .precision
         .map_or(0.0, cadmpeg_ir::scalar::NonNegativeReal::get);
     match &measure.quantity {
         DeclaredQuantity::Volume { value } => {
@@ -354,11 +396,11 @@ fn compare(
         }
         DeclaredQuantity::SolidCentroid { value } => {
             let measured = centroid(&rows, VOLUME, CENTROID)?;
-            point_disagreement(&name, value.get(), measured, source_error)
+            point_disagreement(&name, value.get(), measured, point_error(source_error))
         }
         DeclaredQuantity::SheetCentroid { value } => {
             let measured = centroid(&rows, AREA, AREA_CENTROID)?;
-            point_disagreement(&name, value.get(), measured, source_error)
+            point_disagreement(&name, value.get(), measured, point_error(source_error))
         }
     }
 }
@@ -559,6 +601,12 @@ fn point_disagreement(
             source_error,
         )
     }))
+}
+
+/// The distance within which a stored point lies of the computed point when
+/// each of its three coordinates lies within `precision` of its own.
+fn point_error(precision: f64) -> f64 {
+    precision * 3.0_f64.sqrt()
 }
 
 fn combined_error_allowance(

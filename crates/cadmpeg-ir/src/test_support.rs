@@ -22,8 +22,12 @@ pub(crate) fn make_first_face_surface_unknown(
     surface_id
 }
 
+pub(crate) mod admissibility;
+pub(crate) mod edit;
 pub(crate) mod evaluation_cycles;
+pub(crate) mod evaluation_work;
 pub(crate) mod nurbs;
+pub(crate) mod wire;
 
 /// Run one IR operation under the service decode policy.
 pub(crate) fn with_service_decode_context<T>(

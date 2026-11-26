@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/protein.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `instance_stream_header` record.
 ///
@@ -52,4 +52,6 @@ pub(crate) mod terminal_page {
     pub(crate) const USED: usize = 4;
     /// Offset of `body` (`bytes[128]`). Spec §3.
     pub(crate) const BODY: usize = 8;
+    /// Offset of `record_start` (`u16`, little-endian). Spec §3.
+    pub(crate) const RECORD_START: usize = 6;
 }

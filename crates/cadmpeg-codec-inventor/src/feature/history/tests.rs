@@ -294,6 +294,7 @@ fn projection_orders_history_and_marks_suppression() {
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection");
@@ -431,6 +432,7 @@ fn project_work_planes(
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection")
@@ -479,6 +481,7 @@ fn projection_writes_browser_work_planes_in_history_order() {
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("feature projection");
@@ -590,7 +593,7 @@ fn solid_split_binds_its_plane_to_the_placed_work_plane_feature() {
             .expect("work-plane feature");
         match split.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
-                tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane },
                 ..
             }) => {
                 assert!(binds, "{plane}");

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -1485,7 +1485,9 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             ];
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    require_some!(cadmpeg_ir::features::FinitePoint3::new(Point3::from(point))),
+                    require_some!(cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        Point3::from(point)
+                    )),
                     cylinder_surface.frame().axis().to_unit_length(),
                 ),
             )))
@@ -2092,14 +2094,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{curve_id}"
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

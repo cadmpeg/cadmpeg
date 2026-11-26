@@ -8,7 +8,7 @@
 //! names the same entities in every decode.
 
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, BodyId, IdentityKey, OccurrenceId, ProductDefinitionId,
+    AppearanceBindingId, AppearanceId, IdentityKey, OccurrenceId, ProductDefinitionId,
 };
 use cadmpeg_ir::tessellation::TessellationId;
 
@@ -21,6 +21,12 @@ fn member_key(member: &str) -> IdentityKey {
 /// writer names under this scope is [`body`] of `member`.
 pub(crate) fn member_scope(member: &str) -> IdentityKey {
     member_key(member)
+}
+
+/// The source stream of package member `member`, whose offsets are offsets
+/// in the member's expanded bytes.
+pub(crate) fn member_stream_name(member: &str) -> cadmpeg_ir::StreamName {
+    cadmpeg_ir::stream_name!("pvz:").with_suffix(member)
 }
 
 /// The document definition that places each of several root definitions.
@@ -44,14 +50,6 @@ pub(crate) fn occurrence(index: usize) -> OccurrenceId {
     OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("pvz", "model", "occurrence"),
         index,
-    )
-}
-
-/// The body that holds the geometry of `member`.
-pub(crate) fn body(member: &str) -> BodyId {
-    BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("pvz", "model", "body"),
-        member_key(member),
     )
 }
 

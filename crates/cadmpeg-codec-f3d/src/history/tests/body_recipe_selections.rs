@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical body recipe selections.
 
-use cadmpeg_ir::features::{BodySelection, FeatureId};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::FeatureId;
 
 fn selection_fixture() -> (
     crate::records::feature::scope::DesignParameterScope,
@@ -116,7 +117,7 @@ fn selection_fixture() -> (
 fn bind() -> BodySelection {
     let (scope, groups, operands, mut selection) = selection_fixture();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
-    super::super::bind_body_recipe_body_selection(
+    super::super::body_selections::bind_body_recipe_body_selection(
         &mut selection,
         &feature,
         1,
@@ -143,13 +144,13 @@ fn face_geometry() -> (
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
-    let region = Region {
-        id: RegionId::mint("f3d:model:region#1").unwrap(),
-        body: body.id.clone(),
-        shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
-        native_ref: None,
-    };
+    let region = Region::new(
+        RegionId::mint("f3d:model:region#1").unwrap(),
+        body.id.clone(),
+        vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+    );
     let shell = Shell::new(
         ShellId::mint("f3d:model:shell#1").unwrap(),
         region.id.clone(),
@@ -172,19 +173,20 @@ fn bind_direct(native_set: bool) -> BodySelection {
                 .unwrap(),
         );
     }
-    let inputs = super::super::FeatureBodySelectionInputs {
+    let inputs = super::super::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: &operands,
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
     };
-    super::super::bind_direct_body_recipe_body_selection(
+    super::super::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,
@@ -244,6 +246,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
@@ -315,19 +318,20 @@ fn bind_single_native_design_record(
 ) -> BodySelection {
     let (scope, groups, _, _) = selection_fixture();
     let mut selection = selection;
-    let inputs = super::super::FeatureBodySelectionInputs {
+    let inputs = super::super::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: operands,
         construction_recipes: recipes,
         persistent_design_links: links,
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies,
         regions,
         shells,
         faces,
     };
-    super::super::bind_direct_body_recipe_body_selection(
+    super::super::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,

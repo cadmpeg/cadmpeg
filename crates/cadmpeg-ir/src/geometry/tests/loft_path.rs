@@ -2,8 +2,9 @@
 //! The loft path carries its endpoints inside the path curve object, so
 //! endpoints without a curve have no wire form.
 
-use crate::geometry::{LoftPath, LoftPathCurve};
+use crate::geometry::lofts::{LoftPath, LoftPathCurve};
 use crate::ids::CurveId;
+use cadmpeg_core::serde_erase::json;
 
 fn curve_id() -> CurveId {
     CurveId::mint("test:model:curve#path").expect("valid identity")
@@ -19,30 +20,28 @@ fn loft_path_carries_endpoints_inside_its_curve_object() {
         auxiliaries: Vec::new(),
         flag: 4,
     };
-    let wire = serde_json::to_value(&path).expect("serializes");
+    let wire = json::to_value(&path).expect("serializes");
     assert_eq!(wire["path"]["curve"], "test:model:curve#path");
-    assert_eq!(wire["path"]["endpoints"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(wire["path"]["endpoints"], cadmpeg_core::json!([0.0, 1.0]));
     assert_eq!(
-        serde_json::from_value::<LoftPath>(wire).expect("round trip"),
+        json::from_value::<LoftPath>(wire).expect("round trip"),
         path
     );
 
-    let flat = serde_json::json!({
+    let flat = cadmpeg_core::json!({
         "endpoints": [0.0, 1.0],
         "auxiliaries": [],
         "flag": 4,
     });
-    let error = serde_json::from_value::<LoftPath>(flat)
-        .unwrap_err()
-        .to_string();
+    let error = json::from_value::<LoftPath>(flat).unwrap_err().to_string();
     assert!(error.contains("endpoints"), "{error}");
 
-    let orphan = serde_json::json!({
+    let orphan = cadmpeg_core::json!({
         "path": {"endpoints": [0.0, 1.0]},
         "auxiliaries": [],
         "flag": 4,
     });
-    let error = serde_json::from_value::<LoftPath>(orphan)
+    let error = json::from_value::<LoftPath>(orphan)
         .unwrap_err()
         .to_string();
     assert!(error.contains("curve"), "{error}");

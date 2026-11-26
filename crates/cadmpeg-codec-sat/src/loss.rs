@@ -44,6 +44,9 @@ pub(crate) enum SatLossCode {
     TopologyShellUnprojected,
     /// A standalone source face has no shell owner required by the IR.
     TopologyFaceOwnerUnprojected,
+    /// A face states no loop on a plane, cylinder, or cone; the face is
+    /// stated partial.
+    TopologyFaceBoundaryUnstated,
     /// A body-owned source wire cannot use the IR's shell ownership.
     TopologyWireOwnerUnprojected,
     /// A framed record has no leading source-name component.
@@ -82,6 +85,7 @@ impl SatLossCode {
         Self::EdgeToleranceUnresolved,
         Self::TopologyShellUnprojected,
         Self::TopologyFaceOwnerUnprojected,
+        Self::TopologyFaceBoundaryUnstated,
         Self::TopologyWireOwnerUnprojected,
         Self::SourceRecordNameUnresolved,
         Self::SourceRecordExtensionsUnprojected,
@@ -107,6 +111,7 @@ impl SatLossCode {
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
             Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::TopologyWireOwnerUnprojected => "topology.wire-owner-unprojected",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
             Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
@@ -133,6 +138,7 @@ impl SatLossCode {
             | Self::VertexToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
+            | Self::TopologyFaceBoundaryUnstated
             | Self::TopologyWireOwnerUnprojected
             | Self::SourceRecordNameUnresolved
             | Self::SourceRecordExtensionsUnprojected
@@ -163,6 +169,7 @@ impl SatLossCode {
             | Self::FramingRecordsUnread
             | Self::SourceStreamLayoutUnprojected => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
             Self::SourceConcatenatedStreamsRecovered
             | Self::HeaderMetadataNoncanonical
@@ -180,7 +187,7 @@ impl SatLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `sat/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -253,6 +260,7 @@ mod tests {
                 "edge.tolerance-unresolved",
                 "topology.shell-unprojected",
                 "topology.face-owner-unprojected",
+                "topology.face-boundary-unstated",
                 "topology.wire-owner-unprojected",
                 "source.record-name-unresolved",
                 "source.record-extensions-unprojected",

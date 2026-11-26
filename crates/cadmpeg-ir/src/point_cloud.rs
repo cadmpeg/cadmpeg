@@ -7,12 +7,10 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{PointCloudId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::topology::Color;
-use crate::transform::Transform;
-use crate::units::UnitVector3;
 
 /// One point cloud.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -21,31 +19,36 @@ use crate::units::UnitVector3;
 pub struct PointCloud {
     /// Stable point cloud identity.
     pub id: PointCloudId,
-    /// Product definition whose frame holds the points.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_product_definition"
-    )]
-    pub product_definition: Option<ProductDefinitionId>,
+    /// Product definition that holds the point cloud, in whose frame the
+    /// points lie.
+    pub definition: ProductDefinitionId,
     /// Source name.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_name"
     )]
-    pub name: Option<String>,
-    /// Pose of the capturing sensor in the frame of the points.
+    pub name: Option<NonBlankString>,
+    /// The point cloud's own display colour, apart from the per-point
+    /// `colors`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_sensor"
+        deserialize_with = "deserialize_color"
     )]
-    pub sensor: Option<Transform>,
+    pub color: Option<Color>,
+    /// Whether the source displays the point cloud.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visible"
+    )]
+    pub visible: Option<bool>,
     /// Point positions in document length units.
     pub positions: Vec<FinitePoint3>,
-    /// One unit normal for each point, or none.
-    pub normals: Vec<UnitVector3>,
+    /// The normal vector the source stores at each point, or none. It need
+    /// not be a unit vector.
+    pub normals: Vec<FiniteVector3>,
     /// One color for each point, or none.
     pub colors: Vec<Color>,
     /// Named scalar values, one for each point in each channel.
@@ -71,13 +74,9 @@ pub struct PointChannel {
     pub values: Vec<FiniteReal>,
 }
 
-cadmpeg_core::named_optional_field!(
-    deserialize_product_definition,
-    ProductDefinitionId,
-    "product_definition"
-);
-cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_sensor, Transform, "sensor");
+cadmpeg_core::named_optional_field!(deserialize_name, NonBlankString, "name");
+cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

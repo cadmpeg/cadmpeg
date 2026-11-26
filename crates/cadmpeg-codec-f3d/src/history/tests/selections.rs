@@ -11,27 +11,26 @@
 )]
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json as json_wire;
 
-use crate::history::active_brep_face_matches_source;
-use crate::history::admit_history_binding;
-use crate::history::archived_active_record_count;
 use crate::history::bind_snapshot_revision_ids;
-use crate::history::body_revision_without_topology_change;
-use crate::history::combine_recipe_family_tool_slots;
-use crate::history::grouped_reference_face_candidate;
-use crate::history::historical_body_slot;
+use crate::history::body_selections::{
+    body_revision_without_topology_change, combine_recipe_family_tool_slots, historical_body_slot,
+    pattern_combine_tool_slots, singleton_body_revision_across_state_chain,
+    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
+};
+use crate::history::face_resolution::active_brep_face_matches_source;
+use crate::history::face_resolution::grouped_reference_face_candidate;
 use crate::history::historical_record_archive;
 use crate::history::insert_only_active_record_count;
 use crate::history::materialize_record_table;
-use crate::history::pattern_combine_tool_slots;
-use crate::history::profile_face_group_cardinality_candidates;
+use crate::history::profile_face_groups::profile_face_group_cardinality_candidates;
 use crate::history::selection::bind_edge_identity_history;
 use crate::history::selection::bind_hole_selection_history;
 use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
-use crate::history::singleton_body_revision_across_state_chain;
-use crate::history::singleton_revised_input_body_across_state_chain;
-use crate::history::TopologyStableBodyRevision;
+use crate::history::selection::per_history_identities;
+use crate::history::{admit_history_binding, archived_active_record_count};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
@@ -107,7 +106,10 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(18044, &[unrelated, selected]),
+        entity_selection_face_candidates(
+            18044,
+            &per_history_identities(&[unrelated, selected], &[18044])
+        ),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -120,6 +122,71 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
             }
         ]
     );
+}
+
+#[test]
+fn entity_selection_face_candidates_do_not_depend_on_other_requested_identities() {
+    let state = |state_id, record_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history-state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                faces: vec![30],
+                ..AsmHistoricalTopology::default()
+            }),
+            vec![AsmEntityVersion {
+                entity_ref: 30,
+                record_ref,
+            }],
+        )
+    };
+    let histories = [crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, 800), state(1, 700)],
+    )];
+    let candidate =
+        |state_id| crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Face,
+                entity_ref: 30,
+                state_ids: vec![state_id],
+            },
+            face_slot: 30,
+        };
+    for (local_id, expected) in [(700, candidate(1)), (800, candidate(2))] {
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[local_id])
+            ),
+            [expected.clone()]
+        );
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[700, 800])
+            ),
+            [expected]
+        );
+    }
 }
 
 #[test]
@@ -254,7 +321,7 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     let scope: crate::records::feature::scope::DesignParameterScope =
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:test:scope",
             "byte_offset": 0,
             "class_tag": "300",
@@ -276,7 +343,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         }))
         .expect("Fillet scope");
     let identity = |group_record_index, group_member_ordinal, record_index| {
-        serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
+        json_wire::from_value::<DesignEdgeIdentityOperand>(cadmpeg_core::json!({
             "id": format!("f3d:test:identity#{record_index}"),
             "scope_record_index": 1,
             "group_record_index": group_record_index,
@@ -338,7 +405,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -370,7 +437,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -380,7 +447,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::from([scope.id.clone()]),
     );
@@ -742,7 +809,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
     {
         slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
@@ -754,6 +821,8 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope
@@ -761,7 +830,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
 
 #[test]
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let tool = |record_index, occurrence_reference| {
         crate::records::feature::combine::DesignCombineBodySelection {
@@ -772,7 +841,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
-        super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
+        super::super::body_selections::combine_external_local_tools(&scope)
+            .expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -785,7 +855,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(super::super::combine_external_local_tools(&scope).is_none());
+    assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
 }
 
 #[test]
@@ -1017,7 +1087,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
 
     assert_eq!(insert_only_active_record_count(&states), Some(4));
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1401,7 +1471,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         .into();
 
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1538,7 +1608,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let mut operand = serde_json::from_value::<DesignFaceOperand>(serde_json::json!({
+    let mut operand = json_wire::from_value::<DesignFaceOperand>(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:design-face-operand#1",
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,
@@ -1595,242 +1665,4 @@ mod extrude_profile;
 
 mod face_support;
 
-mod operand_list_combine {
-    use crate::records::feature::combine::{
-        DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm,
-        DesignCombineOperation, DesignCombineTools,
-    };
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{BodySelection, FeatureId};
-
-    const STREAM: &str = "f3d:Design/BulkStream.dat";
-
-    #[allow(clippy::unnecessary_wraps)]
-    fn node(creating_scope_record_index: u32) -> Option<DesignCombineBodyNode> {
-        Some(DesignCombineBodyNode {
-            record_index: creating_scope_record_index + 1,
-            body_entity_suffix: creating_scope_record_index + 2,
-            creating_scope_record_index,
-        })
-    }
-
-    fn scope(record_index: u32, state: i64) -> DesignParameterScope {
-        let mut scope = DesignParameterScope::empty(
-            &format!("{STREAM}:design-parameter-scope#{record_index}"),
-            DesignFeatureKind::BaseFeature,
-            record_index,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.history_state_id = Some(state);
-                draft.previous_history_state_id = Some(state - 1);
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        scope
-    }
-
-    fn topology(bodies: &[i64]) -> crate::history_records::AsmHistoricalTopology {
-        crate::history_records::AsmHistoricalTopology {
-            bodies: bodies.to_vec(),
-            ..Default::default()
-        }
-    }
-
-    fn history(states: &[&[i64]]) -> crate::history_records::AsmHistory {
-        let rows = states
-            .iter()
-            .enumerate()
-            .rev()
-            .map(|(id, bodies)| {
-                let id = i64::try_from(id).unwrap();
-                (
-                    crate::history_records::AsmDeltaState {
-                        id: format!("f3d:asm-delta-state#{id}"),
-                        parent: "f3d:asm-history#1".into(),
-                        byte_offset: 0,
-                        state_id: id,
-                        version_flag: 1,
-                        state_flag: 0,
-                        previous_ref: None,
-                        next_ref: (id > 0).then_some(id - 1),
-                        node_index: id,
-                        partner_ref: None,
-                        owner_ref: 0,
-                        bulletin_boards: Vec::new(),
-                        records: Vec::new(),
-                        transition: None,
-                    },
-                    Some(topology(bodies)),
-                    Vec::new(),
-                )
-            })
-            .collect();
-        crate::test_support::history::history("f3d:asm-history#1".into(), 0, None, false, rows)
-    }
-
-    fn operation(
-        target: Option<DesignCombineBodyNode>,
-        tools: &[Option<DesignCombineBodyNode>],
-    ) -> DesignCombineOperation {
-        let mut selections =
-            tools
-                .iter()
-                .zip(12u32..)
-                .map(|(body_node, record_index)| DesignCombineBodySelection {
-                    record_index,
-                    external_identity: None,
-                    body_node: *body_node,
-                });
-        DesignCombineOperation {
-            form: DesignCombineForm::OperandLists,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
-            operation_offset: 21,
-            keep_tools: false,
-            keep_tools_offset: 29,
-            target_record_index: 11,
-            target_body_node: target,
-            tools: DesignCombineTools {
-                first: selections.next().unwrap(),
-                additional: selections.collect(),
-            },
-
-            destination: Default::default(),
-        }
-    }
-
-    fn bind(
-        operation: DesignCombineOperation,
-        history: &crate::history_records::AsmHistory,
-        scopes: &[DesignParameterScope],
-    ) -> (BodySelection, BodySelection) {
-        let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
-        let combine = scope(400, combine_state);
-        let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
-        let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
-        super::super::super::bind_operand_list_combine_bodies(
-            &mut target,
-            &mut tools,
-            &combine,
-            &operation,
-            &FeatureId::mint("test:model:feature#combine").unwrap(),
-            combine_state - 1,
-            (std::slice::from_ref(history), scopes),
-        );
-        (target, tools)
-    }
-
-    fn input_body_slots(selection: &BodySelection) -> Vec<i64> {
-        let ids: Vec<String> = match selection {
-            BodySelection::Historical { bodies, .. } => {
-                bodies.iter().map(ToString::to_string).collect()
-            }
-            BodySelection::HistoricalSet { members, .. } => {
-                members.iter().map(|row| row.body().to_string()).collect()
-            }
-            other => panic!("expected a historical selection, got {other:?}"),
-        };
-        ids.iter()
-            .map(|id| crate::history::historical_body_slot(id).unwrap())
-            .collect()
-    }
-
-    fn creators() -> Vec<DesignParameterScope> {
-        vec![scope(100, 1), scope(200, 2), scope(300, 3)]
-    }
-
-    fn assert_native(selections: &(BodySelection, BodySelection)) {
-        assert!(
-            matches!(selections.0, BodySelection::Native(_)),
-            "{selections:?}"
-        );
-        assert!(
-            matches!(selections.1, BodySelection::Native(_)),
-            "{selections:?}"
-        );
-    }
-
-    #[test]
-    fn slots_come_from_the_creating_scopes_in_tool_order() {
-        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
-        let (target, tools) = bind(
-            operation(node(200), &[node(300), node(100)]),
-            &history,
-            &creators(),
-        );
-        assert_eq!(input_body_slots(&target), [2]);
-        assert_eq!(input_body_slots(&tools), [3, 1]);
-    }
-
-    #[test]
-    fn every_operand_must_resolve_or_both_selections_stay_native() {
-        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
-        for (target, tools) in [
-            (None, vec![node(300), node(100)]),
-            (node(200), vec![None, node(100)]),
-            (node(200), vec![node(300), None]),
-            (node(999), vec![node(300), node(100)]),
-            (node(200), vec![node(300), node(999)]),
-            (node(200), vec![node(200), node(100)]),
-            (node(200), vec![node(300), node(200)]),
-            (node(200), vec![node(300), node(300)]),
-        ] {
-            assert_native(&bind(operation(target, &tools), &history, &creators()));
-        }
-    }
-
-    #[test]
-    fn a_creator_must_insert_one_body_that_reaches_the_input_state() {
-        let two_inserted = history(&[&[], &[1], &[1, 2, 3], &[1, 2, 3, 4], &[1]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &two_inserted,
-            &creators(),
-        ));
-
-        let removed_before_input = history(&[&[], &[1], &[1, 2], &[1], &[1]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &removed_before_input,
-            &creators(),
-        ));
-
-        let mut no_previous_state = creators();
-        no_previous_state[1]
-            .try_edit(|draft| {
-                draft.previous_history_state_id = None;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        let (target, tools) = bind(
-            operation(node(100), &[node(200)]),
-            &history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[1]]),
-            &no_previous_state,
-        );
-        assert_eq!(input_body_slots(&target), [1]);
-        assert_eq!(input_body_slots(&tools), [2]);
-
-        let scope_in_other_stream = {
-            let mut scopes = creators();
-            scopes[1] = DesignParameterScope::empty(
-                "f3d:Other/BulkStream.dat:design-parameter-scope#200",
-                DesignFeatureKind::BaseFeature,
-                200,
-            );
-            scopes[1]
-                .try_edit(|draft| {
-                    draft.history_state_id = Some(2);
-                    draft.previous_history_state_id = Some(1);
-                    draft.layout_fixture_tail();
-                })
-                .unwrap();
-            scopes
-        };
-        let ordinary = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &ordinary,
-            &scope_in_other_stream,
-        ));
-    }
-}
+mod operand_list_combine;

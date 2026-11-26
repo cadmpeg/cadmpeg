@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, edge_param_range,
+    edge_vertices, face_components, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -160,7 +160,7 @@ fn point_cloud_commits_one_vertex() {
     let cloud = || {
         crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
             points: vec![
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .expect("finite point"),
             ],
             scaled: false,
@@ -185,17 +185,13 @@ fn candidate_validation_propagates_entity_limit() {
             .validate_candidate(|candidate, _| {
                 candidate.geometry.points.push(Point::new(
                     "rhino:test:point#limited".try_into().expect("valid id"),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Rhino,
+                        format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));
@@ -304,7 +300,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
 
 #[test]
 fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::units::UnitVector3;
@@ -372,7 +368,7 @@ fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
 
 #[test]
 fn instance_plane_transform_keeps_component_division() {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::PlaneSurface;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::transform::Transform;
@@ -696,13 +692,13 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(12.7)
     );
     assert_eq!(
         crate::brep::BrepTolerance::new(0.5)
             .and_then(crate::brep::BrepTolerance::fit)
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
     assert_eq!(crate::brep::BrepTolerance::new(-1.0), None);
@@ -735,22 +731,6 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
     assert_eq!(edge_vertices(&reversed, &resolved), [1, 0]);
-}
-
-#[test]
-fn coedge_and_edge_proxy_reversals_are_independent() {
-    for trim_reversed in [false, true] {
-        for edge_proxy_reversed in [false, true] {
-            assert_eq!(
-                coedge_sense(trim_reversed, edge_proxy_reversed),
-                if trim_reversed ^ edge_proxy_reversed {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                }
-            );
-        }
-    }
 }
 
 #[test]
@@ -869,6 +849,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
         ],
         end_parameter: finite_parameter(40.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -899,11 +880,13 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(finite_parameter(5.0), nested)],
         end_parameter: finite_parameter(9.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
@@ -935,6 +918,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -1011,6 +995,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &test_association(),
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1053,13 +1038,9 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
-        name: Some("Extrusion".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -1106,7 +1087,7 @@ fn candidate_rejections_distinguish_admission_from_validation() {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("point identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             );
@@ -1140,24 +1121,33 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     },
                     native_ref: None,
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
+                candidate
+                    .native
+                    .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
+                    .arenas_mut()
+                    .insert(
+                        cadmpeg_core::nonblank_literal!("history_records"),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
                 {
-                    set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
+                    set_exactness(
+                        annotations,
+                        cadmpeg_ir::ids::Identity::new("rhino:test:asset#rejected")
+                            .expect("identity grammar"),
+                        Exactness::Derived,
+                    );
                 }
                 if admission_failure {
                     return Err::<(), String>("source admission refusal".into());
                 }
                 let point = Point::new(
                     "rhino:test:point#duplicate".try_into().unwrap(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("a finite position is a point"),
                     None,
                 );
@@ -1205,17 +1195,13 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
         let point = |key| {
             Point::new(
                 format!("rhino:test:point#{key}").try_into().unwrap(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Rhino,
+                    format: cadmpeg_ir::codec_id!("rhino"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             )
@@ -1282,6 +1268,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &association,
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1295,6 +1282,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
             assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
                 .expect("validate the neutral model")
@@ -1313,36 +1301,61 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     let annotations = cadmpeg_ir::Annotations::default();
 
     assert!(cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
     .is_ok());
     assert!(cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
     .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
     .is_ok());
     assert!(!cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
+        Vec::new()
+    )
+    .expect("admit the model")
+    .is_ok());
+}
+
+/// A finding of a check outside the draft and instance sets does not drop a
+/// candidate.
+#[test]
+fn admission_ignores_findings_outside_its_checks() {
+    let ir = cadmpeg_test_support::admissibility::rejected_outside_admission("rhino:test")
+        .expect("fixture identities are valid");
+    assert!(cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::RHINO_DRAFT,
+        Vec::new(),
+    )
+    .expect("admit the model")
+    .is_ok());
+    assert!(cadmpeg_ir::admit(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1735,6 +1748,18 @@ fn class_report_counts_terminal_outcomes_once() {
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].message, message);
         }
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(unreadable.len(), 1);
+        assert!(unreadable[0].starts_with("part object-record stream=\"\" offset="));
+        assert!(unreadable[0]
+            .split_whitespace()
+            .any(|token| token == "rhino:object:record#000002"));
     });
 }
 
@@ -1794,3 +1819,97 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+
+#[test]
+fn polycurve_states_continuity_where_adjacent_pieces_meet() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 1.5, 0.0], [0.0, 2.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let bytes = support::archive(&[support::object_record(
+        4,
+        support::POLYCURVE_CLASS,
+        &support::polycurve_payload(&[0.0, 1.0, 2.0, 3.0], &children),
+    )]);
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+            CompositeCurveTransition::Discontinuous,
+        ]
+    );
+}
+
+#[test]
+fn polycurve_tests_continuity_on_file_unit_coordinates() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    // In inches the pieces meet 2^-33 apart, within the 2^-32 absolute
+    // coincidence tolerance; in millimetres they are 25.4 times as far.
+    let join = 1.0 + 2.0_f64.powi(-33);
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([join, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let inches = 8;
+    let bytes = support::archive_unit(
+        inches,
+        &[support::object_record(
+            4,
+            support::POLYCURVE_CLASS,
+            &support::polycurve_payload(&[0.0, 1.0, 2.0], &children),
+        )],
+    );
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+        ]
+    );
+}
+
+/// The segment transitions of the composite curve that `bytes` decodes to.
+fn composite_transitions(bytes: Vec<u8>) -> Vec<cadmpeg_ir::geometry::CompositeCurveTransition> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the polycurve archive decodes");
+    decoded
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .find_map(|curve| match &curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some(
+                segments
+                    .iter()
+                    .map(|segment| segment.transition)
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("the polycurve decodes to a composite curve")
+}

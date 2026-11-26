@@ -749,27 +749,6 @@ Ignored tests stay out of the normal fast suite, so routine verification misses 
 an environment with its prerequisites and record the outcome, or check in a
 runnable witness set with the same totals so the fast suite covers the floor.
 
-### QA-17. Strict-floor overrides for dialect and integrity losses bypass QA-15
-
-**Question.** What does strict mode refuse when a decode reports
-`source.writer-stamp-unverified`, `source.dialect-unverified`, or
-`container.integrity-failure`?
-
-**Known.** `loss.rs:355-362` assigns `IntegrityFailure` (and
-`ObjectFramingUndecodable`) error severity, while `loss.rs:429-435` pins
-their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under
-`strict_consequence` at `cadmpeg-ir/src/report/loss.rs:590-596`, strict mode
-rejects a loss whose severity reaches its floor and tolerates any loss with no
-floor. The missing-stamp loss stays at record level (`dialect.rs:59-69`), so strict mode always tolerates it, while the
-residual-dialect loss is charged once per archive at admission
-(`dialect.rs:140-158`) and follows the taxonomy floor. QA-15 settles only the
-non-strict `check` verdict, which ignores losses entirely; these strict-mode consequences are separate questions.
-
-**Need.** State the intended strict consequence for each of the three codes and
-tie each pin to its QA-15-independent verdict rule. If the missing-stamp loss
-must stay strict-tolerated while the residual-dialect loss can reject, the
-specification must state that asymmetry and its ground as a prose rule.
-
 ### TP-01. Decoder output fails geometric-consistency validation
 
 **Question.** Which topology and geometry can the decoder return as a
@@ -970,8 +949,8 @@ model grows?
 candidate commits. `validate/admit.rs:81-90` implements admission by running
 full neutral validation and filtering its findings afterward. The decoder
 repeats this full-document walk for successive candidates, and `cadmpeg check`
-runs full validation again after decode. On one 26,176,187-byte archive with
-69 object records and 27 decoded objects, full check takes 8.36 seconds,
+runs full validation again after decode. For an archive of 69 object records,
+27 of which decode to objects, full check takes 8.36 seconds,
 including 8.31 seconds of user CPU time, and reaches about 125 MiB resident
 memory. Container-only check takes about 0.02 seconds; checking the emitted
 49 MiB CADIR alone takes about 4.7 seconds and reaches about 186 MiB resident

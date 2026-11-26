@@ -100,6 +100,7 @@ pub(super) fn decode_scoped_images<T>(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::io::{Cursor, Write};
 
     use zip::CompressionMethod;
@@ -119,7 +120,7 @@ mod tests {
         zip.write_all(DATA).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let asset = super::embedded_image_asset(&ctx, scan, NAME)
                 .unwrap()
                 .unwrap();
@@ -161,7 +162,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             assert!(super::embedded_image_asset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 "mark.png"
             )
@@ -181,7 +182,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         let stream = crate::ids::native_scope(ENTRY);
         let scope: crate::records::feature::scope::DesignParameterScope =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{stream}:scope#1"),
                 "byte_offset": 0,
                 "class_tag": "300",

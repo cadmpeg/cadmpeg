@@ -1,6 +1,7 @@
 //! Object name and class declaration records.
 
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use crate::layout::named_object_header as named_header;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
@@ -60,6 +61,24 @@ pub(crate) fn object_names(
     Ok(names)
 }
 
+/// The object identifier `name`'s named-object header holds (sldprt.md
+/// §2.3): the identifier at name +8, when the header's string marker sits
+/// at +16. Other bytes can follow a name: a `moExtFeature_c` writes a second
+/// name object there, and the scan reads its text as the identifier.
+pub(crate) fn header_object_id(payload: &[u8], name: &FeatureInputName) -> Option<u32> {
+    let offset = usize::try_from(name.offset).ok()?;
+    let units = usize::from(*payload.get(offset.checked_add(NAME_MARKER.len())?)?);
+    let string = offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?
+        .checked_add(named_header::LEN)?;
+    let marker = &NAME_MARKER[2..];
+    if payload.get(string..string.checked_add(marker.len())?)? != marker {
+        return None;
+    }
+    name.object_id?.value()
+}
+
 fn decimal_matches(text: &str, value: usize) -> bool {
     !text.is_empty()
         && (text == "0" || !text.starts_with('0'))
@@ -78,32 +97,42 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_name_candidates(
-    payload: &[u8],
-) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+/// The marker that opens every object-name record of a lane: the lane's
+/// name class token, then the UTF-16 name prefix.
+pub(crate) fn name_marker(payload: &[u8]) -> [u8; 5] {
     let mut name_marker = [0; 5];
     name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
         name_marker[..2].copy_from_slice(&token.to_le_bytes());
     }
-    payload
-        .windows(name_marker.len())
-        .enumerate()
-        .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
-        .filter_map(move |offset| {
-            let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
-            let units = payload.get(start..end)?;
-            let object_id = end
-                .checked_add(8)
-                .and_then(|position| View::u32_le_at(payload, position))
-                .and_then(|value| ObjectId::try_from(value).ok());
-            Some((offset, object_id, units))
-        })
+    name_marker
+}
+
+fn payload_name_candidates(
+    payload: &[u8],
+) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+    let finder = memchr::memmem::Finder::new(&name_marker(payload)).into_owned();
+    let mut cursor = 0usize;
+    std::iter::from_fn(move || {
+        let relative = finder.find(payload.get(cursor..)?)?;
+        let offset = cursor + relative;
+        cursor = offset + 1;
+        Some(offset)
+    })
+    .filter_map(move |offset| {
+        let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let start = offset + NAME_MARKER.len() + 1;
+        let end = start.checked_add(length.checked_mul(2)?)?;
+        let units = payload.get(start..end)?;
+        let object_id = end
+            .checked_add(8)
+            .and_then(|position| View::u32_le_at(payload, position))
+            .and_then(|value| ObjectId::try_from(value).ok());
+        Some((offset, object_id, units))
+    })
 }
 
 fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
@@ -114,24 +143,20 @@ fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId
 }
 
 fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let bytes = payload.get(offset + 6..offset + 6 + length)?;
-            if !bytes
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
-                return None;
-            }
-            Some((offset, std::str::from_utf8(bytes).ok()?))
-        })
+    memchr::memmem::find_iter(payload, &CLASS_MARKER).filter_map(|offset| {
+        let length = usize::from(View::u16_le_at(payload, offset + 4)?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let bytes = payload.get(offset + 6..offset + 6 + length)?;
+        if !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return None;
+        }
+        Some((offset, std::str::from_utf8(bytes).ok()?))
+    })
 }
 
 pub(crate) fn class_declarations_match(
@@ -200,30 +225,26 @@ pub(crate) fn first_object_name_value_mismatch<'a>(
 /// class declaration directly followed by a repeated-class token and the
 /// UTF-16 name prefix `ff fe ff`.
 fn name_class_token(payload: &[u8]) -> Option<u16> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter(|(_, window)| *window == CLASS_MARKER)
-        .find_map(|(offset, _)| {
-            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let name = payload.get(offset + 6..offset + 6 + length)?;
-            if !name.iter().all(u8::is_ascii_graphic) {
-                return None;
-            }
-            let token_offset = offset + 6 + length;
-            let token = View::u16_le_at(payload, token_offset)?;
-            if !is_class_token(token) {
-                return None;
-            }
-            if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {
-                return None;
-            }
-            let units = usize::from(*payload.get(token_offset + 5)?);
-            (1..=128).contains(&units).then_some(token)
-        })
+    memchr::memmem::find_iter(payload, &CLASS_MARKER).find_map(|offset| {
+        let length = usize::from(View::u16_le_at(payload, offset + 4)?);
+        if !(1..=128).contains(&length) {
+            return None;
+        }
+        let name = payload.get(offset + 6..offset + 6 + length)?;
+        if !name.iter().all(u8::is_ascii_graphic) {
+            return None;
+        }
+        let token_offset = offset + 6 + length;
+        let token = View::u16_le_at(payload, token_offset)?;
+        if !is_class_token(token) {
+            return None;
+        }
+        if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {
+            return None;
+        }
+        let units = usize::from(*payload.get(token_offset + 5)?);
+        (1..=128).contains(&units).then_some(token)
+    })
 }
 
 pub(crate) fn class_declarations(
@@ -248,16 +269,29 @@ pub(crate) fn class_declarations(
 }
 
 pub(super) fn configuration(section: &str) -> Option<String> {
+    configuration_span(section).map(|span| section[span].to_owned())
+}
+
+/// `section` with the configuration index it names replaced by
+/// `configuration`; `None` when it names none.
+pub(crate) fn renumbered_section(section: &str, configuration: &str) -> Option<String> {
+    let span = configuration_span(section)?;
+    Some(format!(
+        "{}{configuration}{}",
+        &section[..span.start],
+        &section[span.end..]
+    ))
+}
+
+/// The byte range of the configuration index in a `Config-N` section name.
+fn configuration_span(section: &str) -> Option<std::ops::Range<usize>> {
     let start = section.find("Config-")? + "Config-".len();
     let tail = &section[start..];
     let end = tail
         .find("-ResolvedFeatures")
         .or_else(|| tail.find('/'))
         .unwrap_or(tail.len());
-    if tail[..end].is_empty() {
-        return None;
-    }
-    Some(tail[..end].to_owned())
+    (end > 0).then_some(start..start + end)
 }
 
 #[cfg(test)]

@@ -4,11 +4,11 @@
 use cadmpeg_core::decode::{BoundedCount, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -150,13 +150,9 @@ fn validate_value_root(
 fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: Some(property.name.clone()),
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -227,6 +223,7 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .with_of(Meshed::definition(crate::product::document_definition_id()?))
     .with_source_object(Some(association(property)?)))
 }
 

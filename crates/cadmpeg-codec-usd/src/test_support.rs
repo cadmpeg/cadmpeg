@@ -70,7 +70,11 @@ pub(crate) fn decode_with(
         DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).expect("context");
     let ctx = ctx.with_companions(files);
     let result = UsdCodec
-        .decode_with_context(&ctx, root)
+        .decode_with_context(
+            &ctx,
+            root,
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        )
         .unwrap_or_else(|failure| panic!("decode failed: {failure:?}\n{text}"));
     ctx.finish_session().expect("session");
     result
@@ -84,7 +88,7 @@ pub(crate) type Written = (String, cadmpeg_ir::report::export::ExportReport);
 pub(crate) fn try_encode(
     ir: &cadmpeg_ir::CadIr,
     request: TargetRequest<'_>,
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     let plan = UsdCodec.plan(EncodeInput::new(ir, None), request)?;
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes)?;
@@ -106,6 +110,25 @@ pub(crate) fn try_encode(
         String::from_utf8(bytes).expect("USDA text is UTF-8"),
         report,
     ))
+}
+
+/// The USDA 1.0 text that `ir` writes with the scene options `scene`.
+pub(crate) fn encode_with(
+    ir: &cadmpeg_ir::CadIr,
+    scene: cadmpeg_ir::codec::write::SceneOptions,
+) -> Written {
+    let plan = UsdCodec
+        .plan(
+            EncodeInput::new(ir, None).with_scene(scene),
+            TargetRequest::Explicit("usda-1.0"),
+        )
+        .expect("plan the write");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write the layer");
+    (
+        String::from_utf8(bytes).expect("USDA text is UTF-8"),
+        report,
+    )
 }
 
 /// The bytes that `ir` writes as for the target `request` resolves.

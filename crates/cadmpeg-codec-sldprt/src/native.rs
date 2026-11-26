@@ -18,7 +18,7 @@ use crate::records::{
 
 use crate::resolved_features::feature_sources::FeatureSources;
 
-const SLDPRT_ARENA_NAMES: &[&str] = &[
+pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
     "feature_histories",
     "feature_input_body_selections",
@@ -311,20 +311,53 @@ pub(crate) struct SldprtNative {
 pub(crate) mod lanes;
 
 impl SldprtNative {
+    /// The object identifiers the part's objects hold, as the decoder reads
+    /// them (sldprt.md §2.3): each history record's, each named object's
+    /// header identifier and each parameter object's identifier. A
+    /// parameter's identifier is the one the exact archive walk read; where
+    /// the walk read no identifier at the scalar, it is the identifier after a
+    /// zero byte and a null tolerance pointer.
+    pub(crate) fn object_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        let records = self
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(crate::records::Feature::source_value);
+        let objects = self.feature_input_lanes.iter().flat_map(|lane| {
+            let named = lane.names.iter().filter_map(|name| {
+                crate::resolved_features::names::header_object_id(&lane.native_payload, name)
+            });
+            let parameters = lane.scalars.iter().filter_map(|scalar| {
+                scalar.archive_object_id.or_else(|| {
+                    crate::resolved_features::scalars::untoleranced_parameter_id(
+                        &lane.native_payload,
+                        scalar,
+                    )
+                })
+            });
+            named.chain(parameters)
+        });
+        records.chain(objects)
+    }
+
+    /// Loads and admits `namespace`; `linear` is the linear tolerance of the
+    /// document that holds it, under which its relation instances are derived.
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         // A native field can contain 256 containers; reconstruction adds the record root.
         policy.limits.max_recursion_depth = 257;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::load_with_context(&ctx, namespace)
+        Self::load_with_context(&ctx, namespace, linear)
     }
 
     pub(crate) fn load_with_context(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
@@ -797,7 +830,7 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, ctx)?;
+        lanes::admit(&native, ctx, linear)?;
         Ok(native)
     }
 

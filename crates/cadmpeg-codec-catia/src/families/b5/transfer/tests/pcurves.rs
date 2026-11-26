@@ -11,7 +11,6 @@ use crate::families::b5::transfer::{
     build_plan, resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
 };
 const EPS_PCURVE_CONE_GEOMETRY: f64 = 1.0e-12;
-const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
@@ -23,9 +22,11 @@ use super::super::surfaces::revolution_surface;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -271,7 +272,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::from([(
             110,
             B5Profile::Line {
@@ -551,7 +552,6 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         .expect("forward trimmed range");
     assert_eq!(forward.geometry, geometry);
     assert_eq!(forward.parameter_range, Some([2.0, 8.0]));
-    assert_eq!(forward.edge_tolerance, None);
 
     let reversed = oriented_nurbs_range(&geometry, [8.0, 2.0], [8.0, 0.0, 2.0], [2.0, 0.0, 2.0])
         .expect("reversed trimmed range");
@@ -567,6 +567,8 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         oriented_nurbs_range(&geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none()
     );
 
+    // An end 1e-4 off its edge end is within the point tolerance: the plan
+    // keeps the range and states no tolerance of its own.
     let tolerant = oriented_nurbs_range(
         &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
@@ -583,12 +585,7 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         [8.0, 0.0, 2.0],
     )
     .expect("tolerant trimmed range");
-    assert!(
-        (tolerant.edge_tolerance.expect("edge tolerance").get()
-            - (1e-4 + EPS_PCURVE_RESIDUAL_INCREMENT))
-            .abs()
-            < 1e-15
-    );
+    assert_eq!(tolerant.parameter_range, Some([2.0, 8.0]));
 }
 
 #[test]
@@ -671,9 +668,6 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     );
     let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
         .expect("tolerant line endpoints");
-    assert!(tolerant
-        .edge_tolerance
-        .is_some_and(|value| value.get() > 0.001));
     assert_eq!(tolerant.cache_fit_tolerance, None);
     assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
     assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
@@ -899,7 +893,6 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
         CurvePlan {
             geometry: geometry.clone(),
             parameter_range: None,
-            edge_tolerance: None,
             cache_fit_tolerance: None,
         },
     );
@@ -910,7 +903,6 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
         CurvePlan {
             geometry,
             parameter_range: Some([2.0, 8.0]),
-            edge_tolerance: None,
             cache_fit_tolerance: None,
         },
     );
@@ -925,7 +917,6 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
             .expect("valid LineCurve fixture"),
         )),
         parameter_range: Some([2.0, 8.0]),
-        edge_tolerance: None,
         cache_fit_tolerance: None,
     };
     merge_curve_plan(&mut plans, &mut conflicts, 4, conflicting.clone());
@@ -1231,7 +1222,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     let payload = UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
@@ -1346,7 +1337,7 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     for component in components {
@@ -1515,7 +1506,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     );
 
     assert!(crate::assemble::neutral_model_is_admissible(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &[]
     )

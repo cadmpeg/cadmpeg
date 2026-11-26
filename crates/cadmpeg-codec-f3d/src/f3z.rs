@@ -6,7 +6,7 @@
 //! [`decode`] classifies every member, decodes the model root, and delegates
 //! occurrence-scoped graph composition to [`merge`].
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -17,6 +17,7 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
+mod member_keys;
 pub(crate) mod merge;
 pub(crate) mod observer;
 mod session;
@@ -90,9 +91,33 @@ fn compose(
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
     inline_given_up_parts(ctx, &mut fidelity, &model_root)?;
     fidelity.decode_digest = Sha256Digest::digest(scan.source_image);
-    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    let root_untyped = fidelity
+        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .map(|image| image.untyped().clone())
+        .unwrap_or_default();
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
-    crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
+    // The archive image holds the root member's bytes, and with them what that
+    // member's image left undecoded. At container depth no member is decoded,
+    // so it is marked with every class a member's parts can hold.
+    let archive_untyped = if ctx.container_only() {
+        [ArenaClass::Model, ArenaClass::Design].into()
+    } else {
+        root_untyped
+    };
+    if !archive_untyped.is_empty() {
+        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, archive_untyped)?;
+    }
+    // `outer_losses` already holds the loss of each part the scan or the
+    // member classification gave up.
+    crate::decode::commit_parts(
+        ctx,
+        scan.given_up
+            .iter()
+            .chain(&session.archive.given_up)
+            .cloned(),
+        &mut ir,
+        &mut fidelity,
+    )?;
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
@@ -138,7 +163,13 @@ fn compose(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    crate::scene::bind(ctx, &mut ir, &scene_sources, &mut report.losses)?;
+    crate::scene::bind(
+        ctx,
+        &mut ir,
+        &scene_sources,
+        &instance_scopes,
+        &mut report.losses,
+    )?;
     report.losses.append(&mut outer_losses);
     finalize_result(ctx, ir, source, report, fidelity, &instance_scopes)
 }
@@ -193,26 +224,29 @@ fn inline_given_up_parts(
 fn finalize_result(
     ctx: &DecodeContext<'_>,
     mut ir: cadmpeg_ir::CadIr,
-    mut source: cadmpeg_ir::SourceMeta,
+    source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
-    source_fidelity: cadmpeg_ir::SourceFidelity,
+    mut source_fidelity: cadmpeg_ir::SourceFidelity,
     instance_scopes: &merge::InstanceScopes,
 ) -> Result<Decoded, CodecError> {
+    let members = member_keys::MemberKeys::new(&ir.model, instance_scopes);
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
+    body.losses
+        .extend(merge::charge_placement_bound_joints(&ir.model));
     crate::design::owners::release_unbound(&mut ir.model);
-    ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
+    body.losses
+        .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
+    members.apply(ctx, &mut ir, &mut source_fidelity, &mut body.losses)?;
+    let depth = body.transfer.depth();
+    cadmpeg_ir::design::projection::project_layer(
         ctx,
-        &ir,
-        Some(&source),
         "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
+        &mut ir,
+        &mut body.losses,
+        |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
     )?;
-    source.attributes.insert(
-        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        hash,
-    );
+    ir.finalize();
     ir.source = Some(source);
     Ok(Decoded {
         ir,

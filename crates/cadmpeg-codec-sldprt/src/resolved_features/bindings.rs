@@ -32,15 +32,15 @@ use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, PathRef,
-    },
-    units::UnitVector3,
-};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
@@ -655,8 +655,8 @@ pub(crate) fn bind_pattern_inputs(
 /// Admits a pattern axis or plane point read from solved `SolidWorks` geometry.
 fn admitted_point(
     point: Point3,
-) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_core::CodecError> {
-    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+) -> Result<cadmpeg_ir::features::geometry::FinitePoint3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed("SolidWorks pattern point must be finite".into())
     })
 }
@@ -664,8 +664,8 @@ fn admitted_point(
 /// Admits a pattern direction or plane normal read from solved `SolidWorks` geometry.
 fn admitted_direction(
     direction: Vector3,
-) -> Result<cadmpeg_ir::features::FeatureDirection3, cadmpeg_core::CodecError> {
-    cadmpeg_ir::features::FeatureDirection3::new(direction).ok_or_else(|| {
+) -> Result<cadmpeg_ir::features::geometry::FeatureDirection3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::geometry::FeatureDirection3::new(direction).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
             "SolidWorks pattern direction must have a finite nonzero norm".into(),
         )
@@ -674,7 +674,7 @@ fn admitted_direction(
 
 fn mirror_plane_from_surface(
     geometry: &SolvedSurfaceGeometry,
-) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
+) -> Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             Some((plane_surface.origin(), *plane_surface.frame().axis()))
@@ -796,7 +796,9 @@ pub(crate) fn bind_mirror_surface_planes(
                     };
                     if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
                         plane_origin: *origin,
-                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
+                        plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                            *normal,
+                        ),
                     }) {
                         *pattern = admitted;
                     }
@@ -811,7 +813,7 @@ pub(crate) fn bind_mirror_surface_planes(
 }
 
 pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::features::Feature]) {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
     let mut represented = HashMap::new();
     for feature in model_features.iter() {
         let Some(native) = &feature.native_ref else {
@@ -855,11 +857,16 @@ pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::featur
     }
 }
 
+/// Binds the scalar operands and relation instances of `lanes` under the
+/// part's linear tolerance `linear`, and returns the loss notes of their
+/// sketch dimensions that form no relation instance.
 pub(crate) fn bind_scalar_operands(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
+    let mut notes = Vec::new();
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
     let features_by_id = crate::records::HistoryFeatures::new(histories);
@@ -927,16 +934,20 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some((*parent_id).to_owned());
             }
         }
-        finalize_lane_bindings(ctx, histories, lane)?;
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
-    Ok(())
+    Ok(notes)
 }
 
+/// Completes the bindings of `lane` under the part's linear tolerance
+/// `linear`, and returns the loss notes of its sketch dimensions that form no
+/// relation instance.
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
@@ -1020,12 +1031,13 @@ pub(crate) fn finalize_lane_bindings(
     }
     let intervals = feature_intervals(histories, lane);
     lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
-    lane.relation_instances = relation_instances(histories, lane)?;
+    let relations = relation_instances(histories, lane, linear)?;
+    lane.relation_instances = relations.instances;
     lane.body_selections = compact_body_selections(histories, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
     lane.generated_surface_identities = generated_surface_identities(lane)?;
-    Ok(())
+    Ok(relations.notes)
 }
 
 fn represented_sketch_features(
@@ -1066,12 +1078,16 @@ fn represented_sketch_features(
     represented
 }
 
+/// Binds the detached sketch objects of the supplemental lanes in `lanes`
+/// again under the part's linear tolerance `linear`, and returns the loss
+/// notes of their sketch dimensions that form no relation instance.
 pub(crate) fn bind_unresolved_detached_sketch_objects(
     ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     let mut unresolved = HashSet::new();
     for feature in model_features {
         if matches!(
@@ -1095,14 +1111,15 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     {
         represented.insert(feature.id.clone());
     }
+    let mut notes = Vec::new();
     for lane in lanes
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        finalize_lane_bindings(ctx, histories, lane)?;
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
-    Ok(())
+    Ok(notes)
 }
 
 pub(super) fn bind_detached_legacy_sketch_objects(

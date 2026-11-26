@@ -1,10 +1,11 @@
-use super::super::{
+use super::super::helix::{
     HelixCircleProfile, HelixCurveConstruction, HelixFrame, HelixLineProfile,
     HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
-    ProceduralCurveDefinition,
 };
+use super::super::procedural_curves::ProceduralCurveDefinition;
 use crate::math::{Point3, Vector3};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 fn curve(radius: f64) -> HelixCurveConstruction {
     HelixCurveConstruction::try_new(
@@ -129,10 +130,10 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         None
     )
     .is_err());
-    let wire = serde_json::to_value(ProceduralCurveDefinition::Helix(valid)).unwrap();
+    let wire = json::to_value(ProceduralCurveDefinition::Helix(valid)).unwrap();
     assert_eq!(wire["kind"], "helix");
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         ProceduralCurveDefinition::Helix(valid)
     );
     for (field, invalid) in [
@@ -141,7 +142,7 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
     ] {
         let mut bad = wire.clone();
         bad[field] = invalid;
-        assert!(serde_json::from_value::<ProceduralCurveDefinition>(bad).is_err());
+        assert!(json::from_value::<ProceduralCurveDefinition>(bad).is_err());
     }
 }
 
@@ -272,18 +273,18 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
     let profile = HelixSurfaceProfile::Circle(HelixCircleProfile::try_new(-1.0, -2.0).unwrap());
     let surface =
         HelixSurfaceConstruction::try_new([1.0, -1.0], [2.0, -2.0], path, profile).unwrap();
-    let wire = serde_json::to_value(surface).unwrap();
+    let wire = json::to_value(surface).unwrap();
     assert_eq!(
         wire["profile"],
         json!({"kind": "circle", "angle": -1.0, "radius": -2.0})
     );
     assert_eq!(
-        serde_json::from_value::<HelixSurfaceConstruction>(wire.clone()).unwrap(),
+        json::from_value::<HelixSurfaceConstruction>(wire.clone()).unwrap(),
         surface
     );
     let mut bad = wire;
     bad["profile"]["radius"] = json!(0.0);
-    assert!(serde_json::from_value::<HelixSurfaceConstruction>(bad).is_err());
+    assert!(json::from_value::<HelixSurfaceConstruction>(bad).is_err());
     assert!(HelixCircleProfile::try_new(1.0, 0.0).is_err());
     assert!(HelixCircleProfile::try_new(f64::INFINITY, 1.0).is_err());
     assert!(HelixLineProfile::try_new(Vector3::new(0.0, 0.0, 0.0)).is_err());
@@ -292,7 +293,7 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
 
 #[test]
 fn numerical_followup_circular_helix_admits_finite_radial_scales() {
-    use crate::geometry::{HelixFrame, HelixPathConstruction};
+    use crate::geometry::helix::{HelixFrame, HelixPathConstruction};
     use crate::math::{Point3, Vector3};
     for radius in [1.0, 1e200, 1e-200] {
         let frame = HelixFrame {
@@ -331,10 +332,7 @@ fn helix_path_unit_axis_keeps_the_raw_construction_and_wire() {
     )
     .unwrap();
     assert_eq!(raw, typed);
-    assert_eq!(
-        serde_json::to_vec(&raw).unwrap(),
-        serde_json::to_vec(&typed).unwrap()
-    );
+    assert_eq!(json::to_vec(&raw).unwrap(), json::to_vec(&typed).unwrap());
 }
 
 #[test]
@@ -359,7 +357,7 @@ fn numerical_followup_helix_path_requires_two_equal_nonzero_radii() {
 
 #[test]
 fn helix_curve_finite_center_returns_the_admitted_center() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     for center in [
         Point3::new(0.0, 0.0, 0.0),
@@ -394,7 +392,7 @@ fn a_helix_line_profile_holds_its_admitted_direction() {
     let profile = HelixLineProfile::try_new(direction).unwrap();
     assert_eq!(
         profile.direction(),
-        crate::features::FiniteVector3::new(direction).unwrap()
+        crate::features::geometry::FiniteVector3::new(direction).unwrap()
     );
     assert!(HelixLineProfile::try_new(Vector3::new(0.0, 0.0, 0.0)).is_err());
     assert!(HelixLineProfile::try_new(Vector3::new(f64::NAN, 1.0, 0.0)).is_err());

@@ -1,4 +1,4 @@
-use crate::features::NonEmptyMembers;
+use crate::features::selections::NonEmptyMembers;
 use crate::ids::{NativeId, SubdId};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
@@ -235,7 +235,7 @@ pub enum FormReferenceRole {
     SerializerSurface,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
@@ -393,7 +393,7 @@ pub struct FormCageObservation {
     pub binding: FormCageBinding,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
@@ -569,7 +569,7 @@ pub enum FormOrder {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = include_str!("form-api-item.md")]
@@ -634,7 +634,7 @@ impl JsonSchema for FormConstruction {
     }
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let mut schema = FormWire::json_schema(generator);
-        schema.insert("allOf".into(), serde_json::json!([{
+        schema.insert("allOf".into(), cadmpeg_core::json!([{
             "if": {"required":["cages"], "properties":{"cages":{"properties":{"kind":{"const":"complete"}}}}},
             "then": {"properties":{"cages":{"properties":{"value":{"uniqueItems":true}}},"cage_inputs":{"properties":{"membership":{"properties":{"kind":{"const":"complete"}}}}}}},
             "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"value":{"properties":{"membership":{"properties":{"kind":{"const":"partial"}}}}}}}}}
@@ -1123,7 +1123,7 @@ fn form_reference_runs_schema(generator: &mut schemars::SchemaGenerator) -> sche
     schema.insert("items".into(), run.into());
     schema.insert(
         "anyOf".into(),
-        serde_json::json!([{"maxItems": 0}, {"minItems": 2}]),
+        cadmpeg_core::json!([{"maxItems": 0}, {"minItems": 2}]),
     );
     schema
 }
@@ -1143,7 +1143,7 @@ struct FormEvidence {
     membership: FormMembership,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1254,10 +1254,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormConstruction {
         self.inputs.visit_identity_references(ctx, visitor)?;
         self.observations.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("rewrite Form construction")?;
         Ok(Self {
@@ -1297,10 +1297,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReference {
         self.resource.visit_identity_references(ctx, visitor)
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             source: self.source.rewrite_identities(ctx, map)?,
@@ -1326,10 +1326,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormNativeReferenceTar
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(match self {
             Self::Local { target } => Self::Local {
@@ -1364,10 +1364,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormInputs {
         self.resource_state_evidence
             .visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             parameters: self.parameters,
@@ -1393,10 +1393,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for FormResource {
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.source.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             source: self.source.rewrite_identities(ctx, map)?,

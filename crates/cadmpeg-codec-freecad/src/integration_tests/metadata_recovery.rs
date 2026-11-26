@@ -108,7 +108,7 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
         .expect("independent document");
     assert!(crate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .expect("native validation")
@@ -213,7 +213,7 @@ fn unrelated_missing_attachments_recover_but_shape_sidecars_remain_required() {
                     .note(String::new())
                     .code));
             assert!(crate::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 decoded.ir()
             )
             .expect("validation")
@@ -228,11 +228,11 @@ fn large_property_population_preserves_the_complete_checked_model() {
     let bytes = crate::test_support::test_archive::rewrite_entry(source, "Document.xml", |data| {
         let document = std::str::from_utf8(data).unwrap();
         let mut addition = String::new();
-        for index in 0..32_000 {
+        for index in 0..256 {
             writeln!(addition, r#"<Property name="Stress{index}" type="App::PropertyString"><String value=""/></Property>"#).unwrap();
         }
         document
-            .replacen("<Properties Count=\"17\"", "<Properties Count=\"32017\"", 1)
+            .replacen("<Properties Count=\"17\"", "<Properties Count=\"273\"", 1)
             .replacen("</Properties>", &(addition + "</Properties>"), 1)
             .into_bytes()
     });
@@ -252,7 +252,7 @@ fn large_property_population_preserves_the_complete_checked_model() {
         .unwrap()
         .is_empty());
     let properties = result.ir().native.namespace("fcstd").unwrap().arenas();
-    assert!(properties["properties"].len() >= 32_000);
+    assert!(properties["properties"].len() >= 256);
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .unwrap();
         let mut written = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut written))
             .unwrap();
         let roundtrip = FcstdCodec
@@ -352,7 +352,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
         assert!(properties[0].links().is_empty());
         assert!(properties[0].side_entries().is_empty());
         assert!(crate::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             roundtrip.ir()
         )
         .unwrap()

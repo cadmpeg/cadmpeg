@@ -7,7 +7,7 @@ use super::super::{
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceObjectAssociation;
@@ -140,12 +140,8 @@ fn uppercase_binary_shape_extension_selects_binary_reader() {
 fn source_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new("Owner").expect("nonblank object"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

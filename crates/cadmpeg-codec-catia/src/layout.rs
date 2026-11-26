@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/catia.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Tag constants from the table inventory.
 pub(crate) mod token {
@@ -884,24 +884,6 @@ pub(crate) mod container_property_record {
     pub(crate) const VALUE_BYTES: usize = 10;
 }
 
-/// Byte offsets for the `consolidated_vertex_wide_roster` record.
-///
-/// Spec §6.4. Record length 5 B.
-pub(crate) mod consolidated_vertex_wide_roster {
-    /// Record length in bytes. Spec §6.4.
-    pub(crate) const LEN: usize = 5;
-    /// Offset of `marker` (`u8`). Spec §6.4.
-    pub(crate) const MARKER: usize = 0;
-    /// Stated value of `marker` (`u8`). Spec §6.4.
-    pub(crate) const MARKER_VALUE: u8 = 14;
-    /// Offset of `ordinal` (`u24`, little-endian). Spec §6.4.
-    pub(crate) const ORDINAL: usize = 1;
-    /// Offset of `terminal` (`u8`). Spec §6.4.
-    pub(crate) const TERMINAL: usize = 4;
-    /// Stated value of `terminal` (`u8`). Spec §6.4.
-    pub(crate) const TERMINAL_VALUE: u8 = 0;
-}
-
 /// Byte offsets for the `surface_weight_row_prefix` record.
 ///
 /// Spec §6.1. Record length 3 B.
@@ -926,22 +908,6 @@ pub(crate) mod surface_weight_repeat_row_prefix {
     pub(crate) const LEADING_REPEATS: usize = 3;
 }
 
-/// Byte offsets for the `sheet_plane_implicit_v_payload` record.
-///
-/// Spec §6.3. Record length 74 B.
-pub(crate) mod sheet_plane_implicit_v_payload {
-    /// Record length in bytes. Spec §6.3.
-    pub(crate) const LEN: usize = 74;
-}
-
-/// Byte offsets for the `sheet_plane_explicit_v_a0_payload` record.
-///
-/// Spec §6.3. Record length 82 B.
-pub(crate) mod sheet_plane_explicit_v_a0_payload {
-    /// Record length in bytes. Spec §6.3.
-    pub(crate) const LEN: usize = 82;
-}
-
 /// Byte offsets for the `surface_weight_symmetric_03_prefix` record.
 ///
 /// Spec §6.1. Record length 3 B.
@@ -958,4 +924,58 @@ pub(crate) mod surface_weight_symmetric_03_prefix {
 pub(crate) mod surface_weight_symmetric_07_prefix {
     /// Stated value of `control` (`u16`). Spec §6.1.
     pub(crate) const CONTROL_VALUE: u16 = 0x0007;
+}
+
+/// Byte offsets for the `consolidated_vertex_wide_roster` record.
+///
+/// Spec §6.4. Record length 5 B.
+pub(crate) mod consolidated_vertex_wide_roster {
+    /// Record length in bytes. Spec §6.4.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER_VALUE: u8 = 14;
+    /// Offset of `ordinal` (`u24`, little-endian). Spec §6.4.
+    pub(crate) const ORDINAL: usize = 1;
+    /// Offset of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL: usize = 4;
+    /// Stated value of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `sheet_plane_implicit_v_payload` record.
+///
+/// Spec §6.3. Record length 74 B.
+pub(crate) mod sheet_plane_implicit_v_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 74;
+}
+
+/// Byte offsets for the `sheet_plane_explicit_v_a0_payload` record.
+///
+/// Spec §6.3. Record length 82 B.
+pub(crate) mod sheet_plane_explicit_v_a0_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 82;
+}
+
+/// Byte offsets for the `sphere_pcurve_coordinate_selector` record.
+///
+/// Spec §6.7. Record length 27 B.
+pub(crate) mod sphere_pcurve_coordinate_selector {
+    /// Stated value of `tag` (`bytes[3]`). Spec §6.7.
+    pub(crate) const TAG_VALUE: [u8; 3] = [0x41, 0x11, 0x82];
+}
+
+/// Byte offsets for the `owned_pcurve_wide_channel_header` record.
+///
+/// Spec §6.3. Record length 3 B.
+pub(crate) mod owned_pcurve_wide_channel_header {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 3;
+    /// Stated value of `marker` (`u8`). Spec §6.3.
+    pub(crate) const MARKER_VALUE: u8 = 20;
+    /// Offset of `site_count` (`u16`, little-endian). Spec §6.3.
+    pub(crate) const SITE_COUNT: usize = 1;
 }

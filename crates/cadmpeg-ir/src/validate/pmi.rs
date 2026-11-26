@@ -1,13 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
+mod nominals;
+mod tolerances;
+
+#[cfg(test)]
+mod tests;
+
 use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
-use crate::pmi::{PmiDefinition, PmiTarget};
+use crate::pmi::{DimensionModifier, PmiDefinition, PmiTarget};
+use crate::report::check::Ruled;
 use crate::report::check::{Check, Finding};
+use crate::report::Severity;
+use nominals::BoundParameters;
+
+fn error(findings: &mut Vec<Finding>, annotation: &str, message: Ruled<'_>) {
+    record_finding(
+        findings,
+        Check::Pmi,
+        Severity::Error,
+        Some(annotation),
+        message,
+    );
+}
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.model.pmi.is_empty() {
+        return;
+    }
+    let bound_parameters = BoundParameters::new(ir);
     let definitions = BorrowedIdentities::build(|add| {
         for annotation in &ir.model.pmi {
             add(annotation.id.as_str(), &annotation.definition);
@@ -57,7 +80,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::Pmi,
                     crate::report::Severity::Error,
                     Some(annotation.id.as_str()),
-                    format_args!("{}", "unresolved PMI target"),
+                    crate::rule!("pmi.unresolved-pmi-target", "{}", "unresolved PMI target"),
                 );
             }
         }
@@ -73,7 +96,11 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("{}", "unresolved datum reference"),
+                            crate::rule!(
+                                "pmi.unresolved-datum-reference",
+                                "{}",
+                                "unresolved datum reference"
+                            ),
                         );
                     }
                 }
@@ -106,7 +133,25 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("inconsistent geometric tolerance-zone constraints"),
+                        crate::rule!(
+                            "pmi.inconsistent-geometric-tolerance-zone-constraints",
+                            "inconsistent geometric tolerance-zone constraints"
+                        ),
+                    );
+                }
+                if zones
+                    .iter()
+                    .any(|zone| zone.form.other_names_a_typed_form())
+                {
+                    record_finding(
+                        findings,
+                        Check::Pmi,
+                        crate::report::Severity::Error,
+                        Some(annotation.id.as_str()),
+                        crate::rule!(
+                            "pmi.tolerance-zone-other-form-names-typed",
+                            "tolerance zone's other form names a typed form"
+                        ),
                     );
                 }
                 if let Some(id) = datum_system {
@@ -119,7 +164,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("unresolved datum system"),
+                            crate::rule!("pmi.unresolved-datum-system", "unresolved datum system"),
                         );
                     }
                 }
@@ -131,21 +176,42 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("dimension nominal quantity disagrees with its kind"),
+                        crate::rule!(
+                            "pmi.dimension-nominal-quantity-disagrees-kind",
+                            "dimension nominal quantity disagrees with its kind"
+                        ),
                     );
                 }
-                let repeated = dimension
+                if dimension
                     .modifiers
                     .iter()
-                    .enumerate()
-                    .any(|(index, modifier)| dimension.modifiers[..index].contains(modifier));
-                if repeated {
+                    .any(DimensionModifier::other_names_a_typed_modifier)
+                {
                     record_finding(
                         findings,
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("dimension states a modifier more than once"),
+                        crate::rule!(
+                            "pmi.dimension-other-modifier-names-typed-modifier",
+                            "dimension's other modifier names a typed modifier"
+                        ),
+                    );
+                }
+                let id = annotation.id.as_str();
+                nominals::check_bound_nominal(&bound_parameters, id, dimension, findings);
+                tolerances::check_dimension_tolerance(id, dimension, findings);
+                tolerances::check_dimension_statements(&bound_parameters, id, dimension, findings);
+                if dimension.dimension == crate::pmi::PmiDimensionKind::DirectedLocation
+                    && annotation.targets.len() != 2
+                {
+                    error(
+                        findings,
+                        id,
+                        crate::rule!("pmi.directed-location-dimension-target-count",
+                            "directed location dimension has {} targets; it has two, the origin and the target",
+                            annotation.targets.len()
+                        ),
                     );
                 }
             }
@@ -157,7 +223,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("unresolved semantic annotation"),
+                            crate::rule!(
+                                "pmi.unresolved-semantic-annotation",
+                                "unresolved semantic annotation"
+                            ),
                         );
                         break;
                     }

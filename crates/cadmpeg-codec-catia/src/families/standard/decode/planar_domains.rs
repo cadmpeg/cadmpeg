@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{FaceLoops, Sense};
@@ -91,9 +91,9 @@ pub(super) fn repair(
     let mut roles = Vec::new();
     let mut constraint = ir.geometry.edges.len();
     for (face_index, face) in ir.geometry.faces.iter().enumerate() {
-        if face.loops.len() < 2 {
+        let Some(face_loops) = face.loops.boundary().filter(|loops| loops.len() >= 2) else {
             continue;
-        }
+        };
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
@@ -101,7 +101,7 @@ pub(super) fn repair(
             continue;
         };
         let mut rows = Vec::new();
-        for id in &face.loops {
+        for id in face_loops {
             let Some(&boundary) = loops.get(id) else {
                 continue;
             };

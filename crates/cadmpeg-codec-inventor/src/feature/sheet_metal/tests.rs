@@ -2,9 +2,11 @@
 use super::*;
 use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::{content_at, parse};
+use cadmpeg_core::serde_erase::json;
 
 use crate::feature::FeatureInventory;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::BTreeMap;
 
 fn header(version: u8) -> Vec<u8> {
@@ -43,9 +45,9 @@ fn exact_record(bytes: &[u8], kind: [u8; 16], version: u8) -> PmDcFeaturePropert
     let mut extra = bytes.to_vec();
     extra.push(0);
     assert!(decode(&extra, kind, version).is_err());
-    let wire = serde_json::to_value(&parsed).expect("serialize property");
+    let wire = json::to_value(&parsed).expect("serialize property");
     assert_eq!(
-        serde_json::from_value::<PmDcFeaturePropertyPayload>(wire).expect("deserialize property"),
+        json::from_value::<PmDcFeaturePropertyPayload>(wire).expect("deserialize property"),
         parsed
     );
     parsed
@@ -97,9 +99,9 @@ fn attachment_keeps_order_qualifiers_states_and_optional_reference() {
         for end in bytes.len() - 3..bytes.len() {
             assert!(decode(&bytes[..end], ATTACHMENT_TYPE, version).is_err());
         }
-        let wire = serde_json::to_value(&extended).expect("serialize extended attachment");
+        let wire = json::to_value(&extended).expect("serialize extended attachment");
         assert_eq!(
-            serde_json::from_value::<PmDcFeaturePropertyPayload>(wire).expect("extended wire"),
+            json::from_value::<PmDcFeaturePropertyPayload>(wire).expect("extended wire"),
             extended
         );
     }
@@ -334,9 +336,9 @@ fn sheet_metal_validation_checks_record_identity_and_operand_types() {
     assert!(!valid_references(&wrong_identity, |ordinal| types
         .get(usize::try_from(ordinal).expect("fixture ordinal fits usize"))
         .map(String::as_str)));
-    let mut wire = serde_json::to_value(&located).expect("native wire");
-    wire["kind"]["definition"]["width"]["index"] = serde_json::json!(0x8000_0000_u32);
-    assert!(serde_json::from_value::<PmDcFeatureProperty>(wire).is_err());
+    let mut wire = json::to_value(&located).expect("native wire");
+    wire["kind"]["definition"]["width"]["index"] = cadmpeg_core::json!(0x8000_0000_u32);
+    assert!(json::from_value::<PmDcFeatureProperty>(wire).is_err());
 }
 
 #[test]
@@ -397,7 +399,7 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
 }
 
 fn corner_loss_input() -> cadmpeg_ir::features::Feature {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "test:model:feature#corner", "ordinal": 1,
         "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic corner feature")
@@ -429,7 +431,7 @@ fn projected_unchanged_corner_reports_every_retained_control() {
     corner.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalCorner {
             bend: FeatureId::mint("test:model:feature#bend").expect("bend identity"),
-            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+            effect: cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect::Unchanged,
         },
     ));
     let losses = retained_control_losses([&corner]);
@@ -524,9 +526,9 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
     use cadmpeg_ir::ids::IdentityKey;
 
     let (mut inventory, feature) = native_corner_round();
-    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
-    label["class_id"] = serde_json::to_value(super::super::FILLET_CLASS_ID).expect("class");
-    inventory.labels[0] = serde_json::from_value(label).expect("ordinary fillet label");
+    let mut label = json::to_value(&inventory.labels[0]).expect("label");
+    label["class_id"] = json::to_value(super::super::FILLET_CLASS_ID).expect("class");
+    inventory.labels[0] = json::from_value(label).expect("ordinary fillet label");
     assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
 
     let (mut inventory, feature) = native_corner_round();
@@ -538,10 +540,10 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
     assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
 
     let (mut inventory, feature) = native_corner_round();
-    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
+    let mut label = json::to_value(&inventory.labels[0]).expect("label");
     label["header"]["owner"] =
-        serde_json::to_value(crate::test_support::sheet_metal::reference(102)).expect("owner");
-    inventory.labels[0] = serde_json::from_value(label).expect("other owner");
+        json::to_value(crate::test_support::sheet_metal::reference(102)).expect("owner");
+    inventory.labels[0] = json::from_value(label).expect("other owner");
     assert!(native_kind_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
 
     let (inventory, mut feature) = native_corner_round();
@@ -552,7 +554,9 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
             groups: vec![cadmpeg_ir::features::edge_treatments::FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::Native("synthetic-edges".to_owned()),
+                edges: cadmpeg_ir::features::selections::EdgeSelection::Native(
+                    "synthetic-edges".to_owned(),
+                ),
                 radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("radius"),
                 },
@@ -631,7 +635,7 @@ fn a_native_face_plate_names_its_first_refused_check() {
     typed.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalCorner {
             bend: FeatureId::mint("test:model:feature#bend").expect("bend"),
-            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+            effect: cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect::Unchanged,
         },
     ));
     assert!(face_losses(&refusals, &[typed]).is_empty());
@@ -640,9 +644,9 @@ fn a_native_face_plate_names_its_first_refused_check() {
 #[test]
 fn a_native_plate_without_another_note_names_its_projection_stage() {
     let (mut inventory, mut feature) = native_corner_round();
-    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
-    label["class_id"] = serde_json::to_value(super::super::PLATE_CLASS_ID).expect("class");
-    inventory.labels[0] = serde_json::from_value(label).expect("plate label");
+    let mut label = json::to_value(&inventory.labels[0]).expect("label");
+    label["class_id"] = json::to_value(super::super::PLATE_CLASS_ID).expect("class");
+    inventory.labels[0] = json::from_value(label).expect("plate label");
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Native {
             kind: "Plate".into(),

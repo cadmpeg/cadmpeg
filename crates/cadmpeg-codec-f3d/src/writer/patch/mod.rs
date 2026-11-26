@@ -69,6 +69,14 @@ pub(crate) fn write_semantic(
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
+    if !target.model.omitted_arenas_held() {
+        return Err(CodecError::NotImplemented(
+            "the document is edited since decode and was read from CADIR, which does not carry \
+             the feature, parameter, configuration, and joint arenas the F3D patch compares \
+             edits against; write it from the decoded source file"
+                .into(),
+        ));
+    }
     // Semantic patching reserializes native records under the same desktop
     // decode policy used for the source-image salvage decode below.
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -448,7 +456,12 @@ pub(crate) fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
+        supported.store(
+            &encode_ctx,
+            supported_target
+                .native
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+        )?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(
@@ -826,7 +839,7 @@ pub(crate) fn write_semantic(
 /// which is the parameter of the curve it trims, negated on a reversed carrier.
 fn native_subset_shift(ir: &CadIr, curve: &cadmpeg_ir::ids::CurveId) -> Option<f64> {
     ir.geometry.procedural_curves.iter().find_map(|procedural| {
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
             procedural.definition()
         else {
             return None;

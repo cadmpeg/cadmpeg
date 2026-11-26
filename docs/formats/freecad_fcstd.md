@@ -1,6 +1,6 @@
 # FreeCAD `.FCStd`
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Support envelope
 
@@ -12,20 +12,8 @@ B-rep side entries. GUI state, thumbnails, persistent element maps, and string-h
 independently optional. Each archive entry is one part. A Geometry property needs the side entry
 that holds its payload.
 
-The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
-retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves the physical order of the retained side entries, preserves every unedited XML
-record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
-declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
-without a typed serializer is refused rather than flattening or discarding children.
-Retained-document transcoding across bands is explicitly refused: the writer regenerates no
-`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
-declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
-available. A preserving write of a source whose retained document graph is
-unusable is refused with the source's own dialect and the catalog, never silently rewritten to
-schema 4.
+Outside the XLink properties, a non-empty `file` or `File` value attribute names one side entry,
+and an empty one names none.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. New object declarations carry
@@ -387,6 +375,18 @@ tessellation is presentation data and does not replace an available exact shape.
 use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
+CADIR decision: below the root, a region, shell, face, loop, or coedge is keyed by its shape and
+location identity, so a compound or a shell that lists one shape twice at one location identity
+lists one element twice. A face listed again at one location identity under another shell, or
+with the other sense, is another face, as the two sides of a face that two solids share: its key
+appends `~use<n>` (escaped `%7Euse<n>` in the id), where `n` numbers the face's distinct uses in
+listing order from 2, and its loops and coedges take their keys from it. The element name binds the first use. Otherwise the
+first listing is the element (CADIR §2.2), as edges, vertices, and points already are. Each
+record a later listing restates with the same content is read and not stated, and is charged one
+`fcstd/topology.record-repeated` loss that names the payload and the record's id. A region or a
+shell restated with other content, as a shell that two solids list, is emitted as read, and the
+decode wrapper's rule for a repeated id applies (CADIR §2.8). Body kind and shell closure count
+every listing.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
 location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
@@ -407,6 +407,8 @@ CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that
 uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
 face incidence and native orientation remain in the native shape record, with
 `fcstd/topology.non-boundary-incidence-retained`.
+A face with no boundary wire on a plane, cylinder, or cone states no boundary; its neutral face is
+partial (CADIR §5.6), with `fcstd/topology.face-boundary-unstated`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -589,7 +591,9 @@ An expression binding is retained independently from its target property's cache
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
 identity, expression-engine identity, and dependencies on other decoded parameters when qualified
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
-not create fabricated parameter identities.
+not create fabricated parameter identities. A binding whose expression text is empty or blank
+emits `parameter.expression-empty`; the v11 parameter states the target property's stored value as
+its expression.
 
 `Placement.Base.x`, `.y`, and `.z` identify the translation components of a
 `PropertyPlacement`; each component is a length in millimetres. An expression target
@@ -640,7 +644,9 @@ it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the obje
 `LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
 `App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
 definition come only from the `Shape` property of its object. Other shape payloads, such as
-`AddSubShape` and `InternalShape`, are not definition bodies. When `Shape` holds a non-null shape
+`AddSubShape` and `InternalShape`, are not definition bodies. A datum (`PartDesign::Plane`,
+`Line`, `Point`, or `CoordinateSystem`) is a feature: a container that lists it holds it as a
+member, and its `Shape` is its display shape, kept in its shape payload record. When `Shape` holds a non-null shape
 whose root location is a rigid transform, that transform is the restored `Placement` of the object
 and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
 bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
@@ -836,11 +842,19 @@ state rather than being collapsed into one enabled flag. Validation rejects dupl
 inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
 A body displays its active `Tip` result through its own `Shape`, with visibility set by the body's
 own GUI view provider. Shapes of members in `Group` or legacy `Model`, including the `Tip`, and
-all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology. They
-remain available for history selections and carry `visible: false`. Structural membership and
-auxiliary shape roles take precedence over GUI visibility; a member's visible view provider does
-not make its stored shape an independent output body. A free feature outside a body retains the
-GUI visibility of its own `Shape`.
+all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology, held
+outside the current geometry. The `Shape` of a member that stores `BaseFeature` holds the
+body's state after that member: each such state other than the `Tip`'s is an evaluation of the
+state after the member, based on the nearest earlier stored state of the body. The `Tip`'s
+`Shape` repeats the body's own `Shape`; where the body's own `Shape` holds no shape, the `Tip`'s
+holds the body's current state. The `AddSubShape` of `Pad`, `Pocket`, `Revolution`, `Groove`,
+`Hole`, and every `Additive` and `Subtractive` feature holds the feature's tool body, an
+evaluation of its own; a document that names the tool shape by the feature's effect stores it as
+`AddShape` or `SubShape`. Every other intermediate shape (a sketch's or a datum's shape, a binder's
+copy, a suppressed member's shape, a dress-up's or a pattern's `AddSubShape`) stays in its shape
+payload record. A persistent element name binds a record of the current geometry only. A
+selection of an intermediate shape's sub-element keeps its source property. A free feature
+outside a body retains the GUI visibility of its own `Shape`.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -1410,9 +1424,17 @@ types do not supply page template or page-view carriers. CADIR decision: only
 field.
 
 For a page, the persisted `Template` link is represented as an optional local template identity only
-when its nonempty target resolves to a registered template drawing. Its typed relationship retains an
-explicit null, external target, or non-drawing target. The persisted `Views` link list is represented
-by an ordered typed relationship, including null, external, and non-drawing targets.
+when its nonempty target resolves to a registered template drawing; the relationship map then holds no
+`Template` entry, and otherwise retains the explicit null, external target, or non-template target. The
+`Views` link list of a page or a view collection (`DrawProjGroup`, `DrawViewClip`,
+`DrawViewCollection`) is represented by `Drawing.views`, in serialized order, for each target that is
+a drawing record other than a page or a template; the relationship map retains the other entries. The
+`BaseView` link of a section or a detail is `Drawing.base_view` when it names a view, projection,
+section, or detail record. Every other local link that names a drawing record is a drawing reference,
+and one that names an `App::Annotation` or `App::AnnotationLabel` a semantic-annotation reference; a
+dimension object, which is both, is named as its drawing record. A subelement of a drawing record
+(`Front.Edge3`) is an unread part of it, its name retained: TechDraw numbers projected edges and
+vertices that are runtime geometry, so no drawing curve holds them.
 
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
@@ -1893,7 +1915,18 @@ both taper angles and offsets, whether length follows the profile normal, and wh
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
 direction. A non-sketch planar profile supplies its profile normal from its persisted placement
-frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
+frame. Reversal inverts the direction.
+
+A body's `Group` list orders its solid features. Its first solid feature creates a new body
+when it adds material and both the body's `BaseFeature` link and the feature's `BaseFeature` link
+are empty.
+An absent `BaseFeature` property also denotes an empty link. Later features add to or remove from
+the result of the same body. A body with a `BaseFeature` link starts from that base. These rules
+apply to PartDesign pads, revolutions, primitives, lofts, pipes, and helices. Pockets, grooves,
+holes, and subtractive primitives, lofts, pipes, and helices remove material. A subtractive first
+solid feature with empty body and feature `BaseFeature` links has an empty input solid.
+
+Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
@@ -1916,7 +1949,8 @@ at most one turn. The sum of two fixed side magnitudes is at most one turn.
 Revolution `Type=1` selects last-intersection termination; Groove `Type=1` selects through-all
 termination. `Type=2` selects first-intersection termination, and `Type=3` selects the face in
 `UpToFace`. These terminations have no fixed angular endpoint.
-Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut.
+Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut,
+subject to the first-feature rule of the extrusion section.
 
 Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
 mode and require a finite positive constant radius. Chamfers retain equal-distance,
@@ -2128,3 +2162,11 @@ A TechDraw annotation's `TextSize` has physical millimetre units with the
 `App::PropertyLength` carrier. A positive value gives `text_style.height`.
 Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
 height. GUI point and pixel sizes are distinct from physical em height.
+
+## 13. Codec digests
+
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
+
+| Key | Records |
+| --- | --- |
+| `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |

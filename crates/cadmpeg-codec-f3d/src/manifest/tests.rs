@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use super::{
-    encode_asset_header, encode_design_asset, encode_top_level, generated_design_asset,
-    parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16, resolve_design_folder,
-    AssetKind, DESIGN_ASSET_TYPE, GENERATED_DESIGN_ASSET_BASE, GENERATED_DOCUMENT_ASSET_GUID,
-    GENERATED_DOCUMENT_GUID, TOP_LEVEL_MANIFEST_VERSION,
+    encode_asset_header, encode_design_asset, encode_design_asset_with_subtype, encode_top_level,
+    generated_design_asset, parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16,
+    resolve_design_folder, AssetKind, DesignAssetFolder, DESIGN_ASSET_TYPE,
+    GENERATED_DESIGN_ASSET_BASE, GENERATED_DOCUMENT_ASSET_GUID, GENERATED_DOCUMENT_GUID,
+    TOP_LEVEL_MANIFEST_VERSION,
 };
 use cadmpeg_core::CodecError;
 
@@ -17,6 +18,7 @@ fn current_top_level_manifest_round_trips() {
     let bytes = encode_top_level(DESIGN_GUID, &["Design Base", "Simulation"]).unwrap();
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base", "Simulation"]);
+    assert!(manifest.lineage_urn.is_none());
 }
 
 #[test]
@@ -54,6 +56,10 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
     assert_eq!(
         with_lineage.asset_folder_bases,
         ["Simulation", "Design Base"]
+    );
+    assert_eq!(
+        with_lineage.lineage_urn.as_deref(),
+        Some("urn:synthetic:lineage")
     );
 }
 
@@ -100,6 +106,7 @@ fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
 
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+    assert!(manifest.lineage_urn.is_none());
 }
 
 #[test]
@@ -113,6 +120,10 @@ fn top_level_manifest_export_flag_can_carry_a_lineage_urn() {
     push_utf16(&mut bytes, "urn:synthetic:dm.lineage:key").unwrap();
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+    assert_eq!(
+        manifest.lineage_urn.as_deref(),
+        Some("urn:synthetic:dm.lineage:key")
+    );
 
     let mut not_urn = flagged;
     push_utf16(&mut not_urn, "NA_IMPORT").unwrap();
@@ -143,7 +154,63 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base[Active]");
+    assert_eq!(folder.folder, "Design Base[Active]");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
+}
+
+/// Resolve the Design folder of a document whose listed bases are Fusion
+/// assets with the given subtypes; an empty subtype is the plain Design asset.
+/// A `PCBAssetSubType` asset carries the Design manifest tail after its subtype.
+fn resolve_fusion_assets(assets: &[(&str, &str, &str)]) -> Result<DesignAssetFolder, CodecError> {
+    let bases = assets.iter().map(|(base, _, _)| *base).collect::<Vec<_>>();
+    let manifest = parse_top_level(&encode_top_level(OTHER_GUID, &bases).unwrap()).unwrap();
+    let mut entries = BTreeMap::new();
+    for (base, guid, subtype) in assets {
+        let bytes = if subtype.is_empty() || *subtype == "PCBAssetSubType" {
+            encode_design_asset_with_subtype(base, guid, subtype).unwrap()
+        } else {
+            encode_fusion_subtype_asset(base, guid, subtype).unwrap()
+        };
+        entries.insert(format!("{base}/Manifest.dat"), bytes);
+    }
+    resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
+        entries.get(name).map(Vec::as_slice)
+    })
+}
+
+#[test]
+fn a_board_subtype_asset_is_the_design_folder_when_no_asset_has_an_empty_subtype() {
+    let folder = resolve_fusion_assets(&[
+        ("Simulation", OTHER_GUID, "SimulationModelAssetSubtype"),
+        ("Board", DESIGN_GUID, "PCBAssetSubType"),
+    ])
+    .unwrap();
+    assert_eq!(folder.folder, "Board");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
+
+    // The empty-subtype asset stays the Design folder beside a board asset.
+    let folder = resolve_fusion_assets(&[
+        ("Board", OTHER_GUID, "PCBAssetSubType"),
+        ("Design Base", DESIGN_GUID, ""),
+    ])
+    .unwrap();
+    assert_eq!(folder.folder, "Design Base");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
+
+    let refusal = |assets: &[(&str, &str, &str)]| match resolve_fusion_assets(assets) {
+        Err(CodecError::Malformed(message)) => message,
+        other => panic!("expected a malformed asset-folder run, found {other:?}"),
+    };
+    assert!(refusal(&[
+        ("Board", DESIGN_GUID, "PCBAssetSubType"),
+        ("Second Board", OTHER_GUID, "PCBAssetSubType"),
+    ])
+    .contains("more than one listed folder declares the Design asset"));
+    assert!(refusal(&[
+        ("Simulation", OTHER_GUID, "SimulationModelAssetSubtype"),
+        ("Flat", DESIGN_GUID, "FlatPatternAssetSubType"),
+    ])
+    .contains("no listed folder declares the Design asset"));
 }
 
 #[test]
@@ -172,7 +239,8 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base");
+    assert_eq!(folder.folder, "Design Base");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
 }
 
 /// Replace the leading version field, keeping every later byte.
@@ -648,6 +716,10 @@ fn top_level_manifest_accepts_exact_lineage_suffix() {
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
         assert_eq!(manifest.declared_version(), Some(version));
+        assert_eq!(
+            manifest.lineage_urn.as_deref(),
+            Some("urn:synthetic:lineage")
+        );
         assert!(manifest.diagnostics.is_empty());
     }
 }
@@ -695,6 +767,7 @@ fn top_level_manifest_reads_a_marker_after_the_display_name() {
         let bytes = terminal_manifest(0, Some("Library Part"), marker);
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+        assert!(manifest.lineage_urn.is_none());
         let mut suffixed = bytes;
         suffixed.extend_from_slice(&[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]);
         assert!(

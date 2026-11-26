@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::container::Container;
+use crate::loss::NxLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
@@ -1478,6 +1480,7 @@ fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
 fn stable_object_record_identities(
     source_entry: &str,
     records: &[&[u8]],
+    work_bound: usize,
 ) -> (Vec<Option<String>>, usize) {
     let mut references = Vec::new();
     for bytes in records {
@@ -1490,7 +1493,7 @@ fn stable_object_record_identities(
         );
     }
     let mut graph_work = StableGraphWork {
-        remaining: MAX_STABLE_GRAPH_WORK,
+        remaining: work_bound,
         refused: false,
     };
 
@@ -1541,11 +1544,23 @@ impl StableGraphWork {
     }
 }
 
-/// Indexed OM records in one section left without a stable identity at
-/// [`MAX_STABLE_GRAPH_WORK`].
+/// Indexed OM records in one section left without a stable identity at the
+/// section's graph work bound.
 pub(super) struct IdentityBoundedSection {
-    pub(super) source_entry: String,
-    pub(super) records: usize,
+    source_entry: String,
+    work_bound: usize,
+    records: usize,
+}
+
+impl IdentityBoundedSection {
+    /// Loss for the records kept without a stable identity.
+    pub(super) fn loss(&self) -> LossNote {
+        NxLossCode::ObjectRecordIdentityBounded.note(format!(
+            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+             {} of its object records were kept without a stable identity.",
+            self.source_entry, self.work_bound, self.records
+        ))
+    }
 }
 
 fn append_stable_object_graph_node(
@@ -2403,20 +2418,21 @@ pub(super) struct StringValue {
 #[cfg(test)]
 mod printable_value_wire_tests {
     use super::StringValue;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn object_record_requires_identity_and_its_offset() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "record", "object_id": 1, "object_id_source_offset": 10,
             "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
             "byte_len": 1, "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa", "source_entry": "entry", "source_offset": 20
         });
-        let record: super::ObjectRecord = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: super::ObjectRecord = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
         for field in ["object_id", "object_id_source_offset"] {
             let mut invalid = wire.clone();
             invalid[field] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<super::ObjectRecord>(invalid)
+            assert!(json::from_value::<super::ObjectRecord>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains(field));
@@ -2424,18 +2440,18 @@ mod printable_value_wire_tests {
         let mut invalid = wire;
         invalid["object_id"] = serde_json::Value::Null;
         invalid["object_id_source_offset"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<super::ObjectRecord>(invalid).is_err());
+        assert!(json::from_value::<super::ObjectRecord>(invalid).is_err());
     }
 
     #[test]
     fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
         let json = r#"{"id":"value","record":"record","object_id":1,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
         let value: StringValue = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(json::to_string(&value).unwrap(), json);
         for invalid in ["", "\n", "μ"] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire["value"] = invalid.into();
-            assert!(serde_json::from_value::<StringValue>(wire)
+            assert!(json::from_value::<StringValue>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains("value"));
@@ -3004,6 +3020,29 @@ pub(super) fn external_reference_empty_records(
     output
 }
 
+/// The name of a record among `records`. Each stream numbers its records from its own start, so a
+/// number that two streams use also names the stream.
+fn external_record_key(
+    record: &ExternalReferenceRecord,
+    records: &[ExternalReferenceRecord],
+) -> String {
+    let number = |record: &ExternalReferenceRecord| {
+        record
+            .id
+            .rsplit_once('#')
+            .map_or(record.id.clone(), |(_, key)| key.to_owned())
+    };
+    let key = number(record);
+    let shared = records
+        .iter()
+        .any(|other| other.source_entry != record.source_entry && number(other) == key);
+    if shared {
+        format!("{}-{key}", record.source_entry)
+    } else {
+        key
+    }
+}
+
 /// Decode exact adjacent reference pairs from bounded handle-set tails.
 pub(super) fn external_reference_tail_reference_pairs(
     container: &Container,
@@ -3028,10 +3067,7 @@ pub(super) fn external_reference_tail_reference_pairs(
                 .into_iter()
                 .enumerate()
         {
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
+            let record_key = external_record_key(record, records);
             let id = format!("nx:external-reference:tail-reference-pair#{record_key}-{ordinal}");
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 CodecError::malformed(
@@ -3091,10 +3127,7 @@ pub(super) fn external_reference_record_string_uses(
             .into_iter()
             .zip([first, second, third, fourth])
         {
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
+            let record_key = external_record_key(record, records);
             let id = format!(
                 "nx:external-reference:record-string-use#{record_key}-{}",
                 u8::from(slot)
@@ -3612,9 +3645,10 @@ fn object_record_relation_ids(
 }
 
 /// Catalog every externally bounded NX OM entity record, with the sections
-/// whose identity graph work reached [`MAX_STABLE_GRAPH_WORK`].
+/// whose identity graph work reached `identity_work_bound`.
 pub(super) fn object_records(
     container: &Container,
+    identity_work_bound: usize,
 ) -> Result<(Vec<ObjectRecord>, Vec<IdentityBoundedSection>), cadmpeg_core::CodecError> {
     let mut output = Vec::new();
     let mut bounded_sections = Vec::new();
@@ -3633,10 +3667,11 @@ pub(super) fn object_records(
             .map(|record| record.bytes)
             .collect::<Vec<_>>();
         let (stable_identities, bounded) =
-            stable_object_record_identities(&entry.name, &record_bytes);
+            stable_object_record_identities(&entry.name, &record_bytes, identity_work_bound);
         if bounded != 0 {
             bounded_sections.push(IdentityBoundedSection {
                 source_entry: entry.name.clone(),
+                work_bound: identity_work_bound,
                 records: bounded,
             });
         }
@@ -5080,7 +5115,8 @@ mod object_record_identity_tests {
     fn unique_indexed_object_records_receive_stable_identities() {
         let container = crate::container::scan_bytes(prt_with_indexed_om_section())
             .expect("required invariant");
-        let (records, bounded_sections) = (super::object_records(&container)).unwrap();
+        let (records, bounded_sections) =
+            (super::object_records(&container, super::MAX_STABLE_GRAPH_WORK)).unwrap();
         assert!(bounded_sections.is_empty());
         assert_eq!(records.len(), 2);
         assert!(records
@@ -5090,7 +5126,8 @@ mod object_record_identity_tests {
     }
 
     fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
-        let (identities, bounded) = super::stable_object_record_identities("/entry", records);
+        let (identities, bounded) =
+            super::stable_object_record_identities("/entry", records, super::MAX_STABLE_GRAPH_WORK);
         assert_eq!(bounded, 0);
         identities
     }
@@ -5173,7 +5210,8 @@ mod object_record_identity_tests {
         // Two records that reference each other carry tails longer than half
         // the section's graph work, so neither graph fits. The small pair after
         // them still fits in what the refused charges left.
-        let tail = vec![0xa0; super::MAX_STABLE_GRAPH_WORK / 2 + 1];
+        const WORK_BOUND: usize = 4096;
+        let tail = vec![0xa0; WORK_BOUND / 2 + 1];
         let mut first = vec![0x01, 0x02, 0x90, 0x00, 0x01];
         first.extend_from_slice(&tail);
         let mut second = vec![0x01, 0x02, 0x90, 0x00, 0x00];
@@ -5185,7 +5223,8 @@ mod object_record_identity_tests {
             &[0x01, 0x02, 0x90, 0x00, 0x02, 0xb0],
         ];
 
-        let (identities, bounded) = super::stable_object_record_identities("/entry", &records);
+        let (identities, bounded) =
+            super::stable_object_record_identities("/entry", &records, WORK_BOUND);
 
         assert_eq!(bounded, 2);
         assert!(identities[..2].iter().all(Option::is_none));
@@ -5194,26 +5233,25 @@ mod object_record_identity_tests {
 
     #[test]
     fn graph_identity_work_bound_reports_its_loss() {
-        use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
-        let tail = vec![0xa0; super::MAX_STABLE_GRAPH_WORK];
+        const WORK_BOUND: usize = 4096;
+        let tail = vec![0xa0; WORK_BOUND];
         let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::indexed_om_section_with_expression_tail(&tail),
         )]);
-        let result = crate::NxCodec
-            .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        let container = crate::container::scan_bytes(file).expect("required invariant");
+        let (_, bounded_sections) = super::object_records(&container, WORK_BOUND)
             .expect("a bounded identity graph is not a decode error");
 
-        let bounded = result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == crate::loss::NxLossCode::ObjectRecordIdentityBounded.kind())
-            .collect::<Vec<_>>();
-        assert_eq!(bounded.len(), 1);
-        assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
-        assert!(bounded[0].message.contains("1 of its object records"));
+        assert_eq!(bounded_sections.len(), 1);
+        let loss = bounded_sections[0].loss();
+        assert_eq!(
+            loss.code,
+            crate::loss::NxLossCode::ObjectRecordIdentityBounded.kind()
+        );
+        assert!(loss.message.contains("/Root/UG_PART/UG_PART"));
+        assert!(loss.message.contains("work bound of 4096 bytes"));
+        assert!(loss.message.contains("1 of its object records"));
     }
 }
 

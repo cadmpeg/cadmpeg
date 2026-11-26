@@ -117,6 +117,8 @@ pub(crate) struct LayerClassification {
     host: SldprtDialect,
     layers: DialectLayers,
     losses: Vec<LossNote>,
+    /// The given-up sections that can hold the `swSolidWorks` envelope.
+    unread_envelopes: Vec<String>,
 }
 
 impl LayerClassification {
@@ -129,7 +131,11 @@ impl LayerClassification {
     }
 
     pub(crate) fn append_losses(&self, losses: &mut Vec<LossNote>) {
-        losses.extend(dialect_losses(&self.layers));
+        losses.extend(
+            self.layers
+                .iter()
+                .filter_map(|matched| dialect_loss(matched, &self.unread_envelopes)),
+        );
         for loss in &self.losses {
             losses.push(SldprtLossCode::DialectLayerCollision.note(loss.message.clone()));
         }
@@ -180,6 +186,7 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<LayerClassific
         host,
         layers,
         losses,
+        unread_envelopes: unread_envelopes(scan),
     })
 }
 
@@ -264,13 +271,36 @@ impl SldprtDialect {
     }
 }
 
-/// The dialect-unverified loss for a classified layer.
+/// The given-up sections that can hold the `swSolidWorks` envelope: every
+/// given-up stream or block, by its stored name where one was read.
+fn unread_envelopes(scan: &ContainerScan<'_>) -> Vec<String> {
+    let mut unnamed = 0_usize;
+    let mut sections = Vec::new();
+    for part in scan.given_up.iter().filter(|part| {
+        matches!(
+            part.kind(),
+            crate::container::COMPOUND_STREAM_PART | crate::container::NATIVE_BLOCK_PART
+        )
+    }) {
+        match part.name() {
+            Some(name) => sections.push(name.to_owned()),
+            None => unnamed += 1,
+        }
+    }
+    if unnamed > 0 {
+        sections.push(format!("{unnamed} whose name is not read"));
+    }
+    sections
+}
+
+/// The dialect-unverified loss for a classified layer. `unread_envelopes`
+/// names the given-up sections that can hold the `swSolidWorks` envelope.
 ///
 /// `None` exactly when `matched.admission` is [`Admission::Admitted`], because
 /// this reads that field rather than reclassifying. The biconditional the
 /// decode policy requires is therefore structural: the note charged and the
 /// admission reported come from one value, not from two authors agreeing.
-fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+fn dialect_loss(matched: &DialectMatch, unread_envelopes: &[String]) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
         Admission::Unverified { .. } | Admission::Residual => {
@@ -288,6 +318,13 @@ fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
                  operation code binds only where the four- and eight-byte candidates agree. \
                  Agreement is consistency, not a declaration.",
                 matched.dialect()),
+                None if !unread_envelopes.is_empty() => format!("no swSolidWorks swVersion declaration was read: the given-up section(s) {} can hold one, so no declared identity was verified. The document is read on \
+                 the `{}` residual path without substituting a declared dialect grammar: the \
+                 feature-operation form-code padding filter is not applied, and an \
+                 operation code binds only where the four- and eight-byte candidates agree. \
+                 Agreement is consistency, not a declaration.",
+                unread_envelopes.join(", "),
+                matched.dialect()),
                 None => format!("the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on \
                  the `{}` residual path without substituting a declared dialect grammar: the \
                  feature-operation form-code padding filter is not applied, and an \
@@ -298,11 +335,6 @@ fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
             Some(SldprtLossCode::SourceDialectUnverified.note(message))
         }
     }
-}
-
-/// Losses charged by every unverified layer in a classified document.
-fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
-    layers.iter().filter_map(dialect_loss).collect()
 }
 
 #[cfg(test)]

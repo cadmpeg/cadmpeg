@@ -8,19 +8,19 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
-use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::{FaceBoundary, Sense};
 use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::CadIr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
@@ -90,7 +90,7 @@ fn owner_work_capped_loss(skipped: usize, work_limit: usize) -> LossNote {
 }
 
 fn needs_surface_owner(mesh: &cadmpeg_ir::tessellation::Tessellation) -> bool {
-    mesh.body.is_none() && mesh.faces.is_empty() && mesh.vertex_count() != 0
+    matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) && mesh.vertex_count() != 0
 }
 
 #[cfg(test)]
@@ -513,10 +513,7 @@ pub(crate) struct ClassInterval {
 
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let mut declarations = Vec::new();
-    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
-        if marker != CLASS_MARKER {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(payload, CLASS_MARKER) {
         let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
             continue;
         };
@@ -538,6 +535,7 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
         let name = name_text.to_owned();
         declarations.push((offset, name));
     }
+    let scene_finder = memchr::memmem::Finder::new(SCENE_SOURCE_MARKER);
     let mut declarations = declarations.into_iter().peekable();
     let mut intervals = Vec::new();
     while let Some((offset, name)) = declarations.next() {
@@ -550,12 +548,15 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
             continue;
         };
         let mut source_ids = Vec::new();
-        for window in records.windows(scene_src::LEN) {
-            let Some(source) = window
-                .starts_with(SCENE_SOURCE_MARKER)
-                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                .flatten()
-                .filter(|source| *source != 0)
+        let mut cursor = 0;
+        while let Some(rel) = scene_finder.find(&records[cursor..]) {
+            let at = cursor + rel;
+            cursor = at + 1;
+            let Some(window) = records.get(at..at + scene_src::LEN) else {
+                break;
+            };
+            let Some(source) =
+                View::u32_le_at(window, scene_src::SOURCE_ID).filter(|source| *source != 0)
             else {
                 continue;
             };
@@ -577,10 +578,10 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         if !matches!(
             crate::classification::native_object_class(&class.name).tree_node(),
             Some(
-                cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
+                cadmpeg_ir::features::tree::FeatureTreeNodeRole::AmbientLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::DirectionalLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::PointLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::SpotLight
             )
         ) {
             continue;
@@ -858,11 +859,7 @@ pub(crate) fn section_display_faces(
     #[cfg(test)]
     DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let mut markers = payload
-        .windows(FACE_TESSELLATION_CLASS.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .peekable();
+    let mut markers = memchr::memmem::find_iter(payload, FACE_TESSELLATION_CLASS).peekable();
     let mut faces = Vec::new();
     while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
@@ -1275,21 +1272,27 @@ impl MeshSamples {
 /// The pass spends at most [`TESSELLATION_OWNER_WORK_PER_ROW`] per row it
 /// walks, and never less than [`TESSELLATION_OWNER_WORK`]. Once spent, the
 /// remaining tables stay unassigned and one loss counts them.
+///
+/// No table binds to a face of `stored`, the bodies of the configurations
+/// that are not active: the `DisplayLists` tables are the active
+/// configuration's faces (spec §8).
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
-    assign_unique_surface_owners_within(ctx, ir, losses, work_limit)
+    assign_unique_surface_owners_within(ctx, ir, stored, losses, work_limit)
 }
 
 fn assign_unique_surface_owners_within(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     for face in &ir.geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
@@ -1379,6 +1382,9 @@ fn assign_unique_surface_owners_within(
     for face in &ir.geometry.faces {
         let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
+            if stored.contains(body) {
+                return None;
+            }
             let inverse = match body_transforms.get(body).copied().flatten() {
                 Some(transform) if transform.is_proper_rigid() => {
                     transform.try_inverse_affine().ok()?
@@ -1392,7 +1398,7 @@ fn assign_unique_surface_owners_within(
                 surface: *surfaces.get(&face.surface)?,
                 tolerance: face
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
                 inverse,
                 identity_inverse: inverse == cadmpeg_ir::transform::Transform::identity(),
                 trim: None,
@@ -1494,9 +1500,11 @@ fn assign_unique_surface_owners_within(
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
+        let assigned_id = mesh.id.clone();
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![face.clone()],
+        };
         if let Some(deflection) = chordal_deflection {
             mesh.set_chordal_deflection(Some(deflection))
                 .map_err(|error| {
@@ -1684,13 +1692,19 @@ fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
 /// The identity is a source-declared face key, so it is stronger than a
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
+/// A face of `stored` is no owner (see [`assign_unique_surface_owners`]).
 pub(crate) fn assign_persistent_owners(
     ir: &mut CadIr,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
-) -> Vec<String> {
+    stored: &HashSet<BodyId>,
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
+    let face_bodies = face_bodies(&ir.geometry);
     let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
-    for (target, identity) in face_identities {
+    for (target, identity) in face_identities
+        .iter()
+        .filter(|(face, _)| owns_display(&face_bodies, face, stored))
+    {
         match faces_by_identity.entry(identity) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(target));
@@ -1702,8 +1716,6 @@ pub(crate) fn assign_persistent_owners(
             }
         }
     }
-
-    let face_bodies = face_bodies(&ir.geometry);
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1723,7 +1735,7 @@ pub(crate) fn assign_persistent_owners(
 
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
@@ -1735,9 +1747,11 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(*face) else {
             continue;
         };
-        let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push((*face).clone());
-        mesh.body = Some(body.clone());
+        let assigned_id = mesh.id.clone();
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(assigned_id);
     }
     assigned
@@ -1746,19 +1760,26 @@ pub(crate) fn assign_persistent_owners(
 /// Bind `DisplayLists` tables to faces through the face key at `M+0x64`.
 ///
 /// A key binds only when exactly one table and exactly one emitted face carry
-/// it, so a repeated key on either side binds nothing.
+/// it, so a repeated key on either side binds nothing. A face of `stored`
+/// is no owner (see [`assign_unique_surface_owners`]).
 pub(crate) fn assign_face_key_owners(
     ir: &mut CadIr,
     face_keys: &[(FaceId, u32)],
     bindings: &[FaceKeyBinding],
-) -> Vec<String> {
-    let faces_by_key = unique_by_key(face_keys.iter().map(|(face, key)| (*key, face)));
+    stored: &HashSet<BodyId>,
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
+    let face_bodies = face_bodies(&ir.geometry);
+    let faces_by_key = unique_by_key(
+        face_keys
+            .iter()
+            .filter(|(face, _)| owns_display(&face_bodies, face, stored))
+            .map(|(face, key)| (*key, face)),
+    );
     let tables_by_key = unique_by_key(
         bindings
             .iter()
             .map(|binding| (binding.key, binding.tessellation.as_str())),
     );
-    let face_bodies = face_bodies(&ir.geometry);
     let mut owners = HashMap::new();
     for (key, table) in &tables_by_key {
         let (Some(table), Some(Some(face))) = (table, faces_by_key.get(key)) else {
@@ -1770,15 +1791,17 @@ pub(crate) fn assign_face_key_owners(
     }
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some((face, body)) = owners.get(mesh.id.as_str()) else {
             continue;
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
-        assigned.push(mesh.id.as_str().to_owned());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: (*body).clone(),
+            faces: vec![(*face).clone()],
+        };
+        assigned.push(mesh.id.clone());
     }
     assigned
 }
@@ -1807,10 +1830,20 @@ fn unique_by_key<K: Eq + std::hash::Hash, V: PartialEq>(
     found
 }
 
+/// Whether `face` may own a display table: its body, where it resolves, is
+/// not one of `stored`.
+fn owns_display(
+    face_bodies: &HashMap<FaceId, BodyId>,
+    face: &FaceId,
+    stored: &HashSet<BodyId>,
+) -> bool {
+    face_bodies
+        .get(face)
+        .is_none_or(|body| !stored.contains(body))
+}
+
 /// The body of every face whose shell and region resolve.
-fn face_bodies(
-    geometry: &cadmpeg_ir::document::Topology,
-) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
+fn face_bodies(geometry: &cadmpeg_ir::document::Topology) -> HashMap<FaceId, BodyId> {
     let regions = geometry
         .regions
         .iter()
@@ -2500,7 +2533,7 @@ fn planar_trim(
     let mut polygons = Vec::new();
     let mut circles = Vec::new();
     let mut boundary_tolerance = 0.0_f64;
-    for loop_id in &face.loops {
+    for loop_id in face.loops.boundary()? {
         let loop_ = *loops.get(loop_id)?;
         if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
         {
@@ -2676,7 +2709,7 @@ fn planar_hole_trim(
     let frame = plane_frame(surface.solved()?)?;
     let tolerance = FaceEvaluationTolerance::of(face)?.get();
     let mut has_polygon_loop = false;
-    for loop_id in &face.loops {
+    for loop_id in face.loops.boundary()? {
         let loop_ = loops.get(loop_id)?;
         has_polygon_loop |= loop_.coedges().len() > 1;
     }
@@ -2684,7 +2717,7 @@ fn planar_hole_trim(
         return None;
     }
     let mut holes = Vec::new();
-    for loop_id in &face.loops {
+    for loop_id in face.loops.boundary()? {
         let loop_ = loops.get(loop_id)?;
         if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
         {
@@ -2725,10 +2758,16 @@ fn cylindrical_trim(
     if radius <= EPS_DISPLAY_QUANTIZATION {
         return None;
     }
-    if face.loops.len() != 1 {
+    let Some(
+        FaceBoundary::Unspecified([loop_id])
+        | FaceBoundary::Classified {
+            outer: loop_id,
+            inner: [],
+        },
+    ) = face.loops.boundary()
+    else {
         return None;
-    }
-    let loop_id = face.loops.iter().next()?;
+    };
     let loop_ = *loops.get(loop_id)?;
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
@@ -2827,10 +2866,16 @@ fn conical_trim(
     if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
         return None;
     }
-    if face.loops.len() != 1 {
+    let Some(
+        FaceBoundary::Unspecified([loop_id])
+        | FaceBoundary::Classified {
+            outer: loop_id,
+            inner: [],
+        },
+    ) = face.loops.boundary()
+    else {
         return None;
-    }
-    let loop_id = face.loops.iter().next()?;
+    };
     let loop_ = *loops.get(loop_id)?;
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
@@ -3234,13 +3279,17 @@ fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 /// [`polygon_boundary_within`] over the edges of `polygon` that start at
-/// `edges`.
+/// `edges`. No distance is within a negative or NaN tolerance, so no edge is
+/// measured for one.
 fn edges_within(
     polygon: &[Point2],
     edges: impl IntoIterator<Item = usize>,
     point: Point2,
     tolerance: f64,
 ) -> bool {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return false;
+    }
     edges.into_iter().any(|index| {
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];

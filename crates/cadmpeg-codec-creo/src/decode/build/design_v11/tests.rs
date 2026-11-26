@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId};
+use cadmpeg_ir::design::container::Rollback;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -30,7 +34,7 @@ fn unresolved(family: UnresolvedFamily) -> LegacyOperation {
 }
 
 fn body(key: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("creo:visibgeom:body#{key}"),
         "kind": "solid",
     }))
@@ -48,7 +52,14 @@ fn part(features: Vec<LegacyFeature>, bodies: &[&str]) -> (CadIr, ProductDefinit
     (ir, definition)
 }
 
-fn timeline(ir: &CadIr) -> (&[Member], &Rollback) {
+fn no_names(ir: &CadIr) -> names::Names {
+    names::Names::new(
+        &crate::test_support::empty_container_scan(),
+        regeneration_order(ir).map(|feature| &feature.id),
+    )
+}
+
+fn timeline(ir: &CadIr) -> (&[Member], Option<&Rollback>) {
     let root = &ir.design.scopes[0].roots[0];
     match ir.design.containers.iter().find(|c| c.id() == root) {
         Some(Container::Ordered {
@@ -56,7 +67,7 @@ fn timeline(ir: &CadIr) -> (&[Member], &Rollback) {
             rollback,
             kind: OrderedKind::Timeline,
             ..
-        }) => (members, rollback),
+        }) => (members, rollback.as_ref()),
         _ => panic!("the scope root is no timeline"),
     }
 }
@@ -67,8 +78,9 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
     let plane = feature("1", 0, unresolved(UnresolvedFamily::DatumPlane));
     let (mut ir, definition) = part(vec![extrude.clone(), plane.clone()], &["1"]);
     let model = ir.model.clone();
+    let names = no_names(&ir);
     crate::decode::with_service_context(|ctx| {
-        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new(), &names)
     })
     .expect("timeline");
     let (members, rollback) = timeline(&ir);
@@ -79,13 +91,13 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
             Member::Feature(extrude.id.clone())
         ]
     );
-    assert_eq!(rollback, &Rollback::End);
+    assert_eq!(rollback, None, "the decoder reads no insert position");
     let scope = &ir.design.scopes[0];
     assert_eq!(scope.definition, definition);
     assert_eq!(scope.current.len(), 1);
     assert_eq!(
         scope.current[0].at,
-        Position::After(Member::Feature(extrude.id.clone()))
+        Position::After(Member::Container(scope.roots[0].clone()))
     );
     assert_eq!(scope.current[0].bodies, [ir.geometry.bodies[0].id.clone()]);
     assert_eq!(ir.model, model);
@@ -106,10 +118,17 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
 #[test]
 fn an_empty_timeline_holds_its_current_state_at_its_start() {
     let (mut ir, definition) = part(Vec::new(), &[]);
+    let names = no_names(&ir);
     crate::decode::with_service_context(|ctx| {
-        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new(), &names)
     })
     .expect("timeline");
+    let (_, rollback) = timeline(&ir);
+    assert_eq!(
+        rollback,
+        Some(&Rollback::End),
+        "a timeline with no member has no member to stand before"
+    );
     let root = ir.design.scopes[0].roots[0].clone();
     assert_eq!(ir.design.scopes[0].current[0].at, Position::Start(root));
 }
@@ -118,8 +137,10 @@ fn an_empty_timeline_holds_its_current_state_at_its_start() {
 fn a_model_with_no_feature_list_states_no_design_records() {
     let (mut ir, definition) = part(Vec::new(), &["1", "2"]);
     let scan = crate::test_support::empty_container_scan();
-    crate::decode::with_service_context(|ctx| project(ctx, &scan, &mut ir, &definition))
-        .expect("projection");
+    crate::decode::with_service_context(|ctx| {
+        project(ctx, &scan, &mut ir, &definition, &mut Vec::new())
+    })
+    .expect("projection");
     assert_eq!(ir.design, CadIr::empty().design);
 }
 
@@ -166,6 +187,19 @@ fn operations_keep_their_family_or_their_native_kind() {
     assert_eq!(
         operation(&LegacyOperation::StoredGeometry {}, &BTreeSet::new()).expect("stored"),
         native("stored_geometry").expect("native")
+    );
+    assert_eq!(
+        operation(
+            &LegacyOperation::KnitSurface {
+                faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            },
+            &BTreeSet::new()
+        )
+        .expect("merge"),
+        native("merge").expect("native")
     );
 }
 
@@ -227,5 +261,16 @@ fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
             .map(|finding| finding.message)
             .collect::<Vec<_>>();
         assert!(findings.is_empty(), "{}: {findings:?}", path.display());
+        for face in &ir.geometry.faces {
+            if crate::identity::numbered_identity(face.id.as_str(), names::FACE).is_some() {
+                let entity = cadmpeg_ir::design::refs::EntityRef::Face(face.id.clone());
+                assert!(
+                    ir.design.names.entries().contains_key(&entity),
+                    "{}: {} has no name entry",
+                    path.display(),
+                    face.id
+                );
+            }
+        }
     }
 }

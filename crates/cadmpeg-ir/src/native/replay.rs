@@ -158,13 +158,16 @@ impl<'de, D: de::Deserializer<'de>> ser::Serialize for Pending<D> {
     }
 }
 
-/// Parse the JSON value held in `json`, which the native record writer
-/// bounded at [`super::MAX_NATIVE_NESTING_DEPTH`] containers per field.
+/// Parse the JSON value held in `json`, whose writer bounded its nesting: the
+/// native record writer at [`super::MAX_NATIVE_NESTING_DEPTH`] containers per
+/// field, and a structural projection at its decode context's depth limit; or
+/// the text that [`crate::hash::finite_json::to_json_value`] writes for a value
+/// already in memory.
 ///
 /// One pass reads the text with the parser's recursion limit lifted. An object
 /// key is plain text: the `serde_json` `Value` reader would treat a first key
 /// spelling its `RawValue` protocol token as embedded JSON.
-pub(super) fn value(json: &str) -> serde_json::Result<Value> {
+pub(crate) fn value(json: &str) -> serde_json::Result<Value> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     deserializer.disable_recursion_limit();
     let value = de::DeserializeSeed::deserialize(Plain, &mut deserializer)?;
@@ -498,6 +501,7 @@ mod tests {
 
     use super::emit;
     use crate::native::MAX_NATIVE_NESTING_DEPTH;
+    use cadmpeg_core::serde_erase::json;
     use serde_json::Value;
 
     /// Replay one whole native record field.
@@ -531,9 +535,9 @@ mod tests {
             depth: MAX_NATIVE_NESTING_DEPTH,
         };
         let expected = serde_json::from_str::<Value>(TEXT).unwrap();
-        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
-        assert_eq!(serde_json::to_string(&member).unwrap(), TEXT);
-        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+        assert_eq!(json::to_value(&member).unwrap(), expected);
+        assert_eq!(json::to_string(&member).unwrap(), TEXT);
+        assert_eq!(json::to_value(&member).unwrap(), expected);
     }
 
     /// One budget spans the whole replay: the parser's own limit restarts per

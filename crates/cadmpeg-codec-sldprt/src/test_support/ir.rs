@@ -21,14 +21,14 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let direction = line_curve.direction();
                 let mut origin = line_curve.origin().get();
                 origin.x += dx;
-                let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+                let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap();
                 *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let mut center = circle_curve.center().get();
                 center.x += dx;
                 *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(center).unwrap(),
                     *circle_curve.frame(),
                     circle_curve.radius(),
                 );
@@ -39,7 +39,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let minor_radius = ellipse_curve.minor_radius();
                 let mut center = ellipse_curve.center().get();
                 center.x += dx;
-                let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
+                let center = cadmpeg_ir::features::geometry::FinitePoint3::new(center).unwrap();
                 *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                     center,
                     *frame,
@@ -54,7 +54,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let minor_radius = hyperbola_curve.minor_radius();
                 let mut center = hyperbola_curve.center().get();
                 center.x += dx;
-                let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
+                let center = cadmpeg_ir::features::geometry::FinitePoint3::new(center).unwrap();
                 *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
                     center,
                     *frame,
@@ -67,7 +67,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let focal_distance = parabola_curve.focal_distance();
                 let mut vertex = parabola_curve.vertex().get();
                 vertex.x += dx;
-                let vertex = cadmpeg_ir::features::FinitePoint3::new(vertex).unwrap();
+                let vertex = cadmpeg_ir::features::geometry::FinitePoint3::new(vertex).unwrap();
                 *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
                     vertex,
                     *frame,
@@ -77,7 +77,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let mut point = degenerate_curve.point().get();
                 point.x += dx;
-                let point = cadmpeg_ir::features::FinitePoint3::new(point).unwrap();
+                let point = cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap();
                 *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -85,7 +85,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .try_map_control_points(|_, pole| {
                         let mut pole = pole.get();
                         pole.x += dx;
-                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                             cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                                 "control_points contains a non-finite point".into(),
                             )
@@ -118,7 +118,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     for point in &mut ir.geometry.points {
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x + dx,
                 moved.y,
                 moved.z,
@@ -136,7 +136,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut origin = plane_surface.origin().get();
                 origin.x += dx;
                 *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(
-                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap(),
                     *frame,
                 );
             }
@@ -146,7 +146,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut origin = cylinder_surface.origin().get();
                 origin.x += dx;
                 *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
-                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap(),
                     *frame,
                     radius,
                 );
@@ -159,7 +159,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut origin = cone_surface.origin().get();
                 origin.x += dx;
                 *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
-                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap(),
                     *frame,
                     radius,
                     ratio,
@@ -172,7 +172,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut center = sphere_surface.center().get();
                 center.x += dx;
                 *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
-                    cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(center).unwrap(),
                     *frame,
                     radius,
                 );
@@ -184,7 +184,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut center = torus_surface.center().get();
                 center.x += dx;
                 *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
-                    cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(center).unwrap(),
                     *frame,
                     major_radius,
                     minor_radius,
@@ -195,7 +195,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .try_map_control_points(|_, pole| {
                         let mut pole = pole.get();
                         pole.x += dx;
-                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                             cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                                 "control_points contains a non-finite point".into(),
                             )
@@ -227,14 +227,9 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
 }
 
 pub(crate) fn strict_options() -> DecodeOptions {
-    use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
-    DecodeOptions {
-        depth: cadmpeg_core::decode::DecodeDepth::Full,
-        policy: DecodePolicy {
-            mode: DecodeMode::Strict,
-            ..DecodePolicy::desktop()
-        },
-    }
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    options
 }
 
 /// Translate every positional carrier in the model by `t`. Directions and
@@ -248,7 +243,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
     for point in &mut ir.geometry.points {
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(shift(&point.position().get()))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(shift(&point.position().get()))
                 .expect("a finite translation keeps a finite position"),
         );
     }
@@ -256,7 +251,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
         if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {
             let direction = line_curve.direction();
             let origin = shift(&line_curve.origin().get());
-            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+            let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap();
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
     }
@@ -265,7 +260,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
             &mut surface.geometry
         {
             let origin = shift(&plane_surface.origin().get());
-            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+            let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap();
             *plane_surface =
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, *plane_surface.frame());
         }
@@ -290,7 +285,7 @@ pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec:
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();

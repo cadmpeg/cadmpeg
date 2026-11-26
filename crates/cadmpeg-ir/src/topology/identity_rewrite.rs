@@ -4,11 +4,11 @@
 use super::{
     AnchoredVertexUse, Body, BodyKind, Coedge, CoedgeUseCurve, Color, Edge, EdgeCarrier, EdgeEnds,
     Face, FaceLoops, IncreasingParameterInterval, Loop, LoopBoundary, LoopRing, ParameterInterval,
-    PcurveUse, Point, Region, Sense, Shell, ShellMember, Vertex,
+    PcurveUse, Point, Region, RegionUnstated, Sense, Shell, ShellMember, Unstated, Vertex,
 };
 
 rewrite_record!(AnchoredVertexUse, []; {vertex, after, pcurves});
-rewrite_record!(Body, []; {id, kind, transform, name, color, visible, native_ref});
+rewrite_record!(Body, []; {id, kind, transform, name, color, visible, unstated, native_ref});
 rewrite_scalar!(BodyKind);
 rewrite_record!(Coedge, []; {id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref});
 rewrite_record!(CoedgeUseCurve, []; {curve, parameter_range});
@@ -25,6 +25,8 @@ rewrite_record!(Face, []; {id, shell, surface, sense, loops, name, color, tolera
 rewrite_enum!(FaceLoops, []; {
     Unspecified {loops},
     Classified {outer, inner},
+    PartialUnspecified {loops},
+    PartialClassified {outer, inner},
 });
 rewrite_scalar!(IncreasingParameterInterval);
 rewrite_record!(Loop, []; {id, face, boundary, native_ref});
@@ -36,11 +38,18 @@ rewrite_record!(LoopRing, []; {coedges, vertex_uses});
 rewrite_scalar!(ParameterInterval);
 rewrite_record!(PcurveUse, []; {pcurve, isoparametric, parameter_range});
 rewrite_record!(Point, []; {id, position, source_object, native_ref});
-rewrite_record!(Region, []; {id, body, shells, native_ref});
+rewrite_record!(Region, []; {id, body, shells, unstated, native_ref});
+rewrite_enum!(RegionUnstated, []; {
+    Voids,
+    Exterior {voids},
+    Unclassified {shells},
+});
 rewrite_scalar!(Sense);
-rewrite_record!(Shell, []; {id, region, members, native_ref});
+rewrite_record!(Shell, []; {id, region, members, unstated, native_ref});
+rewrite_scalar!(Unstated);
 rewrite_enum!(ShellMember, []; {
     WireEdge {id},
     FreeVertex {id},
+    Subd {id},
 });
 rewrite_record!(Vertex, []; {id, point, tolerance, native_ref});

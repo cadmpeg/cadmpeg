@@ -11,17 +11,16 @@
 //! reverses the edges on it. A chain of lowered subsets composes into one map.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::geometry::curve_payloads::SubsetCurveConstruction;
 use crate::geometry::nurbs::NurbsCurve;
-use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
-use crate::ids::{CurveId, ProceduralCurveId};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
+use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralCurveId};
 use crate::scalar::FiniteReal;
 use crate::topology::{IncreasingParameterInterval, ParameterInterval, Sense};
 
@@ -84,32 +83,74 @@ struct Lowering {
     curve: CurveId,
     construction: ProceduralCurveId,
     geometry: SolvedCurveGeometry,
-    span: f64,
     map: RootMap,
     definition: SubsetCurveConstruction,
+    carrier_range: ParameterInterval,
+    edge_ranges: BTreeMap<EdgeId, ParameterInterval>,
+    use_ranges: BTreeMap<CoedgeId, ParameterInterval>,
+}
+
+/// A document with its selected subset curves restated.
+pub struct SubsetLowering<'a> {
+    /// The document with every selected subset restated, except the subsets
+    /// in `unlowered`. A subset in `unlowered` keeps its stated construction.
+    /// Where the lowering restated its source, its interval stays on the
+    /// earlier parameter of that source, so a writer writes it only as its
+    /// cache.
+    pub ir: Cow<'a, CadIr>,
+    /// Each selected subset that cannot be restated on its source.
+    pub unlowered: Vec<UnloweredSubset>,
+}
+
+/// A selected subset curve that the lowering cannot restate.
+#[derive(Debug)]
+pub struct UnloweredSubset {
+    /// The curve the subset construction defines.
+    pub curve: CurveId,
+    /// The subset construction.
+    pub construction: ProceduralCurveId,
+    /// Why the subset cannot be restated.
+    pub error: CodecError,
 }
 
 /// `ir` with every subset curve that `lower` selects restated on its first
 /// source that `lower` does not select. A subset whose chain ends at a source
-/// with no solved geometry is kept.
-pub fn lower_subset_curves(
-    ir: &CadIr,
-    lower: impl Fn(&Curve) -> bool,
-) -> Result<Cow<'_, CadIr>, CodecError> {
-    let lowerings = ir
-        .geometry
-        .procedural_curves
-        .iter()
-        .filter_map(|procedural| lowering(ir, procedural, &lower).transpose())
-        .collect::<Result<Vec<_>, _>>()?;
+/// with no solved geometry is kept. A subset that cannot be restated is kept
+/// unchanged and named in [`SubsetLowering::unlowered`].
+pub fn lower_subset_curves(ir: &CadIr, lower: impl Fn(&Curve) -> bool) -> SubsetLowering<'_> {
+    let mut lowerings = Vec::new();
+    let mut unlowered = Vec::new();
+    for procedural in &ir.geometry.procedural_curves {
+        let Some((curve, subset)) = subset_owner(ir, procedural) else {
+            continue;
+        };
+        if !lower(curve) {
+            continue;
+        }
+        match lowering(ir, procedural, curve, subset, &lower) {
+            Ok(Some(lowering)) => lowerings.push(lowering),
+            Ok(None) => {}
+            Err(error) => unlowered.push(UnloweredSubset {
+                curve: curve.id.clone(),
+                construction: procedural.id.clone(),
+                error,
+            }),
+        }
+    }
     if lowerings.is_empty() {
-        return Ok(Cow::Borrowed(ir));
+        return SubsetLowering {
+            ir: Cow::Borrowed(ir),
+            unlowered,
+        };
     }
     let mut lowered = ir.clone();
     for lowering in lowerings {
-        apply(&mut lowered, lowering)?;
+        apply(&mut lowered, lowering);
     }
-    Ok(Cow::Owned(lowered))
+    SubsetLowering {
+        ir: Cow::Owned(lowered),
+        unlowered,
+    }
 }
 
 fn subset_owner<'ir>(
@@ -126,17 +167,15 @@ fn subset_owner<'ir>(
     ))
 }
 
+/// The restatement of `curve`, defined by `subset`, with every interval on it
+/// mapped, so that [`apply`] cannot fail part way.
 fn lowering(
     ir: &CadIr,
     procedural: &ProceduralCurve,
+    curve: &Curve,
+    subset: &SubsetCurveConstruction,
     lower: &impl Fn(&Curve) -> bool,
 ) -> Result<Option<Lowering>, CodecError> {
-    let Some((curve, subset)) = subset_owner(ir, procedural) else {
-        return Ok(None);
-    };
-    if !lower(curve) {
-        return Ok(None);
-    }
     let [first, last] = subset.parameter_range().endpoints();
     let mut map = RootMap::IDENTITY.then([first, last], *subset.sense());
     let mut visited = BTreeSet::from([&curve.id]);
@@ -186,38 +225,67 @@ fn lowering(
         subset.legacy_cache(),
     )
     .map_err(|error| CodecError::malformed(format_args!("subset curve {}: {error}", curve.id)))?;
+    let carrier_range = map.interval(
+        curve
+            .parameter_range
+            .map_or([0.0, span], IncreasingParameterInterval::endpoints),
+    )?;
+    let mut edge_ranges = BTreeMap::new();
+    for edge in &ir.geometry.edges {
+        if let Some(range) = edge
+            .param_range()
+            .filter(|_| edge.curve() == Some(&curve.id))
+        {
+            edge_ranges.insert(edge.id.clone(), map.interval(range.get())?);
+        }
+    }
+    let mut use_ranges = BTreeMap::new();
+    for coedge in &ir.geometry.coedges {
+        if let Some(use_curve) = coedge
+            .use_curve
+            .as_ref()
+            .filter(|use_curve| use_curve.curve == curve.id)
+        {
+            use_ranges.insert(
+                coedge.id.clone(),
+                map.interval(use_curve.parameter_range.endpoints())?,
+            );
+        }
+    }
     Ok(Some(Lowering {
         curve: curve.id.clone(),
         construction: procedural.id.clone(),
         geometry,
-        span,
         map,
         definition,
+        carrier_range,
+        edge_ranges,
+        use_ranges,
     }))
 }
 
-fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
+fn apply(ir: &mut CadIr, lowering: Lowering) {
     let Lowering {
         curve,
         construction,
         geometry,
-        span,
         map,
         definition,
+        carrier_range,
+        edge_ranges,
+        use_ranges,
     } = lowering;
-    let carrier = ir
+    if let Some(carrier) = ir
         .geometry
         .curves
         .iter_mut()
         .find(|carrier| carrier.id == curve)
-        .ok_or_else(|| CodecError::malformed(format_args!("subset curve {curve} is missing")))?;
-    if let CurveGeometry::Procedural { cache, .. } = &mut carrier.geometry {
-        *cache = Some(geometry);
+    {
+        if let CurveGeometry::Procedural { cache, .. } = &mut carrier.geometry {
+            *cache = Some(geometry);
+        }
+        carrier.parameter_range = IncreasingParameterInterval::new(carrier_range.endpoints());
     }
-    let range = carrier
-        .parameter_range
-        .map_or([0.0, span], IncreasingParameterInterval::endpoints);
-    carrier.parameter_range = IncreasingParameterInterval::new(map.interval(range)?.endpoints());
     for procedural in &mut ir.geometry.procedural_curves {
         if procedural.id == construction {
             *procedural = ProceduralCurve::new(
@@ -231,8 +299,8 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         if edge.curve() != Some(&curve) {
             continue;
         }
-        if let Some(range) = edge.param_range() {
-            edge.set_param_range(Some(map.interval(range.get())?));
+        if let Some(range) = edge_ranges.get(&edge.id) {
+            edge.set_param_range(Some(*range));
         }
         if !map.forward {
             if let Some(ends) = &mut edge.ends {
@@ -248,12 +316,14 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
                 Sense::Reversed => Sense::Forward,
             };
         }
-        if let Some(use_curve) = coedge
-            .use_curve
-            .as_mut()
-            .filter(|use_curve| use_curve.curve == curve)
-        {
-            use_curve.parameter_range = map.interval(use_curve.parameter_range.endpoints())?;
+        if let (Some(use_curve), Some(range)) = (
+            coedge
+                .use_curve
+                .as_mut()
+                .filter(|use_curve| use_curve.curve == curve),
+            use_ranges.get(&coedge.id),
+        ) {
+            use_curve.parameter_range = *range;
         }
     }
     if !map.forward {
@@ -271,7 +341,6 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

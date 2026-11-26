@@ -3,6 +3,7 @@
 
 use crate::select::Selection;
 use crate::test_support::builders::measure;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn a_document_with_a_history_body_measures_as_one_without() {
@@ -17,8 +18,8 @@ fn a_document_with_a_history_body_measures_as_one_without() {
     let without = measure(&plain, &selection);
     let with = measure(&nested, &selection);
     assert_eq!(
-        serde_json::to_value(&without).expect("serialize"),
-        serde_json::to_value(&with).expect("serialize")
+        json::to_value(&without).expect("serialize"),
+        json::to_value(&with).expect("serialize")
     );
     assert_eq!(with.faces().len(), without.faces().len());
     let bodies = measure(&nested, &Selection::default());

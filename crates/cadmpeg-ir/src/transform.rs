@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{FiniteReal, PositiveReal};
@@ -16,7 +16,7 @@ use crate::units::UnitVector3;
 /// The two stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and is
 /// neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform2 {
@@ -150,7 +150,7 @@ pub enum TransformError {
 /// The three stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and
 /// is neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {
@@ -250,6 +250,26 @@ impl Transform {
             && dot(x, z).abs() <= EPSILON
             && dot(y, z).abs() <= EPSILON
             && (dot(cross, z) - 1.0).abs() <= EPSILON
+    }
+
+    /// Whether `self` agrees with `other`: their translations lie within
+    /// `linear` of each other, and each column of their linear parts within
+    /// `angular` times the length of `other`'s column.
+    pub(crate) fn agrees_with(self, other: Self, linear: f64, angular: f64) -> bool {
+        let column =
+            |transform: &Self, index: usize| [0, 1, 2].map(|row| transform.rows[row][index]);
+        let distance = |left: [f64; 3], right: [f64; 3]| {
+            left.into_iter()
+                .zip(right)
+                .map(|(left, right)| (left - right) * (left - right))
+                .sum::<f64>()
+                .sqrt()
+        };
+        distance(column(&self, 3), column(&other, 3)) <= linear
+            && (0..3).all(|index| {
+                let expected = column(&other, index);
+                distance(column(&self, index), expected) <= angular * distance(expected, [0.0; 3])
+            })
     }
 
     /// Composes transforms as `self * right` for column-vector application.
@@ -381,8 +401,9 @@ impl Transform {
 #[cfg(test)]
 mod tests {
     use super::{PositiveReal, Transform, Transform2, TransformError};
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
+    use cadmpeg_core::serde_erase::json;
 
     mod numeric;
 
@@ -577,7 +598,7 @@ mod tests {
         assert_eq!(transform, Transform::identity());
         assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(
-            serde_json::to_string(&transform).expect("serializes"),
+            json::to_string(&transform).expect("serializes"),
             "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]"
         );
 

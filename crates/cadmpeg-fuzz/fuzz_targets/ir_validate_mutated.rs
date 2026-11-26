@@ -33,7 +33,7 @@ fuzz_target!(|data: &[u8]| {
     match strategy % 13 {
         0 => {
             // Drive vertex positions to the finite extremes; a point refuses anything else.
-            let Some(extreme) = cadmpeg_ir::features::FinitePoint3::new(
+            let Some(extreme) = cadmpeg_ir::features::geometry::FinitePoint3::new(
                 cadmpeg_ir::math::Point3::new(f64::MAX, f64::MIN, f64::MIN_POSITIVE),
             ) else {
                 return;
@@ -118,7 +118,9 @@ fuzz_target!(|data: &[u8]| {
             // Add an annotation for an entity that does not exist.
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let stream = StreamHandle::new(cadmpeg_ir::stream_name!("fuzz:nonexistent"));
-            annotations.note("nonexistent", &stream, u64::MAX, None);
+            let absent =
+                cadmpeg_ir::ids::EdgeId::mint("fuzz:nonexistent:edge#0").expect("identity grammar");
+            annotations.note(absent, &stream, u64::MAX, None);
             source_fidelity
                 .annotations
                 .append(annotations.build())

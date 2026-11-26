@@ -78,7 +78,9 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
         (8, false, 0, 0, false),
         (10, false, 0, 1, false),
         (10, true, 0, 1, false),
+        (10, true, 1, 0, false),
         (10, true, 2, 1, false),
+        (10, true, 4, 0, false),
         (11, true, 0, 0, false),
     ];
     for (version, inline_typed, selector, state, padded) in cases {
@@ -101,9 +103,19 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             SketchPointClosure::from_pair(selector, state)
         );
     }
-    assert!(
-        decode_sketch_point_record(&tagged_point_payload(10, false, 2, 1, false), 10,).is_none()
-    );
+    for (inline_typed, selector, state) in [
+        (false, 1, 0),
+        (false, 2, 1),
+        (false, 4, 0),
+        (true, 1, 1),
+        (true, 4, 1),
+    ] {
+        assert!(decode_sketch_point_record(
+            &tagged_point_payload(10, inline_typed, selector, state, false),
+            10,
+        )
+        .is_none());
+    }
     for (selector, state) in [(0, 0), (0, 1), (1, 0), (1, 1), (2, 1), (4, 0), (4, 1)] {
         for padded_paired_reference in [false, true] {
             let decoded = decode_sketch_point_record(
@@ -486,6 +498,7 @@ type GroupDecode = (
     Vec<crate::records::sketch_geometry::SketchPoint>,
     Vec<crate::records::sketch_geometry::SketchCurveIdentity>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
 );
 
 fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> GroupDecode {
@@ -493,58 +506,111 @@ fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Gr
         decode_sketch_curve_identities_from_stream, decode_sketch_points_from_stream,
     };
     let mut losses = Vec::new();
-    let points =
-        decode_sketch_points_from_stream(bytes, meta, "Design/BulkStream.dat", &mut losses)
-            .unwrap();
+    let mut given_up = Vec::new();
+    let points = decode_sketch_points_from_stream(
+        bytes,
+        meta,
+        "Design/BulkStream.dat",
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
     let curves = decode_sketch_curve_identities_from_stream(
         bytes,
         meta,
         "Design/BulkStream.dat",
         &mut losses,
+        &mut given_up,
     )
     .unwrap();
-    (points, curves, losses)
+    (points, curves, losses, given_up)
 }
 
-fn group_stream_error(bytes: &[u8], meta: &crate::metastream::MetaStream) -> String {
-    crate::design::decode::sketch::decode_sketch_points_from_stream(
-        bytes,
-        meta,
-        "Design/BulkStream.dat",
-        &mut Vec::new(),
-    )
-    .unwrap_err()
-    .to_string()
+/// The group frame is unread: no group is admitted and one loss says so.
+fn assert_group_unread(bytes: &[u8], meta: &crate::metastream::MetaStream) {
+    let (groups, losses, given_up) = decode_group_records(bytes, meta);
+    assert!(groups.is_empty());
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
+    );
+    assert_eq!(given_up.len(), 1);
 }
 
 #[test]
 fn sketch_group_resolves_point_and_curve_owners() {
     let (bytes, meta) = group_stream(&[41, 60], OWNER);
-    let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+    let (points, curves, losses, _) = decode_group_stream(&bytes, &meta);
     assert_eq!(points[0].owner_reference, Some(OWNER));
     assert_eq!(points[0].geometry_group, Some(50));
     assert_eq!(curves[0].owner_reference, Some(OWNER));
     assert_eq!(curves[0].geometry_group, Some(50));
     assert!(losses.is_empty());
     let (bytes, meta) = group_stream(&[41, 60], 43);
-    assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
+    assert_group_unread(&bytes, &meta);
     for nested in [b"256".as_slice(), b"260".as_slice()] {
         let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
         let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
         bytes[group_start + 34..group_start + 37].copy_from_slice(nested);
-        assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
+        assert_group_unread(&bytes, &meta);
     }
     let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
     let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
     bytes[group_start + 37..group_start + 41].copy_from_slice(&51u32.to_le_bytes());
-    assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
+    assert_group_unread(&bytes, &meta);
+}
+
+#[test]
+fn unreadable_group_keeps_point_and_curve_values_without_its_owner_join() {
+    let (mut bytes, mut meta) = group_stream(&[41, 60], OWNER);
+    meta.types[5].type_guid = "DCA267ED-D615-4934-B64F-AD805E8003E2"
+        .to_owned()
+        .try_into()
+        .unwrap();
+    meta.types[5].version = 2;
+    let mut geometry = Vec::new();
+    for value in [
+        1.0f64, 2.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        geometry.extend_from_slice(&value.to_le_bytes());
+    }
+    let owner_at = bytes.len() - 11;
+    bytes.splice(owner_at..owner_at, geometry);
+    let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
+    bytes[group_start + 34..group_start + 37].copy_from_slice(b"256");
+    let (points, curves, stream_losses, _) = decode_group_stream(&bytes, &meta);
+    assert!(stream_losses.is_empty());
+    let (groups, losses, given_up) = decode_group_records(&bytes, &meta);
+    assert!(groups.is_empty());
+    assert_eq!(points.len(), 1);
+    assert_eq!(
+        points[0].coordinates(),
+        cadmpeg_ir::math::Point2::new(12.5, -25.0)
+    );
+    assert_eq!(points[0].owner_reference, None);
+    assert_eq!(points[0].geometry_group, None);
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].primary_id.get(), 700);
+    assert!(
+        matches!(curves[0].geometry, Some(crate::records::sketch_geometry::SketchCurveGeometry::Line { start, .. }) if start.get() == cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0))
+    );
+    assert_eq!(curves[0].owner_reference, None);
+    assert_eq!(curves[0].geometry_group, None);
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
+    );
+    let [frame] = given_up.as_slice() else {
+        panic!("one given-up group frame: {given_up:?}");
+    };
+    assert_eq!(frame.span().1.start, group_start);
 }
 
 #[test]
 fn sketch_group_assigns_an_unlisted_backlink_to_the_group_sketch() {
     for (members, kind, record) in [([60], "point", 41), ([41], "curve", 60)] {
         let (bytes, meta) = group_stream(&members, OWNER);
-        let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+        let (points, curves, losses, _) = decode_group_stream(&bytes, &meta);
         assert_eq!(points[0].owner_reference, Some(OWNER));
         assert_eq!(points[0].geometry_group, Some(50));
         assert_eq!(curves[0].owner_reference, Some(OWNER));
@@ -568,8 +634,9 @@ fn decode_group_records(
 ) -> (
     Vec<crate::records::sketch_geometry::SketchGeometryGroup>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
 ) {
-    let (points, curves, mut losses) = decode_group_stream(bytes, meta);
+    let (points, curves, mut losses, mut given_up) = decode_group_stream(bytes, meta);
     let groups = crate::design::decode::sketch::decode_sketch_geometry_groups_from_stream(
         bytes,
         meta,
@@ -577,16 +644,17 @@ fn decode_group_records(
         &points,
         &curves,
         &mut losses,
+        &mut given_up,
     )
     .unwrap();
-    (groups, losses)
+    (groups, losses, given_up)
 }
 
 #[test]
 fn sketch_geometry_group_keeps_ordinal_and_member_run() {
     let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
     let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
-    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let (groups, losses, given_up) = decode_group_records(&bytes, &meta);
     let [group] = groups.as_slice() else {
         panic!("one sketch geometry group");
     };
@@ -599,8 +667,9 @@ fn sketch_geometry_group_keeps_ordinal_and_member_run() {
     assert_eq!(group.members, [41, 60]);
     assert_eq!(group.sketch_reference, OWNER);
     assert!(losses.is_empty());
+    assert!(given_up.is_empty());
     bytes[group_start + 21..group_start + 25].copy_from_slice(&9u32.to_le_bytes());
-    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let (groups, losses, _) = decode_group_records(&bytes, &meta);
     assert_eq!(groups[0].ordinal, 9);
     assert!(losses.is_empty());
 }
@@ -616,14 +685,14 @@ fn sketch_geometry_group_without_the_zero_run_keeps_its_members_and_owners() {
             record.bulk_offset -= 4;
         }
     }
-    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let (groups, losses, _) = decode_group_records(&bytes, &meta);
     let [group] = groups.as_slice() else {
         panic!("one sketch geometry group");
     };
     assert_eq!(group.members, [41, 60]);
     assert_eq!(group.sketch_reference, OWNER);
     assert!(losses.is_empty());
-    let (points, curves, _) = decode_group_stream(&bytes, &meta);
+    let (points, curves, _, _) = decode_group_stream(&bytes, &meta);
     assert_eq!(points[0].owner_reference, Some(OWNER));
     assert_eq!(curves[0].owner_reference, Some(OWNER));
 }
@@ -631,7 +700,7 @@ fn sketch_geometry_group_without_the_zero_run_keeps_its_members_and_owners() {
 #[test]
 fn sketch_geometry_group_reports_a_member_without_a_backlink() {
     let (bytes, meta) = group_stream(&[41, 55, 60], OWNER);
-    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let (groups, losses, _) = decode_group_records(&bytes, &meta);
     assert_eq!(groups[0].members, [41, 55, 60]);
     let [loss] = losses.as_slice() else {
         panic!("one unbacklinked-member loss");
@@ -722,7 +791,7 @@ fn unreadable_point_keeps_sibling_points_and_curves() {
             }
             _ => unreachable!(),
         }
-        let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+        let (points, curves, losses, given_up) = decode_group_stream(&bytes, &meta);
         assert_eq!(points.len(), 1, "{failure}");
         assert_eq!(points[0].record_index, 42, "{failure}");
         assert_eq!(
@@ -730,11 +799,12 @@ fn unreadable_point_keeps_sibling_points_and_curves() {
             cadmpeg_ir::math::Point2::new(12.5, -25.0)
         );
         assert_eq!(curves.len(), 1, "{failure}");
-        assert_eq!(losses.len(), 1, "{failure}");
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::SketchPointUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [crate::loss::F3dLossCode::SketchPointUndecoded.kind()],
+            "{failure}"
         );
+        assert_eq!(given_up.len(), 1, "{failure}");
         assert!(losses[0].message.contains("record 41 version 11"));
     }
 }

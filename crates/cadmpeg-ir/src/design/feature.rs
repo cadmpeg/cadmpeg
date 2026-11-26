@@ -6,7 +6,6 @@
 //! an operation known without its operands, `Native` for one whose meaning is
 //! not established, and `Stored` for a feature defined by stored geometry.
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -14,9 +13,9 @@ use serde::{Deserialize, Serialize};
 
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
-use super::names::NativeName;
+use super::names::{CodecName, NativeName};
 use super::ops::assembly::{
-    AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+    AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
 use super::ops::body::{
     Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, MoveFaces, Pattern, ReplaceFaces,
@@ -37,7 +36,7 @@ use super::options::NativeOptions;
 use super::selection::{DefinitionRef, SetSelection};
 use crate::features::FeatureId;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::scalar::{FiniteReal, PositiveLength};
+use crate::scalar::{PositiveLength, PositiveReal};
 use crate::sketches::{SketchId, SpatialSketchId};
 use crate::spreadsheets::SpreadsheetId;
 use crate::tessellation::TessellationId;
@@ -101,14 +100,23 @@ pub struct Feature {
     pub native_ref: Option<String>,
 }
 
-/// A feature's one operation and the cleanup the source states for its
-/// result. On the wire it has no wrapper level.
+/// A feature's one operation, the assembly context it runs in, and the
+/// cleanup the source states for its result. On the wire it has no wrapper
+/// level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FeatureDefinition {
     /// The operation.
     pub operation: FeatureOperation,
+    /// The participants of an assembly feature, which runs its operation in
+    /// an assembly over them. `None` on every other feature.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_assembly"
+    )]
+    pub assembly: Option<AssemblyContext>,
     /// Whether redundant splitter boundaries are removed from the result.
     #[serde(
         default,
@@ -126,7 +134,7 @@ pub struct FeatureDefinition {
 }
 
 /// The feature that defines a feature generated in another scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -142,7 +150,7 @@ pub enum Driver {
 }
 
 /// The Boolean tolerance a feature carries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -163,7 +171,7 @@ pub enum FuzzyTolerance {
 
 /// The operation of a feature: an arm per operation of the feature families
 /// (§6.1 to §6.7), and the stored, unresolved, and native forms.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -274,8 +282,6 @@ pub enum FeatureOperation {
     ComponentPattern(Box<ComponentPattern>),
     /// Components mirrored across a plane (§6.7).
     MirrorComponents(Box<MirrorComponents>),
-    /// An operation run in the assembly over its participants (§6.7).
-    AssemblyFeature(Box<AssemblyFeature>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
@@ -304,7 +310,7 @@ pub enum FeatureOperation {
     /// An operation whose meaning is not established.
     Native {
         /// The operation's kind, written `codec:kind`.
-        kind: NonBlankString,
+        kind: CodecName,
         /// Options whose meaning is not established.
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         native_options: NativeOptions,
@@ -314,8 +320,54 @@ pub enum FeatureOperation {
     },
 }
 
+impl FeatureOperation {
+    /// Whether the operation's kind cannot change a state (§5.4): a sketch,
+    /// a sheet, a datum, a pattern whose instances are features of their
+    /// own, a template instance, a decal, a mesh section, and an
+    /// `Unresolved` operation of a family whose every operation is one of
+    /// these.
+    pub(crate) fn cannot_change_state(&self) -> bool {
+        match self {
+            Self::Sketch(_)
+            | Self::SpatialSketch(_)
+            | Self::Spreadsheet(_)
+            | Self::Datum(_)
+            | Self::TemplateInstance(_)
+            | Self::Decal(_) => true,
+            Self::Pattern(pattern) => {
+                matches!(
+                    pattern.instances,
+                    super::ops::body::PatternInstances::Members(_)
+                )
+            }
+            Self::Mesh(mesh) => matches!(mesh.kind, super::ops::surface::MeshKind::Section { .. }),
+            Self::Unresolved { family } => matches!(
+                family,
+                OperationFamily::Sketch
+                    | OperationFamily::SpatialSketch
+                    | OperationFamily::Spreadsheet
+                    | OperationFamily::Datum
+                    | OperationFamily::TemplateInstance
+                    | OperationFamily::Decal
+            ),
+            _ => false,
+        }
+    }
+
+    /// The operation's family: the [`OperationFamily`] whose wire name is
+    /// the operation's `kind`. `Unresolved` states its own family; `Native`
+    /// and `Stored` have none.
+    pub(crate) fn family(&self) -> Option<OperationFamily> {
+        if let Self::Unresolved { family } = self {
+            return Some(*family);
+        }
+        let wire = crate::hash::finite_json::to_json_value(self).ok()?;
+        cadmpeg_core::serde_erase::from_json_value::<OperationFamily>(wire.get("kind")?).ok()
+    }
+}
+
 /// Where a feature's stored geometry came from.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StoredOrigin {
@@ -360,13 +412,14 @@ pub struct Link {
         deserialize_with = "deserialize_transform"
     )]
     pub transform: Option<Transform>,
-    /// A uniform scale of the copy.
+    /// The uniform factor the source stores as such, applied about the
+    /// source definition's origin before `transform`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_scale"
     )]
-    pub scale: Option<FiniteReal>,
+    pub scale: Option<PositiveReal>,
     /// Whether the copy follows its source.
     #[serde(
         default,
@@ -513,12 +566,11 @@ pub enum OperationFamily {
     ComponentPattern,
     /// A mirror of components.
     MirrorComponents,
-    /// An assembly feature.
-    AssemblyFeature,
     /// A material removal.
     MaterialRemoval,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_assembly<T>, T, "assembly");
 cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");
 cadmpeg_core::named_optional_field!(deserialize_bodies<T>, T, "bodies");
 cadmpeg_core::named_optional_field!(deserialize_component<T>, T, "component");

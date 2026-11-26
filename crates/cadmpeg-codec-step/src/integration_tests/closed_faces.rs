@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{SphereSurface, TorusSurface};
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -63,12 +63,9 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
             .push(Shell::new(shell.clone(), region.clone()));
         shells.push(shell);
     }
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body.clone(), shells));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
@@ -77,6 +74,7 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 }
 
@@ -197,7 +195,7 @@ fn pole_pair(ir: &mut CadIr, height: f64) {
             },
             native_ref: None,
         });
-        let mut loops: Vec<_> = ir.geometry.faces[0].loops.iter().cloned().collect();
+        let mut loops: Vec<_> = ir.geometry.faces[0].loops.stated().cloned().collect();
         loops.push(lp);
         ir.geometry.faces[0].loops = FaceLoops::unspecified(loops);
     }
@@ -341,6 +339,39 @@ fn hollow_sphere_and_inner_ball_round_trip() {
     round_trip(
         &ir,
         &[4.0 * PI * (125.0 - 64.0) / 3.0, 4.0 * PI * 8.0 / 3.0],
+    );
+}
+
+#[test]
+fn a_hollow_sphere_names_its_solid_with_voids_after_its_body() {
+    let mut ir = CadIr::empty();
+    solid(
+        &mut ir,
+        vec![
+            (sphere(5.0), Sense::Forward),
+            (sphere(4.0), Sense::Reversed),
+        ],
+    );
+    ir.geometry.bodies[0].name = Some("Shell".to_owned());
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write the hollow sphere");
+    let text = String::from_utf8(bytes).expect("Part 21 text");
+    assert!(text.contains(" = BREP_WITH_VOIDS('Shell',"), "{text}");
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(text.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the hollow sphere");
+    assert_eq!(
+        decoded.ir().geometry.bodies[0].name.as_deref(),
+        Some("Shell")
     );
 }
 

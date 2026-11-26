@@ -15,6 +15,7 @@ use super::markers::{
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
     sketch_marker_prefix_at,
 };
+use super::relation_geometry::RELATION_POINT_PREFIX;
 use super::relation_loci::{
     canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands,
     linked_single_arc_entity, linked_single_ellipse_entity, linked_single_entities,
@@ -268,7 +269,7 @@ fn unique_entity_from_link_intersection(
     let mut count = 0;
     for index in 0..candidates.len() {
         let entity = &candidates[index];
-        if entity.as_str().contains("sketch-entity#relation-point:")
+        if entity.as_str().starts_with(RELATION_POINT_PREFIX)
             || !sketch_entities
                 .iter()
                 .any(|candidate| candidate.id() == entity && candidate.sketch == *sketch)
@@ -303,6 +304,69 @@ fn unique_entity_from_link_intersection(
     })
 }
 
+/// The native form of a marker relation: its native code, the entities its
+/// links and owner markers resolve to, and those links and owners as operands.
+pub(super) fn native_marker_relation_definition(
+    ctx: &DecodeContext<'_>,
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Result<SketchConstraintDefinitionInput, CodecError> {
+    let mut entities = Vec::new();
+    for link in marker.links() {
+        if relation_link_identifies_owner(marker, link) {
+            continue;
+        }
+        let additions = marker_entities(
+            ctx,
+            &link.entity_ref,
+            markers_by_id,
+            loci_by_marker,
+            MarkerEntityFilter::All,
+        )?;
+        entities.extend(additions);
+    }
+    sort_marker_entity_ids(&mut entities);
+    let owners = relation_owner_markers(marker, markers_by_id);
+    for owner in &owners {
+        let additions = marker_entities(
+            ctx,
+            owner.id(),
+            markers_by_id,
+            loci_by_marker,
+            MarkerEntityFilter::All,
+        )?;
+        entities.extend(additions);
+    }
+    sort_marker_entity_ids(&mut entities);
+    let mut operands = Vec::new();
+    for link in marker.links() {
+        operands.push(SketchNativeOperand {
+            native_kind: nonblank_literal!("sldprt:marker-local-id"),
+            field: None,
+            object_index: Some(u32::from(link.local_id)),
+            native_ref: Some(link.entity_ref.clone()),
+        });
+    }
+    for owner in owners {
+        operands.push(SketchNativeOperand {
+            native_kind: nonblank_literal!("sldprt:marker-constraint-owner"),
+            field: None,
+            object_index: owner.object_index().or(owner.local_id()),
+            native_ref: Some(owner.id().to_owned()),
+        });
+    }
+    Ok(SketchConstraintDefinitionInput::Native {
+        native_kind: nonblank_literal!("sldprt:marker-relation:{}", marker.kind().native_code()),
+        native_state: None,
+        native_flags: None,
+        native_properties: std::collections::BTreeMap::new(),
+        entities,
+        parameter: None,
+        operands,
+    })
+}
+
 pub(super) fn typed_marker_relation_definition_in_sketch(
     ctx: &DecodeContext<'_>,
     marker: &SketchInputEntity,
@@ -328,64 +392,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     if !marker_owns_constraint(marker, markers_by_id) {
         return Ok(None);
     }
-    let native = || -> Result<SketchConstraintDefinitionInput, CodecError> {
-        let mut entities = Vec::new();
-        for link in marker.links() {
-            if relation_link_identifies_owner(marker, link) {
-                continue;
-            }
-            let additions = marker_entities(
-                ctx,
-                &link.entity_ref,
-                markers_by_id,
-                loci_by_marker,
-                MarkerEntityFilter::All,
-            )?;
-            entities.extend(additions);
-        }
-        sort_marker_entity_ids(&mut entities);
-        let owners = relation_owner_markers(marker, markers_by_id);
-        for owner in &owners {
-            let additions = marker_entities(
-                ctx,
-                owner.id(),
-                markers_by_id,
-                loci_by_marker,
-                MarkerEntityFilter::All,
-            )?;
-            entities.extend(additions);
-        }
-        sort_marker_entity_ids(&mut entities);
-        let mut operands = Vec::new();
-        for link in marker.links() {
-            operands.push(SketchNativeOperand {
-                native_kind: nonblank_literal!("sldprt:marker-local-id"),
-                field: None,
-                object_index: Some(u32::from(link.local_id)),
-                native_ref: Some(link.entity_ref.clone()),
-            });
-        }
-        for owner in owners {
-            operands.push(SketchNativeOperand {
-                native_kind: nonblank_literal!("sldprt:marker-constraint-owner"),
-                field: None,
-                object_index: owner.object_index().or(owner.local_id()),
-                native_ref: Some(owner.id().to_owned()),
-            });
-        }
-        Ok(SketchConstraintDefinitionInput::Native {
-            native_kind: nonblank_literal!(
-                "sldprt:marker-relation:{}",
-                marker.kind().native_code()
-            ),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities,
-            parameter: None,
-            operands,
-        })
-    };
+    let native = || native_marker_relation_definition(ctx, marker, markers_by_id, loci_by_marker);
     let Some(kind) = kind else {
         return Ok(Some(native()?));
     };
@@ -628,8 +635,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 match owner_entities.as_slice() {
                     [owner]
                         if direct_entities.iter().all(|entity| {
-                            entity == owner
-                                || entity.as_str().contains("sketch-entity#relation-point:")
+                            entity == owner || entity.as_str().starts_with(RELATION_POINT_PREFIX)
                         }) =>
                     {
                         owner_entities
@@ -640,7 +646,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let [entity] = entities.as_slice() {
                 if axes.is_some()
                     && sketch_entities.is_empty()
-                    && entity.as_str().contains("sketch-entity#relation-point:")
+                    && entity.as_str().starts_with(RELATION_POINT_PREFIX)
                 {
                     return Ok(Some(native()?));
                 }
@@ -772,7 +778,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     loci_by_marker,
                     MarkerEntityFilter::All,
                 )? {
-                    if entity.as_str().contains("sketch-entity#relation-point:") {
+                    if entity.as_str().starts_with(RELATION_POINT_PREFIX) {
                         continue;
                     }
                     forward_entities.push(entity);
@@ -1825,7 +1831,7 @@ pub(super) fn relation_link_is_geometric_operand(
         )
 }
 
-fn typed_axis_relation_is_inactive(
+fn typed_axis_relation_contradicts_geometry(
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<bool>, CodecError> {
@@ -1865,7 +1871,7 @@ fn typed_axis_relation_is_inactive(
     })
 }
 
-fn typed_binary_relation_is_inactive(
+fn typed_binary_relation_contradicts_geometry(
     kind: crate::records::SketchRelationKind,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
@@ -1890,122 +1896,46 @@ fn typed_binary_relation_is_inactive(
     ))
 }
 
-pub(super) fn marker_relation_is_inactive(
+/// Whether the solved sketch geometry contradicts the typed reading of a
+/// marker relation: an axis relation on an entity that is no line, or whose
+/// operands lie off the axis, a binary relation its entities do not satisfy,
+/// or coincident loci at distinct points.
+pub(super) fn marker_relation_contradicts_geometry(
     marker: &SketchInputEntity,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<bool, CodecError> {
-    use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, Collinear, Concentric, Coradial, EllipseAngle180,
-        EllipseAngle270, EllipseAngle90, Equal, Horizontal, MergePoints, Parallel, Perpendicular,
-        Tangent, Vertical,
-    };
-
     let SketchInputKind::Relation(kind) = marker.kind() else {
         return Ok(false);
     };
-    if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities)? {
-        return Ok(inactive);
+    if let Some(contradicted) =
+        typed_axis_relation_contradicts_geometry(definition, sketch_entities)?
+    {
+        return Ok(contradicted);
     }
-    if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
-        return Ok(inactive);
+    if let Some(contradicted) =
+        typed_binary_relation_contradicts_geometry(kind, definition, sketch_entities)
+    {
+        return Ok(contradicted);
     }
     if let SketchConstraintDefinitionInput::CoincidentLoci { loci } = definition {
         let mut first = None;
-        let mut inactive = false;
+        let mut contradicted = false;
         for locus in loci {
             let Some(point) = profile_locus_point(locus, sketch_entities) else {
                 return Ok(false);
             };
             if let Some(first) = first {
                 let first: Point2 = first;
-                inactive |= !same_dimension_length(point.u, first.u)
+                contradicted |= !same_dimension_length(point.u, first.u)
                     || !same_dimension_length(point.v, first.v);
             } else {
                 first = Some(point);
             }
         }
-        return Ok(inactive);
+        return Ok(contradicted);
     }
-    let SketchConstraintDefinitionInput::Native {
-        entities, operands, ..
-    } = definition
-    else {
-        return Ok(false);
-    };
-    let mut repeated_single_operand = operands.len() >= 2 && operands[0].native_ref.is_some();
-    if repeated_single_operand {
-        for operand in operands {
-            if operand.native_ref != operands[0].native_ref {
-                repeated_single_operand = false;
-                break;
-            }
-        }
-    }
-    if repeated_single_operand
-        && matches!(
-            kind,
-            Horizontal
-                | Vertical
-                | Parallel
-                | Perpendicular
-                | Tangent
-                | Equal
-                | Collinear
-                | Concentric
-                | Coradial
-        )
-    {
-        return Ok(true);
-    }
-    if entities.is_empty() || sketch_entities.is_empty() {
-        return Ok(false);
-    }
-    let mut resolved = Vec::new();
-    for id in entities {
-        if let Some(entity) = find_profile_entity(sketch_entities, id) {
-            resolved.push(entity.geometry.definition());
-        }
-    }
-    if resolved.len() != entities.len() {
-        return Ok(false);
-    }
-    Ok(match kind {
-        ArcAngle90 | ArcAngle180 | ArcAngle270 => {
-            !matches!(resolved.as_slice(), [SketchGeometryDefinition::Arc { .. }])
-        }
-        EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => !matches!(
-            resolved.as_slice(),
-            [SketchGeometryDefinition::Ellipse { .. }]
-        ),
-        Horizontal | Vertical => !matches!(
-            resolved.as_slice(),
-            [SketchGeometryDefinition::Line { .. }]
-                | [
-                    SketchGeometryDefinition::Point { .. },
-                    SketchGeometryDefinition::Point { .. }
-                ]
-        ),
-        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
-            resolved.len() != 2
-                || resolved.iter().any(|entity| {
-                    matches!(
-                        **entity,
-                        SketchGeometryDefinition::Point { .. }
-                            | SketchGeometryDefinition::Native { .. }
-                    )
-                })
-        }
-        crate::records::SketchRelationKind::Coincident | MergePoints => {
-            let [SketchGeometryDefinition::Point { position: first }, SketchGeometryDefinition::Point { position: second }] =
-                resolved.as_slice()
-            else {
-                return Ok(false);
-            };
-            !same_dimension_length(first.u, second.u) || !same_dimension_length(first.v, second.v)
-        }
-        _ => false,
-    })
+    Ok(false)
 }
 
 fn relation_owner_curve_entities(

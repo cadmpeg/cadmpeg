@@ -21,7 +21,7 @@
 //! restrictions. This replaces the separate zero check used before checked
 //! constructor composition; callers must not depend on the old error precedence.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use crate::sketches::OrderedMajorRadius;
@@ -39,7 +39,7 @@ pub struct PlaneSurface {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PlaneSurfaceWire {
@@ -135,7 +135,7 @@ pub struct CylinderSurface {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CylinderSurfaceWire {
@@ -267,7 +267,7 @@ pub struct ConeSurface {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ConeSurfaceWire {
@@ -454,7 +454,7 @@ pub struct SphereSurface {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SphereSurfaceWire {
@@ -588,7 +588,7 @@ pub struct TorusSurface {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TorusSurfaceWire {
@@ -738,7 +738,7 @@ impl TryFrom<TorusSurfaceWire> for TorusSurface {
 }
 
 /// Line with a finite origin and a unit direction.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LineCurveWire")]
 pub struct LineCurve {
@@ -838,7 +838,7 @@ pub struct CircleCurve {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CircleCurveWire {
@@ -958,7 +958,7 @@ pub struct EllipseCurve {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EllipseCurveWire {
@@ -1065,7 +1065,7 @@ impl EllipseCurve {
     /// minor radius is not above it, so only its sign is tested.
     ///
     /// ```
-    /// use cadmpeg_ir::features::FinitePoint3;
+    /// use cadmpeg_ir::features::geometry::FinitePoint3;
     /// use cadmpeg_ir::geometry::analytic::EllipseCurve;
     /// use cadmpeg_ir::math::{Point3, Vector3};
     /// use cadmpeg_ir::scalar::PositiveReal;
@@ -1210,7 +1210,7 @@ pub struct ParabolaCurve {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ParabolaCurveWire {
@@ -1329,7 +1329,7 @@ pub struct HyperbolaCurve {
     frame: OrthonormalFrame3,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HyperbolaCurveWire {
@@ -1464,7 +1464,7 @@ impl TryFrom<HyperbolaCurveWire> for HyperbolaCurve {
 }
 
 /// Degenerate curve at a finite point.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DegenerateCurveWire")]
 pub struct DegenerateCurve {
@@ -1530,6 +1530,35 @@ impl TryFrom<DegenerateCurveWire> for DegenerateCurve {
         Self::try_new(wire.point)
     }
 }
+
+/// The order of a carrier written through its wire form (`into`) is the order
+/// of that form.
+macro_rules! ordered_as_written {
+    ($($carrier:ident => $wire:ident),* $(,)?) => {
+        $(
+            impl crate::structural_order::StructuralOrd for $carrier {
+                fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
+                    crate::structural_order::StructuralOrd::structural_cmp(
+                        &$wire::from(*self),
+                        &$wire::from(*other),
+                    )
+                }
+            }
+        )*
+    };
+}
+
+ordered_as_written!(
+    PlaneSurface => PlaneSurfaceWire,
+    CylinderSurface => CylinderSurfaceWire,
+    ConeSurface => ConeSurfaceWire,
+    SphereSurface => SphereSurfaceWire,
+    TorusSurface => TorusSurfaceWire,
+    CircleCurve => CircleCurveWire,
+    EllipseCurve => EllipseCurveWire,
+    ParabolaCurve => ParabolaCurveWire,
+    HyperbolaCurve => HyperbolaCurveWire,
+);
 
 #[cfg(test)]
 mod tests;

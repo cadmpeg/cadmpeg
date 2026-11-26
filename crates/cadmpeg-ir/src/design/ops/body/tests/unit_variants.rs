@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use crate::design::ops::body::{Heal, InstanceChange, PatternMethod, SplitMethod, TransformMode};
 use crate::design::ops::shared::{

@@ -1,6 +1,7 @@
 use super::*;
-use cadmpeg_ir::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
 
 #[test]
 fn edge_partial_lengths_scale_independently_and_keep_zero_radius() {
@@ -19,12 +20,9 @@ fn edge_partial_lengths_scale_independently_and_keep_zero_radius() {
             json!({"kind":"two_offsets_per_edge","offsets":[{"first":0.0,"second":-7500.0}]}),
         ),
     ] {
-        let mut width: SheetMetalFlangeWidth = serde_json::from_value(wire).expect("partial width");
+        let mut width: SheetMetalFlangeWidth = json::from_value(wire).expect("partial width");
         scale_sheet_metal_flange_width(&mut width, scale).expect("scale widths");
-        assert_eq!(
-            serde_json::to_value(width).expect("scaled width wire"),
-            expected
-        );
+        assert_eq!(json::to_value(width).expect("scaled width wire"), expected);
     }
     for (wire, expected) in [
         (
@@ -36,11 +34,10 @@ fn edge_partial_lengths_scale_independently_and_keep_zero_radius() {
             json!({"kind":"to_object","value":{"offset":-2000.0}}),
         ),
     ] {
-        let mut height: SheetMetalFlangeHeight =
-            serde_json::from_value(wire).expect("partial height");
+        let mut height: SheetMetalFlangeHeight = json::from_value(wire).expect("partial height");
         scale_sheet_metal_flange_height(&mut height, scale).expect("scale height");
         assert_eq!(
-            serde_json::to_value(height).expect("scaled height wire"),
+            json::to_value(height).expect("scaled height wire"),
             expected
         );
     }

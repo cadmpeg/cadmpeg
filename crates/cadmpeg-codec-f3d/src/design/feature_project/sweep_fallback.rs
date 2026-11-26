@@ -14,11 +14,13 @@ use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PathRef,
-    PlanarProfileRef, ProfileRef, SheetSweepSection, SolidSweepOperation, SweepGuideRail,
-    SweepMode, SweepOrientation, SweepPathExtent, SweepSection, SweepShape,
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::sweeps::{
+    SheetSweepSection, SolidSweepOperation, SweepGuideRail, SweepMode, SweepOrientation,
+    SweepPathExtent, SweepSection, SweepShape,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Fraction};
@@ -380,7 +382,7 @@ fn project_one(
             F3dLossCode::FeatureSweepSelectionUnresolved,
             "the section has no unique source carrier; all candidates are retained",
         );
-        SweepSection::Unresolved(None)
+        SweepSection::Unresolved
     };
     let mut paths = owned
         .iter()
@@ -521,10 +523,18 @@ fn project_one(
         .native_ref
         .as_ref()
         .and_then(|id| observations.get(id));
-    let evidence = serde_json::json!({ "scopes": scopes, "groups": groups, "owners": owners, "parameters": parameters, "readouts": readouts, "operation": operation, "values": values });
     feature.source_properties.insert(
         cadmpeg_core::nonblank_literal!("sweep:source"),
-        serde_json::to_string(&evidence).map_err(CodecError::malformed)?,
+        cadmpeg_core::serde_erase::to_json_string(&SweepEvidence {
+            groups: &groups,
+            operation: &operation,
+            owners: &owners,
+            parameters: &parameters,
+            readouts: &readouts,
+            scopes: &scopes,
+            values: &values,
+        })
+        .map_err(CodecError::malformed)?,
     );
     feature
         .evaluation
@@ -544,6 +554,17 @@ fn project_one(
             allow_multi_profile_faces: None,
         }));
     Ok(losses)
+}
+
+#[derive(serde::Serialize)]
+struct SweepEvidence<'a, A, B, C, D, E, F, G> {
+    groups: &'a A,
+    operation: &'a B,
+    owners: &'a C,
+    parameters: &'a D,
+    readouts: &'a E,
+    scopes: &'a F,
+    values: &'a G,
 }
 
 #[cfg(test)]

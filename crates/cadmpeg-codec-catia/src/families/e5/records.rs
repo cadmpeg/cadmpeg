@@ -12,10 +12,12 @@ use crate::layout::e5_rolling_ball_tail as d8_tail;
 use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::blends::RollingBallJetSite;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveAngle, PositiveLength};
@@ -72,8 +74,13 @@ pub(in crate::families) struct E5RollingBallJet {
     /// Persistent E5 record id.
     pub(in crate::families) record_id: u32,
     /// Knots, multiplicities, and complete derivative channels in native order.
-    stations:
-        Vec<cadmpeg_ir::geometry::RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+    stations: Vec<
+        cadmpeg_ir::geometry::blends::RollingBallJetStation<
+            FiniteReal,
+            FiniteVector3,
+            FinitePoint3,
+        >,
+    >,
     /// Native surface-sense flag retained without reinterpretation.
     pub(in crate::families) sense: Sign,
 }
@@ -85,7 +92,7 @@ impl E5RollingBallJet {
     /// Convert the admitted carrier payload to the exact neutral jet form.
     pub(in crate::families) fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
         let stations = self.stations.clone();
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(Self::DEGREE, stations)
             .ok()
             .map(ProceduralSurfaceDefinition::RollingBallJet)
     }
@@ -523,7 +530,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
                 second_derivative: rolling_ball_jet_derivative(second),
             };
             let index = stations.len();
-            stations.push(cadmpeg_ir::geometry::RollingBallJetStation {
+            stations.push(cadmpeg_ir::geometry::blends::RollingBallJetStation {
                 knot: *knots.get(index)?,
                 multiplicity: *multiplicities.get(index)?,
                 site,
@@ -750,7 +757,7 @@ fn e5_nurbs_surface(
     } else {
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows: point_rows }
     };
-    Ok(crate::nurbs::note_refusal(
+    Ok(crate::nurbs::give_up_refused(
         NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
@@ -769,6 +776,10 @@ fn e5_nurbs_surface(
         ),
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "e5-nurbs-surface-frame"),
+            record.pos,
+        ),
     )
     .map(SolvedSurfaceGeometry::Nurbs)
     .map(SurfaceGeometry::Solved))
@@ -997,7 +1008,7 @@ mod tests {
             (jet.definition())
 
                 .expect("valid rolling-ball jet fixture"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet)
                 if jet.degree() == 5
                 && jet.stations().len() == 2
                 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>()

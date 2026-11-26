@@ -135,7 +135,12 @@ fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
     let result = decode(support::archive(&objects));
     assert!(!result.ir().geometry.points.is_empty());
     assert!(result.ir().geometry.curves.len() >= 3);
-    assert!(!result.ir().geometry.procedural_curves.is_empty());
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { .. }
+        )
+    )));
     assert_valid(&result);
 }
 #[test]
@@ -161,6 +166,39 @@ fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
     assert!(!result.ir().geometry.faces.is_empty());
     assert!(!result.ir().geometry.pcurves.is_empty());
     assert_valid(&result);
+}
+
+#[test]
+fn a_rotated_extrusion_cap_pcurve_is_the_planar_projection_the_writer_checks() {
+    // A rotated cap frame whose projections differ in the last bits when the
+    // decoder and the writer compute them with different arithmetic.
+    let length = 29.0_f64.sqrt();
+    let objects = vec![support::object_record(
+        0x10,
+        support::EXTRUSION_CLASS,
+        &crate::extrusion::tests::capped_payload_with_up([2.0 / length, 5.0 / length, 0.0]),
+    )];
+    let result = decode(support::archive_writer("80", 202_608_010, &objects));
+    assert_valid(&result);
+    let caps = result
+        .ir()
+        .geometry
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve.id.as_str().contains(".cap-"))
+        .count();
+    assert_eq!(caps, 2);
+    let mut bytes = Vec::new();
+    let report = crate::test_support::plan_at(crate::RhinoArchiveVersion::V8, result.ir())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes the extrusion");
+    let mismatches = report
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("planar C3 projection"))
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert!(mismatches.is_empty(), "{mismatches:?}");
 }
 
 #[test]
@@ -192,7 +230,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         .points
         .push(cadmpeg_ir::topology::Point::new(
             cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75,
             ))
             .expect("a finite position is a point"),
@@ -1890,7 +1928,7 @@ fn opennurbs_object_walk_and_transfer_floor() {
             .push(cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                     1.25, -2.5, 3.75,
                 ))
                 .expect("a finite position is a point"),

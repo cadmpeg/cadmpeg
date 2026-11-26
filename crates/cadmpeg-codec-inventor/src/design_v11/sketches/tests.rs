@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::ops::sketch::SketchRelation;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DatumPointConstruction, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FinitePoint3, SketchFeatureBinding, SketchPointSelection,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 
@@ -79,7 +84,7 @@ fn run(ir: &mut CadIr) {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    crate::design_v11::project_history(&ctx, ir, &BTreeMap::default()).expect("history");
+    crate::design_v11::project_history(&ctx, ir, &BTreeMap::default(), false).expect("history");
     project(&ctx, ir).expect("sketches");
     crate::design_v11::datums::project(&ctx, ir).expect("datums");
     assert_eq!(ir.model, model);
@@ -120,7 +125,7 @@ fn rectangle_on_principal_plane_keeps_frame_and_construction_line() {
         );
     }
     ir.model.sketch_constraints.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id":"inventor:design:constraint#horizontal", "sketch":sketch_id(),
             "definition":{"kind":"horizontal", "entity":entity_id("a")}
         }))
@@ -273,14 +278,13 @@ fn arc_circle_and_point_keep_geometry_and_sketch_point_datum() {
 #[test]
 fn spline_keeps_knots_poles_weights_and_periodicity() {
     let mut ir = fixture();
-    let geometry: cadmpeg_ir::sketches::SketchGeometry =
-        serde_json::from_value(serde_json::json!({
-            "kind":"nurbs", "curve": {"degree":1, "knots":[0.0,0.0,1.0,1.0],
-            "poles":{"kind":"rational", "points":[
-                {"point":{"u":2.0,"v":3.0},"weight":1.0},
-                {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false}
-        }))
-        .expect("spline");
+    let geometry: cadmpeg_ir::sketches::SketchGeometry = json::from_value(cadmpeg_core::json!({
+        "kind":"nurbs", "curve": {"degree":1, "knots":[0.0,0.0,1.0,1.0],
+        "poles":{"kind":"rational", "points":[
+            {"point":{"u":2.0,"v":3.0},"weight":1.0},
+            {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false}
+    }))
+    .expect("spline");
     ir.model
         .sketch_entities
         .push(cadmpeg_ir::sketches::SketchEntity::new(
@@ -294,10 +298,10 @@ fn spline_keeps_knots_poles_weights_and_periodicity() {
     else {
         panic!("spline")
     };
-    let wire = serde_json::to_value(curve).expect("wire");
+    let wire = json::to_value(curve).expect("wire");
     assert_eq!(
         wire,
-        serde_json::json!({"degree":1, "knots":[0.0,0.0,1.0,1.0],
+        cadmpeg_core::json!({"degree":1, "knots":[0.0,0.0,1.0,1.0],
         "poles":{"kind":"rational", "points":[
             {"point":{"u":2.0,"v":3.0},"weight":1.0},
             {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false})
@@ -305,7 +309,7 @@ fn spline_keeps_knots_poles_weights_and_periodicity() {
 }
 
 #[test]
-fn unread_placement_keeps_an_unresolved_frame() {
+fn unread_placement_states_one_unread_support_input() {
     let mut ir = fixture();
     ir.model.sketches[0].placement = SketchPlacement::Unresolved {};
     run(&mut ir);
@@ -313,7 +317,28 @@ fn unread_placement_keeps_an_unresolved_frame() {
         panic!("placed")
     };
     assert!(frame.resolved.is_none());
-    assert!(frame.inputs.is_empty());
+    assert!(frame.after.is_empty());
+    let [input] = frame.inputs.as_slice() else {
+        panic!("one support input");
+    };
+    assert_eq!(input.role, None);
+    assert_eq!(input.value, None);
+    assert!(matches!(
+        &input.reference,
+        Some(InputReference::Picks(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        }))
+    ));
+    let findings = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("validation")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Design)
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]
@@ -371,4 +396,113 @@ fn read_endpoint_references_bind_points_to_curve_roles() {
         .find(|entity| entity.id == entity_id("line"))
         .expect("line");
     assert!(line.roles.is_empty());
+}
+
+#[test]
+fn shared_endpoint_roles_survive_legacy_arena_sorting() {
+    let mut ir = fixture();
+    add_entity(
+        &mut ir,
+        "joint",
+        Geometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+        false,
+    );
+    for (name, start, end, refs) in [
+        ("z", [-1.0, 0.0], [0.0, 0.0], ["other_z", "joint"]),
+        ("a", [0.0, 0.0], [1.0, 0.0], ["joint", "other_a"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:entity#{name}")));
+    }
+    run(&mut ir);
+    let joint = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id == entity_id("joint"))
+        .expect("joint");
+    assert_eq!(
+        joint.roles,
+        vec![
+            EntityRole {
+                of: entity_id("a"),
+                role: DefiningRole::Start
+            },
+            EntityRole {
+                of: entity_id("z"),
+                role: DefiningRole::End
+            },
+        ]
+    );
+    ir.model.finalize();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+        .set_arena(
+            &ctx,
+            "pm_dc_features",
+            Vec::<crate::feature::PmDcFeature>::new().as_slice(),
+        )
+        .expect("native arena");
+    assert!(crate::design_v11::tests::validate_from_native(&ctx, &ir)
+        .expect("validation")
+        .is_empty());
+}
+
+#[test]
+fn endpoint_roles_keep_reference_names_in_their_own_sketch() {
+    let sketches = [
+        sketch_id(),
+        SketchId::mint("inventor:design:sketch#other").expect("id"),
+    ];
+    let entities = sketches
+        .iter()
+        .enumerate()
+        .map(|(index, sketch)| {
+            cadmpeg_ir::sketches::SketchEntity::new(
+                entity_id(&format!("curve-{index}")),
+                sketch.clone(),
+                Geometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                }
+                .try_into()
+                .expect("geometry"),
+            )
+            .with_endpoint_refs(vec!["shared-start".into(), "shared-end".into()])
+        })
+        .collect::<Vec<_>>();
+    let roles = endpoint_roles(&entities);
+    for (index, sketch) in sketches.iter().enumerate() {
+        assert_eq!(
+            roles[&(sketch, "shared-start")],
+            vec![EntityRole {
+                of: entity_id(&format!("curve-{index}")),
+                role: DefiningRole::Start
+            }]
+        );
+        assert_eq!(
+            roles[&(sketch, "shared-end")],
+            vec![EntityRole {
+                of: entity_id(&format!("curve-{index}")),
+                role: DefiningRole::End
+            }]
+        );
+    }
 }

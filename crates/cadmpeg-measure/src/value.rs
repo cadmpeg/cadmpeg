@@ -7,7 +7,7 @@
 //! non-negative; a value that is not finite becomes unavailable with
 //! `evaluation.non-finite`.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use serde::Serialize;
@@ -431,6 +431,8 @@ pub enum Method {
     CriticalPoints,
     /// A NURBS Bézier control-net bound.
     ControlHull,
+    /// Trimmed surface bounds refined by Bézier subdivision.
+    SurfaceSubdivision,
     /// Volume, centroid, closure and mass properties from face fluxes.
     DivergenceQuadrature,
     /// The sum of member values.
@@ -628,6 +630,7 @@ impl TensorEntries {
 mod tests {
     use super::{measured, BoxKind, Errors, Method, Quantity, Scalar, Unit};
     use crate::reason::{Category, UnavailableReason};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn constructors_keep_values_finite_and_errors_non_negative() {
@@ -674,7 +677,7 @@ mod tests {
             UnavailableReason::AggregateMemberUnavailable
         );
         assert_eq!(unavailable.category(), Category::Budget);
-        let value = serde_json::to_value(Quantity::Unavailable(unavailable)).unwrap();
+        let value = json::to_value(Quantity::Unavailable(unavailable)).unwrap();
         assert_eq!(value["status"], "unavailable");
         assert_eq!(value["reason"], "aggregate.member-unavailable");
         assert_eq!(value["category"], "budget");
@@ -689,13 +692,13 @@ mod tests {
             Errors::new(1.0e-13, 2.0e-6),
             "test:model:face#a",
         );
-        let text = serde_json::to_string(&quantity).unwrap();
+        let text = json::to_string(&quantity).unwrap();
         assert_eq!(
             text,
             "{\"status\":\"measured\",\"value\":1.5,\"unit\":\"mm2\",\"method\":\"boundary_quadrature\",\"numeric_error\":1e-13,\"model_uncertainty\":2e-6}"
         );
         assert_eq!(
-            serde_json::to_value(BoxKind::Conservative).unwrap(),
+            json::to_value(BoxKind::Conservative).unwrap(),
             "conservative"
         );
     }

@@ -33,6 +33,7 @@ use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::surface_allocation::feature_surface_construction_payloads;
 use crate::native::features::FeatureExtrudeProfileReference;
+use cadmpeg_core::serde_erase::json;
 
 /// A container whose feature-history links exceed what the stable sort sorts
 /// without scratch, so a scoped limit of zero refuses at the link sort.
@@ -421,17 +422,17 @@ fn surface_payload_route_admits_fixture() {
         feature_surface_construction_references(&container).expect("admitted surface references");
     assert_eq!(references.len(), 14);
     let payloads = feature_surface_construction_payloads(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &container,
         &references,
         &feature_operation_labels(&container).expect("operation labels"),
         &super::super::surface_branches::feature_surface_construction_branches(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &container,
         )
         .expect("branches"),
         &feature_studio_post_branch_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &container,
         )
         .expect("post references"),
@@ -465,7 +466,7 @@ fn draft_payload_route_admits_fixture() {
 fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
     (0..4).map(|ordinal| {
         let index = if ordinal == 0 { 1 } else { 2 };
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("nx:feature-history:draft-construction-reference#0-0000000000-{ordinal:010}"),
             "operation_label": "nx:feature-history:operation-label#0-0000000000",
             "ordinal": ordinal,
@@ -513,7 +514,7 @@ fn draft_fixed_bytes() -> Vec<u8> {
 fn draft_fixed_route_admits_fixture() {
     let (container, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
     let lanes = feature_draft_construction_binary64_lanes(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &container,
         std::slice::from_ref(&payload),
     )
