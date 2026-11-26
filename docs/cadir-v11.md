@@ -186,7 +186,7 @@ pub struct Native(BTreeMap<CodecId, BTreeMap<NonBlankString, Vec<NativeRecord>>>
 - **Scalars.** Each is a JSON number read as a 64-bit float, finite. `PositiveLength`, `PositiveAngle` and `PositiveReal` are greater than 0. The `NonNegative` forms and `FitTolerance` are at least 0. The `NonZero` forms are not 0. `Fraction` lies in [0, 1], `InteriorAngle` in (0, π), and `SlopeAngle` in (−π/2, π/2). `Length` and its forms are millimetres, `Angle` and its forms radians, and the rest dimensionless.
 - **Tuples.** A `UnitVector2` is a JSON array `[x, y]`. A `Transform` is three rows of four finite numbers, row-major: the linear part in the first three columns and the translation in the fourth. The fourth row, `[0, 0, 0, 1]`, is not written. A `Transform2` is two rows of three finite numbers, the same layout as `Transform`. `FinitePoint2`, `FinitePoint3`, `FiniteVector3`, and `UnitVector3` hold finite coordinates in the order of their frame's axes, and their JSON form is stated in Annex A. A `UnitVector2` or `UnitVector3` has length 1 within 10⁻⁹.
 - **Strings.** A `NonBlankString` holds at least one character that is not white space. White space here and in §2.2 is the Unicode `White_Space` property. A `Sha256Digest` is 64 lower-case hexadecimal digits. `NativeSelections` is checked: at least one name, each holding a character that is not white space, no two equal, in source order. `Base64Bytes` is a byte string written in RFC 4648 base64. A `CodecName` is a codec id (§2.2), `:`, and a name holding at least one character that is not white space, as in `fcstd:Transition` and `sldprt:auto_select`; the name may hold further colons. It is checked. The texts this document writes `codec:name` are of this type: a native option or source setting key, a `Native` operation's kind, a `Native` selection rule, propagation, or relation, and an `Other` generation role. Any other `Native` arm holds the source's kind identifier as a `NonBlankString` (§6), which may carry a codec prefix and need not.
-- **The id types** are newtypes over a string of §2.2's form, one per arena: the arena ids `BodyId`, `RegionId`, `ShellId`, `FaceId`, `LoopId`, `CoedgeId`, `EdgeId`, `VertexId`, the carrier ids, `ProductDefinitionId`, `OccurrenceId`, `FeatureId`, `ParameterId`, and every `…Id` this document declares with its arena; and `ContainerId`, `EvaluationId`, `PublicationId`, `ArrangementId`, `ParameterProgramId`, `SheetMetalRuleId`, `SpatialSketchConstraintId`, `PointCloudId`, `SetupId`, `OperationId`, `MachiningFeatureId`, `ToolId`, `PresetId`, `MachineId`, `ProgramId`, `ProcessGroupId`, `ProcessParameterId`, `ToolpathId`, and `ProcessStateId`.
+- **The id types** are newtypes over a string of §2.2's form, one per arena: the arena ids `BodyId`, `RegionId`, `ShellId`, `FaceId`, `LoopId`, `CoedgeId`, `EdgeId`, `VertexId`, the carrier ids, `ProductDefinitionId`, `OccurrenceId`, `FeatureId`, `ParameterId`, and every `…Id` this document declares with its arena; and `ContainerId`, `EvaluationId`, `PublicationId`, `ArrangementId`, `ParameterProgramId`, `SheetMetalRuleId`, `SpatialSketchConstraintId`, `PointCloudId`, `SetupId`, `OperationId`, `MachiningFeatureId`, `ToolId`, `PresetId`, `MachineId`, `ProgramId`, `ProcessGroupId`, `ProcessParameterId`, `ToolpathId`, and `ProcessStateId`. An `Identity` is a string of §2.2's form that names a record of the arena a field beside it names: the `id` of a `Record` target (§8).
 - **`IrVersion`** writes the string `"11"` and reads no other value (§3.6).
 - **`SourceMeta`** is a file's source. `identity` is either the dialect layers its codec classified (`primary` first, then `extra` in the order the codec found them), or, where none was classified, the bare codec id (`{"kind": "unclassified", "format": "step"}`). A `DialectMatch` names a registry dialect id (`rhino:archive-80`). A `DialectId` is `<format>:<name>`: the format is lower-case ASCII letters and digits; the name is lower-case ASCII letters, digits, `.`, and `-`, and neither starts nor ends with `-`. A `Grammar` is a name of that second form. `DialectLayers` is checked: no two of its layers have the same format and `instance`. `declared` holds the version fields the source declares, verbatim, under keys its codec's format specification lists. `instance` names which occurrence of a layer inside the containing file it is, where there is more than one. `admission` states how the decoder read the layer: `Admitted`, with the grammar of the identified dialect; `Unverified`, with another grammar of the same format, named by `using`, its format-local name; `Residual`, with no declared grammar; `Refused`, identified, with its content not decoded. The decoder charges its dialect-unverified loss for `Unverified` and `Residual`. `attributes` holds the properties the source file states about itself, under keys its codec's format specification lists. It holds nothing a decoder computes (§3.1, Rule B).
 - **`BundleMetadata`** is a fragment's reproduction metadata (§2.6). `signature` identifies the finding the fragment reproduces. `check` is the wire name of the check that found it, an open name, so that a new check is no change of wire. `numbers` holds each number the finding's message stated, with the band inside which a reproduction agrees; `hash` is the first eight bytes of the SHA-256 of the signature's other fields less `numbers`, in lower-case hexadecimal. `entity_kind` is the entity's kind and may be empty. `roots` are the stripped root identities, and `context` is the caller's opaque data. `manifest` lists each arena the cut keeps, with its row count and its serialized size. `incomplete_reason` states why a bounded cut is incomplete.
@@ -4589,7 +4589,7 @@ pub enum AppearanceTarget {
     Body(BodyId), Occurrence(OccurrenceId), Definition(ProductDefinitionId), Face(FaceId), Edge(EdgeId), Vertex(VertexId),
     Surface(SurfaceId), Curve(CurveId), Point(PointId), Tessellation(TessellationId),
     TriangleGroup { tessellation: TessellationId, group: String },
-    Record { arena: NonBlankString, id: String },
+    Record { arena: NonBlankString, id: Identity },
     Unresolved,
 }
 
@@ -4645,7 +4645,7 @@ pub enum AttributeTarget {
     Region(RegionId), Surface(SurfaceId), Curve(CurveId), Point(PointId), Feature(FeatureId), Sketch(SketchId),
     Parameter(ParameterId), ProductDefinition(ProductDefinitionId), Occurrence(OccurrenceId), Tessellation(TessellationId),
     Pmi(PmiId), SemanticAnnotation(SemanticAnnotationId), Drawing(DrawingId), ViewPresentation(PresentationId),
-    Configuration(ConfigurationId), Record { arena: NonBlankString, id: String },
+    Configuration(ConfigurationId), Record { arena: NonBlankString, id: Identity },
 }
 pub enum AttributeValue {
     Integer(i64),
@@ -8121,6 +8121,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       ]
     }
   ]
+}
+```
+
+### `Identity`
+
+```json
+{
+  "type": "string",
+  "pattern": "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
 }
 ```
 

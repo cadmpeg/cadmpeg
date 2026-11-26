@@ -130,12 +130,7 @@ impl DecodeResult {
             }
         }
         let before = cfg!(debug_assertions).then(|| record_ids(&self.ir));
-        for (id, released) in crate::give_up::release_lost(
-            ctx,
-            &mut self.ir,
-            &ids,
-            crate::give_up::Naming::References,
-        )? {
+        for (id, released) in crate::give_up::release_lost(ctx, &mut self.ir, &ids)? {
             let Some(&index) = owner.get(&id) else {
                 continue;
             };

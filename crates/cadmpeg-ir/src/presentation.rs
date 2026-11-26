@@ -316,7 +316,7 @@ pub enum PresentationItem {
     /// Tessellation identity.
     Tessellation {
         /// Assigned tessellation identity.
-        tessellation: String,
+        tessellation: crate::tessellation::TessellationId,
     },
     /// Point cloud.
     PointCloud {

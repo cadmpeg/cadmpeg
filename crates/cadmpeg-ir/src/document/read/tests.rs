@@ -355,10 +355,11 @@ fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
     }
 }
 
-/// The entry that gives a record up names each native record that links to
-/// it, and the document keeps no link to it (§3.3).
+/// A native record holds no reference into the neutral model (§2): one
+/// whose value states the id of a given-up record keeps its place, and the
+/// entry that gives the record up does not name it.
 #[test]
-fn a_native_record_that_links_to_a_given_up_record_is_named() {
+fn a_native_record_that_states_a_given_up_id_is_kept() {
     const ANNOTATION: &str = "test:native:annotation#1";
     let mut ir = unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
@@ -375,6 +376,7 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
             vec![annotation],
         );
     let mut value = json::to_value(&ir).unwrap();
+    let annotations = value["native"]["test"].clone();
     points(&mut value)[0]["position"] = json!("not a point");
     let read = read(value.to_string().as_bytes());
     let entry = read
@@ -383,15 +385,47 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
         .find(|entry| entry.code == crate::unknown::part::record_unreadable_kind())
         .unwrap_or_else(|| panic!("{:?}", read.report));
     assert!(
-        listed(&entry.message, "dropped")
+        !listed(&entry.message, "dropped")
             .into_iter()
             .chain(listed(&entry.message, "marked"))
             .any(|id| id == ANNOTATION),
         "{}",
         entry.message
     );
-    let native = json::to_string(&read.document.native).unwrap();
-    assert!(!native.contains(&format!("\"{point}\"")), "{native}");
+    assert_eq!(
+        json::to_value(&read.document.native).unwrap()["test"],
+        annotations
+    );
+}
+
+/// A label names nothing: a surface whose source object states the id of a
+/// given-up point keeps its place, and so do the faces on it (§3.3).
+#[test]
+fn a_record_whose_label_states_a_given_up_id_is_kept() {
+    const LOOSE: &str = "test:geometry:point#loose";
+    let (ir, mut value) = wire();
+    let mut loose = points(&mut value)[0].clone();
+    loose["id"] = json!(LOOSE);
+    loose["position"] = json!("not a point");
+    points(&mut value).push(loose);
+    value["geometry"]["surfaces"][0]["source_object"] =
+        json!({"format": "test", "object_id": LOOSE, "instance_path": []});
+    let read = read(value.to_string().as_bytes());
+    let document = &read.document;
+    assert!(document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != LOOSE));
+    assert_eq!(document.geometry.surfaces.len(), ir.geometry.surfaces.len());
+    assert_eq!(document.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(
+        document.geometry.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some(LOOSE)
+    );
 }
 
 /// A record nested past the depth bound is given up without a reading of

@@ -1512,7 +1512,7 @@
               "const": "tessellation"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "required": [
@@ -1534,7 +1534,7 @@
               "properties": {
                 "tessellation": {
                   "description": "The tessellation.",
-                  "type": "string"
+                  "$ref": "#/$defs/TessellationId"
                 },
                 "group": {
                   "description": "The `source_id` of the group.",
@@ -1571,7 +1571,7 @@
                 },
                 "id": {
                   "description": "The record's id.",
-                  "type": "string"
+                  "$ref": "#/$defs/Identity"
                 }
               },
               "additionalProperties": false,
@@ -2491,7 +2491,7 @@
               "const": "tessellation"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "required": [
@@ -2607,7 +2607,7 @@
                 },
                 "id": {
                   "description": "The record's id.",
-                  "type": "string"
+                  "$ref": "#/$defs/Identity"
                 }
               },
               "additionalProperties": false,
@@ -40572,7 +40572,7 @@
             },
             "tessellation": {
               "description": "Assigned tessellation identity.",
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "additionalProperties": false,
