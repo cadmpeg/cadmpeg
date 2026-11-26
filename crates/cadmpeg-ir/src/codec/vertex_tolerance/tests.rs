@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use super::widen;
+use super::{settle, widen, Measure};
 use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
@@ -718,6 +720,151 @@ fn a_state_measured_after_its_base_restates_no_vertex_its_base_widens() {
         delta_vertex_tolerance(&base.content.as_ref().unwrap().delta, 0),
         moved_corner_gap(),
     );
+}
+
+/// The vertex-gap findings validation reports on any record.
+fn gaps(ir: &CadIr) -> usize {
+    validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .iter()
+        .filter(|finding| finding.message.contains("miss the edge's vertex positions"))
+        .count()
+}
+
+/// The cube's points at corner 0, moved by (-0.02, -0.02, -0.02) off the
+/// ends and lines of its three edges, and at corner 1, moved 0.015625 along
+/// edge 0 toward corner 0: on edge 0's line and 0.015625 from its end, and
+/// 0.015625 from the ends and lines of its two other edges.
+fn corner_points_off_their_edges(ir: &CadIr) -> Vec<crate::topology::Point> {
+    let mut corner = ir
+        .geometry
+        .points
+        .iter()
+        .find(|point| point.position().get() == Point3::new(10.0, 0.0, 0.0))
+        .unwrap()
+        .clone();
+    corner.set_position(FinitePoint3::new(Point3::new(10.0 - 0.015_625, 0.0, 0.0)).unwrap());
+    vec![moved_origin_corner(ir), corner]
+}
+
+#[test]
+fn a_vertex_kept_by_a_miss_at_a_widened_vertex_is_measured_again_and_widened() {
+    // Corner 0 widens. Corner 1 misses the end of edge 0 on that edge's line,
+    // so a first measure keeps it as stored. With corner 0 widened, edge 0's
+    // allowance covers corner 1, which then states its distance from the ends
+    // of its two other edges.
+    let mut ir = unit_cube().unwrap();
+    for moved in corner_points_off_their_edges(&ir) {
+        for point in &mut ir.geometry.points {
+            if point.id == moved.id {
+                *point = moved.clone();
+            }
+        }
+    }
+    assert!(gaps(&ir) > 0);
+    let mut annotations = Annotations::default();
+    let losses = widen(&mut ir, &mut annotations, &DecodePolicy::default());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        DecodeLossCode::VertexToleranceWidened.note("").code
+    );
+    let vertices = [0, 1].map(|corner| vertex_id(&ir, corner));
+    assert!(
+        loss.message.starts_with("widened 2 vertex tolerance(s)")
+            && loss
+                .message
+                .ends_with(&format!(": {}", vertices.join(", "))),
+        "{}",
+        loss.message
+    );
+    assert_close(
+        vertex_tolerance(&ir.geometry, 0).unwrap(),
+        moved_corner_gap(),
+    );
+    assert_close(vertex_tolerance(&ir.geometry, 1).unwrap(), 0.015_625);
+    assert_eq!(gaps(&ir), 0);
+}
+
+#[test]
+fn a_state_vertex_kept_by_a_miss_at_a_vertex_the_state_widens_is_widened_in_its_delta() {
+    // As above, with the two moved points in the delta of an evaluation on
+    // the current state.
+    let mut ir = crate::validate::design::fixture::document();
+    let points = corner_points_off_their_edges(&ir);
+    let evaluation = &mut ir.design.evaluations[0];
+    let holder = evaluation.id.as_str().to_owned();
+    evaluation.content.as_mut().unwrap().delta.records.points = points;
+    assert!(gaps_on(&ir, &holder) > 0);
+    let keys = [0, 1].map(|corner| format!("{holder} {}", vertex_id(&ir, corner)));
+    let ir = assert_widened_in_deltas(ir, &keys);
+    let delta = &ir.design.evaluations[0].content.as_ref().unwrap().delta;
+    assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
+    assert_close(delta_vertex_tolerance(delta, 1), 0.015_625);
+    assert_eq!(gaps_on(&ir, &holder), 0);
+}
+
+/// A measure that widens each vertex of `widened` to its tolerance and keeps
+/// each `(vertex, partner)` of `blocked` as stored by a miss at `partner`.
+fn a_measure(widened: &[(&str, f64)], blocked: &[(&str, &str)]) -> Measure {
+    Measure {
+        tolerances: widened
+            .iter()
+            .map(|&(vertex, tolerance)| (vertex.to_owned(), tolerance))
+            .collect(),
+        blocked: blocked
+            .iter()
+            .map(|&(vertex, partner)| (vertex.to_owned(), vec![partner.to_owned()]))
+            .collect(),
+    }
+}
+
+#[test]
+fn settling_measures_again_while_a_measure_widens_the_partner_of_a_kept_vertex() {
+    // Each measure widens the vertex the one before kept by a miss at the
+    // vertex it widened; the third keeps none.
+    let mut again = 0;
+    let settled = settle(3, a_measure(&[("a", 1.0)], &[("b", "a")]), |widened| {
+        again += 1;
+        Ok(match widened.len() {
+            1 => a_measure(&[("b", 2.0)], &[("c", "b")]),
+            _ => a_measure(&[("c", 3.0)], &[]),
+        })
+    })
+    .unwrap();
+    assert_eq!(again, 2);
+    assert!(settled.settled);
+    assert_eq!(
+        settled.widened,
+        BTreeMap::from([("a".into(), 1.0), ("b".into(), 2.0), ("c".into(), 3.0)])
+    );
+}
+
+#[test]
+fn settling_does_not_measure_again_where_no_kept_vertex_misses_at_a_widened_one() {
+    let settled = settle(3, a_measure(&[("a", 1.0)], &[("b", "c")]), |_| {
+        panic!("measured again")
+    })
+    .unwrap();
+    assert!(settled.settled);
+    assert_eq!(settled.widened, BTreeMap::from([("a".into(), 1.0)]));
+}
+
+#[test]
+fn settling_stops_unsettled_after_one_measure_more_than_the_geometry_holds_vertices() {
+    // Each measure widens `a` further and keeps `b` by a miss at `a`.
+    let mut again = 0;
+    let settled = settle(2, a_measure(&[("a", 1.0)], &[("b", "a")]), |_| {
+        again += 1;
+        Ok(a_measure(&[("a", 1.0 + f64::from(again))], &[("b", "a")]))
+    })
+    .unwrap();
+    assert_eq!(again, 2);
+    assert!(!settled.settled);
+    assert_eq!(settled.widened, BTreeMap::from([("a".into(), 3.0)]));
 }
 
 #[test]

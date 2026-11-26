@@ -186,38 +186,14 @@ fn a_state_whose_chain_of_bases_does_not_resolve_is_charged_and_the_others_are_m
 }
 
 #[test]
-fn a_state_measures_again_the_records_in_which_its_base_widens_a_vertex() {
-    // `after-extrude`, on the current state, moves corner 0 off the ends of
-    // its three edges by 0.02·√3, and corner 1 0.015625 along the line of
-    // edge 0 toward corner 0. Its measure widens corner 0. Corner 1 misses
-    // the end of edge 0 on that edge's line, so it keeps its tolerance.
-    // `a-chained`, based on it, changes no record. In its resolved state the
-    // widened corner 0 covers the end of edge 0, and corner 1 misses only
-    // the ends of its two other edges, off their lines.
+fn a_state_on_a_settled_base_widens_nothing_outside_its_delta_region() {
+    // `after-extrude`, on the current state, moves corner 0 off its three
+    // edges and corner 1 along edge 0 toward corner 0; measured until a
+    // measure widens nothing, it widens both. `a-chained`, based on it,
+    // changes no record: its resolved state widens nothing, measured whole
+    // or over its delta's region.
     let mut ir = document();
-    let moved = |ir: &CadIr, from: Point3, to: Point3| {
-        let mut point = ir
-            .geometry
-            .points
-            .iter()
-            .find(|point| point.position().get() == from)
-            .unwrap()
-            .clone();
-        point.set_position(FinitePoint3::new(to).unwrap());
-        point
-    };
-    let points = vec![
-        moved(
-            &ir,
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(-0.02, -0.02, -0.02),
-        ),
-        moved(
-            &ir,
-            Point3::new(10.0, 0.0, 0.0),
-            Point3::new(10.0 - 0.015_625, 0.0, 0.0),
-        ),
-    ];
+    let points = super::corner_points_off_their_edges(&ir);
     let base = &mut ir.design.evaluations[0];
     base.content.as_mut().unwrap().delta.records.points = points;
     let mut chained = base.clone();
@@ -228,14 +204,17 @@ fn a_state_measures_again_the_records_in_which_its_base_widens_a_vertex() {
     ir.design.evaluations.insert(0, chained);
     let whole = widened(ir.clone(), Measured::Whole);
     let region = widened(ir, Measured::Region);
-    let delta = &whole.0.design.evaluations[0]
-        .content
-        .as_ref()
-        .unwrap()
-        .delta;
-    assert_eq!(delta.records.vertices.len(), 1, "{delta:?}");
+    let delta = |at: usize| {
+        &whole.0.design.evaluations[at]
+            .content
+            .as_ref()
+            .unwrap()
+            .delta
+    };
+    assert!(delta(0).records.vertices.is_empty(), "{:?}", delta(0));
+    assert_eq!(delta(1).records.vertices.len(), 2, "{:?}", delta(1));
     super::assert_close(
-        super::vertex_tolerance(&delta.records, 1).unwrap(),
+        super::vertex_tolerance(&delta(1).records, 1).unwrap(),
         0.015_625,
     );
     assert_eq!(region, whole);

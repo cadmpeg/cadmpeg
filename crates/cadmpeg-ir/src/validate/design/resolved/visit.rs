@@ -50,17 +50,13 @@ impl<'a> StateView<'_, 'a> {
 
     /// The records of the state connected through references, in the state
     /// or from the base's records the delta replaces or removes, with a
-    /// record the delta states or removes or with an id of `also`, as a
-    /// `Topology` of their own in id order. Every other record of the state
-    /// is the base's record, with the same references to it and from it.
-    /// Where the references of a record cannot be read for another reason
-    /// than a resource limit, every record of the state.
-    pub(crate) fn region<'i>(
-        &self,
-        ctx: &DecodeContext<'_>,
-        also: impl IntoIterator<Item = &'i str>,
-    ) -> Result<Topology, ResourceLimit> {
-        match self.state.region_topology(ctx, self.applied, also) {
+    /// record the delta states or removes, as a `Topology` of their own in id
+    /// order. Every other record of the state is the base's record, with the
+    /// same references to it and from it. Where the references of a record
+    /// cannot be read for another reason than a resource limit, every record
+    /// of the state.
+    pub(crate) fn region(&self, ctx: &DecodeContext<'_>) -> Result<Topology, ResourceLimit> {
+        match self.state.region_topology(ctx, self.applied) {
             Ok(region) => Ok(region),
             Err(CodecError::ResourceLimit(limit)) => Err(limit),
             Err(_) => Ok(self.whole()),
