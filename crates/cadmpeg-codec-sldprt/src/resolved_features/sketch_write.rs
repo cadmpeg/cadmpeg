@@ -23,7 +23,7 @@ const EPS_SKETCH_WRITE_GEOMETRY: f64 = 1.0e-9;
 
 /// The namespace every identity a written sketch generates is composed under.
 fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
-    cadmpeg_ir::identity_namespace!("generated", "sldprt", "sketch")
+    cadmpeg_ir::identity_namespace!("sldprt", "generated", "sketch")
 }
 
 pub(super) fn sketch_brep(

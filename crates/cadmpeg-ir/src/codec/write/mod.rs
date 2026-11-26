@@ -1154,13 +1154,31 @@ impl EncoderBackend for CadirEncoder {
         let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
             CodecError::Malformed(error.to_string())
         };
-        let (canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+        let (mut canonical, mut losses) = match canonical::canonical_form(input.ir)? {
             Some((ir, losses)) => (Some(ir), losses),
             None => (None, Vec::new()),
         };
-        let source = canonical.as_ref().unwrap_or(input.ir);
         let (mut bytes, measured) =
-            crate::hash::measured_canonical_json(source).map_err(malformed)?;
+            match crate::hash::measured_canonical_json(canonical.as_ref().unwrap_or(input.ir)) {
+                Ok(measured) => measured,
+                Err(refusal) => {
+                    let (ir, unwritable) = without_unwritable_records(
+                        canonical.as_ref().unwrap_or(input.ir),
+                        &refusal,
+                    )?;
+                    losses.extend(unwritable);
+                    let measured = crate::hash::measured_canonical_json(&ir);
+                    debug_assert!(
+                        measured.is_ok(),
+                        "a document without each record whose canonical JSON alone is refused \
+                         writes: every value outside the records is a checked type"
+                    );
+                    let measured = measured.map_err(malformed)?;
+                    canonical = Some(ir);
+                    measured
+                }
+            };
+        let source = canonical.as_ref().unwrap_or(input.ir);
         let written;
         let ir = if measured.records.is_empty() && measured.outside.is_empty() {
             source
@@ -1172,6 +1190,24 @@ impl EncoderBackend for CadirEncoder {
                 .into_bytes();
             written = ir;
             &written
+        };
+        let empty;
+        let ir = if holds_records(input.ir) && !writes_records(ir) {
+            losses.push(output_empty(
+                "the written CADIR document holds no record: each record of the document is \
+                 dropped or needs one that is",
+            ));
+            empty = without_records(ir);
+            let written = crate::hash::finite_json::to_canonical_json_string(&empty);
+            debug_assert!(
+                written.is_ok(),
+                "the CADIR empty file writes: it holds no record, and each document-level \
+                 field it states is a checked type"
+            );
+            bytes = written.map_err(malformed)?.into_bytes();
+            &empty
+        } else {
+            ir
         };
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
@@ -1186,28 +1222,66 @@ impl EncoderBackend for CadirEncoder {
     }
 }
 
+/// A copy of `ir` without each record whose canonical JSON is refused and
+/// without each record that needs one, as §3.3 drops a record (§3.4). Each
+/// refused record charges `export:record.invalid`, naming it and the
+/// records dropped and marked with it.
+///
+/// # Errors
+///
+/// A resource refusal for the walk of the carriers.
+fn without_unwritable_records(
+    ir: &CadIr,
+    refusal: &crate::hash::finite_json::CanonicalJsonError,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let unwritable: std::collections::BTreeMap<_, _> =
+        ir.arenas().unwritable().into_iter().collect();
+    debug_assert!(
+        !unwritable.is_empty(),
+        "a document whose canonical JSON is refused holds a record whose canonical JSON alone \
+         is refused: every value outside the records is a checked type ({refusal})"
+    );
+    debug_assert!(
+        !unwritable.values().any(|refusal| matches!(
+            refusal,
+            crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }
+        )),
+        "no record the CADIR wire writes holds a non-finite number: every float of a record \
+         is a checked type"
+    );
+    let mut ir = ir.clone();
+    let seeds = unwritable.keys().cloned().collect();
+    let removed = canonical::give_up_in(&mut ir, |ctx, ir| {
+        crate::give_up::drop_records(ctx, ir, seeds)
+    })?;
+    let losses = removed
+        .into_iter()
+        .filter_map(|(seed, released)| {
+            let refusal = unwritable.get(&seed)?;
+            Some(canonical::record_invalid_code(&seed.arena).note(format!(
+                "the {} write drops record {} of arena {}, whose canonical JSON is refused \
+                 ({refusal}), with each record that needs it; dropped=[{}], marked=[{}]",
+                CadirEncoder::FORMAT.as_str(),
+                seed.id,
+                seed.arena,
+                canonical::listed(&released.dropped),
+                canonical::listed(&released.marked)
+            )))
+        })
+        .collect();
+    Ok((ir, losses))
+}
+
 /// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
 /// record past a bound is written as an unstated value, each expression past
 /// its bound is written in its partial form, and each record still past a
 /// bound is dropped with each record that needs it, as §3.3 drops a record.
-/// A copy that holds no record, of a document that held one, is the empty
-/// document, with `export:output.empty`.
 fn within_the_bounds(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     measured: &crate::bounds::Measured,
 ) -> Result<(CadIr, Vec<LossNote>), CodecError> {
-    let holds_records = |ir: &CadIr| {
-        ir.entity_count() > 0
-            || ir.native.0.values().any(|namespace| {
-                namespace
-                    .arenas()
-                    .values()
-                    .any(|records| !records.is_empty())
-            })
-    };
     let mut ir = ir.clone();
-    let held = holds_records(&ir);
     let mut losses = Vec::new();
     for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
         losses.extend(value_unwritable(
@@ -1219,14 +1293,49 @@ fn within_the_bounds(
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
     losses.extend(drop_records_past_the_bounds(ctx, &mut ir, &records)?);
-    if held && !holds_records(&ir) {
-        losses.push(output_empty(
-            "the written CADIR document holds no record: each record lies past a bound of \
-             §2.5 or needs one that does",
-        ));
-        ir = CadIr::empty();
-    }
     Ok((ir, losses))
+}
+
+/// The CADIR empty file of `ir` (§3.4): no records, with the document-level
+/// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
+/// metadata and tolerances. Its `repro` has no root, manifest row or
+/// incomplete reason, since the file holds no record they describe.
+fn without_records(ir: &CadIr) -> CadIr {
+    let mut empty = CadIr::empty();
+    empty.fragment = ir.fragment;
+    empty.repro.clone_from(&ir.repro);
+    if let Some(repro) = &mut empty.repro {
+        repro.roots.clear();
+        repro.manifest.clear();
+        repro.incomplete_reason = None;
+    }
+    empty.source.clone_from(&ir.source);
+    empty.tolerances = ir.tolerances;
+    empty.set_scope(ir.scope());
+    empty
+}
+
+/// Whether `ir` holds a record of a home or native arena.
+fn holds_records(ir: &CadIr) -> bool {
+    ir.entity_count() > 0 || holds_native_records(ir)
+}
+
+/// Whether `ir` holds a record that its CADIR text writes: a record of a
+/// native arena or of a home arena the wire carries.
+fn writes_records(ir: &CadIr) -> bool {
+    holds_native_records(ir)
+        || ir.arenas().record_ids().iter().any(|(arena, (_, ids))| {
+            !crate::document::ArenaName::WIRE_OMITTED.contains(arena) && !ids.is_empty()
+        })
+}
+
+fn holds_native_records(ir: &CadIr) -> bool {
+    ir.native.0.values().any(|namespace| {
+        namespace
+            .arenas()
+            .values()
+            .any(|records| !records.is_empty())
+    })
 }
 
 /// States `Source` with no tokens each expression past its bound in the

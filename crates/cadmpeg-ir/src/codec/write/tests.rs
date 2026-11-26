@@ -24,6 +24,8 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 
+mod dropped_records;
+
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube().expect("valid unit cube fixture");

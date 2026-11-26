@@ -2133,14 +2133,20 @@ impl<'a> Builder<'a> {
                     format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
                 );
             }
+            let name = string(
+                self.bodies
+                    .get(region.body.as_str())
+                    .and_then(|body| body.name.as_deref())
+                    .unwrap_or(""),
+            );
             let item = if !solid {
                 self.emitter.emit(
                     "SHELL_BASED_SURFACE_MODEL",
-                    &format!("'',{}", refs(&shell_refs)),
+                    &format!("{name},{}", refs(&shell_refs)),
                 )
             } else if voids.is_empty() {
                 self.emitter
-                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{first_shell}"))
+                    .emit("MANIFOLD_SOLID_BREP", &format!("{name},{first_shell}"))
             } else {
                 let void_refs: Vec<Ref> = voids
                     .iter()
@@ -2151,7 +2157,7 @@ impl<'a> Builder<'a> {
                     .collect();
                 self.emitter.emit(
                     "BREP_WITH_VOIDS",
-                    &format!("'',{first_shell},{}", refs(&void_refs)),
+                    &format!("{name},{first_shell},{}", refs(&void_refs)),
                 )
             };
             if solid {
