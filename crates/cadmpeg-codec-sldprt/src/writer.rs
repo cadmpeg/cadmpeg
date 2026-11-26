@@ -126,6 +126,28 @@ pub(crate) struct RetainedSource {
     pub(crate) edit_free: OnceLock<(Vec<u8>, Arc<cadmpeg_ir::codec::DecodeResult>)>,
 }
 
+impl RetainedSource {
+    /// The written part `bytes` as the full decoder reads it back: the
+    /// edit-free part when `bytes` are its bytes, else decoded again. Bytes
+    /// that write no edit as edited (`edit_free`) become the edit-free part
+    /// when there is none yet.
+    pub(crate) fn read_back(
+        &self,
+        bytes: &[u8],
+        edit_free: bool,
+    ) -> Result<Arc<cadmpeg_ir::codec::DecodeResult>, cadmpeg_ir::codec::DecodeFailure> {
+        if let Some((_, decoded)) = self.edit_free.get().filter(|(kept, _)| kept == bytes) {
+            return Ok(Arc::clone(decoded));
+        }
+        let decoded = Arc::new(crate::decode::decode_for_read_back(bytes)?);
+        if edit_free {
+            self.edit_free
+                .get_or_init(|| (bytes.to_vec(), Arc::clone(&decoded)));
+        }
+        Ok(decoded)
+    }
+}
+
 /// Reusable decoded source baseline and native records across read-back retries
 /// of one semantic write.
 #[derive(Default)]

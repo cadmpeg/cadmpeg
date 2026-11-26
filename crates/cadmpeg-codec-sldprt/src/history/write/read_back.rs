@@ -353,25 +353,12 @@ impl<'a> Judge<'a> {
                 ..ReadBack::default()
             };
         }
-        let decoded = match source.edit_free.get() {
-            Some((edit_free, decoded)) if edit_free == bytes => std::sync::Arc::clone(decoded),
-            _ => match crate::decode::decode_for_read_back(bytes) {
-                Ok(decoded) => {
-                    let decoded = std::sync::Arc::new(decoded);
-                    if !claims.features.iter().any(FeatureClaims::any_written) {
-                        source
-                            .edit_free
-                            .get_or_init(|| (bytes.clone(), std::sync::Arc::clone(&decoded)));
-                    }
-                    decoded
-                }
-                Err(error) => {
-                    return ReadBack::unreadable(
-                        claims,
-                        format!("does not decode again ({error})"),
-                    );
-                }
-            },
+        let edit_free = !claims.features.iter().any(FeatureClaims::any_written);
+        let decoded = match source.read_back(bytes, edit_free) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
+            }
         };
         let Some(source_records) = source
             .records

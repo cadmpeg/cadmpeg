@@ -276,8 +276,13 @@ pub(crate) fn baseline_with_bytes(
     let (entries, unedited_bytes) = written.map_or_else(
         |_| (Vec::new(), None),
         |_| {
-            let written =
-                crate::decode::decode_for_read_back(&bytes).expect("the unedited write decodes");
+            // The unedited write writes no edit: a write of the same bytes in
+            // the session reads them back from the retained source.
+            let written = match cache.source_baseline.as_deref() {
+                Some(retained) => retained.read_back(&bytes, true),
+                None => crate::decode::decode_for_read_back(&bytes).map(std::sync::Arc::new),
+            }
+            .expect("the unedited write decodes");
             (diff(part.ir(), written.ir()), Some(bytes))
         },
     );
