@@ -343,7 +343,7 @@ fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
     fn write(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
         let mut bytes = Vec::new();
         crate::F3dCodec
-            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("source-less document parameter encode");
         bytes

@@ -138,6 +138,19 @@ pub(crate) fn measured_canonical_json(
     Ok((bytes, measured))
 }
 
+/// The refusal of the canonical JSON of `value`, where its walk is refused.
+/// The walk notes no bound for a later measured walk.
+pub(crate) fn canonical_refusal<T: Serialize + ?Sized>(value: &T) -> Option<CanonicalJsonError> {
+    let refusal = finite_json::write_canonical_json(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut std::io::sink(),
+        value,
+    )
+    .err();
+    crate::bounds::take_expression_past();
+    refusal
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
@@ -248,21 +261,19 @@ pub fn document_local_sha256_without_carried(
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
-    let document = (|| {
-        Ok::<_, CodecError>(NormalizedDocument {
-            ir_version: ir.ir_version(),
-            fragment: ir.fragment,
-            source: source.cloned(),
-            units: CanonicalUnitsWire::default(),
-            tolerances: &ir.tolerances,
-            geometry: ir.geometry.sorted(),
-            model: ir.model.sorted()?,
-            design: ir.design.sorted(),
-            process: ir.process.sorted(),
-            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
-            omitted_arenas,
-        })
-    })()?;
+    let document = NormalizedDocument {
+        ir_version: ir.ir_version(),
+        fragment: ir.fragment,
+        source: source.cloned(),
+        units: CanonicalUnitsWire::default(),
+        tolerances: &ir.tolerances,
+        geometry: ir.geometry.sorted(),
+        model: ir.model.sorted(),
+        design: ir.design.sorted(),
+        process: ir.process.sorted(),
+        native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+        omitted_arenas,
+    };
     match canonical_json_sha256(ctx, &document) {
         Ok(digest) => Ok(digest),
         Err(error) => {

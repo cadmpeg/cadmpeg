@@ -224,11 +224,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
@@ -247,7 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         let mut edited_bytes = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(&edited_ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&edited_ir, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut edited_bytes))?;
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
@@ -1087,7 +1087,7 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
         )?;
         let mut bytes = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)?
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Unnamed)?
             .write_to(&mut bytes)?;
         let decoded = FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())?;
         if property_value_attribute(decoded.ir(), owner, name, 0, "value") == Some(new)
@@ -1198,11 +1198,11 @@ fn source_less_profile(
     let ir = builder.build()?;
     let mut first = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut first))?;
     let mut second = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
@@ -1808,7 +1808,7 @@ mod tests {
         let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
         let mut written = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut written))
             .expect("write fixture");
         let restored = FcstdCodec

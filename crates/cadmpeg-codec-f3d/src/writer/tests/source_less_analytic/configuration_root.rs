@@ -85,7 +85,7 @@ pub(super) fn write_and_decode(
 ) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less write");
     let decoded = F3dCodec
@@ -172,7 +172,7 @@ fn the_generated_type_is_charged_again_on_a_rewrite() {
     set_active_row(&mut ir, "large");
     let mut first_bytes = Vec::new();
     let first = F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut first_bytes))
         .unwrap();
     assert_eq!(generated_type_losses(&first), 1, "{:#?}", first.losses);

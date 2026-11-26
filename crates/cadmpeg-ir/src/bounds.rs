@@ -127,7 +127,7 @@ pub(crate) fn note_expression_past() {
     EXPRESSION_PAST.with(|past| past.set(true));
 }
 
-fn take_expression_past() -> bool {
+pub(crate) fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
 }
 
