@@ -443,23 +443,52 @@ fn the_caller_depth_limit_governs_retained_value_xml() {
     assert_eq!(limit.operation, "FreeCAD retained property value XML");
 }
 
-/// A tag with more attributes than the per-expansion admission bounds is a
-/// ceiling of the write's session, not a malformed value: the write refuses.
+/// Each attribute of retained value XML is an entity that the write's
+/// session admits. An entity ceiling one below the session's count at the
+/// wide value refuses the write, and the desktop ceiling writes it.
 #[test]
-fn a_retained_value_tag_past_the_attribute_bound_refuses_the_write() {
+fn retained_value_attributes_count_against_the_entity_ceiling() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimits};
     use std::fmt::Write as _;
-    let attributes = (0..=256).fold(String::new(), |mut tag, index| {
+
+    let attributes = (0..257).fold(String::new(), |mut tag, index| {
         write!(tag, r#" a{index}="""#).expect("write attribute");
         tag
     });
     let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
-    let limit = write_refusal(&edited, cadmpeg_core::decode::ResourceLimits::desktop());
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::DecompressedBytes
-    );
-    assert_eq!(limit.additional, u64::MAX);
-    assert_eq!(limit.operation, "FreeCAD retained property value XML");
+    let values: usize = native_arena::<PropertyRecord>(&edited, "properties")
+        .iter()
+        .map(|property| {
+            if let crate::native::PropertyBody::Persisted { values, .. } = &property.body {
+                values.len()
+            } else {
+                0
+            }
+        })
+        .sum();
+    let mut probe = ResourceLimits::desktop();
+    probe.max_entities = u64::MAX;
+    // Each retained value parse is one charge; the wide one holds `value`
+    // and the 257 added attributes.
+    let found = (0..values)
+        .map(|skip| {
+            at_charge(
+                ResourceDimension::Entities,
+                "FreeCAD retained property value XML",
+                skip,
+                || write_refusal(&edited, probe),
+            )
+        })
+        .find(|limit| limit.additional == 258)
+        .expect("the wide value is charged");
+    let mut limits = ResourceLimits::desktop();
+    limits.max_entities = found.used + found.additional - 1;
+    assert_eq!(write_refusal(&edited, limits), found);
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None).with_limits(ResourceLimits::desktop()))
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("the desktop ceiling writes the wide value");
 }
 
 /// Each parse of retained XML charges its text to the input of the write's

@@ -15,13 +15,6 @@ use std::collections::HashSet;
 use super::{u64_from_index, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
-/// Attributes in one XML tag. roxmltree compares each attribute with the
-/// earlier ones in its tag.
-const MAX_XML_TAG_ATTRIBUTES: u64 = 256;
-/// Distinct namespace prefixes declared in one XML text. roxmltree searches
-/// the namespaces in scope for each element and prefixed attribute, and
-/// copies them into each element that declares a namespace.
-const MAX_XML_NAMESPACE_PREFIXES: u64 = 256;
 /// One roxmltree 0.21.1 `NodeData` with the `positions` feature: four links,
 /// the node kind with an inline expanded name, and the source range.
 const XML_NODE_BYTES: u64 = 72;
@@ -29,6 +22,12 @@ const XML_NODE_BYTES: u64 = 72;
 const XML_ATTRIBUTE_BYTES: u64 = 72;
 /// One roxmltree 0.21.1 `TempAttributeData`.
 const XML_TEMP_ATTRIBUTE_BYTES: u64 = 80;
+/// The temporary attributes roxmltree reserves before it grows their vector.
+const XML_TEMP_ATTRIBUTE_SLOTS: u64 = 16;
+/// One name in the scan's prefix set: a slice and its control byte, in a
+/// table that keeps an eighth of its buckets free and can hold its old and
+/// its doubled buckets at once.
+const XML_PREFIX_BYTES: u64 = 4 * (16 + 1);
 /// Bounds one roxmltree 0.21.1 `Namespace` with its sorted index.
 const XML_NAMESPACE_BYTES: u64 = 64;
 /// One nesting level: a slot in roxmltree's prefix stack (16 bytes) and in
@@ -47,10 +46,8 @@ const XML_COPY_BYTES: u64 = 32 + 24;
 /// longer than the source of that text, and earlier copies keep one shared
 /// string each.
 const XML_COPY_FACTOR: u64 = 5;
-/// Parser state, the scan's prefix set, and the temporary attributes of one
-/// tag in a growing vector.
-const XML_FIXED_BYTES: u64 =
-    1024 + 16 * 1024 + 3 * MAX_XML_TAG_ATTRIBUTES / 2 * XML_TEMP_ATTRIBUTE_BYTES;
+/// Parser state and the initial capacities of the parser and the scan.
+const XML_FIXED_BYTES: u64 = 1024 + 16 * 1024;
 /// One 32-byte `serde_json::Value` in an array that may hold twice its
 /// length.
 const JSON_VALUE_BYTES: u64 = 64;
@@ -107,8 +104,11 @@ impl DecodeContext<'_> {
     }
 
     /// Parses XML with DTD processing disabled and charges its node depth.
-    /// The scan bounds the storage that roxmltree reserves and copies, and
-    /// the rest of the per-expansion allowance limits its nodes.
+    /// The scan bounds the storage that roxmltree reserves and copies and the
+    /// name comparisons it makes, one byte each, and the rest of the
+    /// per-expansion allowance limits its nodes. Each attribute, a namespace
+    /// declaration included, and each distinct namespace prefix is an
+    /// admitted entity of the session.
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
@@ -121,12 +121,11 @@ impl DecodeContext<'_> {
     /// Parses XML text that the session reads from memory, as a decoder reads
     /// a companion file: the text's length is charged as input bytes, and the
     /// text is then parsed as [`Self::parse_xml`] parses it. Where
-    /// [`Self::parse_xml`] gives [`CodecError::NotImplemented`] for a tree
-    /// past the per-expansion allowance, or for a tag or a text past the
-    /// attribute or namespace-prefix bounds of that allowance's admission,
-    /// this refuses with `ResourceLimit` in the decompressed-bytes dimension.
-    /// Its `limit` is the allowance, and its `additional` is the storage the
-    /// scan bounds, `u64::MAX` where it bounds none.
+    /// [`Self::parse_xml`] gives [`CodecError::NotImplemented`] for a parse
+    /// past the per-expansion allowance, this refuses with `ResourceLimit` in
+    /// the decompressed-bytes dimension. Its `limit` is the allowance, and
+    /// its `additional` is the storage and comparisons the scan bounds,
+    /// `u64::MAX` where that bound passes `u64`.
     pub fn parse_input_xml<'input>(
         &self,
         text: &'input str,
@@ -159,44 +158,43 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<roxmltree::Document<'input>, XmlRefusal> {
         let allowance = self.per_expand_allowance();
-        let shape = xml_shape(text);
-        if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
-            return Err(XmlRefusal::Allowance {
-                allowance,
-                needed: TreeNeed::Unbounded,
-                reason: format!(
-                    "{operation}: an XML tag has more than {MAX_XML_TAG_ATTRIBUTES} attributes"
-                ),
-            });
-        }
+        let shape = xml_shape_checked(
+            text,
+            || Ok(()),
+            |count| match count
+                .checked_mul(XML_PREFIX_BYTES)
+                .and_then(|bytes| bytes.checked_add(XML_FIXED_BYTES))
+            {
+                Some(bytes) if bytes <= allowance => Ok(()),
+                need => Err(need),
+            },
+        )
+        .map_err(|need| XmlRefusal::tree(allowance, need, operation))?;
         let prefixes = u64_from_index(shape.prefixes.len());
-        if prefixes > MAX_XML_NAMESPACE_PREFIXES {
-            return Err(XmlRefusal::Allowance {
-                allowance,
-                needed: TreeNeed::Unbounded,
-                reason: format!(
-                    "{operation}: the XML text declares more than \
-                     {MAX_XML_NAMESPACE_PREFIXES} namespace prefixes"
-                ),
-            });
-        }
-        let storage = xml_storage_bytes(&shape, prefixes);
-        let nodes_limit = storage
-            .and_then(|bytes| allowance.checked_sub(bytes))
-            .and_then(|rest| xml_nodes_limit(rest, shape.less_than))
-            .ok_or_else(|| XmlRefusal::tree(allowance, storage, operation))?;
+        let need = xml_storage_bytes(&shape, prefixes)
+            .and_then(|bytes| bytes.checked_add(xml_comparisons(&shape, prefixes)?));
+        let (need, nodes_limit) = need
+            .and_then(|bytes| {
+                let rest = allowance.checked_sub(bytes)?;
+                Some((bytes, xml_nodes_limit(rest, shape.less_than)?))
+            })
+            .ok_or_else(|| XmlRefusal::tree(allowance, need, operation))?;
+        self.charge_entities(shape.attributes + prefixes, operation)
+            .map_err(XmlRefusal::Error)?;
         // roxmltree node ids are `u32`; a larger limit leaves the parser's own.
         let mut options = roxmltree::ParsingOptions::default();
         if let Ok(limit) = u32::try_from(nodes_limit) {
             options.nodes_limit = limit;
         }
+        let refused = xml_node_bytes(u64::from(options.nodes_limit) + 1, shape.less_than)
+            .and_then(|nodes| nodes.checked_add(need));
         // roxmltree recurses once per element level.
         self.at_depth(shape.depth, operation, || {
             Ok(
                 roxmltree::Document::parse_with_options(text, options).map_err(
                     |error| match error {
                         roxmltree::Error::NodesLimitReached => {
-                            XmlRefusal::tree(allowance, None, operation)
+                            XmlRefusal::tree(allowance, refused, operation)
                         }
                         error => XmlRefusal::Error(Self::tree_malformed(error)),
                     },
@@ -230,7 +228,8 @@ impl DecodeContext<'_> {
 }
 
 impl crate::scan::ScanBudget<'_> {
-    /// Parses XML after admitting its input, tree storage, and nesting depth.
+    /// Parses XML after admitting its input, tree storage, name comparisons,
+    /// and nesting depth.
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
@@ -239,14 +238,9 @@ impl crate::scan::ScanBudget<'_> {
 
         self.source(u64_from_index(text.len()))?;
         self.retain(XML_FIXED_BYTES)?;
-        let shape = xml_shape_checked(text, || self.check())?;
+        let shape = xml_shape_checked(text, || self.check(), |_| self.retain(XML_PREFIX_BYTES))?;
         self.check()?;
         let prefixes = u64_from_index(shape.prefixes.len());
-        if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES || prefixes > MAX_XML_NAMESPACE_PREFIXES {
-            return Err(StopReason::Unsupported(
-                "XML attribute or namespace limit".into(),
-            ));
-        }
         self.depth(shape.depth)?;
         let nodes = shape
             .less_than
@@ -254,7 +248,14 @@ impl crate::scan::ScanBudget<'_> {
             .and_then(|count| count.checked_add(1))
             .ok_or(StopReason::RetainedBytes)?;
         let storage = xml_storage_bytes(&shape, prefixes)
-            .and_then(|bytes| bytes.checked_sub(XML_FIXED_BYTES))
+            .and_then(|bytes| bytes.checked_add(xml_comparisons(&shape, prefixes)?))
+            .and_then(|bytes| {
+                bytes.checked_sub(
+                    prefixes
+                        .checked_mul(XML_PREFIX_BYTES)?
+                        .checked_add(XML_FIXED_BYTES)?,
+                )
+            })
             .and_then(|bytes| {
                 nodes
                     .checked_mul(3 * XML_NODE_BYTES)
@@ -275,8 +276,8 @@ impl crate::scan::ScanBudget<'_> {
 
 /// Why an XML text gives no tree.
 enum XmlRefusal {
-    /// The tree could need more storage than the per-expansion `allowance`
-    /// bounds: `needed`.
+    /// The parse could need more storage and comparisons than the
+    /// per-expansion `allowance` bounds: `needed`.
     Allowance {
         allowance: u64,
         needed: TreeNeed,
@@ -286,10 +287,10 @@ enum XmlRefusal {
 }
 
 impl XmlRefusal {
-    fn tree(allowance: u64, storage: Option<u64>, operation: &str) -> Self {
+    fn tree(allowance: u64, need: Option<u64>, operation: &str) -> Self {
         Self::Allowance {
             allowance,
-            needed: storage.map_or(TreeNeed::Unbounded, TreeNeed::Bytes),
+            needed: need.map_or(TreeNeed::Unbounded, TreeNeed::Bytes),
             reason: tree_too_large_reason("XML", allowance, operation),
         }
     }
@@ -302,11 +303,11 @@ impl XmlRefusal {
     }
 }
 
-/// The storage an XML tree could need.
+/// The storage and comparisons an XML parse could need.
 #[derive(Clone, Copy)]
 enum TreeNeed {
     Bytes(u64),
-    /// The scan bounds no storage for the tree.
+    /// The bound passes `u64`.
     Unbounded,
 }
 
@@ -353,10 +354,12 @@ struct XmlShape<'text> {
     attributes: u64,
     /// The most attributes in one tag.
     tag_attributes: u64,
+    /// The attribute pairs of each tag, summed. roxmltree compares each
+    /// attribute with the earlier attributes of its tag.
+    attribute_pairs: u128,
     /// `xmlns` outside quoted values in tags, one per namespace declaration.
     declarations: u64,
-    /// Names that follow `xmlns:` in tags, kept up to one past
-    /// [`MAX_XML_NAMESPACE_PREFIXES`].
+    /// Names that follow `xmlns:` in tags.
     prefixes: HashSet<&'text [u8]>,
     /// The deepest node, counted as roxmltree counts ancestors: the root
     /// element is one, and an element, text, CDATA, comment or instruction
@@ -385,11 +388,18 @@ impl<'text> XmlShape<'text> {
         self.depth = self.depth.max(open + 1);
     }
 
-    /// Keeps one prefix past the limit, enough for the limit to refuse.
-    fn prefix(&mut self, name: &'text [u8]) {
-        if u64_from_index(self.prefixes.len()) <= MAX_XML_NAMESPACE_PREFIXES {
+    /// Adds a declared prefix, after `admit` accepts the set's new length
+    /// when the name is new.
+    fn prefix<E>(
+        &mut self,
+        name: &'text [u8],
+        admit: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if !self.prefixes.contains(name) {
+            admit(u64_from_index(self.prefixes.len()) + 1)?;
             self.prefixes.insert(name);
         }
+        Ok(())
     }
 }
 
@@ -397,14 +407,12 @@ impl<'text> XmlShape<'text> {
 /// declarations end at their first terminator, never after the parser's, so
 /// the counts do not fall below what the parser stores. A text run ends at
 /// markup other than CDATA, where roxmltree stops merging text.
-fn xml_shape(text: &str) -> XmlShape<'_> {
-    xml_shape_checked(text, || Ok::<(), std::convert::Infallible>(()))
-        .unwrap_or_else(|never| match never {})
-}
-
+/// `check` runs before each byte, and `admit_prefix` before the prefix set
+/// grows, with its new length.
 fn xml_shape_checked<E>(
     text: &str,
     mut check: impl FnMut() -> Result<(), E>,
+    mut admit_prefix: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<XmlShape<'_>, E> {
     let bytes = text.as_bytes();
     let mut shape = XmlShape::default();
@@ -462,7 +470,10 @@ fn xml_shape_checked<E>(
                 let delimiter =
                     byte.is_ascii_whitespace() || matches!(byte, b'=' | b'/' | b'>' | b'\'' | b'"');
                 if let Some(start) = prefix_start.filter(|_| delimiter) {
-                    shape.prefix(bytes.get(start..index).unwrap_or_default());
+                    shape.prefix(
+                        bytes.get(start..index).unwrap_or_default(),
+                        &mut admit_prefix,
+                    )?;
                     prefix_start = None;
                 }
                 if tail.starts_with(b"xmlns") {
@@ -492,6 +503,7 @@ fn xml_shape_checked<E>(
                         XmlScan::Text
                     }
                     b'=' => {
+                        shape.attribute_pairs += u128::from(tag_attributes);
                         tag_attributes += 1;
                         shape.attributes += 1;
                         shape.tag_attributes = shape.tag_attributes.max(tag_attributes);
@@ -533,7 +545,7 @@ fn xml_shape_checked<E>(
     // A text run or CDATA section that the text ends in.
     shape.copy(copied, bytes.get(run_start..).unwrap_or_default());
     if let Some(start) = prefix_start {
-        shape.prefix(bytes.get(start..).unwrap_or_default());
+        shape.prefix(bytes.get(start..).unwrap_or_default(), &mut admit_prefix)?;
     }
     Ok(shape)
 }
@@ -544,7 +556,8 @@ fn xml_shape_checked<E>(
 /// shrinking the attribute vector copies the attributes. Each element that
 /// declares a namespace stores its declarations and copies the namespaces
 /// in scope: at most one per declared prefix, the default namespace and
-/// `xml`.
+/// `xml`. The temporary attributes of the widest tag and the scan's prefix
+/// set grow as vectors and tables do.
 fn xml_storage_bytes(shape: &XmlShape<'_>, prefixes: u64) -> Option<u64> {
     let namespace_indices = shape
         .declarations
@@ -574,7 +587,39 @@ fn xml_storage_bytes(shape: &XmlShape<'_>, prefixes: u64) -> Option<u64> {
                 .checked_add(1)?
                 .checked_mul(2 * XML_NAMESPACE_BYTES)?,
         )?
-        .checked_add(namespace_indices.checked_mul(3 * 2)?)
+        .checked_add(namespace_indices.checked_mul(3 * 2)?)?
+        .checked_add(
+            shape
+                .tag_attributes
+                .checked_mul(3)?
+                .max(XML_TEMP_ATTRIBUTE_SLOTS)
+                .checked_mul(XML_TEMP_ATTRIBUTE_BYTES)?,
+        )?
+        .checked_add(prefixes.checked_mul(XML_PREFIX_BYTES)?)
+}
+
+/// The name comparisons roxmltree 0.21.1 makes while it parses a text of
+/// `shape`: each attribute with the earlier attributes of its tag, and the
+/// name of each tag and prefixed attribute with the namespaces in scope, at
+/// most one per declared prefix, the default namespace and `xml`.
+fn xml_comparisons(shape: &XmlShape<'_>, prefixes: u64) -> Option<u64> {
+    shape
+        .less_than
+        .checked_add(shape.attributes)?
+        .checked_mul(prefixes.checked_add(2)?)?
+        .checked_add(u64::try_from(shape.attribute_pairs).ok()?)
+}
+
+/// The storage of `nodes` nodes besides the `reserved` slots, as
+/// [`xml_nodes_limit`] bounds it.
+fn xml_node_bytes(nodes: u64, reserved: u64) -> Option<u64> {
+    if nodes <= reserved {
+        nodes.checked_mul(XML_NODE_BYTES)
+    } else {
+        nodes
+            .checked_mul(3 * XML_NODE_BYTES)?
+            .checked_sub(reserved.checked_mul(XML_NODE_BYTES)?)
+    }
 }
 
 /// The most nodes whose storage fits in `rest` bytes besides the `reserved`
@@ -736,11 +781,9 @@ impl JsonStringScan {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write as _;
-
     use super::{
-        json_shape, xml_nodes_limit, xml_shape, xml_storage_bytes, MAX_XML_NAMESPACE_PREFIXES,
-        MAX_XML_TAG_ATTRIBUTES, XML_NODE_BYTES,
+        json_shape, xml_comparisons, xml_node_bytes, xml_nodes_limit, xml_shape_checked,
+        xml_storage_bytes, XmlShape, XML_NODE_BYTES,
     };
     use crate::decode::policy::DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE;
     use crate::decode::{
@@ -822,13 +865,14 @@ mod tests {
         }
     }
 
+    fn xml_shape(text: &str) -> XmlShape<'_> {
+        xml_shape_checked(text, || Ok::<(), std::convert::Infallible>(()), |_| Ok(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
     /// Node storage as [`xml_nodes_limit`] inverts it.
     fn xml_node_storage(nodes: u64, reserved: u64) -> u64 {
-        if nodes <= reserved {
-            nodes * XML_NODE_BYTES
-        } else {
-            3 * nodes * XML_NODE_BYTES - reserved * XML_NODE_BYTES
-        }
+        xml_node_bytes(nodes, reserved).expect("node storage fits u64")
     }
 
     /// What `parse_xml` admits `text` against: storage and its nodes.
@@ -841,6 +885,19 @@ mod tests {
 
     fn repeated(count: usize, part: impl Fn(usize) -> String) -> String {
         (0..count).map(part).collect()
+    }
+
+    /// One empty element with `count` attributes.
+    fn wide_tag(count: usize) -> String {
+        format!("<r{}/>", repeated(count, |index| format!(" a{index}=''")))
+    }
+
+    /// `count` elements that each declare their own namespace prefix.
+    fn declared_prefixes(count: usize) -> String {
+        format!(
+            "<r>{}</r>",
+            repeated(count, |index| format!("<c xmlns:p{index}='u'/>"))
+        )
     }
 
     /// A FreeCAD-shaped document: indented objects with typed properties.
@@ -927,6 +984,8 @@ mod tests {
         );
         assert_eq!(shape.attributes, 5);
         assert_eq!(shape.tag_attributes, 3);
+        // Three attributes give three pairs, and two give one.
+        assert_eq!(shape.attribute_pairs, 4);
         assert_eq!(shape.declarations, 3);
         assert_eq!(shape.prefixes.into_iter().collect::<Vec<_>>(), [&b"p"[..]]);
     }
@@ -1080,11 +1139,14 @@ mod tests {
                 "<r xmlns:p='u'>{}</r>",
                 "<p:a xmlns:q='v' q:b='&amp;'/>".repeat(128)
             ),
+            wide_tag(1000),
+            declared_prefixes(300),
         ] {
             let shape = xml_shape(&text);
             let nodes = shape.less_than * 2 + 1;
-            let storage = xml_storage_bytes(&shape, u64_from_index(shape.prefixes.len()))
-                .expect("XML storage bound")
+            let prefixes = u64_from_index(shape.prefixes.len());
+            let storage = xml_storage_bytes(&shape, prefixes).expect("XML storage bound")
+                + xml_comparisons(&shape, prefixes).expect("XML comparison bound")
                 + nodes * 3 * XML_NODE_BYTES;
             let clock = ManualClock::default();
             let budget = ScanBudget::new(
@@ -1157,6 +1219,8 @@ mod tests {
                 ),
             ),
             ("realistic", realistic_document(count / 4)),
+            ("a wide tag", wide_tag(count / 4)),
+            ("declared prefixes", declared_prefixes(count / 4)),
         ];
         // roxmltree recurses once per level, past a test thread's stack.
         std::thread::Builder::new()
@@ -1217,41 +1281,23 @@ mod tests {
     }
 
     #[test]
-    fn xml_tag_attributes_past_their_limit_are_unsupported() {
-        let tag = |attributes: u64| {
-            (0..attributes).fold(String::from("<r"), |mut tag, index| {
-                write!(tag, " a{index}=''").expect("write attribute");
-                tag + if index + 1 == attributes { "/>" } else { "" }
-            })
-        };
+    fn xml_attribute_comparisons_count_against_the_per_expand_allowance() {
         with_depth(256, |ctx| {
-            assert!(ctx.parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES), "XML").is_ok());
+            assert!(ctx.parse_xml(&wide_tag(1 << 12), "XML").is_ok());
             assert!(is_unsupported(
-                &ctx.parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES + 1), "XML"),
-                "an XML tag has more than 256 attributes"
+                &ctx.parse_xml(&wide_tag(1 << 13), "XML"),
+                "the XML tree could need more than the 16777216-byte per-expansion allowance"
             ));
             assert_eq!(ctx.resource_refusal(), None);
         });
     }
 
     #[test]
-    fn xml_namespace_prefixes_past_their_limit_are_unsupported() {
-        let document = |prefixes: u64| {
-            let mut text = String::from("<r>");
-            for index in 0..prefixes {
-                write!(text, "<c xmlns:p{index}='u'/>").expect("write declaration");
-            }
-            text + "</r>"
-        };
+    fn xml_parses_namespace_prefixes_within_the_allowance() {
+        let text = declared_prefixes(1 << 10);
         with_depth(256, |ctx| {
-            assert!(ctx
-                .parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES), "XML")
-                .is_ok());
-            assert!(is_unsupported(
-                &ctx.parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES + 1), "XML"),
-                "the XML text declares more than 256 namespace prefixes"
-            ));
-            assert_eq!(ctx.resource_refusal(), None);
+            let document = ctx.parse_xml(&text, "XML").expect("declared prefixes");
+            assert_eq!(document.root_element().children().count(), 1 << 10);
         });
     }
 
@@ -1341,20 +1387,52 @@ mod tests {
         let tree = refusal(&format!("<r>{}</r>", "<a/>".repeat(1 << 14)));
         assert_eq!((tree.scope, tree.limit), (LimitScope::Session, ceiling));
         assert!(tree.additional > ceiling);
-        let attributes = (0..=MAX_XML_TAG_ATTRIBUTES).fold(String::from("<r"), |mut tag, index| {
-            write!(tag, " a{index}=''").expect("write attribute");
-            tag
-        }) + "/>";
-        let prefixes =
-            (0..=MAX_XML_NAMESPACE_PREFIXES).fold(String::from("<r>"), |mut text, index| {
-                write!(text, "<c xmlns:p{index}='u'/>").expect("write declaration");
-                text
-            }) + "</r>";
-        for text in [attributes, prefixes] {
-            let bound = refusal(&text);
-            assert_eq!(
-                (bound.scope, bound.limit, bound.additional),
-                (LimitScope::Session, ceiling, u64::MAX)
+        let wide = wide_tag(1500);
+        let shape = xml_shape(&wide);
+        let storage = xml_storage_bytes(&shape, 0).expect("XML storage bound");
+        assert!(storage < ceiling);
+        let comparisons = refusal(&wide);
+        assert_eq!(
+            (comparisons.scope, comparisons.limit, comparisons.additional),
+            (
+                LimitScope::Session,
+                ceiling,
+                storage + xml_comparisons(&shape, 0).expect("XML comparison bound")
+            )
+        );
+    }
+
+    #[test]
+    fn xml_attributes_and_prefixes_are_admitted_entities() {
+        // Four attributes, two of them declarations, and two prefixes.
+        let text = "<r xmlns:p='u' a='1'><p:c xmlns:q='v' b='2'/></r>";
+        for input in [false, true] {
+            with_session(
+                |policy| policy.limits.max_entities = 6,
+                |ctx| {
+                    let parse = |ctx: &DecodeContext<'_>| {
+                        if input {
+                            ctx.parse_input_xml(text, "XML")
+                        } else {
+                            ctx.parse_xml(text, "XML")
+                        }
+                    };
+                    assert!(parse(ctx).is_ok());
+                    let Err(CodecError::ResourceLimit(limit)) = parse(ctx) else {
+                        panic!("the second parse passes the entity ceiling");
+                    };
+                    assert_eq!(
+                        (
+                            limit.dimension,
+                            limit.scope,
+                            limit.limit,
+                            limit.used,
+                            limit.additional
+                        ),
+                        (ResourceDimension::Entities, LimitScope::Session, 6, 6, 6)
+                    );
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                },
             );
         }
     }

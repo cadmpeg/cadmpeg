@@ -448,10 +448,15 @@ fn blank_and_edge_padded_text_items_are_trimmed_or_left_out_and_named() {
     );
 }
 
-/// A Keywords text whose one feature holds 256 attributes and no `Type`:
-/// the reader reads it, and refuses the regenerated text, which adds `Type`.
-fn full_feature() -> String {
-    let attributes = (0..254)
+/// The attributes of the feature of [`wide_feature`] besides `id` and `Name`.
+const WIDE_FEATURE_ATTRIBUTES: usize = 2000;
+
+/// A Keywords text whose one feature holds [`WIDE_FEATURE_ATTRIBUTES`]
+/// attributes besides `id` and `Name`. The parse of its regenerated text
+/// compares each attribute of the feature with the earlier ones, more than
+/// a 1 MiB per-expansion allowance admits.
+fn wide_feature() -> String {
+    let attributes = (0..WIDE_FEATURE_ATTRIBUTES)
         .map(|index| format!(" a{index}=\"{index}\""))
         .collect::<Vec<_>>()
         .concat();
@@ -462,7 +467,7 @@ fn full_feature() -> String {
 
 #[test]
 fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_it() {
-    let second = full_feature();
+    let second = wide_feature();
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x42, "Contents/Keywords", KEYWORDS.as_bytes()));
     source.extend(make_block(0x42, "Contents/Keywords", second.as_bytes()));
@@ -473,11 +478,10 @@ fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_
     assert_eq!(sldprt_native(decoded.ir()).feature_histories.len(), 2);
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     let mut bytes = Vec::new();
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_decompressed_bytes_per_expand = 1 << 20;
     let output = SldprtCodec
-        .plan(EncodeInput::new(
-            decoded.ir(),
-            Some(decoded.source_fidelity()),
-        ))
+        .plan(EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())).with_limits(limits))
         .unwrap()
         .write_to(&mut bytes)
         .unwrap();
@@ -524,8 +528,11 @@ fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_
         .unwrap();
     let histories = sldprt_native(reread.ir()).feature_histories;
     assert_eq!(histories.len(), 2);
-    assert!(histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .any(|feature| feature.name == "Q1" && feature.properties.len() == 254));
+    assert!(
+        histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .any(|feature| feature.name == "Q1"
+                && feature.properties.len() == WIDE_FEATURE_ATTRIBUTES)
+    );
 }
