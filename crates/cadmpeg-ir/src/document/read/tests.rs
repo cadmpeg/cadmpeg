@@ -170,6 +170,9 @@ fn a_record_its_type_refuses_is_given_up_and_the_rest_is_read() {
     let read = read(value.to_string().as_bytes());
     assert_eq!(read.document.geometry.points[..], ir.geometry.points[1..]);
     assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
+    let reason = &read.report[0].message;
+    assert!(reason.contains("invalid type"), "{reason}");
+    assert!(!reason.contains(" at line "), "{reason}");
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
 }
 
