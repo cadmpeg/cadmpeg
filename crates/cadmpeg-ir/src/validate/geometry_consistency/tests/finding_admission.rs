@@ -80,7 +80,13 @@ fn edge_endpoint_finding_is_reported() {
     ));
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "edge curve endpoints miss",
     );
 }
@@ -104,7 +110,13 @@ fn coedge_use_curve_finding_is_reported() {
     ir.geometry.curves.push(curve);
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "coedge use-curve endpoints miss",
     );
 }
