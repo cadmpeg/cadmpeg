@@ -1631,7 +1631,8 @@ impl ActiveCarrierRecord {
         let id = "inventor:kernel:active-carrier#root".to_owned();
         match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
-            crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
+            crate::kernel::ActiveCarrierState::Unavailable(detail)
+            | crate::kernel::ActiveCarrierState::Unreadable { detail, .. } => Self::Unavailable {
                 id,
                 detail: detail.to_owned(),
             },

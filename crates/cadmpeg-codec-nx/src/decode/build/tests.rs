@@ -69,12 +69,46 @@ fn torus_record(xmt: u16, major: f64) -> Vec<u8> {
     bytes
 }
 
+/// The carrier codes of each refused record, each checked to give the record
+/// up as a `parasolid-record` part over its own bytes in its stream, inside
+/// the retained record of that stream.
 fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     let graph = crate::topology::Graph::parse(stream);
-    super::surface_refusals(0, &graph)
-        .into_iter()
-        .map(|loss| loss.code)
-        .collect()
+    crate::test_support::with_decode_context(|ctx| {
+        super::surface_refusals(0, &graph)
+            .into_iter()
+            .map(|(node, refusal)| {
+                let pos = node.pos();
+                assert!(
+                    refusal.message.contains(&format!("at byte {pos} ")),
+                    "{refusal:#?}"
+                );
+                let part = super::give_up_record(
+                    ctx,
+                    (0, &cadmpeg_ir::stream_name!("nx:parasolid#0:partition")),
+                    node,
+                    &refusal,
+                )
+                .expect("the refused record is given up");
+                let loss = part.loss();
+                assert_eq!(
+                    loss.code,
+                    cadmpeg_ir::unknown::part::record_unreadable_kind()
+                );
+                assert!(
+                    loss.message.starts_with(&format!(
+                        "part parasolid-record stream=\"nx:parasolid#0:partition\" offset={pos} \
+                         length={} record={}: ",
+                        node.bytes().len(),
+                        part.id()
+                    )),
+                    "{loss:#?}"
+                );
+                assert!(loss.message.contains(&refusal.message), "{loss:#?}");
+                refusal.code.clone()
+            })
+            .collect()
+    })
 }
 
 #[test]

@@ -581,6 +581,11 @@ pub struct LossNote {
         deserialize_with = "deserialize_count"
     )]
     pub count: Option<u64>,
+    /// The ids of the give-up this note charges or notes, which the decode
+    /// wrapper reads (CADIR §3.3). The wire form leaves them out.
+    #[serde(skip)]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    pub(crate) give_up: Option<Box<crate::unknown::part::GiveUpIds>>,
 }
 
 impl LossNote {
@@ -593,6 +598,7 @@ impl LossNote {
             message: message.into(),
             provenance: None,
             count: None,
+            give_up: None,
         }
     }
 

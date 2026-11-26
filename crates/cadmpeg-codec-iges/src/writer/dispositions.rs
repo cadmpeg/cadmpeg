@@ -53,22 +53,10 @@ const ENTITY_VIEW_ARENAS: &[&str] = &[
 
 /// Native arenas the semantic writer does not regenerate, with the reason the
 /// loss gives.
-const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[
-    (
-        "product_occurrence_expansion",
-        "which the bounded semantic writer does not regenerate",
-    ),
-    (
-        "quarantined_directory_records",
-        "which the bounded semantic writer does not regenerate, because a record that failed \
-         typing has no fields to write",
-    ),
-    (
-        "quarantined_parameter_records",
-        "which the bounded semantic writer does not regenerate, because a record that failed \
-         typing has no fields to write",
-    ),
-];
+const DROPPED_NATIVE_ARENAS: &[(&str, &str)] = &[(
+    "product_occurrence_expansion",
+    "which the bounded semantic writer does not regenerate",
+)];
 
 const UNREFERENCED_DIRECTION: &str =
     "that are directions no written analytic surface references, which the semantic writer \

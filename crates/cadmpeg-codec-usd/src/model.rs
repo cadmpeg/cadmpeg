@@ -42,6 +42,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
@@ -226,6 +227,12 @@ struct Tallies {
     external: usize,
     metadata: BTreeMap<String, usize>,
     api_schemas: BTreeMap<String, usize>,
+    /// Records given up whole, each named by the id of the record that its
+    /// prim would define, with the code of their aggregate loss as the error.
+    given_up: Vec<GivenUpRecord>,
+    /// The `record.dropped-with` notes of the records dropped only because
+    /// they need a given-up record.
+    dependents: Vec<LossNote>,
 }
 
 /// Layer metadata keys the model reads (spec §4.3).
@@ -855,6 +862,7 @@ impl Builder<'_, '_, '_, '_> {
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             if prim.external.is_empty() {
                 self.tallies.rejected_meshes.push(prim.path.clone());
+                self.give_up_mesh(prim, key, UsdLossCode::MeshRejected.kind(), &[]);
             }
             return Ok(None);
         };
@@ -890,6 +898,12 @@ impl Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.give_up_mesh(
+                    prim,
+                    key,
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                    &mesh.subsets,
+                );
                 return Ok(None);
             }
         };
@@ -912,6 +926,51 @@ impl Builder<'_, '_, '_, '_> {
         self.transferred = true;
         self.admit("usd_mesh")?;
         Ok(None)
+    }
+
+    /// Gives up the tessellation that mesh `prim` would define for `key`,
+    /// for `error`, and drops with it each appearance binding that would
+    /// target it.
+    fn give_up_mesh(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        error: impl std::fmt::Display,
+        subsets: &[crate::schema::mesh::Subset],
+    ) {
+        let tessellation = crate::ids::tessellation(key);
+        self.tallies
+            .given_up
+            .push(GivenUpRecord::new(&tessellation, error));
+        // The readers run again only to learn which bindings exist; their
+        // issues were tallied on the first read.
+        let mut issues = Issues::default();
+        if matches!(
+            crate::schema::shading::bound_material(self.stage, prim, &mut issues),
+            Some(Bound::Surface(_))
+        ) {
+            self.tallies.dependents.push(dropped_with(
+                crate::ids::appearance_binding(key),
+                &tessellation,
+            ));
+        }
+        for subset in subsets {
+            let bound = self
+                .stage
+                .find(&subset.path)
+                .and_then(|prim| {
+                    prim.relationship_targets("material:binding")
+                        .into_iter()
+                        .next()
+                })
+                .map(|target| crate::schema::shading::material(self.stage, &target, &mut issues));
+            if matches!(bound, Some(Bound::Surface(_))) {
+                self.tallies.dependents.push(dropped_with(
+                    crate::ids::subset_binding(key, &subset.path),
+                    &tessellation,
+                ));
+            }
+        }
     }
 
     fn tessellation(&self, key: &str, mesh: &MeshData) -> Result<Tessellation, String> {
@@ -1196,6 +1255,10 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(curves) = curves else {
             self.tallies.rejected_curves += 1;
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::CurvesRejected.kind(),
+            ));
             return Ok(None);
         };
         self.tallies.rejected_curves += curves.rejected;
@@ -1292,6 +1355,12 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_curve")?;
         }
         if edges.is_empty() {
+            if !curves.curves.is_empty() || curves.rejected > 0 {
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::body(key),
+                    UsdLossCode::CurvesRejected.kind(),
+                ));
+            }
             return Ok(None);
         }
         let region = crate::ids::region(key);
@@ -1315,10 +1384,18 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(patch) = crate::schema::patch::read(prim, &mut self.issues) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let reason = match crate::brep::patch::bounded(&patch) {
@@ -1971,6 +2048,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(issues.animated.iter().cloned())
         ),
     );
+    losses.extend(tallies.given_up.iter().cloned().map(GivenUpRecord::loss));
+    losses.extend(tallies.dependents.iter().cloned());
     losses
 }
 

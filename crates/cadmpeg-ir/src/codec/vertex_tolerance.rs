@@ -13,30 +13,37 @@
 //! itself does, or where that carrier distance cannot be measured: there a
 //! range is off, not the vertex.
 //!
-//! The pass measures the current geometry, then the resolved state of each
-//! evaluation and process state with content: its base with its delta
-//! applied, as validation resolves it. A vertex that only a resolved state
-//! compares with a moved position states its widened tolerance in that
-//! state's delta: the delta's own record, or a copy of the base's record,
-//! annotated as the base's record is, that the delta then restates. Each
-//! state is measured after the states its chain of bases passes, with the
+//! The pass measures each geometry again, at the tolerances it has widened,
+//! until a measure widens no tolerance: a widened vertex raises the allowance
+//! of the comparisons it ends. It measures the current geometry, then the
+//! resolved state of each evaluation and process state with content: its base
+//! with its delta applied, as validation resolves it. A vertex that only a
+//! resolved state compares with a moved position states its widened tolerance
+//! in that state's delta: the delta's own record, or a copy of the base's
+//! record, annotated as the base's record is, that the delta then restates.
+//! Each state is measured after the states its chain of bases passes, with the
 //! tolerances they widen, and over the records connected through references
-//! with a record its delta changes or with a vertex its base widens: every
-//! other vertex is compared as in the base, where it was measured. A state
-//! whose base is the current state or empty is measured whole. A state
-//! whose chain of bases the pass does not resolve, or that it does not
-//! measure before a resource ceiling, keeps its stored tolerances, and the
-//! pass charges `geometry.vertex-tolerance-unmeasured` naming it. A record inside a history body or a witness body has no
-//! annotation key of its own, so its widened tolerance could not be marked
-//! derived; it keeps its stored tolerance, and validation reports its gaps.
+//! with a record its delta changes: every other vertex is compared as in the
+//! base, where it was measured. A state whose base is the current state or
+//! empty, or whose base the pass did not measure until a measure widened
+//! nothing, is measured whole. A state whose chain of bases the pass does not
+//! resolve, or that it does not measure before a resource ceiling, keeps its
+//! stored tolerances, and the pass charges
+//! `geometry.vertex-tolerance-unmeasured` naming it. A geometry that still
+//! widens after one measure more than it holds vertices keeps the tolerances
+//! widened so far, and the pass charges that loss naming it. A record inside a
+//! history body or a witness body has no annotation key of its own, so its
+//! widened tolerance could not be marked derived; it keeps its stored
+//! tolerance, and validation reports its gaps.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, AnnotationKey, Annotations, FieldName};
 use crate::codec::loss::DecodeLossCode;
+use crate::document::Topology;
 use crate::eval::admission::ModelEvaluationPass;
 use crate::eval::decode::{curve_point, surface_point_solved};
 use crate::eval::finite_or_refusal;
@@ -76,7 +83,7 @@ const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 /// tolerance of the geometry it has not measured and returns the
 /// `geometry.vertex-tolerance-unmeasured` loss. That loss names each
 /// evaluation and process state with content whose resolved state the pass
-/// does not measure.
+/// does not measure, and each geometry that [`settle`] leaves unsettled.
 pub(super) fn widen(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -89,8 +96,8 @@ pub(super) fn widen(
 /// process state.
 #[derive(Clone, Copy)]
 enum Measured {
-    /// The records connected with a record its delta changes or with a
-    /// vertex its base widens, over a base the pass measured.
+    /// The records connected with a record its delta changes, over a base
+    /// the pass measured.
     Region,
     /// Every record, which widens as `Region` does.
     #[cfg(test)]
@@ -105,26 +112,42 @@ fn widen_measuring(
 ) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let read = |key: &str| !computed(annotations, key);
+    let mut stored = HashMap::new();
     let measured = DecodeContext::from_root_bytes_limit(&[], &arena, policy)
         .map_err(CodecError::from)
         .and_then(|(ctx, _)| {
-            let current = measure(&ctx, ir, &read)?;
-            let mut states = StateWidening::new(&current, measured);
+            let first = measure(&ctx, ir, &read)?;
+            let current = settle(ir.geometry.vertices.len(), first, |widened| {
+                raise(&mut ir.geometry, widened, &mut stored);
+                measure(&ctx, ir, &read)
+            })?;
+            let mut states = StateWidening::new(&current.widened, measured);
             let stopped = visit_resolved_states(&ctx, ir, &mut |state| {
                 states.measure(&ctx, ir, &read, &state)
             })
             .err();
-            let unresolved = unresolved(ir, &states.measured_states);
+            let unresolved = unresolved(ir, |id| {
+                states.measured_states.contains(id) || states.unsettled.contains(id)
+            });
+            let mut unsettled: Vec<String> = states.unsettled.into_iter().collect();
+            if !current.settled {
+                unsettled.insert(0, "the current geometry".to_owned());
+            }
             let deltas = states.widened;
-            Ok((current, deltas, stopped, unresolved))
+            Ok((current.widened, deltas, stopped, unresolved, unsettled))
         });
-    let (current, deltas, stopped, unresolved) = match measured {
+    let (current, deltas, stopped, unresolved, unsettled) = match measured {
         Ok(measured) => measured,
         Err(error) => {
+            for vertex in &mut ir.geometry.vertices {
+                if let Some(&tolerance) = stored.get(vertex.id.as_str()) {
+                    vertex.tolerance = tolerance;
+                }
+            }
             return vec![DecodeLossCode::VertexToleranceUnmeasured.note(format!(
                 "the decode wrapper's vertex tolerance pass stopped ({error}), so it widened no \
                  vertex tolerance"
-            ))]
+            ))];
         }
     };
     let mut written = Vec::new();
@@ -133,7 +156,7 @@ fn widen_measuring(
             continue;
         };
         if inserted {
-            annotations.copy_entity(&delta.source, key.clone());
+            annotations.copy_annotations(&delta.source, key.clone());
         }
         written.push((key, delta.increase));
     }
@@ -150,7 +173,12 @@ fn widen_measuring(
             continue;
         };
         builder.derived_field(&vertex.id, TOLERANCE);
-        let before = vertex.tolerance.unwrap_or(linear).get();
+        let before = stored
+            .get(vertex.id.as_str())
+            .copied()
+            .unwrap_or(vertex.tolerance)
+            .unwrap_or(linear)
+            .get();
         vertex.tolerance = Some(tolerance);
         largest = largest.max(tolerance.get() - before);
         widened.push(vertex.id.as_str().to_owned());
@@ -191,12 +219,20 @@ fn widen_measuring(
             unresolved.join(", ")
         )));
     }
+    if !unsettled.is_empty() {
+        losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
+            "the decode wrapper's vertex tolerance pass still widened a vertex tolerance after \
+             one measure more than a geometry holds vertices, so it kept the tolerances widened \
+             so far and a vertex there may still miss a compared position: {}",
+            unsettled.join(", ")
+        )));
+    }
     losses
 }
 
 /// The ids of the evaluations and process states with content that are not
-/// in `measured`, sorted.
-fn unresolved(ir: &CadIr, measured: &HashSet<String>) -> Vec<String> {
+/// `measured`, sorted.
+fn unresolved(ir: &CadIr, measured: impl Fn(&str) -> bool) -> Vec<String> {
     let mut unresolved: Vec<String> = ir
         .design
         .evaluations
@@ -210,7 +246,7 @@ fn unresolved(ir: &CadIr, measured: &HashSet<String>) -> Vec<String> {
                 .filter(|state| state.content.is_some())
                 .map(|state| state.id.as_str()),
         )
-        .filter(|id| !measured.contains(*id))
+        .filter(|id| !measured(id))
         .map(str::to_owned)
         .collect();
     unresolved.sort_unstable();
@@ -240,11 +276,12 @@ struct StateWidening<'w> {
     /// For each vertex, each evaluation or process state that widens it,
     /// with the tolerance it states there.
     by_state: HashMap<String, Vec<(String, PositiveLength)>>,
-    /// For each evaluation or process state, the vertices it widens.
-    by_holder: HashMap<String, Vec<String>>,
     /// The evaluations and process states whose resolved state the pass
-    /// visited.
+    /// measured until a measure widened nothing.
     measured_states: HashSet<String>,
+    /// The evaluations and process states whose resolved state still widened
+    /// at the bound of [`settle`].
+    unsettled: BTreeSet<String>,
     widened: Vec<DeltaWidening>,
 }
 
@@ -254,8 +291,8 @@ impl<'w> StateWidening<'w> {
             current,
             measured,
             by_state: HashMap::new(),
-            by_holder: HashMap::new(),
             measured_states: HashSet::new(),
+            unsettled: BTreeSet::new(),
             widened: Vec::new(),
         }
     }
@@ -302,14 +339,7 @@ impl<'w> StateWidening<'w> {
             .next()
             .filter(|base| self.measured_states.contains(*base));
         let mut topology = match (self.measured, base) {
-            (Measured::Region, Some(base)) => state.region(
-                ctx,
-                self.by_holder
-                    .get(base)
-                    .into_iter()
-                    .flatten()
-                    .map(String::as_str),
-            )?,
+            (Measured::Region, Some(_)) => state.region(ctx)?,
             _ => state.whole(),
         };
         if topology.vertices.is_empty() {
@@ -322,33 +352,45 @@ impl<'w> StateWidening<'w> {
                 vertex.tolerance = Some(tolerance);
             }
         }
-        let mut alone = CadIr::empty();
-        alone.fragment = ir.fragment;
-        alone.tolerances = ir.tolerances;
-        alone.geometry = topology;
         let key = |id: &str| match state.source(id) {
             Some(holder) => format!("{holder} {id}"),
             None => id.to_owned(),
         };
-        let tolerances = measure(ctx, &alone, &|id| read(&key(id)))?;
-        self.measured_states.insert(state.holder.to_owned());
+        let read = |id: &str| read(&key(id));
+        let mut alone = CadIr::empty();
+        alone.fragment = ir.fragment;
+        alone.tolerances = ir.tolerances;
+        alone.geometry = topology;
+        let mut stored = HashMap::new();
+        let first = measure(ctx, &alone, &read)?;
+        let settled = settle(alone.geometry.vertices.len(), first, |widened| {
+            raise(&mut alone.geometry, widened, &mut stored);
+            measure(ctx, &alone, &read)
+        })?;
+        if settled.settled {
+            self.measured_states.insert(state.holder.to_owned());
+        } else {
+            self.unsettled.insert(state.holder.to_owned());
+        }
         for vertex in alone.geometry.vertices {
-            let Some(tolerance) = tolerances
+            let Some(tolerance) = settled
+                .widened
                 .get(vertex.id.as_str())
                 .copied()
                 .and_then(PositiveLength::new)
             else {
                 continue;
             };
-            let before = vertex.tolerance.unwrap_or(ir.tolerances.linear).get();
+            let before = stored
+                .get(vertex.id.as_str())
+                .copied()
+                .unwrap_or(vertex.tolerance)
+                .unwrap_or(ir.tolerances.linear)
+                .get();
             self.by_state
                 .entry(vertex.id.as_str().to_owned())
                 .or_default()
                 .push((state.holder.to_owned(), tolerance));
-            self.by_holder
-                .entry(state.holder.to_owned())
-                .or_default()
-                .push(vertex.id.as_str().to_owned());
             self.widened.push(DeltaWidening {
                 holder: state.holder.to_owned(),
                 source: key(vertex.id.as_str()),
@@ -360,6 +402,78 @@ impl<'w> StateWidening<'w> {
             });
         }
         Ok(())
+    }
+}
+
+/// The tolerances that measuring one geometry until a measure widens none
+/// states.
+struct Settled {
+    /// Each widened vertex with its tolerance.
+    widened: BTreeMap<String, f64>,
+    /// Whether the last measure widened no vertex further.
+    settled: bool,
+}
+
+/// Merges `first` and the measures `again` makes, each at the tolerances
+/// widened before it, until a measure widens no vertex further. Where the
+/// measure after `vertices` measures, the geometry's vertex count, still
+/// widens one, the result is unsettled.
+fn settle(
+    vertices: usize,
+    first: BTreeMap<String, f64>,
+    mut again: impl FnMut(&BTreeMap<String, f64>) -> Result<BTreeMap<String, f64>, ResourceLimit>,
+) -> Result<Settled, ResourceLimit> {
+    let mut widened = BTreeMap::new();
+    let mut last = first;
+    let mut measures = 1;
+    loop {
+        let mut changed = false;
+        for (vertex, tolerance) in last {
+            if widened
+                .get(&vertex)
+                .is_none_or(|&stated: &f64| tolerance > stated)
+            {
+                widened.insert(vertex, tolerance);
+                changed = true;
+            }
+        }
+        if !changed {
+            return Ok(Settled {
+                widened,
+                settled: true,
+            });
+        }
+        if measures > vertices {
+            return Ok(Settled {
+                widened,
+                settled: false,
+            });
+        }
+        last = again(&widened)?;
+        measures += 1;
+    }
+}
+
+/// Raises the tolerance of each vertex of `geometry` that `widened` holds to
+/// its widened value, and keeps in `stored` the tolerance each raised vertex
+/// held before its first raise.
+fn raise(
+    geometry: &mut Topology,
+    widened: &BTreeMap<String, f64>,
+    stored: &mut HashMap<String, Option<PositiveLength>>,
+) {
+    for vertex in &mut geometry.vertices {
+        let Some(tolerance) = widened
+            .get(vertex.id.as_str())
+            .copied()
+            .and_then(PositiveLength::new)
+        else {
+            continue;
+        };
+        stored
+            .entry(vertex.id.as_str().to_owned())
+            .or_insert(vertex.tolerance);
+        vertex.tolerance = Some(tolerance);
     }
 }
 
@@ -375,7 +489,7 @@ fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(Ann
         .binary_search_by(|evaluation| evaluation.id.as_str().cmp(holder))
     {
         let evaluation = &mut ir.design.evaluations[at];
-        let key = AnnotationKey::in_delta(&evaluation.id, vertex.id.as_str());
+        let key = AnnotationKey::in_delta(&evaluation.id, &vertex.id);
         (key, &mut evaluation.content.as_mut()?.delta)
     } else {
         let states = &mut ir.process.states;
@@ -383,7 +497,7 @@ fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(Ann
             .binary_search_by(|state| state.id.as_str().cmp(holder))
             .ok()?;
         let state = &mut states[at];
-        let key = AnnotationKey::in_delta(&state.id, vertex.id.as_str());
+        let key = AnnotationKey::in_delta(&state.id, &vertex.id);
         (key, &mut state.content.as_mut()?.delta)
     };
     let vertices = &mut delta.records.vertices;
@@ -415,8 +529,9 @@ fn computed(annotations: &Annotations, id: &str) -> bool {
     })
 }
 
-/// The tolerance each vertex of `ir`'s geometry states after the pass, for
-/// the vertices it widens, measuring only between the records `read` admits.
+/// The tolerance each vertex of `ir`'s geometry states after one measure,
+/// for the vertices it widens, measuring only between the records `read`
+/// admits.
 fn measure(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -470,15 +585,12 @@ fn measure(
         let Some(&position) = vertices.get(vertex) else {
             continue;
         };
-        for (distance, carrier) in misses {
+        for &(distance, carrier) in &misses {
             let carrier = match carrier {
                 ComparedCarrier::Curve(curve) => curve_distance(ctx, curve, position)?,
                 ComparedCarrier::Surface(surface) => surface_distance(ctx, surface, position)?,
             };
-            let Some(carrier) = carrier else {
-                continue 'vertices;
-            };
-            if distance > CARRIER_DISTANCE_FACTOR * carrier {
+            if carrier.is_none_or(|carrier| distance > CARRIER_DISTANCE_FACTOR * carrier) {
                 continue 'vertices;
             }
         }

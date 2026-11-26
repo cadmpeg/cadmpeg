@@ -3347,6 +3347,10 @@ handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 
 `length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is a finite decimal scalar or formula. Context-free arithmetic uses parentheses, unary signs, `^`, `*`, `/`, `+`, and `-`. Formula parameter references use `p<decimal-index>` tokens. The nearest preceding `hostglobalvariables` marker supplies table identity. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.
 
-## 10. Strict floors
+## 10. Given-up records
 
-`nx/native.attachment-failed` records a native object model whose records the decoder gave up (CADIR §3.3), and carries strict floor Error (CADIR §3.2).
+A Parasolid record is a part (CADIR §3.3): the bytes of the complete record, from its offset in the inflated stream. The decoder gives up a record that it reads and then refuses as a `parasolid-record` part in the stream `nx:parasolid#<index>:<kind>`, where `<index>` is the stream index and `<kind>` is the stream kind. The part is contained in the retained record `nx:container:parasolid#<index>`, which holds the inflated stream, so the part keeps the length and the digest of its bytes. These records are a refused NURBS carrier, a carrier whose control values do not resolve, a CONE or TORUS whose fields state a form that has no surface, and a SHELL that has no admitted FACE. A BODY that has no emitted SHELL and has a given-up SHELL is dropped with that SHELL: the charge of the SHELL names the body id `nx:s<index>:body#<xmt>`. A BODY that has no emitted SHELL and no given-up SHELL is a `parasolid-record` part of its own.
+
+An indexed object-model entry is a part. When the section search of an entry stops at its work bound, the decoder gives up the entry as an `om-entry` part in the stream `nx:container`, at the file offset of the entry, with the entry path as its name. The part keeps the entry's bytes when they fit the retained-byte allowance, and their length and digest otherwise.
+
+When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges `nx/native.attachment-failed` and one `record.unreadable` that names `nx:container` (CADIR §3.3). Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.

@@ -117,18 +117,6 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `quarantined_parameter_records` which the bounded semantic writer does not regenerate, because a record that failed typing has no fields to write: iges:quarantine:parameter#3",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "native.records-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "export"
-          }
-        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `units_data` which the semantic writer does not encode: iges:metadata:units-data#D3",
         "severity": "warning"
       }

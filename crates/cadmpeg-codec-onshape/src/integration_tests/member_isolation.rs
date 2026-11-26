@@ -18,6 +18,38 @@ fn has(result: &cadmpeg_ir::codec::DecodeResult, code: OnshapeLossCode) -> usize
         .count()
 }
 
+/// The `record.unreadable` losses of the archive entry `name` given up as a part.
+fn given_up_entries(result: &cadmpeg_ir::codec::DecodeResult, name: &str) -> usize {
+    let head = format!("part archive-entry {name:?} stream=\"\" offset=");
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        })
+        .count()
+}
+
+/// A pinned decode of `bytes` refuses through the part loss of entry `name`.
+fn assert_pinned_refusal(bytes: Vec<u8>, name: &str) {
+    use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up entry");
+    let head = format!("part archive-entry {name:?} stream=\"\" offset=");
+    assert!(matches!(
+        error,
+        DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == record_unreadable_kind()
+                && rejection.loss().message.starts_with(&head)
+    ));
+}
+
 fn retained(bytes: &[u8]) {
     let result = decode(bytes);
     assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
@@ -86,6 +118,16 @@ fn crc_failure_omits_one_member() {
 }
 
 #[test]
+fn strict_decode_refuses_a_member_with_a_crc_failure() {
+    let mut bytes = fixture("plate-fillet");
+    patch(&mut bytes, TABLE, 16, 14, &0u32.to_le_bytes());
+    let admitted = decode(&bytes);
+    assert_eq!(has(&admitted, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(given_up_entries(&admitted, TABLE), 1);
+    assert_pinned_refusal(bytes, TABLE);
+}
+
+#[test]
 fn inflate_failure_omits_one_member() {
     let mut bytes = deflated_table();
     let offset = central(&bytes, TABLE);
@@ -145,10 +187,12 @@ fn unsupported_method_omits_one_member() {
 }
 
 #[test]
-fn encrypted_member_omits_one_member() {
+fn encrypted_member_is_given_up_and_a_pinned_decode_refuses() {
     let mut bytes = fixture("plate-fillet");
     patch(&mut bytes, TABLE, 8, 6, &1u16.to_le_bytes());
     retained(&bytes);
+    assert_eq!(given_up_entries(&decode(&bytes), TABLE), 1);
+    assert_pinned_refusal(bytes, TABLE);
 }
 
 #[test]
@@ -164,6 +208,7 @@ fn repeated_name_keeps_first_member() {
     }
     let result = decode(&bytes);
     assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(given_up_entries(&result, "notes/first.txt"), 1);
     let asset = result
         .ir()
         .model
@@ -182,6 +227,34 @@ fn repeated_name_keeps_first_member() {
     assert_eq!(data.as_bytes(), b"first");
     assert_eq!(result.ir().model.features.len(), 3);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
+    validate(result);
+}
+
+#[test]
+fn two_directory_records_of_one_stored_span_are_one_part() {
+    let mut bytes = members(&fixture("plate-fillet"), |rows| {
+        rows.insert("notes/a.bin".into(), b"alias".to_vec());
+        rows.insert("notes/b.bin".into(), b"alias".to_vec());
+    });
+    let first = central(&bytes, "notes/a.bin");
+    let local = bytes[first + 42..first + 46].to_vec();
+    let second = central(&bytes, "notes/b.bin");
+    bytes[second + 42..second + 46].copy_from_slice(&local);
+    patch(&mut bytes, "notes/a.bin", 16, 14, &0u32.to_le_bytes());
+    patch(&mut bytes, "notes/b.bin", 16, 14, &0u32.to_le_bytes());
+    let result = decode(&bytes);
+    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 2);
+    assert_eq!(given_up_entries(&result, "notes/a.bin"), 1);
+    assert_eq!(given_up_entries(&result, "notes/b.bin"), 0);
+    let stubs = result
+        .ir()
+        .native
+        .0
+        .get("onshape")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    assert_eq!(stubs, 1);
+    assert_eq!(result.ir().model.features.len(), 3);
     validate(result);
 }
 
@@ -269,6 +342,10 @@ fn malformed_features_retain_step() {
         });
         let result = decode(&bytes);
         assert_eq!(has(&result, OnshapeLossCode::HistoryNotSupported), 1);
+        assert_eq!(
+            given_up_entries(&result, "partstudios/studio/features.json"),
+            1
+        );
         assert!(result.ir().model.features.is_empty());
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         validate(result);

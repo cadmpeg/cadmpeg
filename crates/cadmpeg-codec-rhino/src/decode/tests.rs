@@ -1748,6 +1748,18 @@ fn class_report_counts_terminal_outcomes_once() {
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].message, message);
         }
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(unreadable.len(), 1);
+        assert!(unreadable[0].starts_with("part object-record stream=\"\" offset="));
+        assert!(unreadable[0]
+            .split_whitespace()
+            .any(|token| token == "rhino:object:record#000002"));
     });
 }
 

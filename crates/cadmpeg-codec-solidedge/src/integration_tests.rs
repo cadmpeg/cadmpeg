@@ -324,6 +324,115 @@ fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
     assert_geometry_valid(ir);
 }
 
+#[test]
+fn a_pinned_decode_refuses_a_face_that_states_no_orientation() {
+    let mut partition = test_support::solid_with_cavity_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| {
+            node.kind() == cadmpeg_parasolid::records::node_type::FACE && node.index() == 7
+        })
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+
+    let admitted = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(charged(
+        &admitted,
+        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
+    ));
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .flat_map(|loss| loss.message.split_whitespace())
+        .find(|token| token.starts_with("solidedge:brep:face#"))
+        .expect("record.unreadable names the face")
+        .to_owned();
+    assert!(admitted
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .all(|face| face.id.as_str() != given_up));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses a given-up face");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == given_up));
+}
+
+#[test]
+fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    assert!(
+        charge.starts_with("record solidedge:brep:face#"),
+        "{charge}"
+    );
+    let dropped = charge
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the face's charge names the records dropped with it");
+    for kind in ["solidedge:brep:loop#", "solidedge:brep:coedge#"] {
+        assert!(dropped.iter().any(|id| id.starts_with(kind)), "{charge}");
+    }
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 5);
+    assert!(dropped.iter().all(|id| {
+        geometry.loops.iter().all(|loop_| loop_.id.as_str() != *id)
+            && geometry
+                .coedges
+                .iter()
+                .all(|coedge| coedge.id.as_str() != *id)
+    }));
+}
+
 fn surfaceless_face(sense: u8) -> cadmpeg_ir::codec::DecodeResult {
     let mut partition = test_support::sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
@@ -399,6 +508,31 @@ fn unreadable_partition_preserves_another_partition() {
         == crate::loss::SolidEdgeLossCode::PartitionUnreadable
             .note("")
             .code));
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect();
+    let [given_up] = given_up.as_slice() else {
+        panic!("one given-up partition: {given_up:?}");
+    };
+    assert!(
+        given_up
+            .message
+            .starts_with("part partition stream=\"solidedge:"),
+        "{given_up:?}"
+    );
+    let stubs = result.ir().native_unknowns("solidedge").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
+    let (_, _, fidelity) = result.into_parts();
+    let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
+    let mut stream = b"broken".to_vec();
+    stream.resize(4096, 0);
+    assert_eq!(retained.data(), Some(stream.as_slice()));
 }
 
 #[test]

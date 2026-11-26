@@ -23,6 +23,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 
 use cadmpeg_core::bytes::contains;
 
@@ -31,7 +32,9 @@ use crate::container::{
 };
 use crate::loss::{named, SldprtLossCode};
 
-use self::native::{NativeAssembly, NativeDefinition, NativePlacement, NativePrototype};
+use self::native::{
+    NativeAssembly, NativeDefinition, NativePlacement, NativePrototype, TreeSection,
+};
 
 mod native;
 
@@ -54,6 +57,8 @@ pub(crate) struct AssemblyProjection {
     definitions: Vec<ProductDefinition>,
     occurrences: Vec<Occurrence>,
     losses: Vec<LossNote>,
+    /// The component tree sections the decode gives up.
+    given_up: Vec<GivenUpPart>,
     /// Whether a section outside the embedded documents carries a Parasolid
     /// stream, or a capped probe left that open.
     carries_parasolid: bool,
@@ -72,7 +77,16 @@ const PART_MODEL_ABSENT: [SldprtLossCode; 3] = [
 
 impl AssemblyProjection {
     /// Add the projection to a decoded document.
-    pub(crate) fn apply(mut self, decoded: &mut Decoded) {
+    ///
+    /// # Errors
+    ///
+    /// A given-up tree section whose stub the document already holds, or a
+    /// resource refusal for the stub.
+    pub(crate) fn apply(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        decoded: &mut Decoded,
+    ) -> Result<(), CodecError> {
         let mut bodiless = Vec::new();
         for (definition, site, name) in &self.virtual_sites {
             let tail = format!("@{site}");
@@ -118,7 +132,15 @@ impl AssemblyProjection {
         }
         decoded.ir.model.occurrences.extend(self.occurrences);
         decoded.body.losses.extend(self.losses);
+        for part in self.given_up {
+            decoded.body.losses.push(part.commit(
+                ctx,
+                &mut decoded.ir,
+                &mut decoded.source_fidelity,
+            )?);
+        }
         decoded.ir.finalize();
+        Ok(())
     }
 
     /// The site keys of the virtual component sections that the assembly
@@ -144,6 +166,11 @@ impl AssemblyProjection {
     pub(crate) fn losses(&self) -> &[LossNote] {
         &self.losses
     }
+
+    #[cfg(test)]
+    pub(crate) fn given_up(&self) -> &[GivenUpPart] {
+        &self.given_up
+    }
 }
 
 /// Read the assembly structure of a scanned document.
@@ -160,6 +187,7 @@ pub(crate) fn read(
         return Ok(None);
     }
     let mut tree = None;
+    let mut trees = Vec::new();
     let mut mate_lists = Vec::new();
     let mut is_assembly = false;
     let mut carries_parasolid = false;
@@ -198,6 +226,10 @@ pub(crate) fn read(
                 Some(first) if first != section.payload() => trees_differ = true,
                 Some(_) => {}
             }
+            trees.push(TreeSection {
+                stream: section.source_stream().clone(),
+                stored: section.stored_payload(),
+            });
         } else if is_mate_list(unwrapped) {
             is_assembly = true;
             if contains(section.payload(), MATE_CLASS_TOKEN) {
@@ -208,15 +240,22 @@ pub(crate) fn read(
     if !is_assembly {
         return Ok(None);
     }
-    let mut native = match tree.and_then(xml_text) {
-        Some(_) if trees_differ => NativeAssembly::structure_lost(format!(
-            "The document holds different `{TREE_SECTION}` sections. No occurrence is transferred."
-        )),
-        Some(text) => native_project(ctx, &text, &virtual_sections)?,
-        None => NativeAssembly::structure_lost(format!(
-            "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
-             placement, or component reference is transferred."
-        )),
+    let unreadable = format!(
+        "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
+         placement, or component reference is transferred."
+    );
+    let mut native = match tree.map(xml_text) {
+        Some(Some(_)) if trees_differ => NativeAssembly::structure_given_up(
+            ctx,
+            &trees,
+            format!(
+                "The document holds different `{TREE_SECTION}` sections. No occurrence is \
+                 transferred."
+            ),
+        )?,
+        Some(Some(text)) => native_project(ctx, &text, &trees, &virtual_sections)?,
+        Some(None) => NativeAssembly::structure_given_up(ctx, &trees, unreadable)?,
+        None => NativeAssembly::structure_lost(unreadable),
     };
     if !embedded.is_empty() {
         native.push_loss(
@@ -274,33 +313,52 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<AssemblyProjection, CodecError> {
-    Ok(native_project(ctx, text, &BTreeMap::new())?.into_projection())
+    Ok(native_project(ctx, text, &[test_tree(text)], &BTreeMap::new())?.into_projection())
 }
 
-/// Build the native structure of the component tree text. `virtual_sections`
-/// maps the key of each virtual component section to its site key, or to
-/// `None` when sections share the key.
+/// The section a test projection reads the component tree `text` from.
+#[cfg(test)]
+pub(crate) fn test_tree(text: &str) -> TreeSection<'_> {
+    TreeSection {
+        stream: cadmpeg_ir::stream_name!("swXmlContents/COMPINSTANCETREE"),
+        stored: text.as_bytes(),
+    }
+}
+
+/// Build the native structure of the component tree text, which the
+/// sections `trees` hold. `virtual_sections` maps the key of each virtual
+/// component section to its site key, or to `None` when sections share the
+/// key.
 fn native_project(
     ctx: &DecodeContext<'_>,
     text: &str,
+    trees: &[TreeSection<'_>],
     virtual_sections: &BTreeMap<String, Option<String>>,
 ) -> Result<NativeAssembly, CodecError> {
     let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
-            return Ok(NativeAssembly::structure_lost(format!(
-                "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
-                 transferred."
-            )))
+            return NativeAssembly::structure_given_up(
+                ctx,
+                trees,
+                format!(
+                    "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
+                     transferred."
+                ),
+            );
         }
     };
     let root = document.root_element();
     if root.tag_name().name() != "swSolidWorks" {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
-            root.tag_name().name()
-        )));
+        return NativeAssembly::structure_given_up(
+            ctx,
+            trees,
+            format!(
+                "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
+                root.tag_name().name()
+            ),
+        );
     }
     let mut files = BTreeMap::new();
     let mut models = BTreeMap::new();
@@ -344,9 +402,14 @@ fn native_project(
         "admit SolidWorks component tree models",
     )?;
     if let Some((element, id)) = repeated {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The component tree repeats the `{element}` id `{id}`. No occurrence is transferred."
-        )));
+        return NativeAssembly::structure_given_up(
+            ctx,
+            trees,
+            format!(
+                "The component tree repeats the `{element}` id `{id}`. No occurrence is \
+                 transferred."
+            ),
+        );
     }
 
     let active = configurations
@@ -355,17 +418,26 @@ fn native_project(
         .filter_map(|node| node.attribute("swModelRef"))
         .collect::<Vec<_>>();
     let [root_model] = active.as_slice() else {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The component tree names {} active configurations. No occurrence is transferred.",
-            active.len()
-        )));
+        return NativeAssembly::structure_given_up(
+            ctx,
+            trees,
+            format!(
+                "The component tree names {} active configurations. No occurrence is \
+                 transferred.",
+                active.len()
+            ),
+        );
     };
     let root_model = *root_model;
     if !models.contains_key(root_model) {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The active configuration names model `{root_model}`, which the component tree \
-             does not define. No occurrence is transferred."
-        )));
+        return NativeAssembly::structure_given_up(
+            ctx,
+            trees,
+            format!(
+                "The active configuration names model `{root_model}`, which the component \
+                 tree does not define. No occurrence is transferred."
+            ),
+        );
     }
 
     let mut native = NativeAssembly::default();
@@ -399,10 +471,14 @@ fn native_project(
     };
     walk.holder_stem = walk.model_name(root_model);
     let Some(root_definition) = walk.root_definition(root_model)? else {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The active configuration's model `{root_model}` has no valid identity. No \
-             occurrence is transferred."
-        )));
+        return NativeAssembly::structure_given_up(
+            ctx,
+            trees,
+            format!(
+                "The active configuration's model `{root_model}` has no valid identity. No \
+                 occurrence is transferred."
+            ),
+        );
     };
     let mut path = BTreeSet::from([root_model]);
     walk.expanded.insert(root_model);
