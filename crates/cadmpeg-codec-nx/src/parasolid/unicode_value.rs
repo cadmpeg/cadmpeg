@@ -69,15 +69,13 @@ impl<'a> UnicodeLane<'a> {
 #[cfg(test)]
 mod tests {
     use super::{UnicodeLane, UnicodeValue};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn unicode_values_preserve_scalars_and_reject_empty_or_incomplete_lanes() {
         let value = UnicodeValue::new("\0μ🚀".to_string()).unwrap();
-        let wire = cadmpeg_core::serde_erase::json::to_string(value.as_str()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-            wire
-        );
+        let wire = json::to_string(value.as_str()).unwrap();
+        assert_eq!(json::to_string(&value).unwrap(), wire);
         assert_eq!(serde_json::from_str::<UnicodeValue>(&wire).unwrap(), value);
         assert!(serde_json::from_str::<UnicodeValue>("\"\"").is_err());
         let bytes = value

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::operation_settings::BooleanKind;
 use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
@@ -443,9 +444,9 @@ fn a_tool_absent_from_a_several_body_result_state_restores_the_native_tools() {
 const TOOL_HISTORY: &str = "f3d:asset/Breps.BlobParts/BREP.tool.smbh:asm-history#2";
 
 fn live_pair(entity_suffix: u64) -> DesignBodyBinding {
-    let mut value = serde_json::to_value(pair(entity_suffix, false)).unwrap();
+    let mut value = json::to_value(pair(entity_suffix, false)).unwrap();
     value["body"] = "f3d:brep:body#7".into();
-    serde_json::from_value(value).unwrap()
+    json::from_value(value).unwrap()
 }
 
 /// A component history whose state 1 inserts body slot 7, then the given

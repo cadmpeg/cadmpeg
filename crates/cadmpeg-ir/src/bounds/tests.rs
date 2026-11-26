@@ -190,3 +190,30 @@ fn an_unstated_field_keeps_the_arenas_the_wire_omits() {
     assert_eq!(ir.model.history_bodies, held);
     assert_eq!(ir.census(), before);
 }
+
+/// Each field of one call takes its value in the empty document.
+#[test]
+fn every_unstated_field_takes_its_value_in_the_empty_document() {
+    let mut ir = crate::examples::unit_cube_with_history_body().unwrap();
+    ir.fragment = true;
+    ir.tolerances = crate::units::Tolerances::new(0.5, 0.25).unwrap();
+    let outside = BTreeMap::from(["fragment", "tolerances"].map(|field| {
+        (
+            Outside {
+                field: field.to_owned(),
+                entry: None,
+            },
+            Bound::Document,
+        )
+    }));
+    let unstated = super::unstate_outside(&mut ir, &outside).unwrap();
+    assert_eq!(
+        unstated
+            .iter()
+            .map(|unstated| unstated.field.as_str())
+            .collect::<Vec<_>>(),
+        ["tolerances", "fragment"]
+    );
+    assert!(!ir.fragment);
+    assert_eq!(ir.tolerances, crate::units::Tolerances::default());
+}

@@ -4813,6 +4813,7 @@ fn project_design(
         retired = projection.retired;
         Ok(())
     })?;
+    retired_states::annotate_state_records(ir, annotations);
     if retired.is_empty() {
         return Ok(());
     }

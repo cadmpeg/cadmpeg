@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::u64_from_index;
@@ -1113,7 +1114,7 @@ fn group_at(record_index: u32, ordinal: u32, members: &[u32]) -> DesignConstruct
     let member_offsets: Vec<u64> = (0..members.len())
         .map(|index| 11 * u64_from_index(index))
         .collect();
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
         "scope_record_index": 42,
         "scope_reference_ordinal": ordinal,
@@ -1149,36 +1150,35 @@ fn operand_in(
     ordinal: u32,
     slots: Vec<i64>,
 ) -> DesignFaceOperand {
-    let mut operand: DesignFaceOperand =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
-            "scope_record_index": 42,
-            "scope_reference_ordinal": ordinal + 1,
-            "group_record_index": group_record_index,
-            "group_member_ordinal": ordinal,
-            "record_index": record_index,
-            "byte_offset": 0,
-            "class_tag": "310",
-            "paired_byte_offset": 16,
-            "paired_class_tag": "259",
-            "recipe_record_index": record_index + 3,
-            "recipe_record_byte_offset": 32,
-            "recipe_id": format!(
-                "f3d:Design/BulkStream.dat:construction-recipe#{}",
-                record_index + 3
-            ),
-            "recipe_prefix_offset": 43,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0],
-            "recipe_node_offsets": [],
-            "recipe_nodes": [],
-            "next_record_index": record_index + 4,
-            "next_byte_offset": 160
-        }))
-        .unwrap();
+    let mut operand: DesignFaceOperand = json::from_value(serde_json::json!({
+        "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
+        "scope_record_index": 42,
+        "scope_reference_ordinal": ordinal + 1,
+        "group_record_index": group_record_index,
+        "group_member_ordinal": ordinal,
+        "record_index": record_index,
+        "byte_offset": 0,
+        "class_tag": "310",
+        "paired_byte_offset": 16,
+        "paired_class_tag": "259",
+        "recipe_record_index": record_index + 3,
+        "recipe_record_byte_offset": 32,
+        "recipe_id": format!(
+            "f3d:Design/BulkStream.dat:construction-recipe#{}",
+            record_index + 3
+        ),
+        "recipe_prefix_offset": 43,
+        "recipe_prefix_bytes": "",
+        "recipe_references": [],
+        "recipe_kind": "bounded_face",
+        "recipe_program_offset": 0,
+        "recipe_program": [0],
+        "recipe_node_offsets": [],
+        "recipe_nodes": [],
+        "next_record_index": record_index + 4,
+        "next_byte_offset": 160
+    }))
+    .unwrap();
     operand.resolved_face_slots = slots;
     operand
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve-construction ownership transitions.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
     use crate::features::revolve::{RevolutionAxis, RevolveConstruction};
@@ -9,23 +11,22 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
     });
-    let mut construction: RevolveConstruction =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "kind": "unresolved",
-            "value": {
-                "kind": "axis",
-                "profile": {"kind": "native", "value": "test:profile"},
-                "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.25}},
-                "solid": true,
-                "face_maker_class": "Part::FaceMakerBullseye"
-            }
-        }))
-        .unwrap();
+    let mut construction: RevolveConstruction = json::from_value(serde_json::json!({
+        "kind": "unresolved",
+        "value": {
+            "kind": "axis",
+            "profile": {"kind": "native", "value": "test:profile"},
+            "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.25}},
+            "solid": true,
+            "face_maker_class": "Part::FaceMakerBullseye"
+        }
+    }))
+    .unwrap();
     construction.set_axis(Some(
-        cadmpeg_core::serde_erase::json::from_value::<RevolutionAxis>(axis.clone()).unwrap(),
+        json::from_value::<RevolutionAxis>(axis.clone()).unwrap(),
     ));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
+        json::to_value(construction).unwrap(),
         serde_json::json!({
             "kind": "resolved",
             "value": {
@@ -47,12 +48,10 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
 
     for kind in ["one_sided", "symmetric"] {
         for angle in [-PI, 0.0] {
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<RevolveExtent>(json!({
-                    "kind": kind, "termination": {"kind": "angle", "angle": angle}
-                }))
-                .is_err()
-            );
+            assert!(json::from_value::<RevolveExtent>(json!({
+                "kind": kind, "termination": {"kind": "angle", "angle": angle}
+            }))
+            .is_err());
         }
         for (angle, valid) in [
             (PI, true),
@@ -61,7 +60,7 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             (TAU + 1.0e-9, false),
             (TAU + PI, false),
         ] {
-            let extent: RevolveExtent = cadmpeg_core::serde_erase::json::from_value(json!({
+            let extent: RevolveExtent = json::from_value(json!({
                 "kind": kind, "termination": {"kind": "angle", "angle": angle}
             }))
             .unwrap();
@@ -74,7 +73,7 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
         (PI + 7.0e-15, PI + 7.0e-15, true),
         (TAU, PI, false),
     ] {
-        let extent: RevolveExtent = cadmpeg_core::serde_erase::json::from_value(json!({
+        let extent: RevolveExtent = json::from_value(json!({
             "kind": "two_sided",
             "first": {"kind": "angle", "angle": first},
             "second": {"kind": "angle", "angle": second}
@@ -89,6 +88,6 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             "second": {"kind": "angle", "angle": PI}
         });
         extent[side]["angle"] = json!(-PI);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<RevolveExtent>(extent).is_err());
+        assert!(json::from_value::<RevolveExtent>(extent).is_err());
     }
 }

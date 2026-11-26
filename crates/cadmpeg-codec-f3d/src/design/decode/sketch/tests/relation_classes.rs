@@ -8,6 +8,7 @@ use crate::design::decode::sketch::{
 };
 use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
 use crate::test_support::push_reference_u64;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
@@ -800,7 +801,7 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
             "{}",
             case.label
         );
-        let json = cadmpeg_core::serde_erase::json::to_string(&relation).unwrap();
+        let json = json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
         assert_eq!(restored, relation, "{}", case.label);

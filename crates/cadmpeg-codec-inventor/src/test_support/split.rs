@@ -14,6 +14,7 @@ use crate::{
     pmdc::{PmDcListMetadata, PmDcReferenceList, PmDcU32List},
     record_identity::{Located, RecordTypeId},
 };
+use cadmpeg_core::serde_erase::json;
 
 pub(crate) fn face_fixture(side: bool) -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
     let mut source = plane_split_at(30, 60, 42);
@@ -178,10 +179,9 @@ pub(crate) fn set_marker(properties: &mut [PmDcFeatureProperty], position: usize
 }
 
 pub(crate) fn set_version(source: &mut PmDcFeature, version: u8) {
-    let mut value =
-        cadmpeg_core::serde_erase::json::to_value(&*source).expect("serialized feature");
+    let mut value = json::to_value(&*source).expect("serialized feature");
     value["save_version_major"] = serde_json::Value::from(version);
-    *source = cadmpeg_core::serde_erase::json::from_value(value).expect("feature version");
+    *source = json::from_value(value).expect("feature version");
 }
 
 pub(crate) fn trim_fixture() -> (PmDcFeature, Vec<PmDcFeatureProperty>) {

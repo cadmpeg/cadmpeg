@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datums: every element, with and without a link.
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 use super::{
@@ -142,10 +143,7 @@ fn an_unstated_link_field_is_omitted_and_refuses_null() {
         state: None,
         native_ref: None,
     };
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&empty).unwrap(),
-        "{}"
-    );
+    assert_eq!(json::to_string(&empty).unwrap(), "{}");
     refuses::<Link>(r#"{"state": null}"#);
     refuses::<Link>(r#"{"health": "current"}"#);
 }

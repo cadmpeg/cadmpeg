@@ -8,29 +8,30 @@ use crate::sketch::{
     project, PmDcSketchConstraint, SketchProjection, PERPENDICULAR_TYPE, SKETCH_TYPE,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 /// The same record read as a perpendicular relation whose second operand is
 /// the reference `second`.
 fn as_perpendicular(relation: &PmDcSketchConstraint, second: u32) -> PmDcSketchConstraint {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("relation wire");
+    let mut wire = json::to_value(relation).expect("relation wire");
     wire["kind"] = serde_json::json!({
         "form": "perpendicular",
         "first": wire["kind"]["first"].clone(),
         "second": {"index": second, "qualified": true},
         "orientation": 0,
     });
-    cadmpeg_core::serde_erase::json::from_value(wire).expect("perpendicular wire")
+    json::from_value(wire).expect("perpendicular wire")
 }
 
 /// The same record read as a horizontal alignment.
 fn as_horizontal_alignment(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("relation wire");
+    let mut wire = json::to_value(relation).expect("relation wire");
     wire["kind"] = serde_json::json!({
         "form": "horizontal_alignment",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),
     });
-    cadmpeg_core::serde_erase::json::from_value(wire).expect("alignment wire")
+    json::from_value(wire).expect("alignment wire")
 }
 
 #[test]
@@ -84,14 +85,14 @@ fn a_perpendicular_relation_with_an_unknown_hint_code_stays_native() {
 
 /// The same record read as a perpendicular relation with the same operands.
 fn with_perpendicular_kind(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(relation).expect("relation wire");
+    let mut wire = json::to_value(relation).expect("relation wire");
     wire["kind"] = serde_json::json!({
         "form": "perpendicular",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),
         "orientation": 0,
     });
-    cadmpeg_core::serde_erase::json::from_value(wire).expect("perpendicular wire")
+    json::from_value(wire).expect("perpendicular wire")
 }
 
 #[test]
