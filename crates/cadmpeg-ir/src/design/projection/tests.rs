@@ -4,7 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
-use super::fields::{FeatureField, ModelFeatureField, ModelParameterField, ParameterField};
+use super::fields::{
+    ArrangementField, FeatureField, ModelConfigurationField, ModelFeatureField,
+    ModelParameterField, ParameterField,
+};
 use super::project_layer;
 use crate::design::scope::DesignScope;
 use crate::ids::ProductDefinitionId;
@@ -137,8 +140,40 @@ fn restated_document() -> CadIr {
         pmi: None,
         native_ref: None,
     });
+    ir.design
+        .arrangements
+        .push(crate::design::configuration::Arrangement {
+            id: crate::design::ids::ArrangementId::mint(OPEN).unwrap(),
+            scope: ir.design.scopes[0].definition.clone(),
+            name: cadmpeg_core::nonblank_literal!("Open"),
+            kind: crate::design::configuration::ArrangementKind::Positional,
+            configuration: None,
+            overrides: crate::design::configuration::Overrides::default(),
+            appearances: Vec::new(),
+            moves: Vec::new(),
+            nested: Vec::new(),
+            native_ref: None,
+        });
+    ir.model
+        .configurations
+        .push(crate::features::parameters::DesignConfiguration {
+            id: crate::features::ConfigurationId::mint(OPEN).unwrap(),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: Some("Open".to_owned()),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
     ir
 }
+
+const OPEN: &str = "test:design:arrangement#open";
 
 const FILLET: &str = "test:design:feature#fillet";
 
@@ -177,9 +212,24 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     }
 }
 
+fn arrangement_inputs(field: ArrangementField) -> &'static [ModelConfigurationField] {
+    match field {
+        ArrangementField::Name => &[ModelConfigurationField::Name],
+        ArrangementField::NativeRef => &[ModelConfigurationField::NativeRef],
+        ArrangementField::Scope
+        | ArrangementField::Kind
+        | ArrangementField::Configuration
+        | ArrangementField::Overrides
+        | ArrangementField::Appearances
+        | ArrangementField::Moves
+        | ArrangementField::Nested => &[],
+    }
+}
+
 const RESTATEMENT: super::Restatement = super::Restatement {
     feature: feature_inputs,
     parameter: parameter_inputs,
+    arrangement: arrangement_inputs,
 };
 const WIDTH: &str = "test:design:parameter#width";
 
@@ -394,6 +444,7 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
     let restatement = super::Restatement {
         feature: without_definition,
         parameter: parameter_inputs,
+        arrangement: arrangement_inputs,
     };
     let [fillet] = <[_; 1]>::try_from(restated_with(
         restatement,
@@ -414,4 +465,26 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
     ))
     .unwrap();
     assert_eq!(fillet, (ByteExact, fields(&[("definition", Inferred)])));
+}
+
+/// An arrangement that takes the id of a model configuration restates it: a
+/// configuration mark moves to the arrangement field built from it, and a
+/// mark no arrangement field restates leaves. The arrangement states no
+/// native record, so the `native_ref` mark leaves too.
+#[test]
+fn an_arrangement_takes_the_marks_of_the_configuration_it_restates() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let [open] = <[_; 1]>::try_from(restated(
+        &[],
+        &[
+            (OPEN, "name", Inferred),
+            (OPEN, "ordinal", Derived),
+            (OPEN, "active", Derived),
+            (OPEN, "source_index", Derived),
+            (OPEN, "native_ref", Derived),
+        ],
+        &[OPEN],
+    ))
+    .unwrap();
+    assert_eq!(open, (ByteExact, fields(&[("name", Inferred)])));
 }

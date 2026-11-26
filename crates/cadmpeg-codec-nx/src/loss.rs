@@ -179,6 +179,12 @@ loss_codes! {
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// A sketch record has no design record.
+    SketchDesignUnprojected => ("sketch.design-unprojected", Warning, FeatureHistoryRetained),
+    /// An arrangement stores no name, which a design arrangement requires.
+    ArrangementUnnamed => ("configuration.arrangement-unnamed", Warning, FeatureHistoryRetained),
+    /// An expression stores no name, which a design parameter requires.
+    ParameterUnnamed => ("expression.parameter-unnamed", Warning, FeatureHistoryRetained),
 }
 
 impl NxLossCode {
@@ -285,6 +291,9 @@ mod tests {
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
+                "sketch.design-unprojected",
+                "configuration.arrangement-unnamed",
+                "expression.parameter-unnamed",
             ]
         );
     }

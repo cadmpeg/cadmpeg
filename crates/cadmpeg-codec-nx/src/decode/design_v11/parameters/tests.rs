@@ -33,7 +33,9 @@ fn projected(parameters: Vec<LegacyParameter>) -> Vec<DesignParameter> {
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters;
     let definition = ProductDefinitionId::mint("nx:document:product-definition#root").unwrap();
-    project(&mut ir, &definition);
+    let mut losses = Vec::new();
+    project(&mut ir, &definition, &mut losses);
+    assert!(losses.is_empty());
     ir.design.parameters
 }
 

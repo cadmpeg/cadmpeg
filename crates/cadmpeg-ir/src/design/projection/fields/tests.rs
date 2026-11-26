@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{FeatureField, Field, ParameterField};
+use super::{ArrangementField, FeatureField, Field, ParameterField};
 
 /// The properties the committed CADIR schema gives `definition`, less `id`.
 fn schema_keys(definition: &str) -> Vec<String> {
@@ -32,6 +32,10 @@ fn design_field_keys_are_the_wire_keys_of_the_design_records() {
     assert_eq!(
         sorted(keys(ParameterField::ALL)),
         sorted(schema_keys("DesignParameter"))
+    );
+    assert_eq!(
+        sorted(keys(ArrangementField::ALL)),
+        sorted(schema_keys("Arrangement"))
     );
 }
 
@@ -113,6 +117,42 @@ fn a_model_parameter_serializes_with_the_keys_of_its_field_enum() {
         .collect::<Vec<_>>();
     wire_keys.sort();
     let mut field_keys = keys(super::ModelParameterField::ALL);
+    field_keys.sort();
+    assert_eq!(field_keys, wire_keys);
+}
+
+#[test]
+fn a_model_configuration_serializes_with_the_keys_of_its_field_enum() {
+    use crate::features::parameters::DesignConfiguration;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::ConfigurationId;
+    use crate::ids::BodyId;
+    let configuration = DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#open").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Open".to_owned()),
+        material: Some("Steel".to_owned()),
+        properties: std::collections::BTreeMap::new(),
+        parameter_overrides: std::collections::BTreeMap::new(),
+        bodies: Some(
+            DistinctMembers::try_from(vec![BodyId::mint("test:model:body#1").unwrap()]).unwrap(),
+        ),
+        parameter_values: std::collections::BTreeMap::new(),
+        feature_states: std::collections::BTreeMap::new(),
+        native_ref: Some("test:native#open".to_owned()),
+    };
+    let value = serde_json::to_value(&configuration).unwrap();
+    let mut wire_keys = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .filter(|key| key.as_str() != "id")
+        .cloned()
+        .collect::<Vec<_>>();
+    wire_keys.sort();
+    let mut field_keys = keys(super::ModelConfigurationField::ALL);
     field_keys.sort();
     assert_eq!(field_keys, wire_keys);
 }

@@ -18,7 +18,10 @@ use crate::report::loss::LossNote;
 use crate::report::Severity;
 use crate::unknown::part::record_unreadable_kind;
 
-use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, ParameterField};
+use self::fields::{
+    ArrangementField, FeatureField, Field, ModelConfigurationField, ModelFeatureField,
+    ModelParameterField, ParameterField,
+};
 
 pub mod fields;
 
@@ -69,6 +72,9 @@ pub struct Restatement {
     pub feature: fn(FeatureField) -> &'static [ModelFeatureField],
     /// The model parameter fields each design parameter field is built from.
     pub parameter: fn(ParameterField) -> &'static [ModelParameterField],
+    /// The model configuration fields each field of an arrangement that
+    /// restates the configuration is built from.
+    pub arrangement: fn(ArrangementField) -> &'static [ModelConfigurationField],
 }
 
 /// The less exact of `left` and `right`, in the declared order of
@@ -155,10 +161,10 @@ fn restated_fields<D: Field, M: Field>(
     overrides
 }
 
-/// Restates onto each design feature and parameter of `ir` the exactness of
-/// the model record with its id, through the model fields `restatement`
-/// names for each design field. The CADIR wire carries the design record in
-/// place of the model record (§10).
+/// Restates onto each design feature, parameter and arrangement of `ir` the
+/// exactness of the model feature, parameter or configuration with its id,
+/// through the model fields `restatement` names for each design field. The
+/// CADIR wire carries the design record in place of the model record (§10).
 ///
 /// # Errors
 ///
@@ -179,6 +185,12 @@ pub fn restate_exactness(
                 .iter()
                 .map(|parameter| parameter.id.as_str()),
         )
+        .collect::<BTreeSet<_>>();
+    let configurations = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| configuration.id.as_str())
         .collect::<BTreeSet<_>>();
     let exactness = annotations.annotations().exactness();
     let mut restated = Vec::new();
@@ -203,6 +215,19 @@ pub fn restate_exactness(
                 restatement.parameter,
             );
             restated.push((parameter.id.as_str(), note.entity(), overrides));
+        }
+    }
+    for arrangement in &ir.design.arrangements {
+        if let (true, Some(note)) = (
+            configurations.contains(arrangement.id.as_str()),
+            exactness.get(arrangement.id.as_str()),
+        ) {
+            let overrides = restated_fields(
+                note,
+                ArrangementField::stated(arrangement),
+                restatement.arrangement,
+            );
+            restated.push((arrangement.id.as_str(), note.entity(), overrides));
         }
     }
     let ids = restated.iter().map(|(id, ..)| *id).collect::<BTreeSet<_>>();

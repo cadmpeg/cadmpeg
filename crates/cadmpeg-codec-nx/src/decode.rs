@@ -204,7 +204,7 @@ fn decoded(
                 "nx",
                 &mut ir,
                 &mut body.losses,
-                |ir, _| design_v11::project(ir, definition.clone()),
+                |ir, losses| design_v11::project(ir, definition.clone(), losses),
             )?;
             cadmpeg_ir::design::projection::restate_exactness(
                 &ir,

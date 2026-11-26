@@ -25,10 +25,18 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
-/// The parameters of the scope of `definition`, one per decoded expression.
-pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
+use crate::loss::NxLossCode;
+
+/// The parameters of the scope of `definition`, one per decoded expression
+/// that stores a name. Each expression with no name charges a loss naming it.
+pub(super) fn project(
+    ir: &mut CadIr,
+    definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
+) {
     let mut tables = BTreeMap::<Option<&FeatureId>, BTreeMap<&str, Vec<&LegacyParameter>>>::new();
     for parameter in &ir.model.parameters {
         tables
@@ -41,6 +49,10 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
     let mut parameters = Vec::with_capacity(ir.model.parameters.len());
     for parameter in &ir.model.parameters {
         let Some(name) = NonBlankString::new(parameter.name.clone()) else {
+            losses.push(NxLossCode::ParameterUnnamed.note(format!(
+                "NX expression {} stores no name and has no design record.",
+                parameter.id
+            )));
             continue;
         };
         let declared = declared(parameter);

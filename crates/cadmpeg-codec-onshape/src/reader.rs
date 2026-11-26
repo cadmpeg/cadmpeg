@@ -1075,11 +1075,12 @@ fn annotate(
 /// The model fields the decoder reads to build each design field. A design
 /// feature's definition is read from the source feature, and takes the
 /// `definition` mark [`annotate`] states on every feature; the decoder states
-/// no design parameter.
+/// no design parameter and no arrangement.
 const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
     cadmpeg_ir::design::projection::Restatement {
         feature: feature_inputs,
         parameter: parameter_inputs,
+        arrangement: |_| &[],
     };
 
 #[deny(clippy::wildcard_enum_match_arm)]

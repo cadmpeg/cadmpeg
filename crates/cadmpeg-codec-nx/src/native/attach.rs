@@ -644,7 +644,7 @@ fn attach_configurations<'a>(
         configurations.into_iter().enumerate()
     {
         let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
-            .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
+            .id(&cadmpeg_ir::identity_component!("arrangement"), ordinal);
         let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
             CodecError::malformed(format_args!(
                 "NX configuration ordinal {ordinal} exceeds u32"
