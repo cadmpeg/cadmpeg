@@ -10,6 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::Severity;
 
 use crate::loss::F3dLossCode;
@@ -131,7 +132,6 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
-                scopeless_tessellations: Vec::new(),
             },
         });
         let bodies = path.component_bodies(&decoded.ir().geometry.bodies, false);
@@ -176,7 +176,6 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
             count: 0,
             unjoined: 0,
             tessellations_by_scope: std::collections::HashMap::new(),
-            scopeless_tessellations: Vec::new(),
         },
     });
     let required = path.component_bodies(&bodies, true).unwrap();
@@ -191,8 +190,8 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     let loss = super::super::saved_free_edge_bodies_loss(&ir).unwrap();
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
-        serde_json::from_value(serde_json::json!({
-            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+        json::from_value(cadmpeg_core::json!({
+            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap();
     ir.model.product_definitions.push(definition);
@@ -532,6 +531,7 @@ fn bodyless_finalization_retains_the_body_history_tails() {
                 admitted_entities: 0,
                 report_scope: crate::report::ReportScope::Standalone,
                 model_selection_losses: Vec::new(),
+                given_up: Vec::new(),
             },
             &ModelBrepOutcome::NoPhysicalModel,
         )

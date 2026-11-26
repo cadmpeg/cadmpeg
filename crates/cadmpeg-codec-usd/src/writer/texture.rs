@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use cadmpeg_ir::appearance::{Appearance, TextureRef};
 use cadmpeg_ir::assets::AssetContent;
 
-use super::text::{asset, identifier, quoted, real32, tuple32};
+use super::text::{asset, float, floats, identifier, quoted};
 use super::Writer;
 use crate::schema::shading::{TextureSlot, TEXTURE_SLOTS};
 use crate::schema::texture::SlotKind;
@@ -54,7 +54,7 @@ impl Planned<'_> {
 }
 
 fn float2(values: [f64; 2]) -> String {
-    tuple32(&values.map(crate::text::value::round_f32))
+    floats(&values)
 }
 
 fn wrap(repeat: bool) -> &'static str {
@@ -219,9 +219,7 @@ impl<'ir> Writer<'ir> {
                 ));
                 self.out.line(&format!(
                     "float inputs:rotation = {}",
-                    real32(crate::text::value::round_f32(
-                        mapping.rotation.get().to_degrees()
-                    ))
+                    float(mapping.rotation.get().to_degrees())
                 ));
                 self.out.line(&format!(
                     "float2 inputs:translation = {}",
@@ -418,9 +416,7 @@ impl<'ir> Writer<'ir> {
             out.push((
                 "float".to_owned(),
                 "texture_rotate".to_owned(),
-                real32(crate::text::value::round_f32(
-                    mapping.rotation.get().to_degrees(),
-                )),
+                float(mapping.rotation.get().to_degrees()),
             ));
         }
         out

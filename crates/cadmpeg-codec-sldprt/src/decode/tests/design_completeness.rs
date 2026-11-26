@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BooleanOp};
 use cadmpeg_ir::features::parameters::DesignParameter;
@@ -50,7 +51,7 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
             loops,
             extension,
         });
-        ir.model.features.push(serde_json::from_value(serde_json::json!({
+        ir.model.features.push(json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
         let mut report = super::empty_report(true);
         append_design_losses(
@@ -1645,7 +1646,10 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             feature_input_lanes: native_lanes,
             ..crate::native::SldprtNative::default()
         }
-        .store(&ctx, ir.native.namespace_mut("sldprt"))
+        .store(
+            &ctx,
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+        )
         .unwrap();
         let mut report = super::empty_report(true);
         append_design_losses(&ctx, &ir, &mut report).unwrap();

@@ -10,8 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{LazyLock, Mutex, PoisonError};
 
+use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_ir::CadIr;
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
 /// The key inserted into every swept shape.
@@ -78,13 +78,13 @@ pub struct SweptShapes {
 ///
 /// Returns the serde error when `ir` does not read back as a `CadIr`.
 pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
-    CadIr::deserialize(ir)?;
+    from_json_value::<CadIr>(ir)?;
     let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
     let mut probed = PROBED.lock().unwrap_or_else(PoisonError::into_inner);
     sweep(
         ir,
         &empty,
-        |document| CadIr::deserialize(document).is_ok(),
+        |document| from_json_value::<CadIr>(document).is_ok(),
         &mut probed,
     )
 }
@@ -429,23 +429,11 @@ pub(crate) fn object_at_mut<'a>(
 ///   `BTreeMap<String, String>` of source channel names;
 /// * `/model/appearances/#/properties` - `Appearance::properties`,
 ///   `BTreeMap<String, f64>` of source renderer properties;
-/// * `/model/configurations/#/properties` - `DesignConfiguration::properties`,
-///   configuration-local named values;
-/// * `/model/configurations/#/feature_states/{id}/definition/value/value/parameters`
-///   - the native operation's own fields in a configuration's feature state;
 /// * `/model/drawings/#/parameters` - `Drawing::parameters`, retained drawing
 ///   parameters by source name;
 /// * `/model/drawings/#/relationships` - `Drawing::relationships`,
 ///   `BTreeMap<String, Vec<ReferenceSelection>>`, the source's relationship
 ///   roles by name, each holding the references that role states;
-/// * `/model/features/#/definition/value/value/parameters` -
-///   `FeatureOperation::Native::parameters`, the native operation's own fields;
-/// * `/model/features/#/definition/value/value/inputs/parameters` -
-///   `FormInputs::parameters`, the Form construction's source parameters;
-/// * `/model/features/#/source_properties` - `Feature::source_properties`,
-///   source operation attributes the neutral definition does not consume;
-/// * `/model/parameters/#/properties` - `Parameter::properties`, source
-///   parameter properties no other field represents;
 /// * `/source/attributes` - `SourceMeta::attributes`, format-specific
 ///   attributes;
 /// * `/model/presentation_documents/#/states/#/attributes` and
@@ -456,8 +444,6 @@ pub(crate) fn object_at_mut<'a>(
 ///   fields;
 /// * `/model/semantic_annotations/#/parameters` -
 ///   `SemanticAnnotation::parameters`, the native note's own fields;
-/// * `/model/sketch_constraints/#/definition/native_properties` - the native
-///   sketch relation's own properties;
 /// * `/model/semantic_annotations/#/references` -
 ///   `SemanticAnnotation::references`, `BTreeMap<String,
 ///   Vec<ReferenceSelection>>`, the native note's reference roles by name;
@@ -470,20 +456,13 @@ pub(crate) fn object_at_mut<'a>(
 pub const FREE_FORM_SHAPES: &[&str] = &[
     "/model/appearance_bindings/#/channels",
     "/model/appearances/#/properties",
-    "/model/configurations/#/feature_states/{id}/definition/value/value/parameters",
-    "/model/configurations/#/properties",
     "/model/drawings/#/parameters",
     "/model/drawings/#/relationships",
-    "/model/features/#/definition/value/value/inputs/parameters",
-    "/model/features/#/definition/value/value/parameters",
-    "/model/features/#/source_properties",
-    "/model/parameters/#/properties",
     "/model/presentation_documents/#/states/#/attributes",
     "/model/presentation_documents/#/states/#/kind/value/properties",
     "/model/product_definitions/#/bom_properties",
     "/model/semantic_annotations/#/parameters",
     "/model/semantic_annotations/#/references",
-    "/model/sketch_constraints/#/definition/native_properties",
     "/model/view_presentations/#/properties",
     "/source/attributes",
     "/source/identity/dialects/extra/#/declared",

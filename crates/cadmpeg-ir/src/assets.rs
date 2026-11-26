@@ -175,13 +175,14 @@ impl TryFrom<AssetWire> for Asset {
 #[cfg(test)]
 mod tests {
     use super::{Asset, AssetContent, AssetData, AssetId};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn complete_document_admission_requires_nonempty_canonical_asset_bytes() {
-        let empty = serde_json::to_value(crate::CadIr::empty()).unwrap();
+        let empty = json::to_value(crate::CadIr::empty()).unwrap();
         let document = |data: &str| {
             let mut wire = empty.clone();
-            wire["model"]["assets"] = serde_json::json!([{
+            wire["model"]["assets"] = cadmpeg_core::json!([{
                 "id": "test:assets:asset#embedded",
                 "content": {"kind": "embedded", "data": data}
             }]);
@@ -193,16 +194,16 @@ mod tests {
             ("AAAA", vec![0, 0, 0]),
         ] {
             let wire = document(encoded);
-            let ir: crate::CadIr = serde_json::from_value(wire.clone()).unwrap();
+            let ir: crate::CadIr = json::from_value(wire.clone()).unwrap();
             let AssetContent::Embedded { data } = &ir.model.assets[0].content else {
                 panic!("embedded fixture changed content family");
             };
             assert_eq!(data.0, bytes);
-            assert_eq!(serde_json::to_value(ir).unwrap(), wire);
+            assert_eq!(json::to_value(ir).unwrap(), wire);
         }
         for encoded in ["", "AA", "AA=", "AAAA=", "AB==", "AAB=", "AA==\n", "__8="] {
             assert!(
-                serde_json::from_value::<crate::CadIr>(document(encoded)).is_err(),
+                json::from_value::<crate::CadIr>(document(encoded)).is_err(),
                 "accepted invalid embedded bytes {encoded:?}"
             );
         }
@@ -211,7 +212,7 @@ mod tests {
     #[test]
     #[cfg(feature = "schema")]
     fn asset_byte_schema_requires_at_least_one_encoded_byte() {
-        let schema = serde_json::to_value(schemars::schema_for!(AssetData)).unwrap();
+        let schema = json::to_value(schemars::schema_for!(AssetData)).unwrap();
         assert_eq!(schema["type"], "string");
         assert_eq!(schema["minLength"], 4);
         assert_eq!(schema["contentEncoding"], "base64");
@@ -221,16 +222,19 @@ mod tests {
     fn asset_admission_rejects_empty_content_and_metadata() {
         assert!(AssetData::new(Vec::new()).is_none());
         for (field, content) in [
-            ("data", serde_json::json!({"kind": "embedded", "data": ""})),
-            ("uri", serde_json::json!({"kind": "external", "uri": ""})),
+            (
+                "data",
+                cadmpeg_core::json!({"kind": "embedded", "data": ""}),
+            ),
+            ("uri", cadmpeg_core::json!({"kind": "external", "uri": ""})),
         ] {
-            let error = serde_json::from_value::<AssetContent>(content).expect_err("empty content");
+            let error = json::from_value::<AssetContent>(content).expect_err("empty content");
             assert!(error.to_string().contains(field));
         }
         for field in ["name", "media_type"] {
-            let mut value = serde_json::json!({"id": "synthetic:test:asset#asset", "content": {"kind": "embedded", "data": "AA=="}});
-            value[field] = serde_json::json!("");
-            let error = serde_json::from_value::<Asset>(value).expect_err("empty metadata");
+            let mut value = cadmpeg_core::json!({"id": "synthetic:test:asset#asset", "content": {"kind": "embedded", "data": "AA=="}});
+            value[field] = cadmpeg_core::json!("");
+            let error = json::from_value::<Asset>(value).expect_err("empty metadata");
             assert!(error.to_string().contains(field));
         }
         let content = AssetContent::Embedded {
@@ -253,12 +257,12 @@ mod tests {
         )
         .is_err());
         for content in [
-            serde_json::json!({"kind": "embedded", "data": "AA=="}),
-            serde_json::json!({"kind": "external", "uri": " u "}),
+            cadmpeg_core::json!({"kind": "embedded", "data": "AA=="}),
+            cadmpeg_core::json!({"kind": "external", "uri": " u "}),
         ] {
-            let value = serde_json::json!({"id": "synthetic:test:asset#asset", "name": " n ", "media_type": " m ", "content": content});
-            let asset: Asset = serde_json::from_value(value.clone()).expect("valid asset");
-            assert_eq!(serde_json::to_value(asset).expect("serialize asset"), value);
+            let value = cadmpeg_core::json!({"id": "synthetic:test:asset#asset", "name": " n ", "media_type": " m ", "content": content});
+            let asset: Asset = json::from_value(value.clone()).expect("valid asset");
+            assert_eq!(json::to_value(asset).expect("serialize asset"), value);
         }
     }
 }

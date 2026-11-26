@@ -4,8 +4,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 use crate::F3dCodec;
@@ -25,7 +26,7 @@ fn decoded(bytes: &[u8]) -> Value {
         "{:#?}",
         result.report().losses
     );
-    serde_json::to_value(result.ir()).expect("serialize the IR")
+    cadmpeg_test_support::wire::in_memory_json(result.ir())
 }
 
 fn features<'a>(ir: &'a Value, tag: &str) -> Vec<&'a Value> {
@@ -97,7 +98,7 @@ fn decoded_with_inferred_history(bytes: &[u8]) -> (Value, bool) {
         .iter()
         .any(|loss| loss.code == F3dLossCode::HistoricalBodyRecipeHistoryInferred.kind());
     (
-        serde_json::to_value(result.ir()).expect("serialize the IR"),
+        cadmpeg_test_support::wire::in_memory_json(result.ir()),
         inferred,
     )
 }

@@ -9,10 +9,12 @@ use crate::design::configuration::{
 };
 use crate::design::construction::SourceMode;
 use crate::design::container::Container;
-use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, Link, StoredOrigin};
+use crate::design::feature::{
+    Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, Link, StoredOrigin,
+};
 use crate::design::options::{
-    Boolean, NativeOption, ProjectionDirection, SectionCondition, SheetOutput, SolidOutput,
-    Support, Targets,
+    BodyForm, Boolean, CornerRound, LimitOffset, NativeOption, ProjectionDirection,
+    SectionCondition, SheetOutput, SolidOutput, Support, Targets, Thickness, ThinEnds, ThinWall,
 };
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
 use crate::design::program::{ParameterProgram, ProgramBody, Statement};
@@ -169,13 +171,14 @@ impl Walk for Feature {
         let Self {
             id: _,
             name: _,
-            suppressed: _,
+            suppressed,
             definition,
             placement,
             component: _,
             driven_by: _,
             native_ref: _,
         } = self;
+        suppressed.walk(into)?;
         definition.walk(into)?;
         placement.walk(into)?;
         Ok(())
@@ -188,8 +191,9 @@ impl Walk for FeatureDefinition {
             operation,
             assembly,
             refine: _,
-            fuzzy_tolerance: _,
+            fuzzy_tolerance,
         } = self;
+        fuzzy_tolerance.walk(into)?;
         operation.walk(into)?;
         assembly.walk(into)?;
         Ok(())
@@ -310,12 +314,12 @@ impl Walk for NativeOption {
         match self {
             Self::Selection(f0) => f0.walk(into),
             Self::OrderedSelection(f0) => f0.walk(into),
-            Self::Bool(_)
-            | Self::Integer(_)
-            | Self::Real(_)
-            | Self::Length(_)
-            | Self::Angle(_)
-            | Self::Text(_) => Ok(()),
+            Self::Bool(f0) => f0.walk(into),
+            Self::Integer(f0) => f0.walk(into),
+            Self::Real(f0) => f0.walk(into),
+            Self::Length(f0) => f0.walk(into),
+            Self::Angle(f0) => f0.walk(into),
+            Self::Text(f0) => f0.walk(into),
         }
     }
 }
@@ -335,25 +339,37 @@ impl Walk for SectionCondition {
             Self::Free { support } => support.walk(into),
             Self::Direction {
                 direction,
-                angle: _,
-                weight: _,
-            } => direction.walk(into),
+                angle,
+                weight,
+            } => {
+                angle.walk(into)?;
+                weight.walk(into)?;
+                direction.walk(into)
+            }
             Self::Tangent {
                 support,
-                weight: _,
-                flip: _,
-            } => support.walk(into),
+                weight,
+                flip,
+            } => {
+                weight.walk(into)?;
+                flip.walk(into)?;
+                support.walk(into)
+            }
             Self::Curvature {
                 support,
-                weight: _,
-                flip: _,
-            } => support.walk(into),
-            Self::Default
-            | Self::NormalToProfile {
-                angle: _,
-                weight: _,
+                weight,
+                flip,
+            } => {
+                weight.walk(into)?;
+                flip.walk(into)?;
+                support.walk(into)
             }
-            | Self::Native(_) => Ok(()),
+            Self::NormalToProfile { angle, weight } => {
+                angle.walk(into)?;
+                weight.walk(into)?;
+                Ok(())
+            }
+            Self::Default | Self::Native(_) => Ok(()),
         }
     }
 }
@@ -368,7 +384,8 @@ impl Walk for SheetOutput {
 
 impl Walk for SolidOutput {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { body: _, boolean } = self;
+        let Self { body, boolean } = self;
+        body.walk(into)?;
         boolean.walk(into)?;
         Ok(())
     }
@@ -500,6 +517,81 @@ impl Walk for OccurrenceDesign {
             parameters,
         } = self;
         parameters.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for BodyForm {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Thin(f0) => f0.walk(into),
+            Self::Solid | Self::Sheet => Ok(()),
+        }
+    }
+}
+
+impl Walk for CornerRound {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Round(f0) => f0.walk(into),
+            Self::Sharp => Ok(()),
+        }
+    }
+}
+
+impl Walk for FuzzyTolerance {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Explicit(f0) => f0.walk(into),
+            Self::KernelDefault | Self::Automatic => Ok(()),
+        }
+    }
+}
+
+impl Walk for LimitOffset {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Distance(f0) => f0.walk(into),
+            Self::Translated(f0) => f0.walk(into),
+            Self::Angle(f0) => f0.walk(into),
+        }
+    }
+}
+
+impl Walk for Thickness {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::OneSide { value, side: _ } => value.walk(into),
+            Self::Symmetric(f0) => f0.walk(into),
+            Self::Offsets { outside, inside } => {
+                outside.walk(into)?;
+                inside.walk(into)?;
+                Ok(())
+            }
+            Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for ThinEnds {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Capped(f0) => f0.walk(into),
+            Self::Merged => Ok(()),
+        }
+    }
+}
+
+impl Walk for ThinWall {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            thickness,
+            ends,
+            corner_round,
+        } = self;
+        thickness.walk(into)?;
+        ends.walk(into)?;
+        corner_round.walk(into)?;
         Ok(())
     }
 }

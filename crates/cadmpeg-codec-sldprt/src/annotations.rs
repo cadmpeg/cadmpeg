@@ -4,8 +4,15 @@
 
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::annotations::{AnnotationKey, Annotations};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, StreamName};
+
+/// The annotation key of the native record `id`.
+pub(crate) fn native_key(id: &str) -> Result<AnnotationKey, CodecError> {
+    cadmpeg_ir::ids::Identity::new(id)
+        .map(AnnotationKey::from)
+        .map_err(CodecError::malformed)
+}
 
 /// Note the provenance of the retained record of `member`: its stream, its
 /// source offset and its payload family.
@@ -21,7 +28,7 @@ pub(crate) fn note_member_record(
     };
     note(
         annotations,
-        member.native_id().as_str(),
+        member.native_id(),
         member.source_stream(),
         offset,
         family.label(),
@@ -31,14 +38,14 @@ pub(crate) fn note_member_record(
 
 pub(crate) fn note(
     annotations: &mut Annotations,
-    id: impl AsRef<str>,
+    key: impl Into<AnnotationKey>,
     stream: &StreamName,
     offset: u64,
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), CodecError> {
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let result = builder.annotate(id.as_ref(), stream.as_str(), offset, tag, exactness);
+    let result = builder.annotate(key, stream.as_str(), offset, tag, exactness);
     *annotations = builder.build();
     result
 }

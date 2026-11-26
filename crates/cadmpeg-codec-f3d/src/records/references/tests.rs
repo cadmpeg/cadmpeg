@@ -2,6 +2,7 @@ use super::{
     DesignMaterialAssignment, DesignMaterialAssignmentWire, LostEdgeReference,
     LostEdgeReferenceWire, DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT, LOST_EDGE_REFERENCE_CLONE_COUNT,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn lost_edge() -> LostEdgeReference {
     serde_json::from_str(
@@ -22,8 +23,8 @@ fn lost_edge_reference_borrowed_wire_matches_owned_wire_bytes() {
     let record = lost_edge();
     let owned = LostEdgeReferenceWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -33,7 +34,7 @@ fn lost_edge_reference_native_retained_limit_refuses_before_record_clone() {
 
     let record = lost_edge();
     let arena_name = "lost_edge_references";
-    let needed = serde_json::to_vec(&record).unwrap().len();
+    let needed = json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -57,8 +58,8 @@ fn lost_edge_reference_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&record))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&record).unwrap()
+        json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        json::to_value(&record).unwrap()
     );
 }
 
@@ -73,8 +74,8 @@ fn material_assignment_borrowed_wire_matches_owned_wire_bytes() {
         let record = material(extra_fields);
         let owned = DesignMaterialAssignmentWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -87,7 +88,7 @@ fn material_assignment_native_retained_limit_refuses_before_record_clone() {
         r#", "physical_token":"Mat","physical_token_offset":50,"visual_preset":"Prism-002","visual_preset_offset":80"#,
     );
     let arena_name = "design_material_assignments";
-    let needed = serde_json::to_vec(&record).unwrap().len();
+    let needed = json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -111,7 +112,7 @@ fn material_assignment_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&record))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&record).unwrap()
+        json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        json::to_value(&record).unwrap()
     );
 }

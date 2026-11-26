@@ -2543,240 +2543,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [
-        {
-          "drives": [],
-          "id": "fcstd:model:joint#GroundBracket:constraint",
-          "native_ref": "fcstd:native:joint#GroundBracket",
-          "operands": {
-            "kind": "grounded",
-            "value": {
-              "connector": {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    10.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "kind": "occurrence",
-                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance",
-                    "occurrence_path": []
-                  },
-                  "object": "fcstd:native:object#BracketOccurrence",
-                  "subelements": []
-                }
-              }
-            }
-          },
-          "suppressed": false
-        },
-        {
-          "drives": [],
-          "id": "fcstd:model:joint#RevoluteJoint:constraint",
-          "native_ref": "fcstd:native:joint#RevoluteJoint",
-          "operands": {
-            "kind": "pair",
-            "value": {
-              "connectors": [
-                {
-                  "detached": true,
-                  "frame": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      20.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      6.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      3.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance",
-                      "occurrence_path": []
-                    },
-                    "object": "fcstd:native:object#BracketOccurrence",
-                    "subelements": [
-                      "Face1",
-                      "Edge1"
-                    ]
-                  }
-                },
-                {
-                  "detached": false,
-                  "frame": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      20.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      6.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      3.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
-                      "occurrence_path": []
-                    },
-                    "object": "fcstd:native:object#PinOccurrence",
-                    "subelements": [
-                      "Face2",
-                      "Edge3"
-                    ]
-                  }
-                }
-              ],
-              "kind": {
-                "angle": 0.20943951023931956,
-                "angular_limits": {
-                  "kind": "range",
-                  "maximum": 0.9599310885968813,
-                  "minimum": -0.6108652381980153
-                },
-                "kind": "revolute"
-              },
-              "offset_frames": [
-                [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.5
-                  ]
-                ],
-                [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    -0.5
-                  ]
-                ]
-              ]
-            }
-          },
-          "suppressed": false
-        }
-      ],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#BracketPrototype",
-          "name": "BracketPrototype",
-          "native_ref": "fcstd:native:object#BracketPrototype",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#PinPrototype",
-          "name": "PinPrototype",
-          "native_ref": "fcstd:native:object#PinPrototype",
-          "ordinal": 11,
-          "outputs": [
-            "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3104,7 +2875,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3128,12 +2898,10 @@
             "fcstd:model:occurrence#OccurrenceGroup:container"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Assembly",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3147,12 +2915,10 @@
           "native_ref": "fcstd:native:object#BracketOccurrence",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "BracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3169,12 +2935,10 @@
           "occurrences": [],
           "part_number": "CC0-BRACKET-01",
           "representations": [],
-          "sketches": [],
           "source_name": "BracketPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3188,12 +2952,10 @@
           "native_ref": "fcstd:native:object#ExternalOccurrence",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "ExternalOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3207,12 +2969,10 @@
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "NestedBracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3232,12 +2992,10 @@
             "fcstd:model:occurrence#ExternalOccurrence:instance"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "OccurrenceGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3251,12 +3009,10 @@
           "native_ref": "fcstd:native:object#PinArray",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PinArray",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3270,12 +3026,10 @@
           "native_ref": "fcstd:native:object#PinArray_i0",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PinArray_i0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3289,12 +3043,10 @@
           "native_ref": "fcstd:native:object#PinArray_i1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PinArray_i1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3308,12 +3060,10 @@
           "native_ref": "fcstd:native:object#PinArray_i2",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PinArray_i2",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3330,12 +3080,10 @@
           "occurrences": [],
           "part_number": "CC0-PIN-01",
           "representations": [],
-          "sketches": [],
           "source_name": "PinPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3349,12 +3097,10 @@
           "native_ref": "fcstd:native:object#PrototypeGroup",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PrototypeGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3368,12 +3114,10 @@
             "fcstd:model:occurrence#PrototypeGroup:container"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3382,26 +3126,17 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "ExternalPrototype",
           "storage": {
             "kind": "external",
             "object": "ExternalPrototype",
             "path": "external_component.FCStd"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -5389,7 +5124,6 @@
       "attributes": {
         "application_domains": "App,Assembly,Part",
         "document_kind": "assembly",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -5464,6 +5198,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
     "file_digests": {},
     "retained_records": {},

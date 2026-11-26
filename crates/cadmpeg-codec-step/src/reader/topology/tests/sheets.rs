@@ -494,6 +494,59 @@ fn unflagged_ring(support: &str, extra: &str) -> cadmpeg_ir::codec::DecodeResult
 }
 
 #[test]
+fn a_curve_bounded_surface_whose_boundary_does_not_close_is_a_partial_face() {
+    // The ring's hole `#16` is an open arc, so the face's stored boundary
+    // does not resolve. The support is a B-spline surface, whose own domain
+    // is finite: the face is partial still, since the source bounds it.
+    let mut source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        "#11=CURVE_BOUNDED_SURFACE('ring',#21,(#10,#16),.F.);",
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        "#14=CIRCLE('',#6,2.);
+#22=TRIMMED_CURVE('',#14,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+         #15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#22);
+#16=BOUNDARY_CURVE('open',(#15),.F.);
+         #17=CARTESIAN_POINT('',(-10.,-10.,0.));
+#18=CARTESIAN_POINT('',(10.,-10.,0.));
+         #19=CARTESIAN_POINT('',(-10.,10.,0.));
+#20=CARTESIAN_POINT('',(10.,10.,0.));
+         #21=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#17,#19),(#18,#20)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.);
+",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a ring with an open boundary");
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    assert_eq!(
+        faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    assert!(result.ir().geometry.loops.is_empty());
+    let face_id = faces[0].id.as_str();
+    let unresolved = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::TopologyFaceBoundaryUnstated.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        unresolved,
+        [format!(
+            "CURVE_BOUNDED_SURFACE #11 boundary #16 does not resolve to a closed loop: face {face_id} is stated partial"
+        )]
+    );
+}
+
+#[test]
 fn an_unflagged_boundary_enclosing_the_largest_area_is_the_outer_loop() {
     let result = unflagged_ring("#8", "");
     let model = &result.ir().geometry;
@@ -588,10 +641,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
         .expect("free complex representation member");
     assert_eq!(
-        free_circle
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(result.ir(), free_circle.id.as_str()),
         Some("free circle")
     );
     assert!(result.report().losses.iter().any(|loss| {

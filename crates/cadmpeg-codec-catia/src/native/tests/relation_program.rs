@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -235,7 +236,7 @@ fn relation_program_output_entity_serializes_its_class_name() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
-    let wire = serde_json::to_value(super::super::CatiaEntityRecordWire::from(
+    let wire = json::to_value(super::super::CatiaEntityRecordWire::from(
         native.entity_records[1].clone(),
     ))
     .expect("serialize entity record wire");

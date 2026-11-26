@@ -353,6 +353,17 @@ impl FeatureOperation {
             _ => false,
         }
     }
+
+    /// The operation's family: the [`OperationFamily`] whose wire name is
+    /// the operation's `kind`. `Unresolved` states its own family; `Native`
+    /// and `Stored` have none.
+    pub(crate) fn family(&self) -> Option<OperationFamily> {
+        if let Self::Unresolved { family } = self {
+            return Some(*family);
+        }
+        let wire = crate::hash::finite_json::to_json_value(self).ok()?;
+        cadmpeg_core::serde_erase::from_json_value::<OperationFamily>(wire.get("kind")?).ok()
+    }
 }
 
 /// Where a feature's stored geometry came from.

@@ -165,7 +165,7 @@ fn every_structure_signature_decodes_the_assembly() {
                 model.appearances.len(),
                 model.appearance_bindings.len(),
             ),
-            (3, 3, 2, 2, 1, 1),
+            (3, 3, 0, 2, 1, 1),
             "{signature}"
         );
         assert!(result.report().geometry_transferred());
@@ -195,10 +195,20 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         definitions,
         [
             ("TOP.ASM", vec![]),
-            ("BRACKET.PRT", vec!["pvz:model:body#bracket.ol".to_owned()]),
-            ("PLATE.PRT", vec!["pvz:model:body#plate.ol".to_owned()]),
+            ("BRACKET.PRT", vec![]),
+            ("PLATE.PRT", vec![]),
         ]
     );
+    for (mesh, definition) in model
+        .tessellations
+        .iter()
+        .zip(&model.product_definitions[1..])
+    {
+        assert_eq!(
+            mesh.of,
+            cadmpeg_ir::tessellation::Meshed::definition(definition.id.clone())
+        );
+    }
     assert_eq!(
         model.product_definitions[0]
             .bom_properties
@@ -251,10 +261,44 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
             PvzLossCode::TessellationPatchFields.kind(),
             PvzLossCode::TessellationEdgesNotTransferred.kind(),
             PvzLossCode::GeometryPreambleUndecoded.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
+    let bytes = assembly("PV-PVS0304");
+    let admitted = decode(&bytes);
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == record_unreadable_kind())
+        .expect("the exact stream is given up");
+    assert!(
+        given_up
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset="),
+        "{given_up:?}"
+    );
+    let stubs = admitted.ir().native_unknowns("pvz").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = PvzCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up exact stream");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().message, given_up.message);
 }
 
 #[test]
@@ -297,13 +341,19 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         RawEntry::stored("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    let malformed: Vec<_> = result
+    let (malformed, exact): (Vec<_>, Vec<_>) = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .collect();
+        .partition(|loss| loss.message.starts_with("part archive-entry "));
     assert_eq!(malformed.len(), 1);
+    assert!(
+        exact.iter().all(|loss| loss
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset=")),
+        "{exact:?}"
+    );
     assert!(malformed[0]
         .message
         .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
@@ -312,9 +362,14 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
     // §8.1: the root definition owns the three placements.
     assert_eq!(result.ir().model.occurrences.len(), 3);
     let stubs = result.ir().native_unknowns("pvz").unwrap();
-    let [stub] = stubs.as_slice() else {
-        panic!("one stub: {stubs:?}");
-    };
+    let stub = stubs
+        .iter()
+        .find(|stub| {
+            malformed[0]
+                .message
+                .contains(&format!("record={}", stub.id))
+        })
+        .expect("the stub of the member");
     let [link] = stub.links.as_slice() else {
         panic!("the stub links the definition that names the member");
     };
@@ -324,9 +379,6 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .product_definitions
         .iter()
         .any(|definition| cadmpeg_ir::ids::Identity::from(definition.id.clone()) == *link));
-    assert!(malformed[0]
-        .message
-        .contains(&format!("record={}", stub.id)));
     let (_, _, fidelity) = result.into_parts();
     let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
     assert_eq!(retained.data(), Some(b"not a bzip2 stream".as_slice()));
@@ -426,7 +478,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
     for member in ["cube64.ol", "cube32.ol"] {
         let cube = body(member);
         assert_eq!(cube.kind, BodyKind::Solid);
-        assert_eq!(cube.name.as_deref(), Some(member));
+        assert_eq!(cube.name, None);
         assert_eq!(geometry.stated_body_regions(&cube.id).count(), 1);
         let faces = geometry
             .faces
@@ -437,20 +489,21 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let meshes: Vec<_> = model
             .tessellations
             .iter()
-            .filter(|mesh| mesh.body.as_ref() == Some(&cube.id))
+            .filter(|mesh| mesh.of.body() == Some(&cube.id))
             .collect();
         assert_eq!(meshes.len(), 1);
         assert_eq!(meshes[0].triangle_count(), 12);
     }
-    assert_eq!(body("plate.ol").kind, BodyKind::General);
-    assert!(geometry
-        .stated_body_regions(&body("plate.ol").id)
-        .next()
-        .is_none());
-    assert_eq!(geometry.bodies.len(), 3);
-    for definition in &model.product_definitions[1..] {
-        assert_eq!(definition.bodies.len(), 1);
-    }
+    assert_eq!(geometry.bodies.len(), 2);
+    let plate = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.bodies.is_empty() && definition.occurrences.is_empty())
+        .unwrap();
+    assert!(model
+        .tessellations
+        .iter()
+        .any(|mesh| mesh.of == cadmpeg_ir::tessellation::Meshed::definition(plate.id.clone())));
     let codes = loss_codes(&result);
     assert_eq!(
         codes
@@ -492,7 +545,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let (solid, sheet) = (of_kind(BodyKind::Solid), of_kind(BodyKind::Sheet));
     assert_eq!(geometry.bodies.len(), 2);
     for body in [solid, sheet] {
-        assert_eq!(body.name.as_deref(), Some("part.ol"));
+        assert_eq!(body.name, None);
     }
     let shells = |body: &cadmpeg_ir::topology::Body| -> usize {
         geometry
@@ -512,7 +565,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let meshes: Vec<_> = model
         .tessellations
         .iter()
-        .map(|mesh| mesh.body.clone())
+        .map(|mesh| mesh.of.body().cloned())
         .collect();
     assert_eq!(meshes, [Some(solid.id.clone())]);
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();

@@ -439,7 +439,7 @@ fn project_rows(
         let tag = format!("saved_configuration_property:{}", row.kind);
         crate::annotations::note(
             annotations,
-            id.as_str(),
+            &id,
             owner.source_stream(),
             0,
             &tag,

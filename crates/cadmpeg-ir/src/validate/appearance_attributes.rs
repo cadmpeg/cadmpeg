@@ -5,6 +5,7 @@
 //! PMI, drawing, or presentation record, or a neutral record by its arena;
 //! and the `native_ref` of each record.
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use crate::appearance::AppearanceTarget;
@@ -27,28 +28,111 @@ pub(super) fn check_appearance_attributes(
     }
     let records = DesignRecords::of(ir);
     let model = ModelRecords::of(ir);
+    let assemblies: BTreeSet<&str> = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| !definition.occurrences.is_empty())
+        .map(|definition| definition.id.as_str())
+        .collect();
+    let mut stated = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let owner = binding.id.as_str();
         match &binding.target.entity {
             AppearanceTarget::Occurrence(id) if !model.occurrences.contains(id.as_str()) => {
                 missing(findings, owner, "occurrence", id.as_str());
             }
-            AppearanceTarget::Record { arena, id } => record(ir, findings, owner, arena, id),
+            AppearanceTarget::Definition(id) => {
+                if !model.product_definitions.contains(id.as_str()) {
+                    missing(findings, owner, "product definition", id.as_str());
+                }
+                if binding.target.path.is_some() {
+                    error(
+                        findings,
+                        owner,
+                        crate::rule!(
+                            "appearance_attributes.definition-target-states-path",
+                            "a definition target states a path"
+                        ),
+                    );
+                }
+            }
+            AppearanceTarget::Record { arena, id } => {
+                if ARM_ARENAS.contains(&arena.as_str()) {
+                    error(
+                        findings,
+                        owner,
+                        crate::rule!(
+                            "appearance_attributes.record-target-names-records-another-target",
+                            "record target names `{arena}`, whose records another target arm names"
+                        ),
+                    );
+                }
+                record(ir, findings, owner, arena, id);
+            }
             _ => {}
+        }
+        let orders = match &binding.target.entity {
+            AppearanceTarget::Occurrence(_) => true,
+            AppearanceTarget::Definition(id) => assemblies.contains(id.as_str()),
+            AppearanceTarget::Body(_) | AppearanceTarget::Tessellation(_) => {
+                binding.target.path.is_some()
+            }
+            _ => false,
+        };
+        if orders != binding.precedence.is_some() {
+            error(
+                findings,
+                owner,
+                crate::rule!(
+                    "appearance_attributes.states-no-precedence-target-placed-definition",
+                    "{}",
+                    if orders {
+                        "states no precedence on a target a placed definition can state a nearer target under"
+                    } else {
+                        "states a precedence on a target no placed definition states a nearer target under"
+                    }
+                ),
+            );
+        }
+        let earlier = match binding.target.entity {
+            AppearanceTarget::Unresolved => None,
+            _ => stated.insert(&binding.target, &binding.appearance),
+        };
+        if let Some(other) = earlier {
+            if other != &binding.appearance {
+                super::record_finding(
+                    findings,
+                    Check::Design,
+                    Severity::Warning,
+                    Some(owner),
+                    crate::rule!("appearance_attributes.another-binding-names-same-target-path", 
+                        "another binding names the same target, path, and state with a different appearance"
+                    ),
+                );
+            }
         }
         if binding
             .source_entity_id
             .as_deref()
             .is_some_and(|id| id.trim().is_empty())
         {
-            error(findings, owner, format_args!("source_entity_id is blank"));
+            error(
+                findings,
+                owner,
+                crate::rule!(
+                    "appearance_attributes.source-entity-id-blank",
+                    "source_entity_id is blank"
+                ),
+            );
         }
         if matches!(binding.target.entity, AppearanceTarget::Unresolved) {
             if binding.source_entity_id.is_none() && binding.native_ref.is_none() {
                 error(
                     findings,
                     owner,
-                    format_args!(
+                    crate::rule!(
+                        "appearance_attributes.unresolved-target-states-neither-source-entity",
                         "an unresolved target states neither source_entity_id nor native_ref"
                     ),
                 );
@@ -57,7 +141,10 @@ pub(super) fn check_appearance_attributes(
                 error(
                     findings,
                     owner,
-                    format_args!("an unresolved target states a path or a state"),
+                    crate::rule!(
+                        "appearance_attributes.unresolved-target-states-path-state",
+                        "an unresolved target states a path or a state"
+                    ),
                 );
             }
         }
@@ -73,6 +160,21 @@ pub(super) fn check_appearance_attributes(
         }
     }
 }
+
+/// The arenas whose records an arm of `AppearanceTarget` other than `Record`
+/// names, which a `Record` target names instead of that arm.
+const ARM_ARENAS: [&str; 10] = [
+    "bodies",
+    "occurrences",
+    "product_definitions",
+    "faces",
+    "edges",
+    "vertices",
+    "surfaces",
+    "curves",
+    "points",
+    "tessellations",
+];
 
 /// The ids of the model arenas that an attribute or a binding names and
 /// that no [`ModelIndex`] lookup indexes.
@@ -231,12 +333,12 @@ fn record(
         None => error(
             findings,
             owner,
-            format_args!("record target names `{arena}`, which is no arena of the model, the design, or the topology"),
+            crate::rule!("appearance_attributes.record-target-names-no-arena-model", "record target names `{arena}`, which is no arena of the model, the design, or the topology"),
         ),
         Some(false) => error(
             findings,
             owner,
-            format_args!("record target `{id}` is no record of arena `{arena}`"),
+            crate::rule!("appearance_attributes.record-target-no-record-arena", "record target `{id}` is no record of arena `{arena}`"),
         ),
         Some(true) => {}
     }
@@ -255,7 +357,10 @@ fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             error(
                 findings,
                 owner,
-                format_args!("native_ref `{target}` does not resolve"),
+                crate::rule!(
+                    "appearance_attributes.native-ref-does-not-resolve",
+                    "native_ref `{target}` does not resolve"
+                ),
             );
         }
     };
@@ -274,11 +379,14 @@ fn missing(findings: &mut Vec<Finding>, owner: &str, kind: &str, id: &str) {
     error(
         findings,
         owner,
-        format_args!("references missing {kind} `{id}`"),
+        crate::rule!(
+            "appearance_attributes.references-missing",
+            "references missing {kind} `{id}`"
+        ),
     );
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Design,

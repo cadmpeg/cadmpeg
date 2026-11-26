@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use crate::design::dimension::Dimension;
-use crate::design::refs::{Member, Position};
-use crate::design::selection::Anchor;
+use crate::design::names::{NameEntry, NameKind, NameTable, TopoName};
+use crate::design::refs::{EntityRef, Member, Position};
+use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
+use crate::document::CadIr;
 use crate::process::groups::ProcessOwner;
 use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
+use crate::report::Severity;
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, document, id, place_pin, width_through,
-    workpiece_selection,
+    assert_error, assert_finding, assert_no_process_finding, document, id, place_pin,
+    width_through, workpiece_selection,
 };
 
 #[test]
@@ -135,5 +140,93 @@ fn a_through_path_resolves_from_the_setups_scope() {
     assert_error(
         &ir,
         "occurrence path step test:design:occurrence#nested is not an occurrence",
+    );
+}
+
+/// A path step's `configuration` follows the `ConfigurationRef` rule for the
+/// step's prototype (§5.8).
+#[test]
+fn a_path_steps_configuration_is_one_of_its_prototype() {
+    use crate::design::dimension::{ParamRef, ParameterRef};
+    use crate::design::refs::ConfigurationRef;
+    let configured = |configuration: ConfigurationRef| {
+        let mut reference = width_through("pin");
+        if let ParamRef::Design(ParameterRef {
+            through: Some(path),
+            ..
+        }) = &mut reference
+        {
+            path.0[0].configuration = Some(configuration);
+        }
+        let mut ir = document();
+        place_pin(&mut ir);
+        ir.process.operations[2].technology.stepdown = Some(Dimension::Parameter(reference));
+        ir
+    };
+    let named = cadmpeg_core::text::NonBlankString::new("light").unwrap();
+    assert_no_process_finding(&configured(ConfigurationRef::Named(named)));
+    assert_error(
+        &configured(ConfigurationRef::Local(design::id("configuration", "base"))),
+        "names no configuration of the prototype's scope",
+    );
+}
+
+/// The name of a face that `feature` generates.
+fn face_of(feature: &str) -> TopoName {
+    TopoName::Generated {
+        kind: NameKind::Face,
+        feature: design::feature(feature),
+        role: None,
+        generator: None,
+        index: None,
+    }
+}
+
+/// A pick of the face `feature` generates, resolved to `resolved`.
+fn named(feature: &str, resolved: Option<Vec<EntityRef>>) -> Picked {
+    Picked {
+        target: PickTarget::Entity(face_of(feature)),
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved,
+    }
+}
+
+/// The fixture with the cube's first face named as a face of the extrude,
+/// and the operation's geometry a selection of `pick` in the current state.
+fn picking(pick: Picked) -> CadIr {
+    let mut ir = document();
+    let face = EntityRef::Face(ir.geometry.faces[0].id.clone());
+    ir.design.names = NameTable::from(BTreeMap::from([(
+        face,
+        NameEntry {
+            name: Some(face_of("extrude")),
+            native: None,
+        },
+    )]));
+    let mut selection = workpiece_selection(Some(0));
+    selection.selection = Selection {
+        at: Anchor::Current,
+        picks: Picks::Named(Members::new(vec![pick]).unwrap()),
+        native: None,
+    };
+    ir.process.operations[2].geometry[0].source = GeometrySource::Selection(vec![selection]);
+    ir
+}
+
+#[test]
+fn a_process_pick_resolves_in_the_current_geometry_of_its_setup_scope() {
+    assert_no_process_finding(&picking(named("extrude", None)));
+    assert_finding(
+        &picking(named("fillet", None)),
+        Severity::Warning,
+        "matches no entity of its anchored state",
+    );
+    let elsewhere = EntityRef::Face(design::id("face", "elsewhere"));
+    assert_error(
+        &picking(named("extrude", Some(vec![elsewhere]))),
+        "is not a record of its anchored state",
     );
 }

@@ -8,7 +8,7 @@
 //! the faces on both sides of an edge keep the same boundary points.
 
 use cadmpeg_ir::math::portable::Portable;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -62,6 +62,61 @@ fn key(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
+/// The triangles on each edge of a mesh. Each vertex lists its higher
+/// neighbours in ascending order, each with the triangles on that edge, so
+/// lookups scan a vertex's few neighbours and iteration runs in edge order.
+#[derive(Default)]
+struct Edges {
+    by_low: Vec<Vec<(usize, Vec<usize>)>>,
+}
+
+impl Edges {
+    fn get(&self, (low, high): (usize, usize)) -> Option<&Vec<usize>> {
+        self.by_low
+            .get(low)?
+            .iter()
+            .find(|(other, _)| *other == high)
+            .map(|(_, triangles)| triangles)
+    }
+
+    fn get_mut(&mut self, (low, high): (usize, usize)) -> Option<&mut Vec<usize>> {
+        self.by_low
+            .get_mut(low)?
+            .iter_mut()
+            .find(|(other, _)| *other == high)
+            .map(|(_, triangles)| triangles)
+    }
+
+    /// The triangles of edge `(low, high)`, listed empty when it is new.
+    fn entry(&mut self, (low, high): (usize, usize)) -> &mut Vec<usize> {
+        if self.by_low.len() <= low {
+            self.by_low.resize_with(low + 1, Vec::new);
+        }
+        let neighbours = &mut self.by_low[low];
+        let at = neighbours.partition_point(|(other, _)| *other < high);
+        if neighbours.get(at).is_none_or(|(other, _)| *other != high) {
+            neighbours.insert(at, (high, Vec::new()));
+        }
+        &mut neighbours[at].1
+    }
+
+    /// Every edge with its triangles, in ascending edge order.
+    fn iter(&self) -> impl Iterator<Item = ((usize, usize), &Vec<usize>)> {
+        self.by_low
+            .iter()
+            .enumerate()
+            .flat_map(|(low, neighbours)| {
+                neighbours
+                    .iter()
+                    .map(move |(high, triangles)| ((low, *high), triangles))
+            })
+    }
+
+    fn keys(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.iter().map(|(edge, _)| edge)
+    }
+}
+
 /// Which of two interior edges is longer. Lengths that agree within
 /// [`crate::count::SPLIT_RATIO`] pick the lower vertex-id pair.
 fn longer_edge(
@@ -112,12 +167,12 @@ impl Mesh {
         Ok(Some(self.uv.len() - 1))
     }
 
-    fn edges(&self) -> BTreeMap<(usize, usize), Vec<usize>> {
-        let mut map: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
+    fn edges(&self) -> Edges {
+        let mut map = Edges::default();
         for (at, triangle) in self.triangles.iter().enumerate() {
             if let Some([a, b, c]) = triangle {
                 for (from, to) in [(*a, *b), (*b, *c), (*c, *a)] {
-                    map.entry(key(from, to)).or_default().push(at);
+                    map.entry(key(from, to)).push(at);
                 }
             }
         }
@@ -246,10 +301,10 @@ impl Mesh {
         let mut ignored = Vec::new();
         // An edge whose two triangles are unchanged since it last held keeps
         // holding, so only an edge of a flipped quadrilateral is judged again.
-        let mut changed: BTreeSet<(usize, usize)> = edges.keys().copied().collect();
+        let mut changed: BTreeSet<(usize, usize)> = edges.keys().collect();
         for _ in 0..FLIP_PASSES {
             let mut flipped = false;
-            let candidates: Vec<(usize, usize)> = edges.keys().copied().collect();
+            let candidates: Vec<(usize, usize)> = edges.keys().collect();
             for edge in candidates {
                 if !changed.remove(&edge) {
                     continue;
@@ -272,14 +327,14 @@ impl Mesh {
     /// two vertices opposite the old edge, which the new edge joins.
     fn try_flip(
         &mut self,
-        edges: &mut BTreeMap<(usize, usize), Vec<usize>>,
+        edges: &mut Edges,
         queue: &mut Vec<usize>,
         edge: (usize, usize),
     ) -> Option<(usize, usize)> {
         if self.fixed.contains(&edge) {
             return None;
         }
-        let &[first, second] = edges.get(&edge).map(Vec::as_slice)? else {
+        let &[first, second] = edges.get(edge).map(Vec::as_slice)? else {
             return None;
         };
         let (t1, t2) = (self.triangles[first]?, self.triangles[second]?);
@@ -329,7 +384,7 @@ impl Mesh {
     /// triangles have the edges `opposite` across from it.
     fn legalize(
         &mut self,
-        edges: &mut BTreeMap<(usize, usize), Vec<usize>>,
+        edges: &mut Edges,
         queue: &mut Vec<usize>,
         vertex: usize,
         opposite: Vec<(usize, usize)>,
@@ -351,14 +406,14 @@ impl Mesh {
 
     fn replace(
         &mut self,
-        edges: &mut BTreeMap<(usize, usize), Vec<usize>>,
+        edges: &mut Edges,
         queue: &mut Vec<usize>,
         at: usize,
         triangles: &[[usize; 3]],
     ) {
         if let Some([a, b, c]) = self.triangles[at].take() {
             for (from, to) in [(a, b), (b, c), (c, a)] {
-                if let Some(list) = edges.get_mut(&key(from, to)) {
+                if let Some(list) = edges.get_mut(key(from, to)) {
                     list.retain(|other| *other != at);
                 }
             }
@@ -368,7 +423,7 @@ impl Mesh {
             self.triangles.push(Some(*triangle));
             let [a, b, c] = *triangle;
             for (from, to) in [(a, b), (b, c), (c, a)] {
-                edges.entry(key(from, to)).or_default().push(index);
+                edges.entry(key(from, to)).push(index);
             }
             queue.push(index);
         }
@@ -377,12 +432,12 @@ impl Mesh {
     fn split_edge(
         &mut self,
         carrier: &Carrier<'_, '_>,
-        edges: &mut BTreeMap<(usize, usize), Vec<usize>>,
+        edges: &mut Edges,
         queue: &mut Vec<usize>,
         (from, to): (usize, usize),
         uv: Uv,
     ) -> Result<(), Refusal> {
-        let sharing = edges.get(&key(from, to)).cloned().unwrap_or_default();
+        let sharing = edges.get(key(from, to)).cloned().unwrap_or_default();
         let (Some(point), normal) = (carrier.point(uv)?, carrier.normal(uv)?) else {
             return Ok(());
         };
@@ -551,7 +606,7 @@ impl Mesh {
         let boundary: Vec<(usize, usize)> = edges
             .iter()
             .filter(|(_, sharing)| sharing.len() == 1)
-            .map(|(edge, _)| *edge)
+            .map(|(edge, _)| edge)
             .collect();
         let mut queue = Vec::new();
         for column in 1..=columns {
@@ -589,12 +644,7 @@ impl Mesh {
     /// The triangle whose interior holds `uv`. The search walks from the
     /// newest triangle toward `uv` across the side it lies beyond, and scans
     /// every triangle when the walk leaves the mesh or runs long.
-    fn locate(
-        &self,
-        edges: &BTreeMap<(usize, usize), Vec<usize>>,
-        boundary: &[(usize, usize)],
-        uv: Uv,
-    ) -> Option<usize> {
+    fn locate(&self, edges: &Edges, boundary: &[(usize, usize)], uv: Uv) -> Option<usize> {
         let inside = |[a, b, c]: [usize; 3]| {
             cross2(self.uv[a], self.uv[b], uv) > 0.0
                 && cross2(self.uv[b], self.uv[c], uv) > 0.0
@@ -616,7 +666,7 @@ impl Mesh {
                 return Some(at);
             };
             let next = edges
-                .get(&key(edge.0, edge.1))
+                .get(key(edge.0, edge.1))
                 .and_then(|sharing| sharing.iter().copied().find(|other| *other != at));
             match next {
                 Some(other) => at = other,
@@ -700,7 +750,7 @@ impl Mesh {
     fn split_centre(
         &mut self,
         carrier: &Carrier<'_, '_>,
-        edges: &mut BTreeMap<(usize, usize), Vec<usize>>,
+        edges: &mut Edges,
         queue: &mut Vec<usize>,
         at: usize,
         uv: Uv,

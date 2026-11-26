@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::{
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{HashMap, HashSet};
 
@@ -40,12 +41,13 @@ pub(crate) const GENERATED_NAME: cadmpeg_ir::codec::write::capacity::TextCapacit
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side. `cut` receives an `export:value.unwritable` entry for
-/// each generated name cut to [`GENERATED_NAME`].
+/// Bitwise comparison against the codec digests the decode recorded in
+/// `digests`. Absent digest: sync lanes from the neutral side. `cut` receives
+/// an `export:value.unwritable` entry for each generated name cut to
+/// [`GENERATED_NAME`].
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
+    digests: &CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     edits: &crate::history::write::edits::SourceEdits<'_>,
     cut: &mut Vec<String>,
@@ -57,12 +59,9 @@ pub(crate) fn prepare_sketches_for_write(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
-    let (baseline_neutral, baseline_native) = sketch_baselines(ir);
-    let baseline_constraints = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_neutral_sketch_constraint_local_sha256")
-    });
+    let (baseline_neutral, baseline_native) = sketch_baselines(digests);
+    let baseline_constraints =
+        crate::codec_digests::baseline(digests, "sldprt_neutral_sketch_constraint_local_sha256");
     let current_neutral = sketch_hash(&hash_ctx, ir)?;
     let current_native = native
         .as_ref()
@@ -78,12 +77,12 @@ pub(crate) fn prepare_sketches_for_write(
         native.feature_input_lanes.extend(generated);
         return Ok(());
     }
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &current_neutral);
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != current_neutral);
     if !neutral_changed {
         return Ok(());
     }
     let current_constraints = constraint_hash(&hash_ctx, ir)?;
-    if baseline_constraints.is_none_or(|hash| hash != &current_constraints) {
+    if baseline_constraints.is_none_or(|hash| hash != current_constraints) {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT native sketch relation editing is not implemented".into(),
         ));
@@ -108,17 +107,12 @@ pub(crate) fn prepare_sketches_for_write(
     patch_line_profiles(ir, retained)
 }
 
-/// The source's neutral and native sketch digests, where the decoder stated
+/// The source's neutral and native sketch digests, where the decoder recorded
 /// them.
-fn sketch_baselines(ir: &cadmpeg_ir::CadIr) -> (Option<&String>, Option<&String>) {
-    let attribute = |key: &str| {
-        ir.source
-            .as_ref()
-            .and_then(|source| source.attributes.get(key))
-    };
+fn sketch_baselines(digests: &CodecDigests) -> (Option<&str>, Option<&str>) {
     (
-        attribute("sldprt_neutral_sketch_local_sha256"),
-        attribute("sldprt_native_sketch_sha256"),
+        crate::codec_digests::baseline(digests, "sldprt_neutral_sketch_local_sha256"),
+        crate::codec_digests::baseline(digests, "sldprt_native_sketch_sha256"),
     )
 }
 
@@ -136,10 +130,11 @@ fn holds_sketches(ir: &cadmpeg_ir::CadIr) -> bool {
 /// dimension of its feature, so a driven parameter would read back as an
 /// editable one. A parameter is driven where the design states it `Driven`
 /// (D11) or a dimension that states it is driven binds it.
-pub(crate) fn omitted_driven_parameters(
-    ir: &cadmpeg_ir::CadIr,
-) -> HashSet<&cadmpeg_ir::features::ParameterId> {
-    if sketch_baselines(ir) != (None, None) {
+pub(crate) fn omitted_driven_parameters<'a>(
+    ir: &'a cadmpeg_ir::CadIr,
+    digests: &CodecDigests,
+) -> HashSet<&'a cadmpeg_ir::features::ParameterId> {
+    if sketch_baselines(digests) != (None, None) {
         return HashSet::new();
     }
     ir.design
@@ -165,8 +160,8 @@ pub(crate) fn omitted_driven_parameters(
 /// The driven (reference) dimensions a write omits: a write that generates
 /// the sketch lanes writes each dimension as a driving scalar, so it writes
 /// no driven one.
-pub(crate) fn omitted_driven_dimensions(ir: &cadmpeg_ir::CadIr) -> usize {
-    if sketch_baselines(ir) != (None, None) || !holds_sketches(ir) {
+pub(crate) fn omitted_driven_dimensions(ir: &cadmpeg_ir::CadIr, digests: &CodecDigests) -> usize {
+    if sketch_baselines(digests) != (None, None) || !holds_sketches(ir) {
         return 0;
     }
     ir.model
@@ -1659,7 +1654,12 @@ fn source_less_lanes(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
-    bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
+    bind_scalar_operands(
+        &ctx,
+        &native.feature_histories,
+        &mut lanes,
+        ir.tolerances.linear,
+    )?;
     Ok(lanes)
 }
 
@@ -1795,6 +1795,7 @@ mod source_less_lane_tests {
     use super::super::write_generate::GeneratedMarkerRelation;
     use super::{assemble_source_less_lanes, validate_source_less_constraints};
     use cadmpeg_ir::sketches::SketchCoordinateAxis;
+    use cadmpeg_ir::source_fidelity::CodecDigests;
 
     fn generated_sketch() -> Sketch {
         Sketch {
@@ -2185,14 +2186,20 @@ mod source_less_lane_tests {
                 .any(|window| window == b"sgPntPntDist")
         };
         assert!(writes_scalar(&ir));
-        assert_eq!(super::omitted_driven_dimensions(&ir), 0);
-        assert!(super::omitted_driven_parameters(&ir).is_empty());
+        assert_eq!(
+            super::omitted_driven_dimensions(&ir, &CodecDigests::new()),
+            0
+        );
+        assert!(super::omitted_driven_parameters(&ir, &CodecDigests::new()).is_empty());
 
         ir.model.sketch_constraints[0].driving = Some(false);
         assert!(!writes_scalar(&ir));
-        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
         assert_eq!(
-            super::omitted_driven_parameters(&ir),
+            super::omitted_driven_dimensions(&ir, &CodecDigests::new()),
+            1
+        );
+        assert_eq!(
+            super::omitted_driven_parameters(&ir, &CodecDigests::new()),
             std::collections::HashSet::from([&parameter])
         );
 
@@ -2220,13 +2227,16 @@ mod source_less_lane_tests {
                 native_ref: None,
             });
         assert!(!writes_scalar(&ir));
-        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+        assert_eq!(
+            super::omitted_driven_dimensions(&ir, &CodecDigests::new()),
+            1
+        );
 
         // A `Driven` parameter that no dimension binds stays out of its
         // feature's record too.
         ir.model.sketch_constraints.clear();
         assert_eq!(
-            super::omitted_driven_parameters(&ir),
+            super::omitted_driven_parameters(&ir, &CodecDigests::new()),
             std::collections::HashSet::from([&ir.design.parameters[0].id])
         );
     }

@@ -2789,17 +2789,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3019,7 +3013,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3044,12 +3037,10 @@
             "usd:stage:occurrence#/World/Sheet"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "World",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3062,12 +3053,10 @@
           "native_ref": "/World/Ball",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Ball",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3080,12 +3069,10 @@
           "native_ref": "/World/Box",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3098,12 +3085,10 @@
           "native_ref": "/World/Can",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Can",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3116,12 +3101,10 @@
           "native_ref": "/World/Frustum",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Frustum",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3134,12 +3117,10 @@
           "native_ref": "/World/Funnel",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Funnel",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3152,12 +3133,10 @@
           "native_ref": "/World/Pill",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Pill",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3170,12 +3149,10 @@
           "native_ref": "/World/Sheet",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Sheet",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3186,24 +3163,15 @@
             "usd:stage:occurrence#/World"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -3290,6 +3258,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "928338c43ed158b1fbd621b807bf97e7c038ed34f04b8d342c82625a454c95e3",
     "file_digests": {},
     "retained_records": {},

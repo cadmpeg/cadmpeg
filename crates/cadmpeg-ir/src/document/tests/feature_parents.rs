@@ -2,6 +2,7 @@
 
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
 use crate::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -37,8 +38,11 @@ fn predecessor_document() -> CadIr {
     ir
 }
 
+/// The wire leaves out the features and their parent relations (CADIR v11
+/// §3.4), so a parent graph the model refuses still writes, and validation
+/// locates the finding on the child.
 #[test]
-fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings() {
+fn mutated_parent_graphs_write_and_produce_located_validation_findings() {
     for mutation in [
         "missing parent",
         "missing child",
@@ -46,8 +50,6 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         "tree ownership",
     ] {
         let mut ir = predecessor_document();
-        let before = ir.to_canonical_json().unwrap();
-        assert_eq!(CadIr::from_json(&before).unwrap(), ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -75,9 +77,12 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
             }
             _ => unreachable!(),
         }
-        assert!(serde_json::to_value(&ir.model).is_err(), "{mutation}");
-        assert!(serde_json::to_value(&ir).is_err(), "{mutation}");
-        assert!(ir.to_canonical_json().is_err(), "{mutation}");
+        let model = json::to_value(&ir.model).expect(mutation);
+        assert!(model.get("features").is_none(), "{mutation}");
+        json::to_value(&ir).expect(mutation);
+        json::to_value(ir.geometry.geometry_snapshot(&ir.model, "brep")).expect(mutation);
+        let written = ir.to_canonical_json().expect(mutation);
+        assert!(!written.contains("test:parent-wire:feature#"), "{mutation}");
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(
             report.findings.iter().any(|finding| {
@@ -87,42 +92,6 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
             }),
             "{mutation}: {:?}",
             report.findings
-        );
-    }
-}
-
-#[test]
-fn complete_cadir_admission_checks_the_predecessor_against_current_feature_rows() {
-    let ir = predecessor_document();
-    let wire = serde_json::to_value(&ir).unwrap();
-    assert_eq!(serde_json::from_value::<CadIr>(wire.clone()).unwrap(), ir);
-    for mutation in ["missing parent", "ordinal", "tree ownership"] {
-        let mut invalid = wire.clone();
-        match mutation {
-            "missing parent" => {
-                invalid["model"]["features"][1]["regeneration_parent"] =
-                    serde_json::json!("test:parent-wire:feature#absent");
-            }
-            "ordinal" => {
-                invalid["model"]["features"][1]["ordinal"] = serde_json::json!(0);
-            }
-            "tree ownership" => {
-                invalid["model"]["features"][0]["definition"] = serde_json::json!({
-                    "kind": "operation",
-                    "value": {
-                        "kind": "tree_node",
-                        "value": {"role": "history", "children": {"children": ["test:parent-wire:feature#1-child"]}}
-                    }
-                });
-            }
-            _ => unreachable!(),
-        }
-        let error = serde_json::from_value::<CadIr>(invalid)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("test:parent-wire:feature#1-child"),
-            "{mutation}: {error}"
         );
     }
 }

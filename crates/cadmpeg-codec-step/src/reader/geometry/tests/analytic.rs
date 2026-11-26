@@ -698,6 +698,51 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 }
 
 #[test]
+fn a_bare_cone_in_a_geometric_set_is_a_partial_face_with_no_loop() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,2.,0.5);
+#6=GEOMETRIC_SET('',(#5));
+#7=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#6),#8);
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    let face = &faces[0];
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let face_id = face.id.as_str();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyFaceBoundaryUnstated.kind()
+            && loss.message.contains("a cone with no boundary")
+            && loss
+                .message
+                .split(|c: char| c.is_whitespace())
+                .any(|token| token == face_id)
+    }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        validation.findings.iter().all(|finding| !finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "findings: {:?}",
+        validation.findings
+    );
+    assert!(validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::TopologyPartial
+            && finding.entity.as_deref() == Some(face_id)
+    }));
+}
+
+#[test]
 fn conical_surface_accepts_a_negative_semi_angle() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -828,7 +873,10 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .expect("geometric-set owner");
     assert_eq!(source.format, cadmpeg_ir::codec_id!("step"));
     assert_eq!(source.object_id, "#9");
-    assert_eq!(source.name, None);
+    assert_eq!(
+        crate::test_support::carrier_name(result.ir(), composite.id.as_str()),
+        None
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -872,10 +920,10 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
 
     assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().geometry.points[0]
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(
+            decoded.ir(),
+            decoded.ir().geometry.points[0].id.as_str()
+        ),
         Some("free point")
     );
     assert!(!decoded
@@ -976,10 +1024,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("named APLL point");
     assert_eq!(
-        named_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), named_point.id.as_str()),
         Some("leader")
     );
     let complex_point = decoded
@@ -995,10 +1040,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("complex APLL point");
     assert_eq!(
-        complex_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), complex_point.id.as_str()),
         Some("complex leader")
     );
     let unknowns = decoded
@@ -1089,10 +1131,7 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
         Some("#4")
     );
     assert_eq!(
-        first
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(decoded.ir(), first.id.as_str()),
         Some("display curve")
     );
     assert!(!decoded

@@ -63,7 +63,7 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
         let tessellated = model
             .tessellations
             .iter()
-            .any(|tessellation| tessellation.body.as_ref() == Some(&body.id));
+            .any(|tessellation| tessellation.of.body() == Some(&body.id));
         !tessellated
             && geometry
                 .shells

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::wire;
@@ -8,7 +9,6 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
 use std::fmt::Write;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::report::Severity;
@@ -282,8 +282,8 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
             .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).expect("required invariant"),
-        serde_json::to_vec(second.report()).expect("required invariant")
+        json::to_vec(first.report()).expect("required invariant"),
+        json::to_vec(second.report()).expect("required invariant")
     );
 }
 
@@ -496,32 +496,58 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         panic!("polyline carrier");
     };
     assert_eq!(polyline.knots().as_slice(), [2.0, 2.0, 3.5, 9.0, 9.0]);
-    assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
-    let root = result
-        .ir()
-        .geometry
-        .procedural_curves
-        .iter()
-        .find(|curve| !curve.id.as_str().contains("component"))
-        .expect("root compound");
-    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Compound(compound) =
-        root.definition()
-    else {
-        panic!("compound definition");
-    };
-    let parameters = compound.parameters();
-    let components = compound.components();
-
-    assert_eq!(
-        parameters
+    assert!(result.ir().geometry.procedural_curves.is_empty());
+    let composite = |range: [f64; 2]| {
+        let curve = result
+            .ir()
+            .geometry
+            .curves
             .iter()
-            .map(|value| value.get())
-            .collect::<Vec<_>>(),
-        vec![0.0, 2.0, 5.0]
-    );
-    assert_eq!(components.len(), 2);
-    assert!(components[0].component.as_str().contains("component-0"));
-    assert!(components[1].component.as_str().contains("component-1"));
+            .find(|curve| {
+                matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+                ) && curve
+                    .parameter_range
+                    .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                    == Some(range)
+            })
+            .unwrap_or_else(|| panic!("composite over {range:?}"));
+        let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+            &curve.geometry
+        else {
+            unreachable!("a composite curve");
+        };
+        segments
+            .iter()
+            .map(|segment| {
+                assert!(segment.same_sense);
+                result
+                    .ir()
+                    .geometry
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == segment.curve)
+                    .expect("the segment curve")
+            })
+            .collect::<Vec<_>>()
+    };
+    let root = composite([0.0, 5.0]);
+    assert_eq!(root.len(), 2);
+    assert!(root[0].id.as_str().contains("component-0"));
+    assert!(root[1].id.as_str().contains("component-1"));
+    let Some(SolvedCurveGeometry::Nurbs(first)) = root[0].geometry.solved() else {
+        panic!("first segment carrier");
+    };
+    assert_eq!(first.knots().as_slice(), [0.0, 0.0, 2.0, 2.0]);
+    let inner = composite([2.0, 5.0]);
+    let [inner_line] = inner.as_slice() else {
+        panic!("one inner segment");
+    };
+    let Some(SolvedCurveGeometry::Nurbs(inner_line)) = inner_line.geometry.solved() else {
+        panic!("inner segment carrier");
+    };
+    assert_eq!(inner_line.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
     assert_eq!(
         result
             .ir()
@@ -659,17 +685,16 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
-/// `ObjectFramingUndecodable` carries severity `Error` and pins its strict
-/// floor at `Warning`, above the tolerable floor of its `DecodeDiagnostic`
-/// taxonomy, so the loss rejects. Strict decode therefore refuses the archive,
-/// and it refuses with the policy class that names the loss: the container
-/// parses, one record payload does not, and salvage mode keeps the result.
+/// A framed object record that does not decode is a given-up part. Its
+/// `record.unreadable` charge refuses a pinned decode, and the refusal names
+/// the retained object record: the container parses, one record payload does
+/// not, and salvage mode keeps the result.
 #[test]
 fn strict_decode_refuses_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = RhinoCodec
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
@@ -680,16 +705,56 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
     };
     assert_eq!(
         rejection.loss().code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
+    let message = &rejection.loss().message;
     assert!(
-        rejection
-            .loss()
-            .message
-            .starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {}",
-        rejection.loss().message
+        message.starts_with("part object-record stream=\"\" offset="),
+        "the refusal names the given-up part: {message}"
     );
+    assert!(message
+        .split_whitespace()
+        .any(|token| token == "rhino:object:record#000000"));
+}
+
+/// A framed object record the decoder gives up also charges
+/// `record.unreadable` naming its retained source record: a pinned decode
+/// refuses with that charge in its report, and a default decode admits the
+/// document and reports both the codec's loss and the charge.
+#[test]
+fn a_given_up_framed_object_record_is_charged_as_unreadable() {
+    let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
+    let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
+    let bytes = archive(&[bad_mesh, point]);
+    let charged = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.severity == Severity::Error
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|token| token == "rhino:object:record#000000")
+        })
+    };
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up framed object record");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
+        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
+    };
+    assert!(charged(&rejection.report().losses), "{error}");
+
+    let result = decode(&bytes);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()));
+    assert!(charged(&result.report().losses));
 }
 
 #[test]
@@ -996,7 +1061,9 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
                 .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
-                .len(),
+                .iter()
+                .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+                .count(),
             2
         );
         let unknown = &result

@@ -214,6 +214,9 @@ pub(super) fn check_evaluation_cycles<'ir>(
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
                     findings.push(Finding {
+                        rule: crate::rule_name!(
+                            "evaluation_cycles.malformed-curve-surface-reference-cycle"
+                        ),
                         related: stack[start_index..]
                             .iter()
                             .map(|frame| frame.node)

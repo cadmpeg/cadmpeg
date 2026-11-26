@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn work_point_rule_moves_resolved_input_without_cloning_carrier() {
     use crate::records::feature::work_geometry::{
@@ -29,7 +31,7 @@ fn work_point_rule_moves_resolved_input_without_cloning_carrier() {
 fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
     use crate::records::feature::work_geometry::DesignWorkPointRule;
 
-    let input = serde_json::json!({"record_index": 2, "reference_offset": 10});
+    let input = cadmpeg_core::json!({"record_index": 2, "reference_offset": 10});
     for (kind, code, arity) in [
         ("circle_center", 5, 1),
         ("two_edge_intersection", 7, 2),
@@ -39,19 +41,19 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         ("distance_on_edge", 20, 1),
     ] {
         let inputs = (0..arity).map(|_| input.clone()).collect::<Vec<_>>();
-        let mut wire = serde_json::json!({"kind": kind});
+        let mut wire = cadmpeg_core::json!({"kind": kind});
         if arity == 1 {
             wire["input"] = input.clone();
         } else {
-            wire["inputs"] = serde_json::json!(inputs);
+            wire["inputs"] = cadmpeg_core::json!(inputs);
         }
-        let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("supported rule");
+        let rule: DesignWorkPointRule = json::from_value(wire.clone()).expect("supported rule");
         assert_eq!(rule.reference_type(), code);
-        assert_eq!(serde_json::to_value(rule).expect("serialize rule"), wire);
-        let alias = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
-        let error = serde_json::from_value::<DesignWorkPointRule>(alias)
-            .expect_err("native alias rejected");
+        assert_eq!(json::to_value(rule).expect("serialize rule"), wire);
+        let alias =
+            cadmpeg_core::json!({"kind": "native", "reference_type": code, "inputs": inputs});
+        let error =
+            json::from_value::<DesignWorkPointRule>(alias).expect_err("native alias rejected");
         assert!(error.to_string().contains("reference_type"));
     }
     for (code, inputs) in [
@@ -59,20 +61,18 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         (u32::MAX, vec![input.clone()]),
         (5, vec![input.clone(), input]),
     ] {
-        let wire = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
+        let wire =
+            cadmpeg_core::json!({"kind": "native", "reference_type": code, "inputs": inputs});
         let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("unassigned native form");
-        assert_eq!(
-            serde_json::to_value(rule).expect("serialize native form"),
-            wire
-        );
+            json::from_value(wire.clone()).expect("unassigned native form");
+        assert_eq!(json::to_value(rule).expect("serialize native form"), wire);
     }
 }
 
 #[test]
 fn work_point_plane_carrier_is_bound_to_its_input_frame() {
     use crate::records::feature::work_geometry::DesignWorkPointInput;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "record_index": 7, "reference_offset": 0,
         "carrier": { "kind": "work_plane", "selection": {
             "class_tag": "300",
@@ -83,19 +83,19 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
             "work_plane_scope_record_index": 20, "next_record_index": 11, "next_byte_offset": 179
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(admitted).unwrap(), wire);
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+        assert!(json::from_value::<DesignWorkPointInput>(invalid).is_err());
     }
 }
 
 #[test]
 fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
     use crate::records::feature::work_geometry::DesignWorkPointInput;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "record_index": 7, "reference_offset": 0,
         "carrier": { "kind": "sketch_point", "selection": {
             "class_tag": "300",
@@ -108,19 +108,19 @@ fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
             "next_record_index": 11, "next_byte_offset": 191
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(admitted).unwrap(), wire);
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+        assert!(json::from_value::<DesignWorkPointInput>(invalid).is_err());
     }
 }
 
 #[test]
 fn work_point_sketch_point_carrier_offsets_follow_its_identity_form() {
     use crate::records::feature::work_geometry::DesignWorkPointInput;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "record_index": 7, "reference_offset": 0,
         "carrier": { "kind": "sketch_point", "selection": {
             "class_tag": "290",
@@ -134,12 +134,12 @@ fn work_point_sketch_point_carrier_offsets_follow_its_identity_form() {
             "next_record_index": 11, "next_byte_offset": 187
         }}
     });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    let admitted: DesignWorkPointInput = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(admitted).unwrap(), wire);
     let mut marked = wire.clone();
     marked["carrier"]["selection"]
         .as_object_mut()
         .unwrap()
         .remove("identity_form");
-    assert!(serde_json::from_value::<DesignWorkPointInput>(marked).is_err());
+    assert!(json::from_value::<DesignWorkPointInput>(marked).is_err());
 }

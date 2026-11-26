@@ -36,11 +36,15 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
           "pcurves": [
             {
+              "parameter_range": [
+                4.0,
+                0.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0"
             }
           ],
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
-          "sense": "forward"
+          "sense": "reversed"
         }
       ],
       "curves": [
@@ -96,8 +100,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -208,8 +211,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -276,8 +278,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -376,8 +377,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -393,20 +393,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -423,30 +416,18 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "rhino:object:tessellation#record-000000-offset-177.cache-0"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "rhino:object:tessellation#record-000000-offset-177.cache-0",
           "mesh": {
@@ -460,11 +441,14 @@
               }
             ]
           },
+          "of": {
+            "definition": "rhino:model:product-definition#root",
+            "kind": "display"
+          },
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -624,8 +608,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xc79a8577",
@@ -649,8 +632,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: mesh-cache item CRC mismatch at offset 704",
@@ -662,8 +644,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: extrusion mesh cache CRC mismatch at offset 683",
@@ -675,8 +656,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: extrusion payload CRC mismatch at offset 257",
@@ -775,6 +755,8 @@
       },
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b7a33834673ad07a44203f8fc26dc49e97b78d3a5594d58351569843b7ef180a",
     "file_digests": {},
     "retained_records": {

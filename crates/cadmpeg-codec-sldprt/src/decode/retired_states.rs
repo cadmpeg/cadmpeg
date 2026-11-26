@@ -15,10 +15,13 @@
 //! model target cannot yet name in a state that is not current (interim,
 //! §8), with one loss per configuration. The display tables bind to the
 //! active configuration's faces only, so none names a retired record.
+//! [`retire`] first keys a copy of the annotations of each record an
+//! evaluation's delta holds by that evaluation (§3.2), so a retired record
+//! keeps them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::annotations::{AnnotationKey, Annotations};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::evaluation::{StateBase, StateDelta};
 use cadmpeg_ir::design::names::TopoName;
@@ -31,16 +34,31 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 
-use crate::design_v11::states::remove_records;
+use crate::design_v11::states::{remove_records, topology_ids};
 use crate::loss::SldprtLossCode;
 
-/// Removes the `retired` geometry records, which the evaluations of
-/// configurations that are not active hold, with every model reference to
-/// them: [`retire_model`], with one loss per configuration for the feature
-/// outputs on them that its evaluation's face names do not state; the
-/// appearance bindings on them, and the
-/// appearances only those bindings used, with one loss per configuration;
-/// their annotations and the unknown-record links to them.
+/// Annotates each record of the delta of each evaluation as the geometry
+/// record of the same id is annotated, under the record's key in that
+/// evaluation.
+fn annotate_state_records(ir: &CadIr, annotations: &mut Annotations) {
+    for evaluation in &ir.design.evaluations {
+        let Some(content) = &evaluation.content else {
+            continue;
+        };
+        topology_ids(&content.delta.records, |id| {
+            annotations.copy_entity(id, AnnotationKey::in_delta(&evaluation.id, id));
+        });
+    }
+}
+
+/// Annotates each record of each evaluation's delta under its key in that
+/// evaluation, then removes the `retired` geometry records, which the
+/// evaluations of configurations that are not active hold, with every model
+/// reference to them: [`retire_model`], with one loss per configuration for
+/// the feature outputs on them that its evaluation's face names do not state;
+/// the appearance bindings on them, and the appearances only those bindings
+/// used, with one loss per configuration; their annotations and the
+/// unknown-record links to them.
 pub(super) fn retire(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -48,6 +66,7 @@ pub(super) fn retire(
     retired: &BTreeMap<String, ConfigurationId>,
     losses: &mut Vec<LossNote>,
 ) {
+    annotate_state_records(ir, annotations);
     if retired.is_empty() {
         return;
     }
@@ -142,6 +161,7 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
         AppearanceTarget::Curve(id) => Some(id.as_str()),
         AppearanceTarget::Point(id) => Some(id.as_str()),
         AppearanceTarget::Occurrence(_)
+        | AppearanceTarget::Definition(_)
         | AppearanceTarget::Tessellation(_)
         | AppearanceTarget::TriangleGroup { .. }
         | AppearanceTarget::Record { .. }

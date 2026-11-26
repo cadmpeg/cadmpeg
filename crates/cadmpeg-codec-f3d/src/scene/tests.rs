@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 use crate::test_support::scene::override_row as encoded;
 
@@ -163,7 +164,7 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         rows.extend(found);
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -195,13 +196,10 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         .any(|loss| loss.message.starts_with("2 display override")));
     assert_eq!(ir.model.occurrences, unchanged);
     for binding in [SceneBinding::Ambiguous {}, SceneBinding::Unbound {}] {
-        assert!(serde_json::to_value(binding)
-            .unwrap()
-            .get("occurrence")
-            .is_none());
+        assert!(json::to_value(binding).unwrap().get("occurrence").is_none());
     }
-    assert!(serde_json::from_value::<SceneBinding>(
-        serde_json::json!({"state":"ambiguous","occurrence":"f3d:test:occurrence#a"})
+    assert!(json::from_value::<SceneBinding>(
+        cadmpeg_core::json!({"state":"ambiguous","occurrence":"f3d:test:occurrence#a"})
     )
     .is_err());
 }
@@ -258,12 +256,12 @@ fn scene_native_validation_shares_matrix_and_path_gates() {
     }
     assert!(ScenePath::try_from(vec![]).is_ok());
     let (rows, _) = decode(&encoded(&[3, 17]));
-    let mut wire = serde_json::to_value(&rows[0]).unwrap();
-    wire["path"] = serde_json::json!([3]);
-    assert!(serde_json::from_value::<DisplayPose>(wire).is_err());
-    let mut wire = serde_json::to_value(&rows[0]).unwrap();
-    wire["transform"][0][0] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<DisplayPose>(wire).is_err());
+    let mut wire = json::to_value(&rows[0]).unwrap();
+    wire["path"] = cadmpeg_core::json!([3]);
+    assert!(json::from_value::<DisplayPose>(wire).is_err());
+    let mut wire = json::to_value(&rows[0]).unwrap();
+    wire["transform"][0][0] = cadmpeg_core::json!(-1.0);
+    assert!(json::from_value::<DisplayPose>(wire).is_err());
 }
 
 #[test]
@@ -319,7 +317,7 @@ fn scene_inserted_synthetic_root_leaves_placement_path_to_holder_and_child_uses_
     world.extend(encoded(&[3, 4533, 5, 991]));
     let (rows, _) = decode(&world);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();
@@ -455,7 +453,7 @@ fn scene_fully_tagged_paths_bind_through_complete_occurrence_chains() {
     assert_eq!(rows.len(), 3);
     assert!(rows.iter().all(|row| row.tagged_from == Some(0)));
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -513,7 +511,7 @@ fn scene_shared_definition_paths_keep_each_insertion_and_original_occurrence() {
         let (rows, mut losses) = decode(&world);
         assert_eq!(rows.len(), 2);
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(&ctx, "display_poses", &rows)
             .unwrap();
         bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -570,7 +568,7 @@ fn scene_carrierless_children_leave_their_insertion_path_to_the_insertion() {
     let (rows, mut losses) = decode(&world);
     assert_eq!(rows.len(), 3);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -633,7 +631,7 @@ fn scene_expansion_refusal_binds_on_the_unexpanded_tree() {
         };
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -706,7 +704,7 @@ fn scene_expansion_refusal_binds_children_listed_per_placement() {
     world.extend(encoded(&[3, 19, 23, 31]));
     let (rows, mut losses) = decode(&world);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -805,7 +803,7 @@ fn scene_expansion_keeps_each_placements_child_and_binds_every_row() {
         })
         .collect::<BTreeMap<_, _>>();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();

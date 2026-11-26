@@ -14,10 +14,7 @@ fn metadata_parameter_expression_refuses_nesting_limit() {
         0x43, "Contents/Keywords",
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="10"><Dimension Name="A">+ + + + + + + + + + + + 1</Dimension></Feature></Keywords>"#,
     ));
-    let mut options = DecodeOptions {
-        depth: cadmpeg_core::decode::DecodeDepth::Container,
-        ..DecodeOptions::default()
-    };
+    let mut options = DecodeOptions::default();
     options.policy.limits.max_recursion_depth = 8;
     let error = SldprtCodec
         .decode(&mut Cursor::new(&source), &options)

@@ -30,13 +30,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded
-        .ir_mut()
-        .source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
+    decoded.source_fidelity_mut().content_digest = None;
 
     let mut encoded = Vec::new();
     let path = crate::test_support::plan_fixture_write_with_native_envelope(
@@ -130,7 +124,7 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap();
     let mut written = Vec::new();
@@ -167,7 +161,7 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut Vec::new())
@@ -201,7 +195,7 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut encoded = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -286,7 +280,7 @@ fn semantic_writer_emits_face_records_deterministically() {
         let mut encoded = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&ir, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
@@ -344,7 +338,7 @@ fn encoder_drops_a_source_less_extrusion_with_an_unresolved_profile() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -673,7 +667,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -954,7 +948,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -1094,7 +1088,7 @@ fn encoder_drops_a_source_less_sketch_constraint_it_cannot_write() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -1153,7 +1147,7 @@ fn patched_retained_metadata(
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::annotations::note(
         &mut annotations,
-        id,
+        cadmpeg_ir::ids::Identity::new(id.as_str()).expect("identity grammar"),
         &cadmpeg_ir::stream_name!("SWObjects"),
         0,
         "metadata",
@@ -1311,7 +1305,7 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         crate::annotations::note(
             &mut annotations,
-            id,
+            cadmpeg_ir::ids::Identity::new(id).expect("identity grammar"),
             &cadmpeg_ir::stream_name!("SWObjects"),
             offset,
             "moPart_c",
@@ -1499,7 +1493,7 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap();
     let loss = plan
@@ -1619,7 +1613,9 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
         let output = crate::writer::write_semantic_with_records(
             &ir,
             &fidelity.annotations,
+            &fidelity.codec_digests,
             &records,
+            &[],
             &[],
             &mut written,
         )
@@ -1659,6 +1655,8 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
     let output = crate::writer::write_semantic_with_records(
         &baseline,
         &fidelity.annotations,
+        &fidelity.codec_digests,
+        &[],
         &[],
         &[],
         &mut Vec::new(),

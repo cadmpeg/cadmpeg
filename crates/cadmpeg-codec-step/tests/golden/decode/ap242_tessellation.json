@@ -346,17 +346,15 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [
         {
+          "basis": "validation",
           "id": "step:data:declared_measure#41-43",
           "label": "triangle sheet",
           "native_ref": "#43",
-          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_area",
             "value": 50.0
@@ -366,10 +364,10 @@
           }
         },
         {
+          "basis": "validation",
           "id": "step:data:declared_measure#46-48",
           "label": "triangle centroid",
           "native_ref": "#48",
-          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_centroid",
             "value": {
@@ -383,10 +381,10 @@
           }
         },
         {
+          "basis": "validation",
           "id": "step:data:declared_measure#50-52",
           "label": "open sheet volume",
           "native_ref": "#52",
-          "provenance": "validation_property",
           "quantity": {
             "kind": "volume",
             "value": 0.0
@@ -396,10 +394,10 @@
           }
         },
         {
+          "basis": "validation",
           "id": "step:data:declared_measure#57-59",
           "label": "intentional mismatch",
           "native_ref": "#59",
-          "provenance": "validation_property",
           "quantity": {
             "kind": "solid_area",
             "value": 51.0
@@ -410,13 +408,8 @@
         }
       ],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -433,31 +426,18 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "step:tessellation:mesh#7"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "step:data:body#38",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "step:tessellation:mesh#4",
           "mesh": {
@@ -508,13 +488,17 @@
               }
             ]
           },
+          "of": {
+            "body": "step:data:body#38",
+            "faces": [],
+            "kind": "body"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "step:tessellation:mesh#7",
           "mesh": {
@@ -586,6 +570,9 @@
                 }
               }
             ]
+          },
+          "of": {
+            "kind": "unresolved"
           },
           "source_object": {
             "format": "step",
@@ -690,8 +677,7 @@
           "value": {
             "code": "tessellation.item-undeclared",
             "kind": "reference_graph_not_closed",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
@@ -703,8 +689,7 @@
           "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
@@ -727,6 +712,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "e74b5cf757a728be2ac8fffe008046fa11b4550230fdeab08c772aa6bdefd88d",
     "file_digests": {},
     "retained_records": {},

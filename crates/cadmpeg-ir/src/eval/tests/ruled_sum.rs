@@ -104,7 +104,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.25,
             0.5
@@ -195,7 +195,7 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
     )));
     assert!(reached(model_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &ir,
+        &crate::index::ModelIndex::new_model_only(&ir),
         &ir.geometry.surfaces[0].geometry,
         0.25,
         f64::MAX

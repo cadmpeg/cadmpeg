@@ -47,6 +47,7 @@ mod tests {
     mod deltas_source;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::CadIr;
     use cadmpeg_registry::validate_native;
     use cadmpeg_registry::InputCatalog;
@@ -77,9 +78,8 @@ mod tests {
         )
         .expect_err("validation must admit the loaded input length");
         assert_eq!(error.exit_code(), 2);
-        let report =
-            serde_json::to_value(error.refusal().expect("typed resource refusal").report())
-                .expect("serialize resource evidence");
+        let report = json::to_value(error.refusal().expect("typed resource refusal").report())
+            .expect("serialize resource evidence");
         assert_eq!(report["stage"], "check");
         assert_eq!(report["resource"]["dimension"], "input_bytes");
         assert_eq!(report["resource"]["operation"], "admit loaded input length");
@@ -92,7 +92,7 @@ mod tests {
     fn an_unregistered_namespace_reaches_no_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("absent");
+        let _ = ir.native.namespace_mut(cadmpeg_ir::codec_id!("absent"));
         assert!(findings(&inputs, &ir).is_empty());
     }
 
@@ -101,7 +101,7 @@ mod tests {
     fn a_registered_namespace_reaches_its_own_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("fcstd");
+        let _ = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
         let findings = findings(&inputs, &ir);
         assert!(!findings.is_empty());
         assert!(

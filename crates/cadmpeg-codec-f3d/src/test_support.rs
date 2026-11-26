@@ -20,7 +20,6 @@ pub(crate) mod shell_slots;
 
 use std::io::Write;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
@@ -37,6 +36,17 @@ pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
+
+/// The report codes of one record given up under `code`: its own loss, then
+/// `record.unreadable`.
+pub(crate) fn given_up_codes(
+    code: crate::loss::F3dLossCode,
+) -> [cadmpeg_ir::report::loss::LossKind; 2] {
+    [
+        code.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    ]
+}
 
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
 pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
@@ -70,17 +80,19 @@ pub(crate) fn with_decode_policy<T>(
     f(&ctx)
 }
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
-    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
+    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// Write `ir` under a request that names no target, with `fidelity` or
+/// source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
 /// code is `code` (`namespace/code`) and whose message holds `fragment`.
 pub(crate) fn assert_written_with_loss(
@@ -92,7 +104,7 @@ pub(crate) fn assert_written_with_loss(
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec
@@ -111,23 +123,40 @@ pub(crate) fn assert_written_with_loss(
 }
 
 /// The written file's B-rep frames, and a write that charged no
-/// `export:output.empty` decodes with no blocking loss.
+/// `export:output.empty` decodes with no blocking loss. A write that charged
+/// `writer.geometry-omitted` for a design with no body decodes with the
+/// blocking losses of empty body maps.
 pub(crate) fn assert_decodes_back(
     written: &cadmpeg_ir::report::export::ExportReport,
     decoded: &cadmpeg_ir::report::decode::DecodeReport,
 ) {
-    let empty = written
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "export/output.empty");
+    let charged = |code: &str| {
+        written
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code)
+    };
+    let empty = charged("export/output.empty");
+    let body_less = charged(
+        &crate::loss::F3dLossCode::WriterGeometryOmitted
+            .kind()
+            .to_string(),
+    );
     for loss in &decoded.losses {
         assert!(
             !loss.message.contains("not a decodable"),
             "the written B-rep frames: {}",
             loss.message
         );
+        let empty_maps = body_less
+            && (loss
+                .message
+                .starts_with("No physical model BREP was selected")
+                || loss
+                    .message
+                    .starts_with("No physical B-rep topology was selected"));
         assert!(
-            empty || loss.severity < cadmpeg_ir::report::Severity::Blocking,
+            empty || empty_maps || loss.severity < cadmpeg_ir::report::Severity::Blocking,
             "the written file decodes without a blocking loss: {:#?}",
             decoded.losses
         );

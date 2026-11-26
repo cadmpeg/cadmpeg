@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -107,9 +108,11 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            );
+            ));
             continue;
         };
         let mut supported = true;
@@ -177,15 +180,23 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                )),
+            ));
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                )),
+            ));
             continue;
         }
         let Some(name) =
@@ -200,9 +211,13 @@ pub(super) fn decode(
                 )
             })
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                layer_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
+                )),
+            ));
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -228,6 +243,7 @@ pub(super) fn decode(
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
+            native_ref: None,
         });
         typed.insert(layer_id);
     }
@@ -259,10 +275,12 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                style_id,
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            );
+            ));
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -296,7 +314,11 @@ pub(super) fn decode(
         }
         if !context_style_ids.is_empty() {
             let message = context_style_message(style_id, &context_style_ids, exchange);
-            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(message));
+            losses.extend(give_up_instance(
+                exchange,
+                style_id,
+                StepLossCode::ContextDependentStyleUnresolved.note(message),
+            ));
             continue;
         }
         let color = combine_color_resolutions(style_references.iter().copied().map(|reference| {
@@ -335,17 +357,25 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    style_id,
+                    StepLossCode::ConflictingScalarColors.note(format!(
+                        "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
+                    )),
+                ));
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, ctx)? {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "STYLED_ITEM #{style_id} has no resolved surface color"
-                    )));
+                    losses.extend(give_up_instance(
+                        exchange,
+                        style_id,
+                        StepLossCode::DecodeWarning.note(format!(
+                            "STYLED_ITEM #{style_id} has no resolved surface color"
+                        )),
+                    ));
                 }
                 continue;
             }
@@ -429,6 +459,7 @@ pub(super) fn decode(
                     .into(),
                     target: target.into(),
                     appearance: appearance_id.clone(),
+                    precedence: None,
                     source_entity_id: Some(format!("#{target_step}")),
                     object_type: None,
                     visible,

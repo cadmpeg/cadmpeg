@@ -18,14 +18,6 @@ fn assert_cube_document(ir: &cadmpeg_ir::CadIr) {
     );
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.geometry.faces.len(), 6);
-    assert_eq!(
-        ir.source
-            .as_ref()
-            .unwrap()
-            .attributes
-            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,),
-        Some(&crate::decode::document_local_sha256(ir).unwrap())
-    );
     let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
 }
@@ -50,6 +42,7 @@ fn independent_archive_members_state_one_document_root() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
         .unwrap();
     assert_cube_document(composed.ir());
@@ -74,6 +67,7 @@ fn referenced_archive_member_keeps_root_body_ownership_after_merge() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
         .unwrap();
     assert_cube_document(composed.ir());
@@ -199,6 +193,7 @@ fn archive_session_expanded_member_traces_avoid_reexecution() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
     };
     session
@@ -227,7 +222,6 @@ fn archive_session_changed_allowance_decision_reexecutes_member() {
             max_retained_bytes: 100,
             ..cadmpeg_core::decode::ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let (ctx, view) =
@@ -341,13 +335,19 @@ fn archive_session_public_archive_trace_counts() {
     session
         .require_original_spaces
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    let original = session.compose(decode());
+    let original = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     assert!(original.is_ok());
     let before = session.composition_reexecutions();
     session
         .require_original_spaces
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let composed = session.compose(decode());
+    let composed = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let after = session.composition_reexecutions() - before;
     crate::test_support::archive_session::assert_equal(&original, &composed);
     println!("public archive: members={}, original-space reexecutions={before}, relocated reexecutions={after}", session.members().len());

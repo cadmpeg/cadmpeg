@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::wire;
 
@@ -42,7 +43,7 @@ fn canonical_record_json_len<T: serde::Serialize>(arena_name: &str, record: &T) 
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(record))
             .expect("canonical record");
-        serde_json::to_vec(&namespace.arenas()[arena_name][0])
+        json::to_vec(&namespace.arenas()[arena_name][0])
             .expect("stored record JSON")
             .len()
     })
@@ -249,19 +250,15 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
 fn consolidated_parameter_point_wire_rejects_contradictory_controls() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
     for (index, control) in [(0, 0x01), (1, 0x08), (2, 0x48)] {
-        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[index])
+        let mut wire = json::to_value(&native.consolidated_parameter_points[index])
             .expect("serialize parameter point");
-        wire["control"] = serde_json::json!(control);
-        assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
-        );
+        wire["control"] = cadmpeg_core::json!(control);
+        assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
     }
-    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[2])
-        .expect("serialize explicit line");
-    wire["payload"]["values"][3] = serde_json::json!(2.0);
-    assert!(
-        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
-    );
+    let mut wire =
+        json::to_value(&native.consolidated_parameter_points[2]).expect("serialize explicit line");
+    wire["payload"]["values"][3] = cadmpeg_core::json!(2.0);
+    assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
 }
 
 #[test]
@@ -291,17 +288,13 @@ fn parameter_operand_native_round_trip_preserves_all_compact_widths() {
         ("u16", 65536),
         ("u24", 0x0100_0000),
     ] {
-        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
-        wire["operand"] = serde_json::json!({"value":invalid,"encoding":encoding});
-        assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
-        );
+        let mut wire = json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+        wire["operand"] = cadmpeg_core::json!({"value":invalid,"encoding":encoding});
+        assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
     }
-    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
-    wire["byte_len"] = serde_json::json!(5);
-    assert!(
-        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
-    );
+    let mut wire = json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+    wire["byte_len"] = cadmpeg_core::json!(5);
+    assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
 }
 
 #[test]
@@ -461,8 +454,8 @@ fn consolidated_circle_borrowed_wire_preserves_json_bytes() {
     };
     let owned: crate::native::CatiaConsolidatedCircleWire = circle.clone().into();
     assert_eq!(
-        serde_json::to_vec(circle).expect("borrowed circle JSON"),
-        serde_json::to_vec(&owned).expect("owned circle JSON")
+        json::to_vec(circle).expect("borrowed circle JSON"),
+        json::to_vec(&owned).expect("owned circle JSON")
     );
 }
 
@@ -472,7 +465,7 @@ fn consolidated_circle_retained_limit_refuses_json_record() {
     let [circle] = native.consolidated_circles.as_slice() else {
         panic!("one consolidated circle")
     };
-    let json_len = serde_json::to_vec(circle).expect("circle JSON").len();
+    let json_len = json::to_vec(circle).expect("circle JSON").len();
     let arena_name = "consolidated_circles";
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
@@ -498,8 +491,8 @@ fn consolidated_parameter_point_borrowed_wire_preserves_json_bytes() {
     for point in &native.consolidated_parameter_points {
         let owned: crate::native::CatiaConsolidatedParameterPointWire = point.clone().into();
         assert_eq!(
-            serde_json::to_vec(point).expect("borrowed parameter point JSON"),
-            serde_json::to_vec(&owned).expect("owned parameter point JSON")
+            json::to_vec(point).expect("borrowed parameter point JSON"),
+            json::to_vec(&owned).expect("owned parameter point JSON")
         );
     }
     assert!(!native.consolidated_parameter_points.is_empty());
@@ -513,9 +506,7 @@ fn consolidated_parameter_point_retained_limit_refuses_json_record() {
         .first()
         .expect("parameter point");
     let arena_name = "consolidated_parameter_points";
-    let json_len = serde_json::to_vec(point)
-        .expect("parameter point JSON")
-        .len();
+    let json_len = json::to_vec(point).expect("parameter point JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -540,8 +531,8 @@ fn consolidated_plane_carrier_borrowed_wire_preserves_json_bytes() {
     for carrier in &native.consolidated_plane_carriers {
         let owned: crate::native::CatiaConsolidatedPlaneCarrierWire = carrier.clone().into();
         assert_eq!(
-            serde_json::to_vec(carrier).expect("borrowed plane carrier JSON"),
-            serde_json::to_vec(&owned).expect("owned plane carrier JSON")
+            json::to_vec(carrier).expect("borrowed plane carrier JSON"),
+            json::to_vec(&owned).expect("owned plane carrier JSON")
         );
     }
     assert!(!native.consolidated_plane_carriers.is_empty());
@@ -583,8 +574,8 @@ fn consolidated_cylinder_borrowed_wire_preserves_json_bytes() {
     for cylinder in &native.consolidated_cylinders {
         let owned: crate::native::CatiaConsolidatedCylinderWire = cylinder.clone().into();
         assert_eq!(
-            serde_json::to_vec(cylinder).expect("borrowed cylinder JSON"),
-            serde_json::to_vec(&owned).expect("owned cylinder JSON")
+            json::to_vec(cylinder).expect("borrowed cylinder JSON"),
+            json::to_vec(&owned).expect("owned cylinder JSON")
         );
     }
     assert!(!native.consolidated_cylinders.is_empty());
@@ -627,8 +618,8 @@ fn consolidated_owner_packet_borrowed_wire_preserves_json_bytes() {
             .expect("owner packet");
         let owned: crate::native::CatiaConsolidatedOwnerPacketWire = packet.clone().into();
         assert_eq!(
-            serde_json::to_vec(packet).expect("borrowed packet JSON"),
-            serde_json::to_vec(&owned).expect("owned packet JSON")
+            json::to_vec(packet).expect("borrowed packet JSON"),
+            json::to_vec(&owned).expect("owned packet JSON")
         );
     }
 }
@@ -667,13 +658,13 @@ fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
     let [circle] = native.consolidated_circles.as_slice() else {
         panic!("one consolidated circle")
     };
-    let mut wire = serde_json::to_value(circle).expect("serialize CATIA circle");
+    let mut wire = json::to_value(circle).expect("serialize CATIA circle");
     let full_circle = wire["full_circle"]
         .as_bool()
         .expect("serialized circle flag");
-    wire["full_circle"] = serde_json::json!(!full_circle);
+    wire["full_circle"] = cadmpeg_core::json!(!full_circle);
 
-    let error = serde_json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)
+    let error = json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)
         .expect_err("full_circle mismatch must fail admission");
     assert!(error.to_string().contains("full_circle"), "{error}");
 }
@@ -883,13 +874,12 @@ fn consolidated_revolution_wire_rejects_directions_outside_the_exact_tolerance()
     let [revolution] = native.consolidated_revolutions.as_slice() else {
         panic!("one consolidated revolution carrier")
     };
-    let mut wire = serde_json::to_value(revolution).expect("serialize CATIA revolution");
+    let mut wire = json::to_value(revolution).expect("serialize CATIA revolution");
     let off_axis = (1.0_f64 + 5.0e-10).sqrt();
-    wire["axis"] = serde_json::json!([0.0, 0.0, off_axis]);
-    let error = serde_json::from_value::<crate::native::CatiaConsolidatedRevolution>(wire)
-        .expect_err(
-            "an axis outside the exact squared-length tolerance is not a revolution direction",
-        );
+    wire["axis"] = cadmpeg_core::json!([0.0, 0.0, off_axis]);
+    let error = json::from_value::<crate::native::CatiaConsolidatedRevolution>(wire).expect_err(
+        "an axis outside the exact squared-length tolerance is not a revolution direction",
+    );
     assert!(error.to_string().contains("unit vector"));
 }
 
@@ -1072,9 +1062,9 @@ fn consolidated_cylinder_frames_round_trip_at_the_stored_pair_tolerance_edge() {
     };
     assert_eq!(axis.get(), [component, 0.0, 0.0]);
 
-    let wire = serde_json::to_value(cylinder).expect("serialize CATIA cylinder");
+    let wire = json::to_value(cylinder).expect("serialize CATIA cylinder");
     assert_eq!(
-        &serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(wire)
+        &json::from_value::<crate::native::CatiaConsolidatedCylinder>(wire)
             .expect("a decoded frame deserializes wherever its stored pair was admitted"),
         cylinder
     );
@@ -1399,13 +1389,12 @@ fn native_namespace_retains_source_closed_owner_chart() {
         carrier_surface.encoding(),
         crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
     );
-    let wire = serde_json::to_value(chart).expect("serialize owner chart");
-    let controls: [u8; 6] =
-        serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>>(
-            wire["bridge"]["controls"].clone(),
-        )
-        .expect("six bridge controls")
-        .into_inner();
+    let wire = json::to_value(chart).expect("serialize owner chart");
+    let controls: [u8; 6] = json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>>(
+        wire["bridge"]["controls"].clone(),
+    )
+    .expect("six bridge controls")
+    .into_inner();
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(construction_radius.get(), 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.frame.pos);
@@ -1583,11 +1572,9 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         native
     );
 
-    let mut invalid = serde_json::to_value(packet).expect("owner packet wire");
-    invalid["payload"]["tail"] = serde_json::json!("");
-    assert!(
-        serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err()
-    );
+    let mut invalid = json::to_value(packet).expect("owner packet wire");
+    invalid["payload"]["tail"] = cadmpeg_core::json!("");
+    assert!(json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err());
 }
 
 #[test]
@@ -1698,10 +1685,10 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .expect("store invalid CATIA edge run for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
-    let mut invalid = serde_json::to_value(crate::native::CatiaNative::decode(&bytes))
+    let mut invalid = json::to_value(crate::native::CatiaNative::decode(&bytes))
         .expect("serialize CATIA edge definition");
-    invalid["consolidated_edge_nodes"][0]["definition"]["class"] = serde_json::json!(0x26);
-    assert!(serde_json::from_value::<crate::native::CatiaNative>(invalid).is_err());
+    invalid["consolidated_edge_nodes"][0]["definition"]["class"] = cadmpeg_core::json!(0x26);
+    assert!(json::from_value::<crate::native::CatiaNative>(invalid).is_err());
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_edge_nodes[0].uses = None;
@@ -1869,25 +1856,28 @@ mod vertex_identity;
 fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() {
     let native = crate::native::CatiaNative::decode(&b2_cone_stream());
     let cone = &native.consolidated_cones[0];
-    let valid = serde_json::to_value(cone).expect("cone wire");
+    let valid = json::to_value(cone).expect("cone wire");
     assert_eq!(
-        serde_json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone())
+        json::from_value::<crate::native::CatiaConsolidatedCone>(valid.clone())
             .expect("admitted cone"),
         *cone
     );
     for (field, value) in [
-        ("direction_y", serde_json::json!([1.0, 0.0, 0.0])),
-        ("axis", serde_json::json!([0.0, 0.0, -1.0])),
-        ("half_angle", serde_json::json!(0.0)),
-        ("half_angle", serde_json::json!(std::f64::consts::FRAC_PI_2)),
-        ("angular_range", serde_json::json!([-10.0, -9.0])),
-        ("angular_domain", serde_json::json!([0.0, 1.0])),
-        ("slant_range", serde_json::json!([-1.0, 1.0])),
+        ("direction_y", cadmpeg_core::json!([1.0, 0.0, 0.0])),
+        ("axis", cadmpeg_core::json!([0.0, 0.0, -1.0])),
+        ("half_angle", cadmpeg_core::json!(0.0)),
+        (
+            "half_angle",
+            cadmpeg_core::json!(std::f64::consts::FRAC_PI_2),
+        ),
+        ("angular_range", cadmpeg_core::json!([-10.0, -9.0])),
+        ("angular_domain", cadmpeg_core::json!([0.0, 1.0])),
+        ("slant_range", cadmpeg_core::json!([-1.0, 1.0])),
     ] {
         let mut invalid = valid.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(),
+            json::from_value::<crate::native::CatiaConsolidatedCone>(invalid).is_err(),
             "{field}"
         );
     }
@@ -1898,19 +1888,16 @@ mod admission;
 #[test]
 fn plane_wire_rejects_selector_direction_and_range_contradictions() {
     let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
-    let original =
-        serde_json::to_value(&native.consolidated_plane_carriers[0]).expect("plane wire");
+    let original = json::to_value(&native.consolidated_plane_carriers[0]).expect("plane wire");
     for (field, value) in [
-        ("layout", serde_json::json!(0xdc)),
-        ("direction", serde_json::json!([0.0, 1.0, 0.0])),
-        ("u_range", serde_json::json!([5.0, 0.0])),
-        ("v_range", serde_json::json!([3.0, -2.0])),
+        ("layout", cadmpeg_core::json!(0xdc)),
+        ("direction", cadmpeg_core::json!([0.0, 1.0, 0.0])),
+        ("u_range", cadmpeg_core::json!([5.0, 0.0])),
+        ("v_range", cadmpeg_core::json!([3.0, -2.0])),
     ] {
         let mut wire = original.clone();
         wire["payload"][field] = value;
-        assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(wire).is_err()
-        );
+        assert!(json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(wire).is_err());
     }
 }
 

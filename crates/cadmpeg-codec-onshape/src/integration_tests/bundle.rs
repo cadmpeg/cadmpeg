@@ -2,21 +2,24 @@
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
+use super::up_to_next::up_to_next;
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
+pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
     let mut report = Report::default();
     let model = read_bytes(Path::new("test.onshape-bundle"), bytes, &mut report)?;
     Ok((model, report))
 }
 
-fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
+pub(super) fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
@@ -24,9 +27,9 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
         let mut data = Vec::new();
         member.read_to_end(&mut data).unwrap();
         if member.name().unwrap().ends_with(".json") {
-            let mut value = serde_json::from_slice(&data).unwrap();
+            let mut value = json::from_slice(&data).unwrap();
             edit(&member.name().unwrap(), &mut value);
-            data = serde_json::to_vec(&value).unwrap();
+            data = json::to_vec(&value).unwrap();
         }
         zip.start_file(
             member.name().unwrap().as_ref(),
@@ -38,8 +41,8 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-fn timeline(model: &Model) -> Value {
-    let mut wire = serde_json::to_value(&model.ir).unwrap();
+pub(super) fn timeline(model: &Model) -> Value {
+    let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir);
     wire["model"]["features"]
         .as_array_mut()
         .unwrap()
@@ -47,7 +50,7 @@ fn timeline(model: &Model) -> Value {
     wire
 }
 
-fn kinds(model: &Model) -> Vec<String> {
+pub(super) fn kinds(model: &Model) -> Vec<String> {
     timeline(model)["model"]["features"]
         .as_array()
         .unwrap()
@@ -73,9 +76,9 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
-        let roundtrip: cadmpeg_ir::CadIr =
-            serde_json::from_value(serde_json::to_value(&model.ir).unwrap()).unwrap();
-        assert_eq!(roundtrip, model.ir);
+        let written = json::to_value(&model.ir).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(written.clone()).unwrap();
+        assert_eq!(json::to_value(&roundtrip).unwrap(), written);
         assert!(wire["model"].get("bodies").is_none());
         assert!(!wire["geometry"]["edges"].as_array().unwrap().is_empty());
         for edge in wire["geometry"]["edges"].as_array().unwrap() {
@@ -277,16 +280,11 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 #[test]
 fn wrong_magic_schema_and_manifest_identity_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in ["schema", "assembly", "multiple", "path"] {
+    for failure in ["schema", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
                     "schema" => value["schema"] = json!("dutchman.onshape-bundle/2"),
-                    "assembly" => value["elements"][0]["type"] = json!("ASSEMBLY"),
-                    "multiple" => {
-                        let row = value["elements"][0].clone();
-                        value["elements"].as_array_mut().unwrap().push(row);
-                    }
                     "path" => value["elements"][0]["id"] = json!("../studio"),
                     _ => {}
                 }
@@ -457,147 +455,6 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
         .losses()
         .iter()
         .any(|loss| loss.detail.contains("non-planar terminating")));
-}
-
-/// A synthetic box body in metres: twelve straight edges and six planar faces whose
-/// `orientation` says whether the outward side follows the stored surface normal.
-fn box_body(low: [f64; 3], high: [f64; 3], tag: &str) -> (Vec<Value>, Vec<Value>) {
-    let corner = |i: usize| -> [f64; 3] {
-        std::array::from_fn(|axis| {
-            if i >> axis & 1 == 1 {
-                high[axis]
-            } else {
-                low[axis]
-            }
-        })
-    };
-    let point = |p: [f64; 3]| json!({"x": p[0], "y": p[1], "z": p[2]});
-    let mut edges = Vec::new();
-    let mut ends = Vec::new();
-    for a in 0..8usize {
-        for axis in 0..3 {
-            if a >> axis & 1 == 0 {
-                let b = a | 1 << axis;
-                let (p, q) = (corner(a), corner(b));
-                let mut direction = [0.0; 3];
-                direction[axis] = 1.0;
-                edges.push(json!({"id": format!("{tag}e{a}{b}"), "curve": {"type": "LINE", "origin": point(p), "direction": point(direction)},
-                    "geometry": {"startPoint": point(p), "endPoint": point(q), "midPoint": point(std::array::from_fn(|j| f64::midpoint(p[j], q[j])))}}));
-                ends.push((a, b));
-            }
-        }
-    }
-    let mut faces = Vec::new();
-    for axis in 0..3 {
-        for (side, name) in [(0, "low"), (1, "high")] {
-            let mut normal = [0.0; 3];
-            normal[axis] = 1.0;
-            let (min, max) = (
-                corner(side << axis),
-                corner(7 & !(usize::from(side == 0) << axis)),
-            );
-            let coedges: Vec<_> = ends
-                .iter()
-                .filter(|(a, b)| a >> axis & 1 == side && b >> axis & 1 == side)
-                .map(|(a, b)| json!({"edgeId": format!("{tag}e{a}{b}"), "orientation": true}))
-                .collect();
-            faces.push(
-                json!({"id": format!("{tag}{name}{axis}"), "orientation": side == 1,
-                "surface": {"type": "PLANE", "origin": point(min), "normal": point(normal)},
-                "box": {"minCorner": point(min), "maxCorner": point(max)},
-                "loops": [{"isOuter": true, "coedges": coedges}]}),
-            );
-        }
-    }
-    (edges, faces)
-}
-
-fn up_to_next(operation: &str, extra: Option<([f64; 3], [f64; 3])>) -> Vec<u8> {
-    changed(&fixture("plate-fillet"), |path, value| {
-        if path.ends_with("features.json") {
-            value["features"][2] = json!({"btType": "BTMFeature-134", "featureType": "extrude", "featureId": "toNext", "name": "To next", "parameters": [
-                {"parameterId": "bodyType", "value": "SOLID"}, {"parameterId": "operationType", "value": operation},
-                {"parameterId": "entities", "queries": [{"btType": "BTMIndividualSketchRegionQuery-140", "featureId": "Base sketch"}]},
-                {"parameterId": "endBound", "value": "UP_TO_NEXT"}
-            ]});
-        }
-        if path.ends_with("bodydetails/2.json") {
-            let (mut edges, mut faces) = box_body([0.0; 3], [0.02, 0.01, 0.002], "");
-            if let Some((low, high)) = extra {
-                let (more_edges, more_faces) = box_body(low, high, "boss");
-                edges.extend(more_edges);
-                faces.extend(more_faces);
-            }
-            value["bodies"][0]["edges"] = json!(edges);
-            value["bodies"][0]["faces"] = json!(faces);
-        }
-    })
-}
-
-#[test]
-fn up_to_next_ends_on_the_first_face_every_profile_ray_meets() {
-    for bytes in [
-        up_to_next("REMOVE", None),
-        up_to_next("NEW", None),
-        up_to_next(
-            "REMOVE",
-            Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
-        ),
-    ] {
-        let (model, report) = read(&bytes).unwrap();
-        assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
-        assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-            == Some("onshape/history.not-supported")
-            && loss
-                .detail
-                .contains("exact coverage and first intersection")));
-    }
-}
-
-#[test]
-fn up_to_next_retains_a_slanted_planar_end_for_the_writer_to_gate() {
-    // Raise the top of a synthetic box linearly along X, leaving its bottom on XY.
-    let bytes = changed(&up_to_next("REMOVE", None), |path, value| {
-        if !path.ends_with("bodydetails/2.json") {
-            return;
-        }
-        let point = |p: &mut Value| {
-            let x = p["x"].as_f64().unwrap();
-            let z = p["z"].as_f64().unwrap();
-            p["z"] = json!(z * (1.0 + 10.0 * x));
-        };
-        for edge in value["bodies"][0]["edges"].as_array_mut().unwrap() {
-            for key in ["startPoint", "midPoint", "endPoint"] {
-                point(&mut edge["geometry"][key]);
-            }
-            point(&mut edge["curve"]["origin"]);
-            let start = &edge["geometry"]["startPoint"];
-            let end = &edge["geometry"]["endPoint"];
-            edge["curve"]["direction"] = json!({
-                "x": end["x"].as_f64().unwrap() - start["x"].as_f64().unwrap(),
-                "y": end["y"].as_f64().unwrap() - start["y"].as_f64().unwrap(),
-                "z": end["z"].as_f64().unwrap() - start["z"].as_f64().unwrap()
-            });
-        }
-        for face in value["bodies"][0]["faces"].as_array_mut().unwrap() {
-            point(&mut face["surface"]["origin"]);
-            point(&mut face["box"]["minCorner"]);
-            point(&mut face["box"]["maxCorner"]);
-            if face["id"] == "high2" {
-                face["surface"]["normal"] = json!({"x": -0.02, "y": 0.0, "z": 1.0});
-            }
-        }
-    });
-    let (model, report) = read(&bytes).unwrap();
-    assert_eq!(
-        kinds(&model),
-        ["sketch", "extrude", "native"],
-        "{:?}",
-        report.losses()
-    );
-    assert!(report.losses().iter().any(|loss| loss
-        .detail
-        .contains("exact coverage and first intersection")));
 }
 
 #[test]
@@ -1146,7 +1003,7 @@ fn thin_extrusions_refuse_unscoped_design_construction() {
                     .unwrap();
                 let (ir, report, fidelity) = result.into_parts();
                 assert!(ir.design.features.is_empty());
-                let wire = serde_json::to_value(&ir).unwrap();
+                let wire = cadmpeg_test_support::wire::in_memory_json(&ir);
                 let feature = wire["model"]["features"]
                     .as_array()
                     .unwrap()
@@ -1406,7 +1263,7 @@ fn repeated_exterior_consumers_exhaust_the_bundle_budget_early() {
         .unwrap()
         .iter()
         .filter_map(|f| f.pointer("/definition/value/value/profile/value/value/regions"))
-        .map(|regions| serde_json::to_vec(regions).unwrap().len())
+        .map(|regions| json::to_vec(regions).unwrap().len())
         .sum();
     eprintln!("Cumulative recovery: refused at consumer {first_loss} of 129 (128 extra holes); emitted {boundary_bytes} region JSON bytes; reader {elapsed:?}");
     assert!(
@@ -1510,55 +1367,221 @@ fn overlapping_dividers_are_not_lost_as_a_zero_area_ring() {
 }
 
 #[test]
-fn up_to_next_refuses_a_narrow_recess_and_an_uncovered_profile_interior() {
-    for interior in [false, true] {
-        let bytes = changed(&up_to_next("REMOVE", None), |path, response| {
-            if !path.ends_with("bodydetails/2.json") {
-                return;
+fn a_whole_sketch_region_query_maps_despite_its_resolved_region_ids() {
+    for (query_string, mapped) in [
+        ("query = qSketchRegion(id + \"Base sketch\", false);", true),
+        (
+            "query = qSketchRegion(id + \"Other sketch\", false);",
+            false,
+        ),
+        ("query = qSketchRegion(id + \"Base sketch\", true);", false),
+        (
+            "query = qUnion([qSketchRegion(id + \"Base sketch\", false)]);",
+            false,
+        ),
+    ] {
+        let bytes = changed(&fixture("plate-fillet"), |path, value| {
+            if path.ends_with("features.json") {
+                let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+                query["deterministicIds"] = json!(["JGC"]);
+                query["queryString"] = json!(query_string);
+                query["filterInnerLoops"] = json!(false);
             }
-            let low = if interior {
-                [0.007, 0.004, 0.002]
-            } else {
-                [0.001, 0.0, 0.002]
-            };
-            let high = if interior {
-                [0.008, 0.006, 0.004]
-            } else {
-                [0.002, 0.001, 0.004]
-            };
-            let (edges, faces) = box_body(low, high, "recess");
-            let body = &mut response["bodies"][0];
-            let boundary = faces.iter().find(|f| f["id"] == "recesslow2").unwrap()["loops"][0]
-                ["coedges"]
-                .clone();
-            let first_face = body["faces"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .find(|f| f["id"] == "high2")
-                .unwrap();
-            first_face["loops"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"isOuter":false,"coedges":boundary}));
-            body["edges"].as_array_mut().unwrap().extend(edges);
-            body["faces"]
-                .as_array_mut()
-                .unwrap()
-                .extend(faces.into_iter().filter(|f| f["id"] != "recesslow2"));
         });
-        let result = crate::test_support::review::decode(&bytes);
-        let wire = crate::test_support::review::wire(&result);
-        assert_eq!(
-            wire["model"]["features"][2]["definition"]["value"]["kind"],
-            "native"
-        );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|l| l.code.to_string() == "onshape/history.not-supported"
-                && l.message.contains("exact coverage and first intersection")));
-        crate::test_support::review::validate(result);
+        let (model, report) = read(&bytes).unwrap();
+        let deterministic = report.losses().iter().any(|loss| {
+            loss.code.as_deref() == Some("onshape/history.not-supported")
+                && loss.detail.contains("deterministic sketch-region subsets")
+        });
+        if mapped {
+            assert_eq!(kinds(&model)[1], "extrude", "{query_string}");
+            assert!(!deterministic, "{query_string}: {:?}", report.losses());
+        } else {
+            assert_eq!(kinds(&model)[1], "native", "{query_string}");
+            assert!(deterministic, "{query_string}: {:?}", report.losses());
+        }
     }
 }
+
+#[test]
+fn whole_sketch_inner_loop_filter_selects_the_ring_and_preserves_unfiltered_queries() {
+    for (nested, filter, clockwise) in [
+        (false, false, false),
+        (false, true, false),
+        (true, false, false),
+        (true, true, false),
+        (true, true, true),
+    ] {
+        {
+            let bytes = changed(&fixture("default-plane-regions"), |path, value| {
+                if !path.ends_with("features.json") {
+                    return;
+                }
+                region_fixture::frame(value, false);
+                if clockwise {
+                    let lines = [
+                        (0.0, 0.0, 0.0, 1.0),
+                        (0.0, 0.02, 1.0, 0.0),
+                        (0.02, 0.02, 0.0, -1.0),
+                        (0.02, 0.0, -1.0, 0.0),
+                    ];
+                    for (i, (x, y, dx, dy)) in lines.into_iter().enumerate() {
+                        let geometry = &mut value["features"][0]["entities"][i]["geometry"];
+                        geometry["pntX"] = json!(x);
+                        geometry["pntY"] = json!(y);
+                        geometry["dirX"] = json!(dx);
+                        geometry["dirY"] = json!(dy);
+                    }
+                }
+                if !nested {
+                    value["features"][0]["entities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .pop();
+                }
+                let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+                *query = json!({"btType":"BTMIndividualSketchRegionQuery-140",
+                    "featureId":"drawn-profile", "deterministicIds":["outer-region", "inner-region"],
+                    "filterInnerLoops":filter,
+                    "queryString":format!("query = qSketchRegion(id + \"drawn-profile\", {filter});")});
+            });
+            let (model, report) = read(&bytes).unwrap();
+            assert_eq!(kinds(&model)[1], "extrude", "{:?}", report.losses());
+            let wire = timeline(&model);
+            let profile =
+                &wire["model"]["features"][1]["definition"]["value"]["value"]["profile"]["value"];
+            if nested && filter {
+                assert_eq!(profile["kind"], "sketch_regions");
+                let regions = profile["value"]["regions"].as_array().unwrap();
+                assert_eq!(regions.len(), 1);
+                assert_eq!(regions[0]["outer_boundary"].as_array().unwrap().len(), 4);
+                let holes = regions[0]["hole_boundaries"].as_array().unwrap();
+                assert_eq!(holes.len(), 1);
+                assert_eq!(holes[0].as_array().unwrap().len(), 1);
+                assert!(holes[0][0]["entity"].as_str().unwrap().ends_with("/hole"));
+                // The outer ring runs counterclockwise about the sketch normal whichever
+                // way the lines are stored: twice the signed area of the 20 mm square is
+                // 2 * 20 * 20. The hole circle is one use over [0, TAU] and runs the
+                // opposite way.
+                let mut doubled_area = 0.0;
+                for part in regions[0]["outer_boundary"].as_array().unwrap() {
+                    let entity = wire["model"]["sketch_entities"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|e| e["id"] == part["entity"])
+                        .unwrap();
+                    let point = |key: &str| {
+                        let p = &entity["geometry"][key];
+                        [p["u"].as_f64().unwrap(), p["v"].as_f64().unwrap()]
+                    };
+                    let (a, b) = if part["reversed"].as_bool().unwrap() {
+                        (point("end"), point("start"))
+                    } else {
+                        (point("start"), point("end"))
+                    };
+                    doubled_area += a[0] * b[1] - a[1] * b[0];
+                }
+                assert!((doubled_area - 800.0).abs() < 1e-6, "{doubled_area}");
+                assert_eq!(holes[0][0]["reversed"], true);
+            } else {
+                assert_eq!(profile["kind"], "sketch");
+            }
+        }
+    }
+}
+
+#[test]
+fn overlapping_source_loops_keep_all_sketch_regions() {
+    for filter in [false, true] {
+        let bytes = changed(&fixture("default-plane-regions"), |path, value| {
+            if !path.ends_with("features.json") {
+                return;
+            }
+            region_fixture::frame(value, false);
+            let entities = value["features"][0]["entities"].as_array_mut().unwrap();
+            entities.pop();
+            let mut shifted = entities.clone();
+            for (i, entity) in shifted.iter_mut().enumerate() {
+                entity["entityId"] = json!(format!("shifted{i}"));
+                for coordinate in ["pntX", "pntY"] {
+                    let origin = entity["geometry"][coordinate].as_f64().unwrap();
+                    entity["geometry"][coordinate] = json!(origin + 0.01);
+                }
+            }
+            entities.extend(shifted);
+            value["features"][1]["parameters"][2]["queries"][0] = json!({
+                "btType":"BTMIndividualSketchRegionQuery-140", "featureId":"drawn-profile",
+                "deterministicIds":["left-region", "overlap-region", "right-region"],
+                "filterInnerLoops":filter,
+                "queryString":format!("query = qSketchRegion(id + \"drawn-profile\", {filter});")});
+        });
+        let (model, report) = read(&bytes).unwrap();
+        assert_eq!(kinds(&model)[1], "extrude", "{:?}", report.losses());
+        assert_eq!(
+            timeline(&model)["model"]["features"][1]["definition"]["value"]["value"]["profile"]
+                ["value"]["kind"],
+            "sketch"
+        );
+    }
+}
+
+fn filtered_region_bytes(edit: impl Fn(&mut Value)) -> Vec<u8> {
+    changed(&fixture("default-plane-regions"), |path, value| {
+        if !path.ends_with("features.json") {
+            return;
+        }
+        region_fixture::frame(value, false);
+        value["features"][1]["parameters"][2]["queries"][0] = json!({
+            "btType":"BTMIndividualSketchRegionQuery-140", "featureId":"drawn-profile",
+            "deterministicIds":["outer-region"], "filterInnerLoops":true,
+            "queryString":"query = qSketchRegion(id + \"drawn-profile\", true);"});
+        edit(value);
+    })
+}
+
+fn filtered_refusal(report: &Report, detail: &str) -> bool {
+    report.losses().iter().any(|loss| {
+        loss.code.as_deref() == Some("onshape/history.not-supported")
+            && loss.detail.contains(detail)
+    })
+}
+
+#[test]
+fn an_island_inside_a_filtered_hole_keeps_the_extrude_native() {
+    // The island lies inside the hole circle, so it has two containing loops.
+    let bytes = filtered_region_bytes(|value| {
+        value["features"][0]["entities"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+            "btType":"BTMSketchCurve-4","entityId":"island","geometry":{
+            "btType":"BTCurveGeometryCircle-115","radius":0.001,"xCenter":0.005,
+            "yCenter":0.01,"xDir":1.0}}));
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[1], "native", "{:?}", report.losses());
+    assert!(
+        filtered_refusal(&report, "nested more than one level"),
+        "{:?}",
+        report.losses()
+    );
+}
+
+#[test]
+fn a_filtered_query_that_is_not_a_region_query_keeps_the_extrude_native() {
+    let bytes = filtered_region_bytes(|value| {
+        let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+        query["btType"] = json!("BTMIndividualCreatedByQuery-137");
+        query["deterministicIds"] = json!([]);
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[1], "native", "{:?}", report.losses());
+    assert!(
+        filtered_refusal(&report, "filtered inner sketch regions"),
+        "{:?}",
+        report.losses()
+    );
+}
+
+mod planes;

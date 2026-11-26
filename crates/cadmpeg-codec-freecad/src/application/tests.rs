@@ -52,11 +52,11 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .collect::<std::collections::HashMap<_, _>>();
     assert_eq!(
         by_domain["Mesh"]["dependencies"],
-        serde_json::json!(["fcstd:native:object#Points"])
+        cadmpeg_core::json!(["fcstd:native:object#Points"])
     );
     assert_eq!(
         by_domain["Fem"]["side_entries"],
-        serde_json::json!(["analysis.dat"])
+        cadmpeg_core::json!(["analysis.dat"])
     );
     assert_eq!(by_domain["Path"]["inert_payload"], true);
     assert_eq!(by_domain["Mesh"]["inert_payload"], false);
@@ -104,12 +104,12 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .find(|record| record["domain"] == "Fem")
         .unwrap()["property_records"][0]["payloads"][0];
     let replacement = b"different internally consistent bytes";
-    payload["byte_len"] = serde_json::json!(replacement.len());
-    payload["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(replacement));
+    payload["byte_len"] = cadmpeg_core::json!(replacement.len());
+    payload["sha256"] = cadmpeg_core::json!(cadmpeg_ir::hash::sha256_hex(replacement));
     let mut edited = result.ir().clone();
     edited
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "applications",

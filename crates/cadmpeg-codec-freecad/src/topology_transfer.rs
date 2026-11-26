@@ -31,7 +31,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -469,10 +469,6 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 self.source_object.as_str().to_owned(),
             )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         })
     }
@@ -1146,10 +1142,13 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
-                .with_body(self.current_body.as_ref().map(|body| {
-                    BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)
-                }).transpose()?)
-                .with_faces(faces)
+                .with_of(match self.current_body.as_ref() {
+                    Some(body) => Meshed::Body {
+                        body: BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)?,
+                        faces,
+                    },
+                    None => Meshed::Unresolved,
+                })
                 .with_admitted_chordal_deflection(Some(
                     triangulation
                         .deflection
@@ -1164,6 +1163,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             );
         }
         let mut loops = Vec::new();
+        let mut unbounding_wires = Vec::new();
         for (loop_index, wire_use) in shape
             .children
             .iter()
@@ -1200,6 +1200,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 edge_uses.reverse();
             }
             if edge_uses.is_empty() {
+                unbounding_wires.push(wire_use.shape.to_string());
                 continue;
             }
             let loop_key = format!("{}:{}", face_key, loop_index + 1);
@@ -1279,12 +1280,35 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             }
             loops.push(loop_id);
         }
+        let support_geometry = if loops.is_empty() {
+            self.positions
+                .surface(ir, &surface_id)
+                .map(|surface| &surface.geometry)
+        } else {
+            None
+        };
+        let (face_loops, unstated_on) =
+            cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, support_geometry);
+        if let Some(kind) = unstated_on {
+            let wires = if unbounding_wires.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " (wire shape {} holds no boundary edge use)",
+                    unbounding_wires.join(", ")
+                )
+            };
+            self.losses.push(FreecadLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "payload {} face shape {} states no boundary wire{wires} on a {kind}, which no face covers whole: face {face_id} is stated partial",
+                self.payload.id, face_use.shape,
+            )));
+        }
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
             sense: sense(face_reversed ^ normal_reversed),
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops: face_loops,
             name: None,
             color: None,
             tolerance: PositiveLength::from_assigned_real(tolerance),
@@ -2914,6 +2938,9 @@ pub(crate) mod tests;
 
 #[cfg(test)]
 mod admission_tests;
+
+#[cfg(test)]
+mod face_connectivity_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;
