@@ -8,8 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::{
-    bridge, coedge, edge_use, loop_head, owned_triangle_with_resolution, plane_carrier, vertex_use,
-    world_point,
+    entity51, fixture_vertex_owner_class, owned_triangle_with_resolution, untyped_triangle,
 };
 use crate::SldprtCodec;
 
@@ -45,21 +44,17 @@ fn bodies_with_two_stored_resolutions_state_the_larger() {
 
 #[test]
 fn faces_without_a_body_node_state_the_modeller_default() {
-    let mut body = plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
-    body.extend(bridge(10, 20, 100));
-    body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
-    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
-    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
-    for edge in [40, 41, 42] {
-        body.extend(edge_use(edge, 0));
-    }
-    body.extend(vertex_use(50, 60));
-    body.extend(vertex_use(51, 61));
-    body.extend(vertex_use(52, 62));
-    body.extend(world_point(60, [0.0, 0.0, 0.0]));
-    body.extend(world_point(61, [1.0, 0.0, 0.0]));
-    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    let mut body = untyped_triangle(0.0);
+    let typed_start = body
+        .windows(3)
+        .position(|window| window == [0x00, 0x0c, 0xff])
+        .expect("typed ownership suffix");
+    body.truncate(typed_start);
+    body.extend(fixture_vertex_owner_class(900));
+    body.extend(entity51(2, 500, 0x0017, &[510, 700, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 510, 0x001b, &[520, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 520, 0x001f, &[530, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 530, 0x0021, &[10, 0, 0, 0, 0, 0]));
     let (bodies, linear, angular) = tolerances(&body);
     assert_eq!(bodies, 1);
     assert!(
