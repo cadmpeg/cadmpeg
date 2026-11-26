@@ -125,8 +125,8 @@ chokepoints are:
 
 Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
-storage are not retained bytes; the expanded-bytes charge of an XML parse,
-per-input bounds, entity charges, and local work caps bound them. A new
+storage are not retained bytes; the expanded-bytes charge of an XML or JSON
+parse, per-input bounds, entity charges, and local work caps bound them. A new
 copy of bytes that the decoded document keeps must call `retain_bytes`
 before the copy. A native record's text may be
 counted twice toward retained bytes, once by the codec before attach and
@@ -159,9 +159,10 @@ declaration included, and each distinct namespace prefix is an entity
 charged to the session before roxmltree parses.
 
 A JSON tree is estimated from its delimiter counts as a `serde_json::Value`
-tree, also for typed parses, and bounded by the per-expansion allowance. A
-tree that could exceed the allowance is `NotImplemented` and does not set
-the fuse.
+tree, also for typed parses. The session charges that estimate to the
+decompressed-bytes dimension before the parse, against the same ceiling as
+an XML parse, and a refusal is the same `ResourceLimit` with the estimate
+as `additional`.
 
 ## Retained-byte availability
 

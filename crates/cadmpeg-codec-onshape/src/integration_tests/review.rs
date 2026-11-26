@@ -23,35 +23,21 @@ fn kind(wire: &Value, ordinal: usize) -> &Value {
 #[test]
 fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
     let original = fixture("plate-fillet");
-    for resource in ["depth", "storage", "entities"] {
+    for resource in ["depth", "entities"] {
         let bytes = edit(&original, |path, value| {
-            if path.ends_with("features.json") {
-                if resource == "depth" {
-                    value["extra"] = json!([[[[[[[[0]]]]]]]]);
-                } else if resource == "storage" {
-                    value["extra"] = json!(vec![0; 4096]);
-                }
+            if path.ends_with("features.json") && resource == "depth" {
+                value["extra"] = json!([[[[[[[[0]]]]]]]]);
             }
         });
         let mut policy = DecodePolicy::default();
-        match resource {
-            "depth" => policy.limits.max_recursion_depth = 7,
-            "storage" => policy.limits.max_decompressed_bytes_per_expand = 32_768,
-            "entities" => policy.limits.max_entities = 3,
-            _ => unreachable!(),
+        if resource == "depth" {
+            policy.limits.max_recursion_depth = 7;
+        } else {
+            policy.limits.max_entities = 3;
         }
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let backend = crate::OnshapeCodec::new(|ctx, root| {
-            Ok(cadmpeg_ir::codec::Decoded {
-                ir: cadmpeg_ir::CadIr::empty(),
-                body: cadmpeg_ir::codec::DecodeBody::new(
-                    cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
-                ),
-                source_fidelity: cadmpeg_ir::SourceFidelity::for_root(root),
-            })
-        });
-        let result = backend.decode_impl(&ctx, root);
+        let result = admission_only(&ctx, root);
         if resource == "entities" {
             let error = result.unwrap_err();
             let CodecError::ResourceLimit(limit) = error else {
@@ -72,9 +58,6 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
                 .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note))
                 .collect();
             assert_eq!(notes.len(), 1);
-            if resource == "storage" {
-                assert!(notes[0].message.contains("JSON"));
-            }
             assert!(decoded
                 .body
                 .losses
@@ -92,6 +75,73 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
             assert!(ctx.resource_refusal().is_none());
         }
     }
+}
+
+/// The Onshape admission of `root` with a backend that builds an empty
+/// document.
+fn admission_only(
+    ctx: &DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
+    let backend = crate::OnshapeCodec::new(|ctx, root| {
+        Ok(cadmpeg_ir::codec::Decoded {
+            ir: cadmpeg_ir::CadIr::empty(),
+            body: cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
+            ),
+            source_fidelity: cadmpeg_ir::SourceFidelity::for_root(root),
+        })
+    });
+    backend.decode_impl(ctx, root)
+}
+
+/// A stored JSON member's tree is charged to the session's expanded bytes
+/// (decode-resource-caps). The `features.json` member with 4096 added
+/// numbers needs at least 64 bytes for each of their values. A ceiling one
+/// below the session's count at that member refuses the decode in the
+/// session, and the default ceiling admits it.
+#[test]
+fn a_json_member_past_the_expanded_bytes_ceiling_refuses_the_session() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension};
+
+    let bytes = edit(&fixture("plate-fillet"), |path, value| {
+        if path.ends_with("features.json") {
+            value["extra"] = json!(vec![0; 4096]);
+        }
+    });
+    let refusal = |total: u64| {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_decompressed_bytes_total = total;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        match admission_only(&ctx, root) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                Some(limit)
+            }
+            Err(error) => panic!("expected a resource limit: {error}"),
+            Ok(_) => None,
+        }
+    };
+    let entries = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap().len();
+    let found = (0..entries)
+        .filter_map(|skip| {
+            at_charge(
+                ResourceDimension::DecompressedBytes,
+                "Onshape JSON member",
+                skip,
+                || refusal(u64::MAX),
+            )
+        })
+        .find(|limit| limit.additional > 4096 * 64)
+        .expect("the wide member is charged");
+    assert_eq!(found.scope, LimitScope::Session);
+    assert_eq!(refusal(found.used + found.additional - 1), Some(found));
+    assert_eq!(
+        refusal(DecodePolicy::default().limits.max_decompressed_bytes_total),
+        None
+    );
 }
 
 #[test]
@@ -638,8 +688,10 @@ fn manifest_detection_preserves_the_context_tree_refusal() {
             response["extra"] = json!(vec![0; 4096]);
         }
     });
+    // The edited manifest holds 4096 added numbers, a tree of more than
+    // 4096 * 64 bytes.
     let mut policy = DecodePolicy::default();
-    policy.limits.max_decompressed_bytes_per_expand = 32_768;
+    policy.limits.max_decompressed_bytes_total = 32_768;
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let whole = cadmpeg_core::decode::WholeInput::of_source(root, &mut Cursor::new(&bytes))
@@ -647,7 +699,9 @@ fn manifest_detection_preserves_the_context_tree_refusal() {
         .unwrap();
     assert!(matches!(
         codec().detect_whole_impl(&ctx, whole),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+                && limit.operation == "Onshape manifest"
     ));
 }
 

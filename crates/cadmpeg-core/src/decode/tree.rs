@@ -5,10 +5,9 @@
 //! [`DecodeContext::enter_nested`] before it parses, so a deep document
 //! refuses with the session's recursion-depth dimension before the parser or
 //! other code walks it recursively. A scan of the text gives the depth and
-//! bounds the tree's storage. An XML parse charges that bound and its name
-//! comparisons to the session as expanded bytes. A JSON tree that could need
-//! more than the per-expansion allowance is [`CodecError::NotImplemented`]
-//! and leaves the session open.
+//! bounds the tree's storage. Each parse charges that bound, and an XML
+//! parse also its name comparisons, to the session as expanded bytes against
+//! the caller's ceiling on the bytes expanded in all.
 
 use std::collections::HashSet;
 
@@ -90,16 +89,25 @@ impl DecodeContext<'_> {
             .map_err(Self::tree_malformed)
     }
 
-    /// Checks that a `serde_json::Value` tree of `text` fits the
-    /// per-expansion allowance and returns the depth the parse can reach.
+    /// Charges the storage of a `serde_json::Value` tree of `text` as
+    /// expanded bytes against the caller's ceiling on the bytes expanded in
+    /// all, and returns the depth the parse can reach. A refusal is
+    /// `ResourceLimit` of `scope: Session`: its `additional` is the storage
+    /// bound, `u64::MAX` where the bound passes `u64`.
     fn admit_json(&self, text: &str, operation: &'static str) -> Result<u64, CodecError> {
-        let shape = json_shape(text);
-        let allowance = self.per_expand_allowance();
-        if json_storage_bytes(u64_from_index(text.len()), &shape)
-            .is_none_or(|bytes| bytes > allowance)
-        {
-            return Err(tree_too_large("JSON", allowance, operation));
+        if let Some(limit) = self.budget.fused() {
+            return Err(CodecError::ResourceLimit(limit));
         }
+        let shape = json_shape(text);
+        let Some(storage) = json_storage_bytes(u64_from_index(text.len()), &shape) else {
+            return Err(self.refuse_tree(
+                self.budget.policy().limits.max_decompressed_bytes_total,
+                self.budget.decompressed_used(),
+                TreeNeed::Unbounded,
+                operation,
+            ));
+        };
+        self.budget.charge_expanded(storage, operation)?;
         Ok(shape.depth)
     }
 
@@ -160,7 +168,7 @@ impl DecodeContext<'_> {
             },
         )
         .map_err(|need| {
-            self.refuse_xml(
+            self.refuse_tree(
                 ceiling,
                 used,
                 need.map_or(TreeNeed::Unbounded, TreeNeed::Bytes),
@@ -169,7 +177,7 @@ impl DecodeContext<'_> {
         })?;
         let prefixes = u64_from_index(shape.prefixes.len());
         let Some((nodes, cost)) = xml_parse_cost(&shape, prefixes) else {
-            return Err(self.refuse_xml(ceiling, used, TreeNeed::Unbounded, operation));
+            return Err(self.refuse_tree(ceiling, used, TreeNeed::Unbounded, operation));
         };
         self.budget.charge_expanded(cost, operation)?;
         admit(shape.attributes + prefixes)?;
@@ -190,9 +198,9 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Refuses an XML parse whose bound `need` passes the expanded bytes that
+    /// Refuses a tree parse whose bound `need` passes the expanded bytes that
     /// the session has left.
-    fn refuse_xml(
+    fn refuse_tree(
         &self,
         ceiling: u64,
         used: u64,
@@ -269,7 +277,7 @@ impl crate::scan::ScanBudget<'_> {
     }
 }
 
-/// The bytes an XML parse holds and spends.
+/// The bytes a tree parse holds and spends.
 #[derive(Clone, Copy)]
 enum TreeNeed {
     Bytes(u64),
@@ -285,13 +293,6 @@ impl TreeNeed {
             Self::Unbounded => u64::MAX,
         }
     }
-}
-
-fn tree_too_large(kind: &str, allowance: u64, operation: &str) -> CodecError {
-    CodecError::NotImplemented(format!(
-        "{operation}: the {kind} tree could need more than the \
-         {allowance}-byte per-expansion allowance"
-    ))
 }
 
 #[derive(Clone, Copy)]
@@ -732,8 +733,8 @@ impl JsonStringScan {
 #[cfg(test)]
 mod tests {
     use super::{
-        json_shape, xml_comparisons, xml_parse_cost, xml_shape_checked, xml_storage_bytes,
-        XmlShape, XML_FIXED_BYTES, XML_NODE_BYTES, XML_PREFIX_BYTES,
+        json_shape, json_storage_bytes, xml_comparisons, xml_parse_cost, xml_shape_checked,
+        xml_storage_bytes, XmlShape, XML_FIXED_BYTES, XML_NODE_BYTES, XML_PREFIX_BYTES,
     };
     use crate::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, LimitScope,
@@ -881,20 +882,8 @@ mod tests {
         run(&ctx)
     }
 
-    fn with_expand_ceiling<T>(bytes: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_decompressed_bytes_per_expand = bytes;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-        run(&ctx)
-    }
-
     fn is_depth_refusal<T: std::fmt::Debug>(result: &Result<T, CodecError>) -> bool {
         matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth)
-    }
-
-    fn is_unsupported<T: std::fmt::Debug>(result: &Result<T, CodecError>, text: &str) -> bool {
-        matches!(result, Err(CodecError::NotImplemented(message)) if message.contains(text))
     }
 
     #[test]
@@ -1345,21 +1334,25 @@ mod tests {
     }
 
     #[test]
-    fn json_tree_past_the_per_expand_allowance_is_unsupported() {
-        let document = |maps: usize| format!("[{}]", vec![r#"{"a":0}"#; maps].join(","));
-        with_expand_ceiling(1 << 20, |ctx| {
-            assert!(ctx.parse_json_value(&document(1 << 8), "JSON").is_ok());
-            let message =
-                "the JSON tree could need more than the 1048576-byte per-expansion allowance";
-            assert!(is_unsupported(
-                &ctx.parse_json_value(&document(1 << 11), "JSON"),
-                message
-            ));
-            assert!(is_unsupported(
-                &ctx.parse_json::<serde_json::Value>(&document(1 << 11), "JSON"),
-                message
-            ));
-            assert_eq!(ctx.resource_refusal(), None);
+    fn json_tree_storage_charges_the_session_s_expanded_bytes() {
+        let text = format!("[{}]", vec![r#"{"a":0}"#; 1 << 11].join(","));
+        let cost = json_storage_bytes(u64_from_index(text.len()), &json_shape(&text))
+            .expect("the bound fits u64");
+        with_expanded_ceiling(cost - 1, |ctx| {
+            let refused = ctx.parse_json_value(&text, "JSON");
+            assert_eq!(
+                expanded_refusal(ctx, &refused),
+                (LimitScope::Session, cost - 1, 0, cost)
+            );
+        });
+        with_expanded_ceiling(cost, |ctx| {
+            assert!(ctx.parse_json::<serde_json::Value>(&text, "JSON").is_ok());
+            assert_eq!(ctx.budget.decompressed_used(), cost);
+            let refused = ctx.parse_json_value(&text, "JSON");
+            assert_eq!(
+                expanded_refusal(ctx, &refused),
+                (LimitScope::Session, cost, cost, cost)
+            );
         });
     }
 
