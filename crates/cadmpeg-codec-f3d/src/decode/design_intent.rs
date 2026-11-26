@@ -373,22 +373,42 @@ fn extend_design_assets(
     Ok(())
 }
 
+/// Part kind of an ASM history partition whose states do not read.
+const HISTORY_PART: &str = "asm-history";
+
+/// The history of one BREP stream. A history whose states do not read is
+/// given up over its partition, from its start to the end of the stream,
+/// into `given_up`.
 fn decode_asm_history(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     history_brep: &container::BrepFacts,
     remaining_retained_bytes: &mut u64,
     binding_work: &WorkBudget,
+    given_up: &mut Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 ) -> Result<Option<AsmHistory>, CodecError> {
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(
+    match crate::history::decode(
         ctx,
         bytes,
         &history_brep.name,
         history_ref_width(history_brep),
         remaining_retained_bytes,
         binding_work,
-    )
+    ) {
+        Ok(history) => Ok(history),
+        Err(failure) => {
+            given_up.push(scan.give_up_entry_span(
+                ctx,
+                &history_brep.name,
+                HISTORY_PART,
+                failure.start..bytes.len(),
+                [cadmpeg_core::decode::ArenaClass::Design],
+                failure.error,
+            )?);
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -506,6 +526,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         });
         let history_res = (|| -> Result<_, CodecError> {
             let mut histories = Vec::new();
+            let mut given_up = Vec::new();
             for history_brep in container::history_breps(scan) {
                 let binding_work = WorkBudget::new(remaining_binding_work);
                 let history = decode_asm_history(
@@ -514,6 +535,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                     history_brep,
                     &mut remaining_retained_bytes,
                     &binding_work,
+                    &mut given_up,
                 )?;
                 unbound_histories += usize::from(binding_work.exhausted());
                 remaining_binding_work = binding_work.remaining();
@@ -521,7 +543,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                     histories.push(history);
                 }
             }
-            Ok(histories)
+            Ok((histories, given_up))
         })();
         let pre_sketch_res = h_pre.join().unwrap_or_else(|_| {
             Err(CodecError::malformed(
@@ -530,7 +552,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         });
         (history_res, pre_sketch_res)
     });
-    design.asm_histories = history_res?;
+    let (asm_histories, history_given_up) = history_res?;
+    design.asm_histories = asm_histories;
     let (
         persistent_references,
         lost_edge_references,
@@ -546,6 +569,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         given_up_frames,
     ) = pre_sketch_res?;
     let mut given_up = crate::design::decode::record::give_up_frames(ctx, scan, given_up_frames)?;
+    given_up.extend(history_given_up);
     if unbound_histories != 0 {
         push_loss_vec(
             &mut losses,

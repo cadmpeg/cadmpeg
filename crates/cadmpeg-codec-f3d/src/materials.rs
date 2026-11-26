@@ -19,7 +19,7 @@ use std::io::{Cursor, Write};
 use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
@@ -40,6 +40,7 @@ use crate::design::presentation::{
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::zero_fill_to;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -580,8 +581,9 @@ pub(crate) struct DecodedMaterials {
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
     pub(crate) untyped_distance_properties: usize,
-    /// Rejected Protein record diagnostics.
-    pub(crate) notes: Vec<String>,
+    /// Protein entries and records the decode leaves out, given up as
+    /// parts.
+    pub(crate) given_up: Vec<GivenUpPart>,
     /// Losses charged while joining appearances to topology.
     pub(crate) losses: Vec<LossNote>,
 }
@@ -608,7 +610,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
-    let mut notes = Vec::new();
+    let mut given_up = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -618,20 +620,48 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let protein = scan.entry_view(&entry.name).ok_or_else(|| {
             CodecError::Malformed("protein archive entry missing from scan".into())
         })?;
-        let Some(instance) = instance_properties(ctx, protein)? else {
-            continue;
+        // An entry that opens no archive, or whose instance stream frames no
+        // record, leaves the document whole.
+        let (instance_name, record_frames) = match instance_records(ctx, protein) {
+            Ok(Some(found)) => found,
+            Ok(None) => continue,
+            Err(error) => {
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                continue;
+            }
         };
-        let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
         let catalog = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
             let outcome = cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
+            let stream = scan.entry_stream(&format!("{}/{instance_name}", entry.name))?;
             for rejected in &outcome.rejected {
-                let note = format!(
-                    "Protein {} record {} rejected: {}",
-                    entry.name, rejected.ordinal, rejected.detail
-                );
-                notes.push(note);
+                let frame = usize::try_from(rejected.ordinal)
+                    .ok()
+                    .and_then(|ordinal| record_frames.get(ordinal))
+                    .ok_or_else(|| {
+                        CodecError::malformed("Protein rejected record names no record frame")
+                    })?;
+                // The fixed source-less layouts read some records the schema
+                // path rejects; those records stay in the document.
+                if decode_fixed_record(frame.bytes())?.is_some() {
+                    continue;
+                }
+                let part = Part::at(
+                    "f3d",
+                    PROTEIN_RECORD_PART,
+                    u64_from_index(frame.logical_offset()),
+                    frame.bytes(),
+                    [ArenaClass::Model],
+                )
+                .in_stream(stream.clone());
+                given_up.push(ctx.give_up_part(
+                    part,
+                    CodecError::malformed(format_args!(
+                        "Protein record {} rejected: {}",
+                        rejected.ordinal, rejected.detail
+                    )),
+                )?);
             }
             let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
@@ -779,7 +809,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         face_assignments,
         has_topology_assignments,
         untyped_distance_properties,
-        notes,
+        given_up,
         losses,
     })
 }
@@ -1888,13 +1918,30 @@ fn unique_body_map_pair<'a>(
     Ok(Some(binding))
 }
 
-/// Open a nested Protein ZIP member through the session archive expander so
-/// per-expand and cumulative decompressed ceilings bind.
-fn instance_properties<'a>(
+/// Part kind of a Protein instance record given up over its bytes in the
+/// dechunked instance stream.
+const PROTEIN_RECORD_PART: &str = "protein-record";
+
+/// The member name and logical records of the instance stream of a Protein
+/// archive, opened through the session archive expander so per-expand and
+/// cumulative decompressed ceilings bind. `None` when the archive holds no
+/// instance stream.
+///
+/// # Errors
+///
+/// The error of an archive that does not open or an instance stream whose
+/// pages frame no records.
+fn instance_records<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
-) -> Result<Option<View<'a>>, CodecError> {
-    nested_entry(ctx, protein, "AssetData/InstanceProperties.bin")
+) -> Result<Option<(String, Vec<cadmpeg_protein::framing::RecordFrame>)>, CodecError> {
+    let archive = ArchiveSnapshot::new(ctx, protein)?;
+    let Some((name, instance)) = open_nested(ctx, &archive, "AssetData/InstanceProperties.bin")?
+    else {
+        return Ok(None);
+    };
+    let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+    Ok(Some((name, frames)))
 }
 
 fn definition_catalog<'a>(
@@ -2013,19 +2060,28 @@ fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), Co
     Ok(())
 }
 
+/// The member of the Protein archive `protein` whose name ends with
+/// `suffix`. The decode reads the definition catalog only after the instance
+/// stream of the same archive opened.
 fn nested_entry<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
     suffix: &str,
 ) -> Result<Option<View<'a>>, CodecError> {
-    let archive = match ArchiveSnapshot::new(ctx, protein) {
-        Ok(archive) => archive,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
+    let archive = ArchiveSnapshot::new(ctx, protein)?;
+    Ok(open_nested(ctx, &archive, suffix)?.map(|(_, view)| view))
+}
+
+/// The name and bytes of the first member of `archive` whose name ends with
+/// `suffix`.
+fn open_nested<'a>(
+    ctx: &DecodeContext<'a>,
+    archive: &ArchiveSnapshot<'a>,
+    suffix: &str,
+) -> Result<Option<(String, View<'a>)>, CodecError> {
     for entry in archive.entries() {
         if entry.name.ends_with(suffix) {
-            return Ok(Some(archive.open(ctx, &entry.name)?));
+            return Ok(Some((entry.name.clone(), archive.open(ctx, &entry.name)?)));
         }
     }
     Ok(None)

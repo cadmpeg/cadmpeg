@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
 use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::EditableDecodeResult;
@@ -106,6 +106,37 @@ fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
             "malformed table admitted: {bytes:?}"
         );
     }
+}
+
+/// A malformed `ComponentReferenceData.json` gives up that entry alone.
+#[test]
+fn malformed_component_reference_data_gives_up_its_own_entry() {
+    let part = [("part.f3d", "aaaabbbb-cccc-dddd-eeee-ffff00001111")];
+    let redirections = redirections_json("root.f3d", &part);
+    let document = crate::test_support::assembly_test::f3d_with_reference_entries(
+        "assembly-design",
+        b"[1, 2",
+        redirections.as_bytes(),
+    );
+    let head = "part archive-entry \"ComponentReferenceData.json\" stream=\"\" offset=";
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let mut source = Cursor::new(&document);
+        let decoded = F3dCodec.decode(&mut source, &options).unwrap();
+        let losses = &decoded.report().losses;
+        crate::test_support::charged_part(decoded.ir(), losses, head, "");
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code == unreadable
+                    && loss.message.contains("RedirectionsStream.dat"))
+        );
+    }
+    crate::test_support::assert_pinned_refusal(document, head);
 }
 
 #[test]

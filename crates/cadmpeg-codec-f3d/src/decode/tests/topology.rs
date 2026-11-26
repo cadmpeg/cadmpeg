@@ -1471,8 +1471,11 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
 }
 
 #[test]
-fn decode_reports_faces_with_missing_surface_references() {
-    for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
+fn faces_with_missing_surface_references_are_given_up() {
+    for (surface, cause) in [
+        (-1i64, "the face record states no surface"),
+        (999, "the face record's surface reference names no record"),
+    ] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
@@ -1488,29 +1491,59 @@ fn decode_reports_faces_with_missing_surface_references() {
             .filter(|record| record.head() == "face")
             .nth(1)
             .expect("second generated face");
+        let record_at = |index: i64| {
+            records
+                .iter()
+                .find(|record| i64::try_from(record.index) == Ok(index))
+                .expect("a referenced record")
+        };
+        // The face, then each loop of its chain followed by its coedge ring:
+        // the records that need the face.
+        let mut dropped = vec![i64::try_from(face.index).unwrap()];
+        let mut next_loop = face.ref_at(4);
+        while let Some(loop_index) = next_loop.filter(|index| !dropped.contains(index)) {
+            dropped.push(loop_index);
+            let lp = record_at(loop_index);
+            let mut next_coedge = lp.ref_at(4);
+            while let Some(coedge) = next_coedge.filter(|index| !dropped.contains(index)) {
+                dropped.push(coedge);
+                next_coedge = record_at(coedge).ref_at(3);
+            }
+            next_loop = lp.ref_at(3);
+        }
+        // The loss lists the dropped ids in their sort order.
+        let mut dropped = dropped
+            .iter()
+            .map(|index| format!("f3d:brep:entity#{index}"))
+            .collect::<Vec<_>>();
+        dropped.sort();
+        let dropped = dropped.join(", ");
+        let head = format!(
+            "part face stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset={} length={} ",
+            face.offset, face.len
+        );
         let record = &mut smbh[face.offset..face.offset + face.len];
         let surface_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
         record[surface_ref + 1..surface_ref + 9].copy_from_slice(&surface.to_le_bytes());
+        let bytes = f3d_with_smbh(&smbh);
 
         let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&smbh)),
-                &DecodeOptions::default(),
-            )
-            .expect("missing face surface remains an explicitly lossy decode");
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("a permissive decode gives the face up and goes on");
         assert_eq!(result.ir().geometry.faces.len(), 1);
-        let note = result
+        let charge = crate::test_support::charged_part(
+            result.ir(),
+            &result.report().losses,
+            &head,
+            &dropped,
+        );
+        assert!(charge.message.contains(cause), "{}", charge.message);
+        assert!(!result
             .report()
             .losses
             .iter()
-            .find(|loss| loss.message.contains("required surface reference"))
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing face-surface loss note: {:?}",
-                    result.report().losses
-                )
-            });
-        assert!(note.message.contains(condition), "{}", note.message);
+            .any(|loss| loss.message.contains("required surface reference")));
+        crate::test_support::assert_pinned_refusal(bytes, &head);
     }
 }
 

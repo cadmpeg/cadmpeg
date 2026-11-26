@@ -224,7 +224,9 @@ fn member_metadata(
     metadata_ctx.take_trace();
     let mut metadata = MemberMetadata::default();
     let result = (|| {
-        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan)? else {
+        let Some(table) =
+            crate::xref::decode(&metadata_ctx, member_scan).map_err(|failure| failure.error)?
+        else {
             return Ok(false);
         };
         metadata.references.extend(

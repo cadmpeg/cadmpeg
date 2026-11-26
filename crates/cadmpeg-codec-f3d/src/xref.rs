@@ -16,10 +16,11 @@ use std::collections::HashSet;
 
 use serde::Deserialize;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
@@ -280,24 +281,111 @@ fn parse_component_reference_data(
     Ok(value)
 }
 
+/// The top-level manifest entry, whose reference extension carries the
+/// table of a document saved without `RedirectionsStream.dat`.
+const MANIFEST_ENTRY: &str = "Manifest.dat";
+
+/// Part kind of the reference extension of the top-level manifest.
+pub(crate) const MANIFEST_REFERENCES_PART: &str = "manifest-references";
+
+/// The stored bytes an external-reference table is read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum XrefSource {
+    /// An archive entry.
+    Entry(&'static str),
+    /// The reference extension of the top-level `Manifest.dat`.
+    ManifestReferences,
+}
+
+/// An external-reference table the decoder dropped, with the stored bytes
+/// whose decoding failed.
+#[derive(Debug)]
+pub(crate) struct XrefFailure {
+    pub(crate) source: XrefSource,
+    pub(crate) error: CodecError,
+}
+
+impl XrefFailure {
+    /// The failure of `source` with `error`.
+    fn of(source: XrefSource) -> impl FnOnce(CodecError) -> Self {
+        move |error| Self { source, error }
+    }
+
+    /// Gives up the stored bytes whose decoding failed: the archive entry,
+    /// or the reference extension's bytes in `Manifest.dat`. `None` when the
+    /// scan holds no such bytes.
+    ///
+    /// # Errors
+    ///
+    /// A refusal of the part helper.
+    pub(crate) fn give_up(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scan: &ContainerScan<'_>,
+    ) -> Result<Option<GivenUpPart>, CodecError> {
+        let error =
+            CodecError::malformed(format_args!("F3D external-reference table: {}", self.error));
+        match self.source {
+            XrefSource::Entry(entry) => scan.give_up_entry(ctx, entry, error),
+            XrefSource::ManifestReferences => {
+                let (Some(extension), Some(manifest)) = (
+                    scan.manifest_reference_extension,
+                    scan.entry_view(MANIFEST_ENTRY),
+                ) else {
+                    return Ok(None);
+                };
+                let start = extension
+                    .start()
+                    .checked_sub(manifest.start())
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "F3D manifest reference extension precedes its manifest",
+                        )
+                    })?;
+                let end = start.checked_add(extension.window().len()).ok_or_else(|| {
+                    CodecError::malformed("F3D manifest reference extension overflows")
+                })?;
+                scan.give_up_entry_span(
+                    ctx,
+                    MANIFEST_ENTRY,
+                    MANIFEST_REFERENCES_PART,
+                    start..end,
+                    [ArenaClass::Model],
+                    error,
+                )
+                .map(Some)
+            }
+        }
+    }
+}
+
 fn reference_data(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Result<Option<XrefTable>, CodecError> {
-    validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
-        Ok(bytes) => bytes,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return api_export::decode(ctx, scan),
-    };
-    parse(ctx, bytes).map(Some)
+) -> Result<Option<(XrefTable, XrefSource)>, XrefFailure> {
+    validate_component_reference_data(ctx, scan).map_err(XrefFailure::of(XrefSource::Entry(
+        COMPONENT_REFERENCE_ENTRY,
+    )))?;
+    let redirections = XrefSource::Entry(REDIRECTIONS_ENTRY);
+    match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => parse(ctx, bytes)
+            .map(|table| Some((table, redirections)))
+            .map_err(XrefFailure::of(redirections)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(XrefFailure::of(redirections)(error)),
+        Err(_) => {
+            let source = XrefSource::ManifestReferences;
+            api_export::decode(ctx, scan)
+                .map(|table| table.map(|table| (table, source)))
+                .map_err(XrefFailure::of(source))
+        }
+    }
 }
 
 /// Decode the container's external references.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Option<XrefTable>, CodecError> {
+) -> Result<Option<XrefTable>, XrefFailure> {
     decode_with_scopes(ctx, scan, &[])
 }
 
@@ -307,11 +395,11 @@ pub(crate) fn decode_with_scopes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-) -> Result<Option<XrefTable>, CodecError> {
-    let Some(mut table) = reference_data(ctx, scan)? else {
+) -> Result<Option<XrefTable>, XrefFailure> {
+    let Some((mut table, source)) = reference_data(ctx, scan)? else {
         return Ok(None);
     };
-    bind_occurrences(scan, &mut table, scopes)?;
+    bind_occurrences(scan, &mut table, scopes).map_err(XrefFailure::of(source))?;
     Ok(Some(table))
 }
 
