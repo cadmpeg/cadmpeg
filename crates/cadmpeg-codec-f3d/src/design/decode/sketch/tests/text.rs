@@ -1030,8 +1030,8 @@ fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identit
 
 #[test]
 fn the_txt_tag_anchor_run_widens_with_the_class_version() {
-    // The run between the anchor and the text string is ten bytes below class
-    // version 4 and eleven from it, so a record read at the other version's
+    // The run between the anchor and the text string is ten bytes at class
+    // version 3 and eleven from class version 4, so a record read at the other version's
     // width does not end on its owning-sketch reference.
     for (written, read) in [(3u32, 4u32), (4, 3)] {
         assert!(decode_sketch_text_at(
@@ -1063,7 +1063,7 @@ fn txt_tag_outline_curve_with_weights(
 ) -> Vec<u8> {
     let mut bytes = vec![0; 2];
     bytes.extend_from_slice(&degree.to_le_bytes());
-    bytes.extend_from_slice(&1.0e-9f64.to_le_bytes());
+    bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
     let push_header = |bytes: &mut Vec<u8>, count: usize| {
         let count = u32::try_from(count).expect("fixture value fits u32");
         bytes.extend_from_slice(&count.to_le_bytes());
@@ -1108,8 +1108,8 @@ fn txt_tag_outline(curves: &[Vec<u8>], lines: u32) -> Vec<u8> {
     bytes
 }
 
-/// A `txt_tag` record below class version 4 with `outline` stored after the
-/// eight-byte lane that follows its anchor.
+/// A `txt_tag` record with `outline` stored between the eight-byte lane that
+/// follows its anchor and the two zero bytes ahead of its text.
 fn txt_tag_sketch_text_record_with_outline(outline: &[u8]) -> Vec<u8> {
     let mut bytes =
         txt_tag_sketch_text_record_at(&[("txt_tag_base", 300)], &[261], &[261], (0.25, -1.5), 3);
@@ -1189,9 +1189,16 @@ fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
     element_size[22] = 4;
     assert!(!decodes(&element_size, 1));
 
+    // Knot-array capacity at offset 18, after the count 8 at offset 14.
     let mut capacity = curve.clone();
+    capacity[18..22].copy_from_slice(&9u32.to_le_bytes());
+    assert!(decodes(&capacity, 1));
     capacity[18..22].copy_from_slice(&7u32.to_le_bytes());
     assert!(!decodes(&capacity, 1));
+
+    let mut token = curve.clone();
+    token[6] = 0x96;
+    assert!(!decodes(&token, 1));
 
     assert!(!decodes(
         &txt_tag_outline_curve(2, &OUTLINE_KNOTS, &OUTLINE_POINTS),
@@ -1213,6 +1220,10 @@ fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
         span[span_at..span_at + 8].copy_from_slice(&0.5f64.to_le_bytes());
         assert!(!decodes(&span, 1));
     }
+    let mut negative_zero = curve.clone();
+    let first_at = curve.len() - 16;
+    negative_zero[first_at..first_at + 8].copy_from_slice(&(-0.0f64).to_le_bytes());
+    assert!(decodes(&negative_zero, 1));
 
     assert!(!decodes(
         &txt_tag_outline_curve_with_weights(3, &OUTLINE_KNOTS, &[1.0], &OUTLINE_POINTS),
@@ -1231,6 +1242,60 @@ fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
     let line_count_at = 4 + curve.len();
     outline[line_count_at + 3] = 1;
     assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_none());
+}
+
+#[test]
+fn a_txt_tag_outline_stores_its_members_in_the_specified_order() {
+    let mut outline = Vec::new();
+    let u32_le = |bytes: &mut Vec<u8>, value: u32| bytes.extend_from_slice(&value.to_le_bytes());
+    let f64_le = |bytes: &mut Vec<u8>, values: &[f64]| {
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    };
+    // Curve count, then one curve block.
+    u32_le(&mut outline, 1);
+    outline.extend_from_slice(&[0, 0]);
+    u32_le(&mut outline, 1);
+    outline.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
+    // Knots: count 4, capacity 6, element size 8.
+    for header in [4, 6, 8] {
+        u32_le(&mut outline, header);
+    }
+    f64_le(&mut outline, &[2.0, 2.0, 5.0, 5.0]);
+    // Weights: count 2, capacity 2, element size 8.
+    for header in [2, 2, 8] {
+        u32_le(&mut outline, header);
+    }
+    f64_le(&mut outline, &[1.0, 0.75]);
+    // Control points: count 2, capacity 3, element size 8.
+    for header in [2, 3, 8] {
+        u32_le(&mut outline, header);
+    }
+    f64_le(&mut outline, &[0.5, 1.5, 0.0, 2.5, 3.5, 0.0]);
+    // The f64, the two Boolean bytes, and the first and last knot.
+    f64_le(&mut outline, &[1.0e-12]);
+    outline.extend_from_slice(&[1, 0]);
+    f64_le(&mut outline, &[2.0, 5.0]);
+    // Line count, then one line: start point and vector to the end point.
+    u32_le(&mut outline, 1);
+    f64_le(&mut outline, &[0.5, 1.5, 0.0, 2.0, 2.0, 0.0]);
+    assert_eq!(
+        outline.len(),
+        4 + 14 + 3 * 12 + 4 * 8 + 2 * 8 + 2 * 24 + 26 + 4 + 48
+    );
+
+    let bytes = txt_tag_sketch_text_record_with_outline(&outline);
+    let text = decode_sketch_text_at(&bytes, 2).expect("class-version-2 sketch text");
+    assert_eq!(text.text, "sketch text");
+    assert_eq!(text.owner_reference, 201);
+
+    // The first knot and the last knot close the block in that order.
+    let mut swapped = outline.clone();
+    let span_at = outline.len() - 4 - 48 - 16;
+    swapped[span_at..span_at + 8].copy_from_slice(&5.0f64.to_le_bytes());
+    swapped[span_at + 8..span_at + 16].copy_from_slice(&2.0f64.to_le_bytes());
+    assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&swapped), 2).is_none());
 }
 
 #[test]

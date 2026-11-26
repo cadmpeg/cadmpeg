@@ -4217,7 +4217,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which glyph region of a sketch text does each Extrude selection member name?
 
-**Known.** `f3d.md` "An Extrude selection resolves to neutral sketch-loop indices" defines the member resolution through Sketch points, curves, and history states. Each member of one selection group names a distinct profile region of the selected Sketch. The local identity of a member that picks a glyph region matches no Sketch point or curve identity, and the `txt_tag` and `textex_tag` records store no glyph outline. A group can hold more members than the regions that the Sketch curves bound.
+**Known.** `f3d.md` "An Extrude selection resolves to neutral sketch-loop indices" defines the member resolution through Sketch points, curves, and history states. Each member of one selection group names a distinct profile region of the selected Sketch. The local identity of a member that picks a glyph region matches no Sketch point or curve identity, a class-version-2 `txt_tag` record stores a glyph outline that carries no Sketch point or curve identity, and the `textex_tag` record stores none. A group can hold more members than the regions that the Sketch curves bound.
 
 **Need.** Saves that pick a subset of the glyphs of one text, and saves that pick a glyph counter, with the local identities of each member.
 

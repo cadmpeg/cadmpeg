@@ -2714,11 +2714,13 @@ const TEXT_PLACEMENT_TOLERANCE: f64 = 1.0e-9;
 const TXT_TAG_POST_ROTATION_RUN: usize = 5;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
-/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward.
+/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward. The run is
+/// one byte shorter at class version 3, and at [`TXT_TAG_OUTLINE_VERSION`] it
+/// holds the glyph outline.
 const TXT_TAG_ANCHOR_RUN: usize = 11;
 
 /// The `txt_tag` class version that adds the eleventh byte of the run between
-/// the text anchor and the text count. Below it the run is ten bytes.
+/// the text anchor and the text count.
 const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
 
 /// The `txt_tag` class version from which a record writes its persistent
@@ -2737,6 +2739,9 @@ const TXT_TAG_ANCHOR_LANE: usize = 8;
 
 /// Bytes of one `txt_tag` outline curve ahead of its three counted arrays.
 const TXT_TAG_OUTLINE_CURVE_HEAD: usize = 14;
+
+/// The eight-byte token that follows the degree of a `txt_tag` outline curve.
+const TXT_TAG_OUTLINE_CURVE_TOKEN: [u8; 8] = [0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e];
 
 /// Bytes of one `txt_tag` outline curve after its three counted arrays.
 const TXT_TAG_OUTLINE_CURVE_TAIL: usize = 26;
@@ -3122,12 +3127,16 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
             return None;
         }
         let degree = usize::try_from(View::u32_le_at(payload, cursor.checked_add(2)?)?).ok()?;
+        let token_at = cursor.checked_add(6)?;
         *cursor = cursor.checked_add(TXT_TAG_OUTLINE_CURVE_HEAD)?;
+        if payload.get(token_at..*cursor)? != TXT_TAG_OUTLINE_CURVE_TOKEN {
+            return None;
+        }
         let mut counts = [0usize; 3];
-        let mut knot_span = [0u64; 2];
+        let mut knot_span = [0.0f64; 2];
         for (array, (count, width)) in counts.iter_mut().zip([8usize, 8, 24]).enumerate() {
             let stored = View::u32_le_at(payload, *cursor)?;
-            if View::u32_le_at(payload, cursor.checked_add(4)?)? != stored
+            if View::u32_le_at(payload, cursor.checked_add(4)?)? < stored
                 || View::u32_le_at(payload, cursor.checked_add(8)?)? != 8
             {
                 return None;
@@ -3138,8 +3147,8 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
             let end = cursor.checked_add(count.checked_mul(width)?)?;
             if array == 0 && *count != 0 {
                 knot_span = [
-                    View::u64_le_at(payload, *cursor)?,
-                    View::u64_le_at(payload, end.checked_sub(8)?)?,
+                    View::f64_le_at(payload, *cursor)?,
+                    View::f64_le_at(payload, end.checked_sub(8)?)?,
                 ];
             }
             *cursor = end;
@@ -3154,8 +3163,8 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
         let flags_at = cursor.checked_add(8)?;
         let span_at = cursor.checked_add(10)?;
         if payload.get(flags_at..span_at)?.iter().any(|flag| *flag > 1)
-            || View::u64_le_at(payload, span_at)? != knot_span[0]
-            || View::u64_le_at(payload, span_at.checked_add(8)?)? != knot_span[1]
+            || View::f64_le_at(payload, span_at)? != knot_span[0]
+            || View::f64_le_at(payload, span_at.checked_add(8)?)? != knot_span[1]
         {
             return None;
         }
@@ -3180,10 +3189,10 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
 /// Read the `txt_tag` form's members from the height to the end of the record.
 /// Two bytes separate the height from the anchor coordinates, which this form
 /// stores directly rather than in a placement transform. The form writes no
-/// parameter-reference slot: an eleven-byte unclassified member run, ten bytes
-/// below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], follows the anchor. At
-/// [`TXT_TAG_OUTLINE_VERSION`] the glyph outline sits inside that run, after
-/// its first eight bytes. The text string
+/// parameter-reference slot: a member run follows the anchor, eleven bytes from
+/// [`TXT_TAG_ANCHOR_MEMBER_VERSION`] and ten bytes at class version 3. At
+/// [`TXT_TAG_OUTLINE_VERSION`] the run is its eight-byte lane, the glyph
+/// outline, and two zero bytes. The text string
 /// is followed by a counted reference run, fifteen bytes, and the trailing run
 /// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
