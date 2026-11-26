@@ -3,30 +3,26 @@
 //! its entities. A sketch feature that holds no decoded sketch charges a
 //! loss naming it.
 //!
-//! An NX sketch entity is a native point record with no curve. The decoder
-//! reads no sketch support, so a sketch's plane states the stored frame where
-//! the decoder reads one, and otherwise one input with no role and an
-//! `Unread` selection of the support (§5.9).
+//! An entity states its planar curve where it has one, and otherwise its
+//! native class in the `nx` namespace with no solved curve; the decoder reads
+//! each NX sketch entity as a native point record. The decoder reads no
+//! sketch support, so a sketch's plane states the stored frame where the
+//! decoder reads one, and otherwise one input with no role and an `Unread`
+//! selection of the support (§5.9).
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::design::construction::{
-    kinds, Construction, ConstructionInput, FrameValue, InputReference,
-};
+use cadmpeg_ir::design::construction::{kinds, Construction, ConstructionInput, InputReference};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::ops::sketch::{
     EntityDefinition, EntityForm, Planar, Sketch, SketchEntity, SketchPlane, SketchSolve,
 };
+use cadmpeg_ir::design::projection::sketch::{native_entity_kind, planar_curve, stored_frame};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureId, FeatureOperation};
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::sketches::{
-    Sketch as LegacySketch, SketchEntity as LegacyEntity, SketchGeometryDefinition, SketchId,
-};
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::sketches::{Sketch as LegacySketch, SketchEntity as LegacyEntity, SketchId};
 
 use crate::loss::NxLossCode;
 
@@ -92,11 +88,11 @@ pub(super) fn project(
     }
     let mut entities = Vec::new();
     for entity in &ir.model.sketch_entities {
-        match definition(entity).filter(|_| owners.contains_key(&entity.sketch)) {
-            Some(definition) => entities.push(SketchEntity::<Planar> {
+        if owners.contains_key(&entity.sketch) {
+            entities.push(SketchEntity::<Planar> {
                 id: entity.id().clone(),
                 sketch: entity.sketch.clone(),
-                definition,
+                definition: definition(entity),
                 roles: Vec::new(),
                 construction: entity.construction.then_some(true),
                 centerline: None,
@@ -104,8 +100,9 @@ pub(super) fn project(
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
                 native_ref: entity.native_ref.clone(),
-            }),
-            None => losses.push(unprojected("sketch entity", entity.id().as_str())),
+            });
+        } else {
+            losses.push(unprojected("sketch entity", entity.id().as_str()));
         }
     }
     for constraint in &ir.model.sketch_constraints {
@@ -125,20 +122,7 @@ fn unprojected(record: &str, id: &str) -> LossNote {
 }
 
 fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
-    let resolved = sketch
-        .resolved_placement()
-        .and_then(|(origin, normal, u_axis)| {
-            let z_axis = UnitVector3::normalized(normal.get())?;
-            let x_axis = UnitVector3::normalized(u_axis.get())?;
-            let y_axis =
-                UnitVector3::normalized(Vector3::from(z_axis).cross(Vector3::from(x_axis)))?;
-            Some(FrameValue {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            })
-        });
+    let resolved = stored_frame(sketch.placement);
     let inputs = if resolved.is_some() {
         Vec::new()
     } else {
@@ -175,17 +159,19 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
     }
 }
 
-/// The definition of a native point record: its native class in the `nx`
-/// namespace, with no solved curve. Every other entity has none here.
-fn definition(entity: &LegacyEntity) -> Option<EntityDefinition<Planar>> {
-    let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
-        return None;
-    };
-    let kind = NonBlankString::new(format!("nx:{native_kind}"))?;
-    Some(EntityDefinition::Defined {
-        form: Box::new(EntityForm::Native(kind)),
-        solved: None,
-    })
+/// The definition of `entity`: its planar curve, else its native class in the
+/// `nx` namespace with no solved curve.
+fn definition(entity: &LegacyEntity) -> EntityDefinition<Planar> {
+    planar_curve(&entity.geometry).map_or_else(
+        || EntityDefinition::Defined {
+            form: Box::new(EntityForm::Native(native_entity_kind(
+                "nx",
+                &entity.geometry,
+            ))),
+            solved: None,
+        },
+        EntityDefinition::Free,
+    )
 }
 
 #[cfg(test)]

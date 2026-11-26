@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::feature::{FeatureOperation as DesignOperation, OperationFamily};
+use cadmpeg_ir::design::ops::sketch::PlanarCurve;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, SketchFeatureBinding};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
@@ -192,6 +195,31 @@ fn the_feature_that_holds_a_sketch_states_it_with_its_native_points() {
             ),
         ]
     );
+    assert_eq!(unprojected(&losses), Vec::<&str>::new());
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn an_entity_with_a_planar_curve_states_the_curve() {
+    let mut ir = CadIr::empty();
+    ir.model.features = vec![owning("a", 0)];
+    ir.model.sketches = vec![model_sketch(SketchPlacement::Unresolved {})];
+    let geometry = json::from_value::<SketchGeometry>(cadmpeg_core::json!({"kind": "line",
+        "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 0.0}}))
+    .unwrap();
+    ir.model.sketch_entities = vec![LegacyEntity::new(
+        SketchEntityId::mint("nx:feature-history:sketch-entity#l0").unwrap(),
+        sketch_id(),
+        geometry,
+    )];
+    let losses = project_ir(&mut ir);
+    let [entity] = ir.design.sketch_entities.as_slice() else {
+        panic!("one design entity");
+    };
+    let EntityDefinition::Free(PlanarCurve::Line { start, end }) = &entity.definition else {
+        panic!("a free line: {:?}", entity.definition);
+    };
+    assert_eq!([start.get().u, end.get().u], [0.0, 2.0]);
     assert_eq!(unprojected(&losses), Vec::<&str>::new());
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
