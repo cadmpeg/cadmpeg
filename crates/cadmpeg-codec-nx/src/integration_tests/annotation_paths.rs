@@ -6,7 +6,7 @@ use cadmpeg_ir::Exactness;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_om::segment_om_record_area_with_input_store_payload;
-use crate::test_support::test_prt::{composed_feature_history_prt, prt_with_named_payloads};
+use crate::test_support::test_prt::prt_with_named_payloads;
 
 fn fields(result: &EditableDecodeResult, id: &str) -> (Exactness, Vec<(String, Exactness)>) {
     let note = &result.source_fidelity().annotations.exactness()[id];
@@ -16,17 +16,6 @@ fn fields(result: &EditableDecodeResult, id: &str) -> (Exactness, Vec<(String, E
         .map(|(field, exactness)| (field.to_string(), *exactness))
         .collect();
     (note.entity(), fields)
-}
-
-/// A history feature's derived `source_content` has no design field and
-/// leaves; the derived entity exactness stays.
-#[test]
-fn a_restated_history_feature_keeps_its_entity_exactness() {
-    let result = super::decode(composed_feature_history_prt());
-    assert_eq!(
-        fields(&result, "nx:feature-history:feature#0000000000-0000000014"),
-        (Exactness::Derived, Vec::new())
-    );
 }
 
 /// The expression's derived `ordinal` feeds no design field and leaves, and

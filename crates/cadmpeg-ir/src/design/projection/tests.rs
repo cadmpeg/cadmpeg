@@ -415,3 +415,38 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
     .unwrap();
     assert_eq!(fillet, (ByteExact, fields(&[("definition", Inferred)])));
 }
+
+/// A mark under a shared name that the codec builds from no model field of
+/// that name may describe the model field, so the design field claims no
+/// more than its entity: a derived `definition` on an inferred fillet leaves,
+/// and an unknown one stays.
+#[test]
+fn an_unlisted_shared_name_mark_claims_no_more_than_its_entity() {
+    use crate::provenance::Exactness::{Derived, Inferred, Unknown};
+    fn without_definition(field: FeatureField) -> &'static [ModelFeatureField] {
+        match field {
+            FeatureField::Definition => &[],
+            other => feature_inputs(other),
+        }
+    }
+    let restatement = super::Restatement {
+        feature: without_definition,
+        parameter: parameter_inputs,
+    };
+    for (mark, expected) in [
+        (Derived, vec![]),
+        (Unknown, fields(&[("definition", Unknown)])),
+    ] {
+        let [fillet] = <[_; 1]>::try_from(restated_with(
+            restatement,
+            &[(FILLET, Inferred)],
+            &[
+                (FILLET, "definition", mark),
+                (FILLET, "definition.operation", Derived),
+            ],
+            &[FILLET],
+        ))
+        .unwrap();
+        assert_eq!(fillet, (Inferred, expected), "{mark:?}");
+    }
+}

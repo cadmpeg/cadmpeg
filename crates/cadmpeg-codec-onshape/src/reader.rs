@@ -346,6 +346,12 @@ fn rollback_bar(
 fn suppression(feature: &Value) -> Mapping<bool> {
     Ok(boolean_field(feature, "suppressed")? | boolean_field(feature, "parentSuppressed")?)
 }
+/// Whether `feature` holds a `suppressed` or `parentSuppressed` key.
+pub(super) fn suppression_stated(feature: &Value) -> bool {
+    ["suppressed", "parentSuppressed"]
+        .iter()
+        .any(|key| feature.get(key).is_some())
+}
 fn reserve_history<T>(rows: &mut Vec<T>, count: usize) -> Result<(), Error> {
     rows.try_reserve(count)
         .map_err(|_| Error::Decode("Onshape history allocation failed".into()))
@@ -856,7 +862,8 @@ fn studio(
             .cloned()
             .collect();
         let mut row = json!({"id": feature_id, "ordinal": ordinal, "name": name, "dependencies": dependencies, "source_properties": source_properties, "source_content": [], "outputs": outputs, "definition": definition});
-        if let Ok(suppressed) = suppressed {
+        // A source with neither key does not state suppression (§5.10).
+        if let (Ok(suppressed), true) = (suppressed, suppression_stated(feature)) {
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
@@ -1053,12 +1060,10 @@ fn annotate(
                 )
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
-        if source.get("suppressed").is_none() && source.get("parentSuppressed").is_none() {
-            annotations
-                .field_exactness(id("feature", native), "suppressed", Exactness::Inferred)
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
     }
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
+    // The side is marked on the restated note, so the rest of the design
+    // `definition` keeps its mark.
     for feature in &model.ir.design.features {
         let id = feature.id.as_str();
         if assumed_sides.contains(id) {
@@ -1067,7 +1072,6 @@ fn annotate(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
     model.source_fidelity.annotations = annotations.build();
     Ok(())
 }
