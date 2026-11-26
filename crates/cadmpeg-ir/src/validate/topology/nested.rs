@@ -14,8 +14,9 @@ use crate::validate::referential_integrity::check_typed_references;
 /// The rules a nest check runs on a topology.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::validate) enum NestRules {
-    /// Coedge pairing, shell connectivity, wire topology, edge ends, and
-    /// topology tolerances: the rules that give up a decoded history body.
+    /// The rules history-body admission runs on a nest: coedge pairing, shell
+    /// connectivity, wire topology, edge ends, and topology tolerances, after
+    /// the identity, reference, and typed reference checks of a closed nest.
     Admission,
     /// Every rule of part 10 on one topology. With `caches`, each procedural
     /// curve is also compared with its solved carrier (Caches, K2).

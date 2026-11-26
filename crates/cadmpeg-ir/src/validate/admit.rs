@@ -314,10 +314,12 @@ pub const RHINO_INSTANCE: &Admission = DRAFT_CORE;
 /// [`admit_with_additional_native_identities`].
 pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
 
-/// History-body admission: [`DRAFT_CORE`], with the nest rules of coedge
-/// pairing, shell connectivity, wire topology, edge ends, and topology
-/// tolerances on each history body's nest. The other topology rules report
-/// on a nest and give up no history body.
+/// History-body admission: [`DRAFT_CORE`], with the identity, order,
+/// reference, and typed reference checks and the rules of coedge pairing,
+/// shell connectivity, wire topology, edge ends, and topology tolerances on
+/// each history body's nest. An error of these that [`DRAFT_CORE`] lists
+/// gives up the history body. The other topology rules report on a nest and
+/// give up no history body.
 pub const HISTORY_BODY_ADMISSION: &Admission = &Admission {
     rules: DRAFT_CORE.rules,
     annotations: false,

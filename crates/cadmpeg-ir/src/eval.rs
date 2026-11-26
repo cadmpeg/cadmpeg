@@ -1608,6 +1608,7 @@ pub fn nurbs_curve_parameter_near_point(
         return Ok(None);
     };
     nurbs_curve_parameter_near_point_with_nonnegative_tolerance(ctx, curve, point, tolerance, seed)
+        .map_err(Into::into)
 }
 
 /// [`nurbs_curve_parameter_near_point`] with an admitted tolerance and seed.
@@ -1617,8 +1618,8 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     point: Point3,
     tolerance: NonNegativeLength,
     seed: FiniteReal,
-) -> Result<Option<FiniteReal>, CodecError> {
-    let _depth = ctx.enter_nested("IR NURBS curve inversion depth")?;
+) -> Result<Option<FiniteReal>, ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("IR NURBS curve inversion depth")?;
     let scratch = decode::Scratch::new(ctx);
     let result = (|| {
         let tolerance = tolerance.get();
@@ -1747,7 +1748,7 @@ fn nurbs_curve_parameter_near_point_newton(
     tolerance: f64,
     seed: FiniteReal,
     search: NurbsSearchWindow<'_>,
-) -> Result<Option<FiniteReal>, CodecError> {
+) -> Result<Option<FiniteReal>, ResourceLimit> {
     let (poles, weights) = lanes;
     let scratch = decode::Scratch::new(ctx);
     let result = (|| {
@@ -5127,7 +5128,8 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(seed) = FiniteReal::new(seed) else {
             return Ok(None);
         };
-        return direct_curve_parameter_near_point(ctx, cache, point, seed, tolerance);
+        return direct_curve_parameter_near_point(ctx, cache, point, seed, tolerance)
+            .map_err(Into::into);
     }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         let Some(seed) = FiniteReal::new(seed) else {
@@ -5136,7 +5138,8 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(None);
         };
-        return direct_curve_parameter_near_point(ctx, geometry, point, seed, tolerance);
+        return direct_curve_parameter_near_point(ctx, geometry, point, seed, tolerance)
+            .map_err(Into::into);
     }
     let Some(construction) = curve.geometry.procedural_construction() else {
         return Ok(None);
@@ -5463,7 +5466,7 @@ pub(crate) fn curve_parameter_near_point(
     point: Point3,
     seed: f64,
     tolerance: f64,
-) -> Result<Option<FiniteReal>, CodecError> {
+) -> Result<Option<FiniteReal>, ResourceLimit> {
     let Some(geometry) = geometry.solved() else {
         return Ok(None);
     };
@@ -5482,10 +5485,10 @@ fn direct_curve_parameter_near_point(
     point: Point3,
     seed: FiniteReal,
     admitted_tolerance: NonNegativeLength,
-) -> Result<Option<FiniteReal>, CodecError> {
-    let _depth = ctx.enter_nested("IR direct curve inversion depth")?;
+) -> Result<Option<FiniteReal>, ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("IR direct curve inversion depth")?;
 
-    let result = (|| -> Option<Result<FiniteReal, CodecError>> {
+    let result = (|| -> Option<Result<FiniteReal, ResourceLimit>> {
         let tolerance = admitted_tolerance.get();
         let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
@@ -5606,7 +5609,7 @@ fn direct_curve_parameter_near_point(
         {
             Ok(Some(point)) => point,
             Ok(None) => return None,
-            Err(limit) => return Some(Err(limit.into())),
+            Err(limit) => return Some(Err(limit)),
         };
         let error = evaluated.distance(point);
         (error.is_finite() && error <= tolerance).then_some(Ok(parameter))

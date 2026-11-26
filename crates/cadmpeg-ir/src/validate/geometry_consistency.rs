@@ -915,7 +915,7 @@ impl<'ir> CurveEndComparisons<'ir> {
         curve: &crate::geometry::Curve,
         vertices: [&str; 2],
         [start_t, end_t]: [f64; 2],
-    ) -> Result<Option<MeasuredEnds>, CodecError> {
+    ) -> Result<Option<MeasuredEnds>, ResourceLimit> {
         let (Some((start, start_tol)), Some((end, end_tol))) = (
             self.vertices.get(vertices[0]),
             self.vertices.get(vertices[1]),
@@ -994,7 +994,7 @@ impl<'ir> CurveEndComparisons<'ir> {
         &self,
         ctx: &DecodeContext<'_>,
         edge: &'ir crate::topology::Edge,
-    ) -> Result<Option<VertexComparison<'ir>>, CodecError> {
+    ) -> Result<Option<VertexComparison<'ir>>, ResourceLimit> {
         let (Some(curve), Some(ends), Some(range)) = (
             edge.curve().and_then(|curve| self.curve(curve)),
             &edge.ends,
@@ -1014,7 +1014,7 @@ impl<'ir> CurveEndComparisons<'ir> {
         &self,
         ctx: &DecodeContext<'_>,
         coedge: &'ir crate::topology::Coedge,
-    ) -> Result<Option<VertexComparison<'ir>>, CodecError> {
+    ) -> Result<Option<VertexComparison<'ir>>, ResourceLimit> {
         let Some(use_curve) = &coedge.use_curve else {
             return Ok(None);
         };
@@ -1191,6 +1191,7 @@ pub(super) fn check_pcurve_surface_consistency(
             );
         }
     })
+    .map_err(Into::into)
 }
 
 /// The comparison of each coedge's pcurve image on its face's surface with
@@ -1202,7 +1203,7 @@ pub(crate) fn pcurve_image_comparisons<'ir>(
     index: &crate::index::ModelIndex<'ir>,
     evaluations: &ModelEvaluationPass,
     mut visit: impl FnMut(VertexComparison<'ir>),
-) -> Result<(), CodecError> {
+) -> Result<(), ResourceLimit> {
     let ir = index.ir();
     let model = PassEvaluator {
         index,
@@ -1400,7 +1401,7 @@ pub(crate) fn pcurve_image_comparisons<'ir>(
         let mut minimum_mismatch: Option<f64> = None;
         let mut nearest: Option<[ComparedEnd<'ir>; 2]> = None;
         let mut qualified = false;
-        let mut qualifies = |ranges: &Option<Vec<[f64; 2]>>| -> Result<bool, CodecError> {
+        let mut qualifies = |ranges: &Option<Vec<[f64; 2]>>| -> Result<bool, ResourceLimit> {
             for [t0, t1] in ranges.iter().flat_map(|ranges| ranges.iter()).copied() {
                 // A non-finite pcurve or surface point is measured as a finite
                 // one is: the distance it produces is the finding's measure.
@@ -1510,7 +1511,7 @@ fn pcurve_parameter_ranges(
     pcurve: &crate::geometry::pcurve::Pcurve,
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
     let mut ranges = Vec::new();
     if let Some(range) = pcurve_range.or(pcurve
         .parameter_range()
@@ -1554,7 +1555,7 @@ fn edge_pcurve_parameter_ranges(
     first: &crate::geometry::pcurve::Pcurve,
     last: &crate::geometry::pcurve::Pcurve,
     tolerance: f64,
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
     let [start, end] = endpoints;
     let mut start_parameters = Vec::new();
     for seed in pcurve_parameter_seeds_on_surface(ctx, context, first)? {
@@ -1794,7 +1795,7 @@ fn unique<T>(
 fn pcurve_parameter_seeds(
     ctx: &DecodeContext<'_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Result<Vec<f64>, CodecError> {
+) -> Result<Vec<f64>, ResourceLimit> {
     let mut seeds = Vec::new();
     seeds.push(0.0);
     if let Some(range) = pcurve.parameter_range() {
@@ -1811,7 +1812,7 @@ fn pcurve_parameter_seeds_on_surface(
     ctx: &DecodeContext<'_>,
     context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Result<Vec<FiniteReal>, CodecError> {
+) -> Result<Vec<FiniteReal>, ResourceLimit> {
     let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
     let Some((origin, direction)) = pcurve.geometry.line_parameters(ctx)? else {
         return Ok(unique(seeds, FiniteReal::new));
