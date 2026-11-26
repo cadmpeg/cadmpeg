@@ -13,7 +13,7 @@ use super::blend::{
     BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget, CircularBlendDefinition,
     ContactCurveSample, SourcePcurveSample,
 };
-use super::geometry_work::GeometryWorkBudget;
+use super::geometry_work::{GeometryWorkBudget, LaneGeometryWork};
 use super::nurbs_fit::{fit_nurbs_surface_parameter, fit_nurbs_surface_parameter_locally};
 use super::offset::{
     coarse_model_surface_parameters,
@@ -33,7 +33,7 @@ use super::MISSING_TOLERANCE;
 use crate::framing::node_kind::NodeKind;
 use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
-use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{analytic_surface_parameters, finite_or_refusal};
@@ -51,32 +51,25 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Maximum serialized support-UV lane length admitted by one model record.
 pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
 
-/// Minimum support-UV point fits admitted while completing one model.
+/// Minimum support-UV consistency checks admitted for one model.
 const MIN_SUPPORT_UV_COMPLETION_SAMPLES: usize = 1_024;
 
-/// Support-UV fits reserved for each admitted chart candidate before the
-/// model-wide ceiling applies.
+/// Support-UV consistency checks reserved for each admitted chart candidate
+/// before the model-wide ceiling applies.
 const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
 
-/// Hard support-UV completion ceiling for one model and one completion
-/// strategy. The direct and coupled strategies receive independent slices so
-/// a difficult continuation pass cannot starve direct surface inversion.
-///
-/// Completion work scales with the chart census so a valid model is not
-/// truncated at an arbitrary candidate prefix. The ceiling remains in place
-/// for unusually large or adversarial inputs.
+/// Hard ceiling on the support-UV consistency checks of one model.
 const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
 
-/// Geometry work reserved for one support-UV sample before the lane slice is
-/// capped. A lane is admitted as a whole, so one difficult carrier cannot
-/// consume the model-wide budget before later carriers get a certified try.
+/// Geometry work that each sample adds to the budget of one support-UV lane
+/// attempt.
 const SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE: usize = 2_048;
 
-/// Minimum geometry work available to a support-UV lane with a small chart.
+/// Minimum geometry work of one support-UV lane attempt.
 const MIN_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 131_072;
 
-/// Maximum geometry work available to one support-UV lane in one strategy.
-const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
+/// Maximum geometry work of one support-UV lane attempt.
+pub(super) const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
 
 pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
     chart_count
@@ -93,7 +86,7 @@ pub(super) fn support_uv_budget_exhausted(budget: &WorkBudget) -> bool {
     budget.exhausted() || budget.remaining() == 0
 }
 
-fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) -> usize {
+fn support_uv_lane_geometry_work_limit(sample_count: usize) -> usize {
     sample_count
         .checked_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
         .map_or(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK, |work| {
@@ -102,12 +95,6 @@ fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) ->
                 MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
             )
         })
-        .min(remaining)
-}
-
-#[cfg(test)]
-fn new_support_uv_budget() -> WorkBudget {
-    WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
 }
 
 pub(super) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
@@ -254,15 +241,11 @@ fn validated_serialized_values_lane_with_budget(
     fit_tolerance: f64,
     values: Option<&SupportUvLane>,
     geometry_budget: &GeometryWorkBudget<'_>,
-    support_budget: &WorkBudget,
 ) -> Result<Option<Vec<Point2>>, cadmpeg_core::decode::ResourceLimit> {
     let Some(values) = values else {
         return Ok(None);
     };
-    if values.len() > MAX_SUPPORT_UV_SAMPLES
-        || !support_uv_spans_chart(values.as_slice(), points)
-        || !support_budget.charge_by(points.len())
-    {
+    if values.len() > MAX_SUPPORT_UV_SAMPLES || !support_uv_spans_chart(values.as_slice(), points) {
         return Ok(None);
     }
     if !support_uv_lane_matches_surface_with_budget(
@@ -835,48 +818,37 @@ pub(super) fn complete_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let support_budget = new_support_uv_budget();
-    let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget =
-        GeometryWorkBudget::from_context(ctx, super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    complete_support_uv_with_budget(
-        ir,
-        pending,
-        &support_budget,
-        &geometry_budget,
-        &coupled_support_budget,
-        &geometry_budget,
-    )
+    let lane_work = LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+    complete_support_uv_with_budget(ir, pending, &lane_work, &lane_work)
 }
 
 #[cfg(test)]
 pub(super) fn complete_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    support_budget: &WorkBudget,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &WorkBudget,
-    coupled_geometry_budget: &GeometryWorkBudget<'_>,
+    lane_work: &LaneGeometryWork<'_>,
+    coupled_lane_work: &LaneGeometryWork<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
     complete_support_uv_with_budget_and_endpoint_witnesses(
         ir,
         pending,
-        (support_budget, geometry_budget),
-        (coupled_support_budget, coupled_geometry_budget),
+        lane_work,
+        coupled_lane_work,
         &mut endpoint_witnesses,
     )
 }
 
+/// Completes the pending support-UV lanes in waves. Each lane attempt draws its
+/// own geometry budget, and a lane side is attempted again only after the
+/// opposite side's pcurve changes, so the work is bounded by the lane count.
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    direct_budgets: (&WorkBudget, &GeometryWorkBudget<'_>),
-    coupled_budgets: (&WorkBudget, &GeometryWorkBudget<'_>),
+    lane_work: &LaneGeometryWork<'_>,
+    coupled_lane_work: &LaneGeometryWork<'_>,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let (support_budget, geometry_budget) = direct_budgets;
-    let (coupled_support_budget, coupled_geometry_budget) = coupled_budgets;
     // A failed fit can become solvable when either lane is filled by an
     // earlier wave. Keep those dependencies as the direct and coupled retry
     // keys; unrelated progress must not repeat the same inverse problems.
@@ -888,11 +860,11 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     let mut lane_geometry_exhausted = false;
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
-        if before == 0 || support_uv_budget_exhausted(support_budget) {
+        if before == 0 {
             break;
         }
-        geometry_budget.clear_blend_frame_cache();
-        coupled_geometry_budget.clear_blend_frame_cache();
+        lane_work.clear_blend_frame_cache();
+        coupled_lane_work.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_support_uv_wave(
             ir,
             SupportUvAttempts {
@@ -901,13 +873,11 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
                 failed_coupled_attempts: &mut failed_coupled_attempts,
                 endpoint_witnesses,
             },
-            support_budget,
-            geometry_budget,
-            coupled_support_budget,
-            coupled_geometry_budget,
+            lane_work,
+            coupled_lane_work,
         )?;
         let after = pending_support_lanes_requiring_completion(ir, pending);
-        if after >= before || support_uv_budget_exhausted(support_budget) {
+        if after >= before {
             break;
         }
     }
@@ -1003,10 +973,8 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 let parent_geometry_budget = geometry_budget;
                 let lane_geometry_budget = if isolate_lanes {
                     Some(
-                        parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
-                            points.len(),
-                            parent_geometry_budget.remaining(),
-                        )),
+                        parent_geometry_budget
+                            .child_slice(support_uv_lane_geometry_work_limit(points.len())),
                     )
                 } else {
                     None
@@ -1158,10 +1126,8 @@ struct SupportUvAttempts<'inputs> {
 fn complete_support_uv_wave(
     ir: &mut CadIr,
     support_uv_attempts: SupportUvAttempts<'_>,
-    support_budget: &WorkBudget,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &WorkBudget,
-    coupled_geometry_budget: &GeometryWorkBudget<'_>,
+    lane_work: &LaneGeometryWork<'_>,
+    coupled_lane_work: &LaneGeometryWork<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let SupportUvAttempts {
         pending,
@@ -1171,17 +1137,13 @@ fn complete_support_uv_wave(
     } = support_uv_attempts;
 
     let mut lane_geometry_exhausted = false;
-    let geometry_exhausted = geometry_budget.exhausted();
-    if !support_uv_budget_exhausted(support_budget) && !geometry_exhausted {
+    {
         let mut replacements = Vec::new();
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         for (procedural_id, samples, fit_tolerance, serialized) in pending {
             let points = &samples.points();
             let parameters = &samples.parameters();
-            if support_uv_budget_exhausted(support_budget) {
-                break;
-            }
             let Some(procedural) = model_index
                 .procedural_curves(procedural_id.as_str(), cadmpeg_ir::index::StandardIndex)
             else {
@@ -1199,9 +1161,6 @@ fn complete_support_uv_wave(
                 continue;
             };
             for side in 0..2 {
-                if support_uv_budget_exhausted(support_budget) {
-                    break;
-                }
                 if !pcurve_requires_completion(
                     context.sides()[side]
                         .pcurve
@@ -1290,7 +1249,7 @@ fn complete_support_uv_wave(
                         spine,
                         radius,
                         0,
-                        geometry_budget.ctx,
+                        lane_work.ctx,
                     )?
                     else {
                         return Ok(None);
@@ -1303,12 +1262,8 @@ fn complete_support_uv_wave(
                         boundary,
                     )))
                 })()?;
-                let parent_geometry_budget = geometry_budget;
                 let lane_geometry_budget =
-                    parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
-                        points.len(),
-                        parent_geometry_budget.remaining(),
-                    ));
+                    lane_work.lane(support_uv_lane_geometry_work_limit(points.len()));
                 let geometry_budget = &lane_geometry_budget;
                 let mut contact_seeds = BlendContactSeedCache::default();
                 let uv = (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
@@ -1319,16 +1274,12 @@ fn complete_support_uv_wave(
                         effective_fit_tolerance,
                         serialized.values[side].as_ref(),
                         geometry_budget,
-                        support_budget,
                     )? {
                         return Ok(Some((values, true)));
                     }
                     let mut uv = Vec::new();
                     let mut all_parameters_certified = true;
                     for (point_index, point) in points.iter().enumerate() {
-                        if !support_budget.charge() {
-                            return Ok(None);
-                        }
                         let serialized_seeds = serialized_support_uv_seed_candidates(
                             &surface.geometry,
                             serialized,
@@ -1497,7 +1448,10 @@ fn complete_support_uv_wave(
                                                     0,
                                                     geometry_budget,
                                                 )?;
-                                            blend_parameter_grids.insert(surface_id.clone(), grid);
+                                            if grid.is_some() || !geometry_budget.exhausted() {
+                                                blend_parameter_grids
+                                                    .insert(surface_id.clone(), grid);
+                                            }
                                         }
                                         if let Some(grid) = blend_parameter_grids
                                             .get(surface_id)
@@ -1535,11 +1489,7 @@ fn complete_support_uv_wave(
                     Ok(Some((uv, all_parameters_certified)))
                 })();
                 let Some((mut uv, all_parameters_certified)) = uv? else {
-                    let parent_exhausted = parent_geometry_budget
-                        .consume_child(&lane_geometry_budget)
-                        .is_err();
-                    let child_exhausted = lane_geometry_budget.exhausted();
-                    lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+                    lane_geometry_exhausted |= lane_geometry_budget.exhausted();
                     failed_attempts.insert(
                         attempt_key,
                         source_pcurve.map(|pcurve| pcurve.geometry.clone()),
@@ -1660,11 +1610,7 @@ fn complete_support_uv_wave(
                         source_pcurve.map(|pcurve| pcurve.geometry.clone()),
                     );
                 }
-                let parent_exhausted = parent_geometry_budget
-                    .consume_child(&lane_geometry_budget)
-                    .is_err();
-                let child_exhausted = lane_geometry_budget.exhausted();
-                lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+                lane_geometry_exhausted |= lane_geometry_budget.exhausted();
             }
         }
         let mut cache_backed_constructions = BTreeSet::<ProceduralCurveId>::new();
@@ -1711,18 +1657,14 @@ fn complete_support_uv_wave(
     // Independent inverse admission is the cheapest certified route. Run
     // coupled continuation only after this wave has had a chance to fill the
     // same lanes, so difficult nested supports are reserved for residuals.
-    let coupled_geometry_exhausted = coupled_geometry_budget.exhausted();
-    if !coupled_geometry_exhausted {
-        coupled_geometry_budget.clear_blend_frame_cache();
-        lane_geometry_exhausted |= complete_coupled_support_uv(
-            ir,
-            pending,
-            coupled_support_budget,
-            coupled_geometry_budget,
-            failed_coupled_attempts,
-            endpoint_witnesses,
-        )?;
-    }
+    coupled_lane_work.clear_blend_frame_cache();
+    lane_geometry_exhausted |= complete_coupled_support_uv(
+        ir,
+        pending,
+        coupled_lane_work,
+        failed_coupled_attempts,
+        endpoint_witnesses,
+    )?;
     Ok(lane_geometry_exhausted)
 }
 
@@ -1824,17 +1766,13 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
 fn complete_coupled_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    coupled_support_budget: &WorkBudget,
-    geometry_budget: &GeometryWorkBudget<'_>,
+    lane_work: &LaneGeometryWork<'_>,
     failed_attempts: &mut BTreeMap<
         ProceduralCurveId,
         [Option<cadmpeg_ir::geometry::procedural_curves::SupportPcurve>; 2],
     >,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if geometry_budget.exhausted() {
-        return Ok(false);
-    }
     let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<&str, Option<Vec<(Point2, Point3)>>>::new();
@@ -1944,14 +1882,6 @@ fn complete_coupled_support_uv(
         {
             continue;
         }
-        let missing_lanes = missing.iter().filter(|missing| **missing).count();
-        let Some(sample_work) = points.len().checked_mul(missing_lanes) else {
-            coupled_support_budget.exhaust();
-            break;
-        };
-        if !coupled_support_budget.charge_by(work_units(sample_work)) {
-            break;
-        }
         let mut seeds = [None; 2];
         for (side, seed) in seeds.iter_mut().enumerate() {
             let support = &context.sides()[side];
@@ -1968,10 +1898,8 @@ fn complete_coupled_support_uv(
                 }
             }
         }
-        let parent_geometry_budget = geometry_budget;
-        let lane_geometry_budget = parent_geometry_budget.child_slice(
-            support_uv_lane_geometry_work_limit(points.len(), parent_geometry_budget.remaining()),
-        );
+        let lane_geometry_budget =
+            lane_work.lane(support_uv_lane_geometry_work_limit(points.len()));
         let geometry_budget = &lane_geometry_budget;
         let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
             &model_index,
@@ -1994,11 +1922,7 @@ fn complete_coupled_support_uv(
         }
         let Some(lanes) = lanes else {
             failed_attempts.insert(procedural_id.clone(), lane_state);
-            let parent_exhausted = parent_geometry_budget
-                .consume_child(&lane_geometry_budget)
-                .is_err();
-            let child_exhausted = lane_geometry_budget.exhausted();
-            lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+            lane_geometry_exhausted |= lane_geometry_budget.exhausted();
             continue;
         };
         let mut lane_replacements = Vec::new();
@@ -2053,14 +1977,7 @@ fn complete_coupled_support_uv(
                 lane_replacements.push((procedural_id.clone(), side, pcurve));
             }
         }
-        let parent_exhausted = parent_geometry_budget
-            .consume_child(&lane_geometry_budget)
-            .is_err();
-        let child_exhausted = lane_geometry_budget.exhausted();
-        lane_geometry_exhausted |= child_exhausted || parent_exhausted;
-        if parent_exhausted {
-            continue;
-        }
+        lane_geometry_exhausted |= lane_geometry_budget.exhausted();
         for (key, witness) in lane_witnesses {
             endpoint_witnesses.entry(key).or_default().push(witness);
         }
@@ -2114,15 +2031,13 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     pending: &[PendingExt11SupportUv],
     geometry_work: usize,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, geometry_work);
+    let lane_work = LaneGeometryWork::from_context(ctx, geometry_work);
     let mut failed_attempts = BTreeMap::new();
 
     complete_coupled_support_uv(
         ir,
         pending,
-        &coupled_support_budget,
-        &geometry_budget,
+        &lane_work,
         &mut failed_attempts,
         &mut BTreeMap::new(),
     )
@@ -2712,7 +2627,7 @@ mod tests {
     use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
-    use super::super::geometry_work::GeometryWorkBudget;
+    use super::super::geometry_work::{GeometryWorkBudget, LaneGeometryWork};
     use super::{
         complete_support_uv_with_budget_and_endpoint_witnesses, ordered_support_uv_seed_candidates,
         support_uv_lane_geometry_work_limit, support_uv_lane_matches_surface_with_budget,
@@ -2720,7 +2635,6 @@ mod tests {
         MAX_SUPPORT_UV_SAMPLES,
     };
     use crate::intersection::SupportUvLane;
-    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -2778,7 +2692,6 @@ mod tests {
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let budget = GeometryWorkBudget::from_context(ctx, 10_000);
-            let support_budget = WorkBudget::new(100);
             let chart = [Point3::new(0., 0., 0.), Point3::new(2., 0., 0.)];
             let constant = SupportUvLane::new(vec![[0., 0.], [0., 0.]], 2).unwrap();
             assert!(super::validated_serialized_values_lane_with_budget(
@@ -2788,7 +2701,6 @@ mod tests {
                 10.,
                 Some(&constant),
                 &budget,
-                &support_budget,
             )
             .unwrap()
             .is_none());
@@ -2801,7 +2713,6 @@ mod tests {
                 10.,
                 Some(&values),
                 &budget,
-                &support_budget,
             )
             .unwrap()
             .unwrap();
@@ -2824,43 +2735,6 @@ mod tests {
                 &[Point2::new(1., 1.); 3],
                 &[chart[0]; 3],
             ));
-            let exact_budget = WorkBudget::new(2);
-            assert!(super::validated_serialized_values_lane_with_budget(
-                &index,
-                &surface,
-                &chart,
-                10.,
-                Some(&values),
-                &budget,
-                &exact_budget,
-            )
-            .unwrap()
-            .is_some());
-            assert_eq!(exact_budget.remaining(), 0);
-            assert!(super::validated_serialized_values_lane_with_budget(
-                &index,
-                &surface,
-                &chart,
-                10.,
-                Some(&values),
-                &budget,
-                &exact_budget,
-            )
-            .unwrap()
-            .is_none());
-            let short_budget = WorkBudget::new(1);
-            assert!(super::validated_serialized_values_lane_with_budget(
-                &index,
-                &surface,
-                &chart,
-                10.,
-                Some(&values),
-                &budget,
-                &short_budget,
-            )
-            .unwrap()
-            .is_none());
-            assert!(short_budget.exhausted());
             let constant_pcurve =
                 super::linear_pcurve_geometry(&[0., 1.], &[Point2::new(0., 0.); 2]).unwrap();
             assert!(super::constant_pcurve_contradicts_chart(
@@ -2892,7 +2766,6 @@ mod tests {
                 0.001,
                 Some(&wrong),
                 &budget,
-                &support_budget,
             )
             .unwrap()
             .is_none());
@@ -2902,29 +2775,6 @@ mod tests {
     #[test]
     fn linear_knots_repeat_end_parameters() {
         assert_eq!(super::linear_knots(&[0.0, 1.0]), [0.0, 0.0, 1.0, 1.0]);
-    }
-
-    #[test]
-    fn support_uv_completion_skips_at_local_geometry_work_limit() {
-        crate::test_support::with_decode_context(|ctx| {
-            let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
-            let geometry_budget = GeometryWorkBudget::from_context(ctx, 0);
-            assert!(!geometry_budget.charge());
-            assert!(geometry_budget.exhausted());
-            let mut ir = CadIr::empty();
-            let mut endpoint_witnesses = BTreeMap::new();
-
-            complete_support_uv_with_budget_and_endpoint_witnesses(
-                &mut ir,
-                &[],
-                (&support_budget, &geometry_budget),
-                (&support_budget, &geometry_budget),
-                &mut endpoint_witnesses,
-            )
-            .expect("an exhausted local geometry slice skips completion");
-            assert!(endpoint_witnesses.is_empty());
-            assert!(ctx.resource_refusal().is_none());
-        });
     }
 
     #[test]
@@ -3004,27 +2854,20 @@ mod tests {
     }
 
     #[test]
-    fn support_uv_lane_geometry_slice_preserves_parent_fairness() {
-        let parent = WorkBudget::new(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK * 2);
-        let lane_limit =
-            support_uv_lane_geometry_work_limit(MAX_SUPPORT_UV_SAMPLES, parent.remaining());
-        let lane = parent.child_slice(lane_limit);
+    fn a_lane_that_exhausts_its_geometry_work_leaves_the_next_lane_whole() {
+        crate::test_support::with_decode_context(|ctx| {
+            let lane_work = LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+            let lane_limit = support_uv_lane_geometry_work_limit(MAX_SUPPORT_UV_SAMPLES);
+            let lane = lane_work.lane(lane_limit);
 
-        assert_eq!(lane_limit, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
-        assert!(lane.charge_by(lane_limit));
-        assert!(!lane.charge());
-        assert_eq!(parent.consumed(), 0);
-        assert!(!parent.exhausted());
+            assert_eq!(lane_limit, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+            assert!(lane.charge_by(lane_limit));
+            assert!(!lane.charge());
 
-        assert!(matches!(parent.consume_child(&lane), Ok(())));
-        assert_eq!(parent.consumed(), MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
-        assert!(!parent.exhausted());
-
-        let later_lane = parent.child_slice(support_uv_lane_geometry_work_limit(
-            MAX_SUPPORT_UV_SAMPLES,
-            parent.remaining(),
-        ));
-        assert!(later_lane.charge());
+            let later_lane = lane_work.lane(lane_limit);
+            assert_eq!(later_lane.remaining(), MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+            assert!(later_lane.charge_by(lane_limit));
+        });
     }
 
     #[test]
@@ -3038,7 +2881,7 @@ mod tests {
     #[test]
     fn support_uv_lane_count_overflow_caps_at_the_lane_ceiling() {
         assert_eq!(
-            support_uv_lane_geometry_work_limit(usize::MAX, usize::MAX),
+            support_uv_lane_geometry_work_limit(usize::MAX),
             MAX_SUPPORT_UV_LANE_GEOMETRY_WORK
         );
     }
@@ -3153,12 +2996,13 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+            let lane_work = LaneGeometryWork::from_context(ctx, 100);
             let mut endpoint_witnesses = BTreeMap::new();
             assert!(!complete_support_uv_with_budget_and_endpoint_witnesses(
                 &mut ir,
                 &[],
-                (&support_budget, &geometry_budget),
-                (&support_budget, &geometry_budget),
+                &lane_work,
+                &lane_work,
                 &mut endpoint_witnesses,
             )
             .expect("an empty candidate list needs no model index"));

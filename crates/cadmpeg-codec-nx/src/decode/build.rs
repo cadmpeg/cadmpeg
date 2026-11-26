@@ -7,9 +7,8 @@ use super::emit::{
     unknown_stream_metadata,
 };
 use super::geometry_work::{
-    model_geometry_work_limit, GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK,
-    MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK, MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
-    MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+    model_geometry_work_limit, GeometryWorkBudget, LaneGeometryWork, MAX_ADAPTIVE_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
@@ -26,7 +25,7 @@ use super::support_uv::{
     invalidate_inconsistent_support_uv_with_validated_lanes_and_status, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
-    IntersectionCompletionSource, SerializedSupportUv,
+    IntersectionCompletionSource, SerializedSupportUv, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
@@ -284,27 +283,17 @@ pub(super) fn try_decode_geometry(
             MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
             geometry_record_count,
         ),
-        support_uv_completion: model_geometry_work_limit(
-            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-            geometry_record_count,
-        ),
-        coupled_support_uv: model_geometry_work_limit(
-            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-            geometry_record_count,
-        ),
     };
     let exact_transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
     let transfer_budget = WorkBudget::new(transfer_limit);
     let support_uv_validation_budget = WorkBudget::new(support_uv_limit);
-    let support_budget = WorkBudget::new(support_uv_limit);
-    let coupled_support_budget = WorkBudget::new(support_uv_limit);
     let adaptive_geometry_budget = GeometryWorkBudget::from_context(ctx, geometry_limits.adaptive);
     let completion_geometry_budget =
         GeometryWorkBudget::from_context(ctx, geometry_limits.pcurve_completion);
-    let support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, geometry_limits.support_uv_completion);
-    let coupled_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, geometry_limits.coupled_support_uv);
+    let support_uv_lane_work =
+        LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+    let coupled_support_uv_lane_work =
+        LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
     let serialized_support_uv_geometry_budget =
         GeometryWorkBudget::from_context(ctx, geometry_limits.serialized_support_uv);
     let mut support_uv_lane_geometry_exhausted = false;
@@ -320,8 +309,8 @@ pub(super) fn try_decode_geometry(
         let scope = IdScope::stream_from_index(si)?;
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
-        support_uv_geometry_budget.clear_blend_frame_cache();
-        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        support_uv_lane_work.clear_blend_frame_cache();
+        coupled_support_uv_lane_work.clear_blend_frame_cache();
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         if preselection
             .as_ref()
@@ -1368,16 +1357,16 @@ pub(super) fn try_decode_geometry(
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
         )?;
-        support_uv_geometry_budget.clear_blend_frame_cache();
-        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        support_uv_lane_work.clear_blend_frame_cache();
+        coupled_support_uv_lane_work.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir)?;
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
                 &mut ir,
                 &pending_ext11_support_uv,
-                (&support_budget, &support_uv_geometry_budget),
-                (&coupled_support_budget, &coupled_support_uv_geometry_budget),
+                &support_uv_lane_work,
+                &coupled_support_uv_lane_work,
                 &mut completed_endpoint_witnesses,
             )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
@@ -1537,14 +1526,6 @@ pub(super) fn try_decode_geometry(
         serialized: crate::decode::report::SupportUvPhaseStatus {
             samples_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
             geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
-        },
-        direct: crate::decode::report::SupportUvPhaseStatus {
-            samples_exhausted: support_uv_budget_exhausted(&support_budget),
-            geometry_exhausted: support_uv_geometry_budget.exhausted(),
-        },
-        coupled: crate::decode::report::SupportUvPhaseStatus {
-            samples_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
-            geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
         },
         support_uv_lane_geometry_exhausted,
         transfer_limit,

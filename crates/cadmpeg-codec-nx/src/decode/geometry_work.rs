@@ -22,14 +22,6 @@ pub(super) const MAX_PCURVE_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 /// EXT11 support-UV lanes for one decoded model.
 pub(super) const MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
-/// Floor of the geometry evaluation work admitted while validating or
-/// completing EXT11 support-UV lanes for one decoded model.
-pub(super) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
-
-/// Floor of the geometry evaluation work admitted while continuing coupled
-/// surface-intersection support lanes for one decoded model.
-pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
-
 /// Geometry work each selected Parasolid record adds to a model-wide budget.
 pub(super) const GEOMETRY_WORK_PER_RECORD: usize = 4096;
 
@@ -74,6 +66,41 @@ impl<'a> GeometryWorkBudget<'a> {
 
     pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
         self.blend_frame_cache.as_ref()
+    }
+}
+
+/// Geometry work for a phase whose lanes each draw their own budget. The lanes
+/// share the decode context and the blend-frame cache; the work one lane
+/// spends leaves the budget of every other lane unchanged.
+pub(super) struct LaneGeometryWork<'a> {
+    pub(super) ctx: &'a DecodeContext<'a>,
+    lane_limit: usize,
+    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
+}
+
+impl<'a> LaneGeometryWork<'a> {
+    /// No lane budget exceeds `lane_limit` units.
+    pub(super) fn from_context(ctx: &'a DecodeContext<'_>, lane_limit: usize) -> Self {
+        Self {
+            ctx,
+            lane_limit,
+            blend_frame_cache: Rc::new(RefCell::new(
+                super::blend::BlendSurfaceFrameCache::default(),
+            )),
+        }
+    }
+
+    /// A new budget of `limit` units for one lane attempt.
+    pub(super) fn lane(&self, limit: usize) -> GeometryWorkBudget<'_> {
+        GeometryWorkBudget {
+            work: WorkBudget::new(limit.min(self.lane_limit)),
+            ctx: self.ctx,
+            blend_frame_cache: Rc::clone(&self.blend_frame_cache),
+        }
+    }
+
+    pub(super) fn clear_blend_frame_cache(&self) {
+        self.blend_frame_cache.borrow_mut().clear();
     }
 }
 
