@@ -212,8 +212,10 @@ pub(crate) const VIEW_RECORD_PART: &str = "view-record";
 pub(crate) const V1_RECORD_PART: &str = "v1-record";
 
 /// Gives up the framed record of `kind` at `range` of `data` for the codec
-/// loss `why`. A retained source record keeps the same bytes, so the part
-/// keeps only their digest. The part links to `holder`, the document record
+/// loss `why`. The part keeps the length and digest of the record's bytes;
+/// [`keep_uncovered_part_bytes`] gives it the bytes where no other retained
+/// record keeps them. Its loss names the caller's retained-bytes ceiling
+/// where the bytes pass it. The part links to `holder`, the document record
 /// that contains it, when there is one.
 pub(crate) fn give_up_retained(
     ctx: &DecodeContext<'_>,
@@ -223,14 +225,22 @@ pub(crate) fn give_up_retained(
     holder: Option<UnknownId>,
     why: &LossNote,
 ) -> Result<GivenUpPart, CodecError> {
+    let offset = cadmpeg_core::decode::u64_from_index(range.start);
+    let bytes = &data[range];
     let mut part = Part::at(
         "rhino",
         kind,
-        cadmpeg_core::decode::u64_from_index(range.start),
-        &data[range],
+        offset,
+        bytes,
         [cadmpeg_core::decode::ArenaClass::Model],
     )
     .digest_only();
+    if cadmpeg_core::decode::u64_from_index(bytes.len()) > ctx.retained_bytes_available() {
+        part = part.costing(
+            "its bytes pass the caller's retained-bytes ceiling (max_retained_bytes); \
+             the part keeps their length and digest",
+        );
+    }
     if let Some(holder) = holder {
         part = part.contained_in(cadmpeg_ir::ids::Identity::from(holder));
     }
@@ -240,9 +250,63 @@ pub(crate) fn give_up_retained(
     )
 }
 
+/// Gives the given-up part of each stub in `parts` the bytes of `data` it
+/// spans, where no other retained record of `fidelity` keeps them and they
+/// fit the caller's retained-bytes ceiling (`rhino_3dm.md` §21).
+///
+/// # Errors
+///
+/// A resource refusal for the retained bytes, or a malformed error when a
+/// part's span lies outside `data`.
+pub(crate) fn keep_uncovered_part_bytes(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    parts: &[UnknownId],
+) -> Result<(), CodecError> {
+    for id in parts {
+        let Some(record) = fidelity.retained_record(id.as_str()) else {
+            continue;
+        };
+        let (start, end, length) = (record.offset(), record.end_offset(), record.byte_len());
+        let covered = fidelity.retained_records().iter().any(|(other, kept)| {
+            other != id
+                && kept.data().is_some()
+                && kept.offset() <= start
+                && end <= kept.end_offset()
+        });
+        if record.data().is_some() || covered || length > ctx.retained_bytes_available() {
+            continue;
+        }
+        let (classes, owner) = (record.untyped().clone(), record.stream().to_owned());
+        let bytes = usize::try_from(start)
+            .ok()
+            .zip(usize::try_from(end).ok())
+            .and_then(|(start, end)| data.get(start..end))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("given-up part {id} lies outside the source"))
+            })?;
+        ctx.retain_bytes(length, "given-up part source bytes")?;
+        let mut inline = ctx.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+        inline.copy_from_slice(bytes);
+        let kept = cadmpeg_ir::RetainedSourceRecord::from_bytes(
+            owner,
+            start,
+            cadmpeg_ir::RetainedBytes::Inline { data: inline },
+        )
+        .map_err(CodecError::malformed)?
+        .with_untyped(classes);
+        fidelity.remove_retained_record(id.as_str());
+        fidelity
+            .insert_retained_record(id.clone(), kept)
+            .map_err(CodecError::malformed)?;
+    }
+    Ok(())
+}
+
 /// Gives up the framed object record at `source_order`, spanning `range`,
-/// for the codec loss `why`. Its object record in the document keeps its
-/// bytes and contains the part.
+/// for the codec loss `why`. Its object record in the document contains the
+/// part.
 pub(crate) fn give_up_object_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -260,8 +324,7 @@ pub(crate) fn give_up_object_record(
     )
 }
 
-/// Gives up the framed table record `record` for the codec loss `why`. Its
-/// opaque record in the source fidelity keeps its bytes.
+/// Gives up the framed table record `record` for the codec loss `why`.
 pub(crate) fn give_up_table_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],

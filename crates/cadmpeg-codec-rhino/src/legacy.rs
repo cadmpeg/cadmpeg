@@ -593,8 +593,7 @@ fn push_v1_record(
     Ok(())
 }
 
-/// Gives up the V1 record `chunk`, whose legacy record in the source fidelity
-/// keeps its bytes, for the codec loss `code` with `message`.
+/// Gives up the V1 record `chunk` for the codec loss `code` with `message`.
 fn v1_record_given_up(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -3130,6 +3129,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
+    let parts = given_up
+        .iter()
+        .map(|part| part.id().clone())
+        .collect::<Vec<_>>();
     for part in given_up {
         losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
@@ -3144,6 +3147,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
     }
+    crate::container::keep_uncovered_part_bytes(ctx, data, &mut source_fidelity, &parts)?;
     Ok(Decoded {
         ir,
         body: DecodeBody {

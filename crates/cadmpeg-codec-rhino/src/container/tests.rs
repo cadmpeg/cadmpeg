@@ -1256,5 +1256,56 @@ pub(crate) fn assert_part_given_up(
         cadmpeg_core::decode::u64_from_index(offset)
     );
     assert!(retained.data().is_none());
-    assert!(fidelity.retained_record(keeper).is_some());
+    assert!(fidelity
+        .retained_record(keeper)
+        .is_some_and(|keeper| keeper.data().is_some()));
+}
+
+/// A given-up record that no other record retains keeps its bytes; past the
+/// caller's retained-bytes ceiling it keeps their length and digest, and its
+/// charge names that ceiling.
+#[test]
+fn a_given_up_record_past_the_caller_ceiling_keeps_its_digest() {
+    let part_id =
+        |stub: &str| cadmpeg_ir::ids::UnknownId::mint(stub.to_owned()).expect("the stub id parses");
+    let data = vec![0x5a_u8; 4096];
+    let why =
+        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
+    let charge = |max_retained_bytes: u64| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        let part = super::give_up_retained(
+            &ctx,
+            &data,
+            super::TABLE_RECORD_PART,
+            0..data.len(),
+            None,
+            &why,
+        )
+        .expect("give up the record");
+        let stub = part.id().as_str().to_owned();
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut fidelity =
+            cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]));
+        let loss = part
+            .commit(&ctx, &mut ir, &mut fidelity)
+            .expect("commit the part");
+        super::keep_uncovered_part_bytes(&ctx, &data, &mut fidelity, &[part_id(&stub)])
+            .expect("keep the bytes no other record keeps");
+        let retained = fidelity
+            .retained_record(&stub)
+            .expect("the part is retained")
+            .data()
+            .map(<[u8]>::to_vec);
+        (loss.message, retained)
+    };
+    let (message, retained) = charge(2048);
+    assert!(message.contains("max_retained_bytes"), "{message}");
+    assert_eq!(retained, None);
+    let (message, retained) = charge(1 << 20);
+    assert!(!message.contains("max_retained_bytes"), "{message}");
+    assert_eq!(retained, Some(data.clone()));
 }
