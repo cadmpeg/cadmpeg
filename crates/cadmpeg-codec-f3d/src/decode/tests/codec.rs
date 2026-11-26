@@ -754,6 +754,37 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
 }
 
 #[test]
+fn decode_selects_the_board_asset_of_a_document_without_an_empty_subtype_asset() {
+    let f3d = crate::test_support::zip_test::synthetic_board_asset_f3d();
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        let design_breps = container::design_breps(scan).collect::<Vec<_>>();
+        assert_eq!(design_breps.len(), 1);
+        assert!(design_breps[0].name.ends_with("BREP.design.smb"));
+        let streams = scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            streams,
+            ["DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat"]
+        );
+    });
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert!(decoded
+        .ir()
+        .geometry
+        .bodies
+        .iter()
+        .all(|body| !body.id.as_str().contains("BREP.sibling")));
+}
+
+#[test]
 fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
     let decoded = F3dCodec
         .decode(

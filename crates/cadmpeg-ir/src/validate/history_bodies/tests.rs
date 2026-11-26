@@ -220,6 +220,20 @@ fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
     assert!(!admitted(&ir, crate::DRAFT_CORE));
 }
 
+#[test]
+fn a_nest_tolerance_out_of_range_is_reported_and_gives_up_no_history_body() {
+    let mut nest = scoped(cube_nest());
+    nest.vertices[0].tolerance = crate::scalar::PositiveLength::new(2.0e6);
+    let ir = document_with(nest);
+    let found = findings(&ir);
+    assert!(
+        found.iter().any(|finding| finding.rule.as_str()
+            == "topology.topology-tolerance-outside-sane-canonical-range"),
+        "{found:?}"
+    );
+    assert!(admitted(&ir, crate::HISTORY_BODY_ADMISSION));
+}
+
 /// The findings of the nest rules of history-body admission on `nest`.
 fn admission_findings(nest: &BodyTopology) -> Vec<Finding> {
     use super::super::topology::nested::{check, NestRules};
@@ -246,7 +260,7 @@ struct Defect {
     apply: fn(&mut BodyTopology),
 }
 
-fn defects() -> [Defect; 7] {
+fn defects() -> [Defect; 6] {
     [
         Defect {
             rule: "identity_order.entity-id-not-globally-unique",
@@ -321,14 +335,6 @@ fn defects() -> [Defect; 7] {
                     ))
                     .expect("finite"),
                 );
-            },
-        },
-        Defect {
-            rule: "topology.topology-tolerance-outside-sane-canonical-range",
-            checks: &[Check::Tolerances],
-            gives_up: false,
-            apply: |nest| {
-                nest.vertices[0].tolerance = crate::scalar::PositiveLength::new(2.0e6);
             },
         },
     ]
