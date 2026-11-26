@@ -437,10 +437,12 @@ fn decode_snapshot(bytes: &[u8]) -> String {
                 .to_canonical_json()
                 .expect("serialize canonical ir");
             let report = json::to_string_pretty(result.report()).expect("serialize report");
-            let fidelity = json::to_string_pretty(
-                &cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
-            )
-            .expect("serialize source_fidelity");
+            let fidelity =
+                json::to_string_pretty(&cadmpeg_test_support::golden::fidelity_snapshot(
+                    result.ir(),
+                    result.source_fidelity(),
+                ))
+                .expect("serialize source_fidelity");
             let mut out = String::from("{\n");
             out.push_str("  \"ir\": ");
             out.push_str(&indent_block(&ir));
