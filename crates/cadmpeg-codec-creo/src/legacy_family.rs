@@ -752,11 +752,11 @@ mod tests {
                     integer(instance, "attributes", 0, 13),
                     integer(value, "type", 50, 14),
                 ],
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             real_values: crate::legacy::TypedValues {
                 rows: vec![real(value, VALUE_REAL, 2.5, 15)],
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             string_values: vec![
                 string(item, "name", "d0", 16),

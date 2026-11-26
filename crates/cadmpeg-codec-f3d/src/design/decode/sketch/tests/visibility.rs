@@ -483,9 +483,10 @@ fn unread_folder_charges_one_loss_for_its_sketches() {
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].1.ordinal_collection, None);
     assert_eq!(
-        losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
-        [&crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchFolderUndecoded)
     );
+    assert!(losses[1].message.contains("sketch folder 500"));
 }
 
 #[test]

@@ -40,13 +40,23 @@ pub fn record_unreadable_kind() -> LossKind {
 /// with `why`'s provenance.
 #[must_use]
 pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNote; 2] {
-    let mut unreadable = LossNote::new(
-        record_unreadable_kind(),
-        format!("record {record} given up: {}", why.code),
-    )
-    .with_severity(Severity::Error);
+    let mut unreadable = record_unreadable(record, &why.code);
     unreadable.provenance.clone_from(&why.provenance);
     [why, unreadable]
+}
+
+/// The `record.unreadable` (Error) of a record a decoder gives up whole,
+/// naming `record` and `reason`.
+#[must_use]
+pub fn record_unreadable(
+    record: impl std::fmt::Display,
+    reason: impl std::fmt::Display,
+) -> LossNote {
+    LossNote::new(
+        record_unreadable_kind(),
+        format!("record {record} given up: {reason}"),
+    )
+    .with_severity(Severity::Error)
 }
 
 /// One part as its decoder names it before reading it.

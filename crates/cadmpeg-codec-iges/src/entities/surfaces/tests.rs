@@ -109,9 +109,15 @@ fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
 
 #[test]
 fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
-    for indicator in [
-        "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
-        "0,0,1",
+    // The midpoint normal admits the first indicator and reaches the NURBS
+    // offset the decoder does not project; it rejects the second, so the
+    // offset entity is given up.
+    for (indicator, given_up) in [
+        (
+            "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
+            &[][..],
+        ),
+        ("0,0,1", &["iges:entity:directory#3"][..]),
     ] {
         let result = IgesCodec
             .decode(
@@ -127,11 +133,17 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             .iter()
             .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
         assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
-        assert_eq!(result.report().losses.len(), 1);
+        assert_eq!(
+            result.report().losses.len(),
+            1 + given_up.len(),
+            "{:#?}",
+            result.report().losses
+        );
         assert_eq!(
             result.report().losses[0].code,
             IgesLossCode::GeometryNotProjected.kind()
         );
+        crate::test_support::assert_gives_up(result.report(), given_up);
     }
 }
 

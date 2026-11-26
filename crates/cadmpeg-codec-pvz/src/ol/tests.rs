@@ -299,7 +299,10 @@ fn a_malformed_surface_stream_is_reported_and_the_member_survives() {
         assert!(geometry.meshes.is_empty());
         assert_eq!(
             losses(&geometry),
-            [PvzLossCode::GeometryStreamUndecoded.kind()]
+            [
+                PvzLossCode::GeometryStreamUndecoded.kind(),
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
+            ]
         );
     }
 }
@@ -325,7 +328,10 @@ fn edge_groups_are_decoded_and_reported() {
     );
     assert_eq!(
         losses(&geometry(&odd).unwrap()),
-        [PvzLossCode::GeometryStreamUndecoded.kind()]
+        [
+            PvzLossCode::GeometryStreamUndecoded.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
 }
 

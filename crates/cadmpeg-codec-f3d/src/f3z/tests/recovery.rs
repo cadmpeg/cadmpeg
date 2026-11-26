@@ -401,4 +401,17 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
         .collect::<Vec<_>>();
     assert_eq!(failures.len(), 2, "{failures:?}");
     assert_eq!(failures[0], failures[1]);
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|token| token == "component.f3d")
+        })
+        .count();
+    assert_eq!(unreadable, 1);
 }

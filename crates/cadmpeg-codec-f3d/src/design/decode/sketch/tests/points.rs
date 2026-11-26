@@ -510,10 +510,9 @@ fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Gr
 fn assert_group_unread(bytes: &[u8], meta: &crate::metastream::MetaStream) {
     let (groups, losses) = decode_group_records(bytes, meta);
     assert!(groups.is_empty());
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchGeometryGroupUndecoded)
     );
 }
 
@@ -576,10 +575,9 @@ fn unreadable_group_keeps_point_and_curve_values_without_its_owner_join() {
     );
     assert_eq!(curves[0].owner_reference, None);
     assert_eq!(curves[0].geometry_group, None);
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchGeometryGroupUndecoded)
     );
 }
 
@@ -773,10 +771,10 @@ fn unreadable_point_keeps_sibling_points_and_curves() {
             cadmpeg_ir::math::Point2::new(12.5, -25.0)
         );
         assert_eq!(curves.len(), 1, "{failure}");
-        assert_eq!(losses.len(), 1, "{failure}");
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::SketchPointUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchPointUndecoded),
+            "{failure}"
         );
         assert!(losses[0].message.contains("record 41 version 11"));
     }

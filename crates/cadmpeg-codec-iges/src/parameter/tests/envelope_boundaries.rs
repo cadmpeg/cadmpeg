@@ -240,8 +240,12 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
     let code = IgesLossCode::ParameterDataQuarantined.kind();
     assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 2);
     assert!(result.ir().geometry.points.is_empty());
-    assert_eq!(losses.len(), 2, "{losses:#?}");
-    assert!(losses.iter().all(|loss| loss.code == code));
+    assert_eq!(losses.len(), 4, "{losses:#?}");
+    assert_eq!(losses.iter().filter(|loss| loss.code == code).count(), 2);
+    crate::test_support::assert_gives_up(
+        result.report(),
+        &["iges:quarantine:parameter#1", "iges:quarantine:parameter#3"],
+    );
 }
 
 #[test]

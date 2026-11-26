@@ -65,10 +65,13 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 model_body = Some(model.body);
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => losses.push(EdrawingsLossCode::StreamMalformed.note(format!(
-                "the eModel model stream did not open ({error}); the package carries no model \
-                 data"
-            ))),
+            Err(error) => losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                crate::package::MODEL_MEMBER,
+                EdrawingsLossCode::StreamMalformed.note(format!(
+                    "the eModel model stream did not open ({error}); the package carries no \
+                     model data"
+                )),
+            )),
         }
     }
     let mut ir = CadIr::decoded(SourceMeta::classified(

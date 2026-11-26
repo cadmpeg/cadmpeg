@@ -1032,9 +1032,10 @@ fn drawing_entity_loss_names_the_entity_and_reason() {
     let entry = directory_entry(404, 0);
     let mut losses = Vec::new();
     super::push_drawing_entity_loss(&mut losses, &entry, "missing");
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert_eq!(
         losses[0].message,
         "IGES entity type 404 form 0 was not projected: missing"
     );
+    crate::test_support::assert_given_up(&losses[1], "iges:entity:directory#1");
 }

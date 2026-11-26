@@ -28,6 +28,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -173,7 +174,8 @@ struct ClassOutcome<'a> {
     retained: usize,
     native: Option<(RhinoLossCode, NonZeroUsize)>,
     attribute_degraded: usize,
-    failed_framed: usize,
+    /// Source orders of the framed records the decoder gave up.
+    failed_framed: Vec<usize>,
     first_object: &'a ObjectRecord,
 }
 
@@ -2799,21 +2801,30 @@ impl<'a> DecodeContext<'a> {
                         .with_provenance(loss_provenance(class, outcome)),
                 );
             }
-            if outcome.failed_framed > 0 {
+            if !outcome.failed_framed.is_empty() {
                 losses.push(
                     RhinoLossCode::ObjectFramingUndecodable
                         .note(format_args!(
                             "{} framed object record(s) for class {class} could not be decoded",
-                            outcome.failed_framed
+                            outcome.failed_framed.len()
                         ))
                         .with_provenance(loss_provenance(class, outcome)),
                 );
+                for source_order in &outcome.failed_framed {
+                    losses.push(record_unreadable(
+                        Self::mint_unknown_id(*source_order),
+                        RhinoLossCode::ObjectFramingUndecodable.kind(),
+                    ));
+                }
             }
         }
 
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
-            losses.push(diagnostic.to_loss());
+            match &diagnostic.given_up {
+                Some(record) => losses.extend(record_given_up(record, diagnostic.to_loss())),
+                None => losses.push(diagnostic.to_loss()),
+            }
         }
 
         losses.append(&mut self.report.typed_losses);
@@ -2994,20 +3005,7 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         source: &OpaqueRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let table_key = source.table_typecode.to_be_bytes();
-        let record_key = source.record.typecode.to_be_bytes();
-        let offset_key =
-            (cadmpeg_core::decode::u64_from_index(source.record.range.start)).to_be_bytes();
-        let key = IdentityKey::hex_byte(table_key[0])
-            .with_hex_bytes(&table_key[1..])
-            .dash(IdentityKey::hex_byte(record_key[0]).with_hex_bytes(&record_key[1..]))
-            .dash(IdentityKey::hex_byte(offset_key[0]).with_hex_bytes(&offset_key[1..]));
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
-            key,
-        );
-
-        let record = self.source_record(id, source.record.range.clone())?;
+        let record = self.source_record(source.id(), source.record.range.clone())?;
         self.opaque_records.push(record);
         Ok(())
     }
@@ -3921,14 +3919,16 @@ impl<'a> DecodeContext<'a> {
 
     fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
-        for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
+        for (source_order, (object, status)) in
+            self.scan.objects.iter().zip(&self.statuses).enumerate()
+        {
             let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
             let outcome = outcomes.entry(class).or_insert_with(|| ClassOutcome {
                 decoded: 0,
                 retained: 0,
                 native: None,
                 attribute_degraded: 0,
-                failed_framed: 0,
+                failed_framed: Vec::new(),
                 first_object: object,
             });
             // Keep the first framed source, or the last degraded source if none was framed.
@@ -3943,7 +3943,7 @@ impl<'a> DecodeContext<'a> {
             match status {
                 None => outcome.retained += 1,
                 Some(GeometryOutcome::Decoded) => outcome.decoded += 1,
-                Some(GeometryOutcome::Failed) => outcome.failed_framed += 1,
+                Some(GeometryOutcome::Failed) => outcome.failed_framed.push(source_order),
                 Some(GeometryOutcome::NativeRetained(code)) => {
                     let count = outcome
                         .native

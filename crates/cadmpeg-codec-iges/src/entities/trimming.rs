@@ -2643,7 +2643,7 @@ pub(super) fn project(
                 }
                 if pcurve_unchecked {
                     if segment.parameter_curves_authoritative {
-                        super::push_geometry_loss(
+                        super::push_retained_geometry_loss(
                             &mut losses,
                             entry,
                             format_args!("checking the boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS"),
@@ -2651,7 +2651,7 @@ pub(super) fn project(
                         valid = false;
                         break;
                     }
-                    super::push_geometry_loss(
+                    super::push_retained_geometry_loss(
                         &mut losses,
                         entry,
                         format_args!(
@@ -2663,7 +2663,7 @@ pub(super) fn project(
                 }
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
-                        super::push_attributed_loss(
+                        super::push_given_up_loss(
                             &mut losses,
                             entry,
                             IgesLossCode::BoundaryPcurveOutsideSupportDomain,
@@ -2882,7 +2882,7 @@ pub(super) fn project(
                 break;
             };
             if source_endpoints.len() > MAX_BOUNDARY_CLUSTER_ENDPOINTS {
-                super::push_geometry_loss(
+                super::push_retained_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!(
@@ -3056,7 +3056,7 @@ pub(super) fn project(
             linear_boundary_ring_points(&linear_boundary_candidates, BoundarySpace::Parameter)
                 + linear_boundary_ring_points(&linear_boundary_candidates, BoundarySpace::Model);
         if !planar_pairs.admit(ring_points) {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!(

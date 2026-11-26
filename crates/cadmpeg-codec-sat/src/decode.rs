@@ -22,6 +22,9 @@ use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEviden
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
+/// The retained source of a text stream's bytes past its last read record.
+const UNREAD_RECORD: &str = "sat:source:unread#0";
+
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
@@ -309,6 +312,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .as_ref()
             .filter(|_| unread_stream_layout)
             .map(|span| span.start),
+        unread.as_ref().map(|_| UNREAD_RECORD),
         &mut result.body.losses,
     );
     let extensions =
@@ -345,7 +349,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         .then_some(("sat:source:standalone-faces#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
-    let unread_span = unread.map(|span| ("sat:source:unread#0", span));
+    let unread_span = unread.map(|span| (UNREAD_RECORD, span));
     retain_source(
         ctx,
         &mut result,

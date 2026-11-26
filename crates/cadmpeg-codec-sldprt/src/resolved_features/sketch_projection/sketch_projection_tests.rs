@@ -439,6 +439,18 @@ fn project(
     (projected, losses)
 }
 
+/// `given_up` is the `record.unreadable` of the edge the fixture refuses.
+fn assert_refused_edge_given_up(given_up: &cadmpeg_ir::report::loss::LossNote) {
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up
+        .message
+        .split_whitespace()
+        .any(|token| token == "test:profile:edge#2"));
+}
+
 #[test]
 fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
     let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1, 0]));
@@ -450,9 +462,10 @@ fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
     };
     assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
     assert!(sketch.profiles.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one loss names the refused edge, which is given up");
     };
+    assert_refused_edge_given_up(given_up);
     assert!(loss.message.contains("test:profile:edge#2"));
     assert!(loss.message.contains(&format!(
         "sketch {} states no entity for the edge and no profile for loop \
@@ -466,9 +479,10 @@ fn a_face_whose_only_loop_is_refused_states_no_sketch_and_the_loss_names_none() 
     let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1]));
     assert!(projected.sketches.is_empty());
     assert!(projected.entities.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one loss names the refused edge, which is given up");
     };
+    assert_refused_edge_given_up(given_up);
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()
@@ -515,9 +529,10 @@ fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 1);
     assert_eq!(sketch.profiles[0][0].entity, *entity.id());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one loss names the refused edge, which is given up");
     };
+    assert_refused_edge_given_up(given_up);
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()

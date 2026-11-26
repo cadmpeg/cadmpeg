@@ -16,6 +16,7 @@ use cadmpeg_ir::pmi::{
     PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_unreadable;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::loss::CreoLossCode;
@@ -198,12 +199,14 @@ pub(super) fn transfer(
 ) -> Result<(), CodecError> {
     let mut fields_by_owner = BTreeMap::<(u32, u32), DimensionFields<'_>>::new();
     let mut unresolved = 0usize;
+    let mut given_up = Vec::new();
     for attribute in attributes.iter().flatten() {
         if !dimension_field(attribute.name) {
             continue;
         }
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
             unresolved += 1;
+            given_up.push(super::attribute_row(attribute.offset));
             continue;
         };
         add_attribute(
@@ -235,14 +238,18 @@ pub(super) fn transfer(
     let mut assumed_deviation_limits = 0usize;
     let mut assumed_absolute_limits = 0usize;
     for (owner, fields) in fields_by_owner {
+        let record = super::pmi_record(format_args!("{}:{}", owner.1, owner.0));
         let Some(kind) = fields.kind else {
             unresolved += 1;
+            given_up.push(record);
             continue;
         };
         let Some(candidates) = elements_by_owner.get(&owner) else {
             unresolved += 1;
+            given_up.push(record);
             continue;
         };
+        // More than one annotation element claims the owner.
         if candidates.len() != 1 {
             unresolved += 1;
             continue;
@@ -259,6 +266,7 @@ pub(super) fn transfer(
             .filter(|text| !text.is_empty())
         else {
             unresolved += 1;
+            given_up.push(record);
             continue;
         };
         let is_linear_kind_inference = kind_text == "Linear";
@@ -283,6 +291,7 @@ pub(super) fn transfer(
                 Some(value) => Some(value),
                 None => {
                     unresolved += 1;
+                    given_up.push(record);
                     continue;
                 }
             },
@@ -317,6 +326,7 @@ pub(super) fn transfer(
             Err(_) => {
                 unresolved += 1;
                 let Ok(definition) = admit(&dimension_kind, nominal, None, fields.mode) else {
+                    given_up.push(record);
                     continue;
                 };
                 definition
@@ -327,6 +337,7 @@ pub(super) fn transfer(
         }
         let Some(offset) = fields.offset else {
             unresolved += 1;
+            given_up.push(record);
             continue;
         };
         let target = element
@@ -386,6 +397,12 @@ pub(super) fn transfer(
             "{unresolved} dimensional attribute owner(s) have an ambiguous join, invalid value, or unresolved tolerance mode."
         )));
     }
+    let reason = CreoLossCode::PmiRecordUnresolved.kind();
+    losses.extend(
+        given_up
+            .iter()
+            .map(|record| record_unreadable(record, &reason)),
+    );
     if conflicting != 0 {
         losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
             "{conflicting} dimension(s) use the first value of conflicting attributes."

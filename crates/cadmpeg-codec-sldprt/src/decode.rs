@@ -2728,7 +2728,7 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = 0_usize;
+    let mut unreadable = Vec::new();
     for (site, stream) in &streams {
         match decode_bodies(
             ctx,
@@ -2741,12 +2741,18 @@ fn merge_local_bodies(
                 merge_brep(decoded, bodies)?;
             }
             Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
-            Err(_) => unreadable += 1,
+            Err(_) => unreadable.push(stream.section.native_id()),
         }
     }
     decoded
         .losses
-        .extend(imported_bodies_loss(unreadable, streams.len()));
+        .extend(imported_bodies_loss(unreadable.len(), streams.len()));
+    decoded.losses.extend(unreadable.into_iter().map(|record| {
+        cadmpeg_ir::unknown::part::record_unreadable(
+            record,
+            SldprtLossCode::GeometryImportedBodiesNotTransferred.kind(),
+        )
+    }));
     Ok(())
 }
 
@@ -2801,6 +2807,20 @@ fn untaken_local_bodies_losses(
             ))
         })
         .collect()
+}
+
+/// The `record.unreadable` of a Parasolid site whose entity records frame and
+/// build no geometry; a site that holds no entity record gives up nothing.
+fn site_not_transferred(
+    site: &ActiveParasolidSite<'_>,
+    decoded: &Brep,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (decoded.stats.source_entity_records > 0).then(|| {
+        cadmpeg_ir::unknown::part::record_unreadable(
+            site.section.native_id(),
+            SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+        )
+    })
 }
 
 /// The loss for `unreadable` of `total` imported body streams.
@@ -2897,8 +2917,10 @@ fn try_decode_brep(
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
-            fallback_losses.extend(decoded_sites[selected_site].2.losses.iter().cloned());
-            append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
+            let (_, representative, decoded) = &decoded_sites[selected_site];
+            fallback_losses.extend(decoded.losses.iter().cloned());
+            append_topology_record_losses(&decoded.stats, fallback_losses);
+            fallback_losses.extend(site_not_transferred(&streams[*representative], decoded));
             return Ok(None);
         }
     } else {
@@ -2915,9 +2937,10 @@ fn try_decode_brep(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
-            for (_, _, decoded) in &decoded_sites {
+            for (_, representative, decoded) in &decoded_sites {
                 fallback_losses.extend(decoded.losses.iter().cloned());
                 append_topology_record_losses(&decoded.stats, fallback_losses);
+                fallback_losses.extend(site_not_transferred(&streams[*representative], decoded));
             }
             return Ok(None);
         }

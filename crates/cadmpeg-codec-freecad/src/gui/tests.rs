@@ -1894,6 +1894,11 @@ fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str
     assert!(assert_gui_metadata_recovery(&recovered)
         .message
         .contains(expected));
+    let entry = crate::native::native_id("entry", "GuiDocument.xml");
+    assert!(recovered.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.split_whitespace().any(|token| token == entry)
+    }));
     assert!(recovered.ir().model.appearances.is_empty());
 }
 

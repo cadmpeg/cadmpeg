@@ -242,14 +242,18 @@ pub(crate) fn decode(
         }
     }
     let appearances = match container.stream(token::STREAM_ATTRIBUTES) {
-        Some(stored) => read_stream(ctx, stored, &mut residue, "attribute", |stream, local| {
-            attributes::read(stream, token::STREAM_ATTRIBUTES, local)
-        })?
+        Some(stored) => read_stream(
+            ctx,
+            stored,
+            &mut residue,
+            (token::STREAM_ATTRIBUTES, "attribute"),
+            |stream, local| attributes::read(stream, token::STREAM_ATTRIBUTES, local),
+        )?
         .unwrap_or_default(),
         None => {
             residue
                 .failed_streams
-                .push("the attribute stream is absent".to_owned());
+                .push((None, "the attribute stream is absent".to_owned()));
             AppearanceTable::default()
         }
     };
@@ -258,7 +262,7 @@ pub(crate) fn decode(
             ctx,
             stored,
             &mut residue,
-            "surface tessellation",
+            (token::STREAM_SURFACE_TESSELLATION, "surface tessellation"),
             |stream, local| {
                 surface::read(
                     stream,
@@ -276,7 +280,7 @@ pub(crate) fn decode(
             ctx,
             stored,
             &mut residue,
-            "edge tessellation",
+            (token::STREAM_EDGE_TESSELLATION, "edge tessellation"),
             |stream, local| edges::read(ctx, stream, token::STREAM_EDGE_TESSELLATION, local),
         )?;
         for polyline in polylines.into_iter().flatten() {
@@ -299,7 +303,7 @@ fn read_stream<T>(
     ctx: &DecodeContext<'_>,
     stored: View<'_>,
     residue: &mut MemberResidue,
-    label: &str,
+    (id, label): (u32, &str),
     read: impl FnOnce(View<'_>, &mut MemberResidue) -> Result<T, CodecError>,
 ) -> Result<Option<T>, CodecError> {
     let mut local = MemberResidue::default();
@@ -310,9 +314,10 @@ fn read_stream<T>(
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            residue
-                .failed_streams
-                .push(format!("the {label} stream was not decoded: {error}"));
+            residue.failed_streams.push((
+                Some(id),
+                format!("the {label} stream was not decoded: {error}"),
+            ));
             Ok(None)
         }
     }
@@ -365,8 +370,9 @@ pub(crate) struct MemberResidue {
     edge_segments: usize,
     preambles: usize,
     unknown_streams: Vec<u32>,
-    /// Streams that were not decoded, with the reason.
-    failed_streams: Vec<String>,
+    /// Streams that were not decoded, with the id of each stored one and
+    /// the reason.
+    failed_streams: Vec<(Option<u32>, String)>,
 }
 
 impl MemberResidue {
@@ -395,8 +401,9 @@ impl MemberResidue {
 pub(crate) struct PackageResidue {
     total: MemberResidue,
     members: usize,
-    /// `(member, reason)` for each stream that was not decoded.
-    failures: Vec<(String, String)>,
+    /// `(member, stream, reason)` for each stream that was not decoded,
+    /// `stream` naming a stored stream.
+    failures: Vec<(String, Option<u32>, String)>,
     /// Members with unknown stream identities.
     unknown_streams: Vec<(String, Vec<u32>)>,
 }
@@ -406,8 +413,9 @@ impl PackageResidue {
     pub(crate) fn absorb(&mut self, name: &str, residue: &MemberResidue) {
         self.members += 1;
         self.total.merge(residue);
-        for reason in &residue.failed_streams {
-            self.failures.push((name.to_owned(), reason.clone()));
+        for (stream, reason) in &residue.failed_streams {
+            self.failures
+                .push((name.to_owned(), *stream, reason.clone()));
         }
         if !residue.unknown_streams.is_empty() {
             self.unknown_streams
@@ -420,11 +428,16 @@ impl PackageResidue {
     pub(crate) fn losses(&self) -> Vec<LossNote> {
         let total = &self.total;
         let mut losses = Vec::new();
-        for (member, reason) in &self.failures {
-            losses.push(
-                PvzLossCode::GeometryStreamUndecoded
-                    .note(format!("geometry member {member:?}: {reason}")),
-            );
+        for (member, stream, reason) in &self.failures {
+            let note = PvzLossCode::GeometryStreamUndecoded
+                .note(format!("geometry member {member:?}: {reason}"));
+            match stream {
+                Some(stream) => losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    crate::ids::member_stream(member, *stream),
+                    note,
+                )),
+                None => losses.push(note),
+            }
         }
         for (member, ids) in &self.unknown_streams {
             let ids = ids

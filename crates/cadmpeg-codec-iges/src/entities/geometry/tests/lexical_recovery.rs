@@ -34,9 +34,10 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
     );
 }
 
-/// `iges.md` states strict floor Warning for `iges/parameter.literal-unusable`.
+/// A curve whose required pole does not read is given up, so a pinned decode
+/// refuses on the curve's `record.unreadable` whatever the literal.
 #[test]
-fn a_pinned_decode_refuses_an_unreadable_nurbs_pole_only_for_an_unusable_literal() {
+fn a_pinned_decode_refuses_an_unreadable_nurbs_pole() {
     for (literal, unusable) in [
         ("3Hbad", false),
         ("", false),
@@ -54,18 +55,23 @@ fn a_pinned_decode_refuses_an_unreadable_nurbs_pole_only_for_an_unusable_literal
             .losses
             .iter()
             .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        crate::test_support::assert_gives_up(recovered.report(), &["iges:entity:directory#1"]);
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;
         match IgesCodec.decode(&mut Cursor::new(bytes), &pinned) {
-            Ok(_) => assert!(!unusable, "{literal}"),
             Err(DecodeFailure::StrictRejected { rejection }) => {
-                assert!(unusable, "{literal}");
+                crate::test_support::assert_given_up(rejection.loss(), "iges:entity:directory#1");
                 assert_eq!(
-                    rejection.loss().code,
-                    IgesLossCode::ParameterLiteralUnusable.kind(),
+                    rejection
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code == IgesLossCode::ParameterLiteralUnusable.kind()),
+                    unusable,
                     "{literal}"
                 );
             }
+            Ok(_) => panic!("{literal}: expected a strict refusal"),
             Err(other) => panic!("{literal}: {other:?}"),
         }
     }

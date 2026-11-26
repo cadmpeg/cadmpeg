@@ -23,6 +23,11 @@ pub(crate) fn member_scope(member: &str) -> IdentityKey {
     member_key(member)
 }
 
+/// The name of stream `stream` of geometry member `member` in loss messages.
+pub(crate) fn member_stream(member: &str, stream: u32) -> String {
+    format!("pvz:{}#{stream:#010x}", member_key(member))
+}
+
 /// The document definition that places each of several root definitions.
 pub(crate) fn document() -> ProductDefinitionId {
     ProductDefinitionId::compose(

@@ -2545,6 +2545,25 @@
           "tag": "directory_entry:D1"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#1 given up: iges/entity.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 243,
+          "stream": "iges",
+          "tag": "directory_entry:D1"
+        },
+        "severity": "error"
       }
     ],
     "notes": [

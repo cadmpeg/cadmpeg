@@ -115,10 +115,16 @@ fn a_given_up_statement_names_the_records_that_need_it() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("the set keeps its readable entry");
     assert_eq!(decoded.ir().geometry.points.len(), 1);
-    let losses = given_up_losses(decoded.report());
-    let [loss] = losses.as_slice() else {
-        panic!("one record.unreadable loss");
+    let (parts, records): (Vec<_>, Vec<_>) = given_up_losses(decoded.report())
+        .into_iter()
+        .partition(|loss| loss.message.starts_with("part "));
+    let [loss] = parts.as_slice() else {
+        panic!("one record.unreadable loss for the given-up statement");
     };
+    let [record] = records.as_slice() else {
+        panic!("one record.unreadable loss for the record with a missing reference");
+    };
+    assert!(record.message.split_whitespace().any(|word| word == "#5"));
     assert!(loss.message.ends_with(&format!(
         "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; lost=[#6 entry #3]"
     )));

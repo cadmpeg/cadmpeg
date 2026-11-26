@@ -194,11 +194,15 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
         if decoded {
             assert!(result.report().losses.is_empty(), "{point_name}");
         } else {
-            assert_eq!(result.report().losses.len(), 1, "{point_name}");
+            assert_eq!(result.report().losses.len(), 2, "{point_name}");
             assert_eq!(
                 result.report().losses[0].code,
                 IgesLossCode::GeometryNotProjected.kind(),
                 "{point_name}"
+            );
+            crate::test_support::assert_given_up(
+                &result.report().losses[1],
+                "iges:entity:directory#1",
             );
         }
     }
@@ -214,11 +218,12 @@ fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
         .unwrap();
 
     assert!(result.ir().geometry.curves.is_empty());
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
     assert_eq!(
         result.report().losses[0].code,
         IgesLossCode::GeometryNotProjected.kind()
     );
+    crate::test_support::assert_given_up(&result.report().losses[1], "iges:entity:directory#1");
 }
 
 #[test]
@@ -296,7 +301,7 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
         if decoded {
             assert!(result.report().losses.is_empty());
         } else {
-            assert_eq!(result.report().losses.len(), 1);
+            assert_eq!(result.report().losses.len(), 2);
             assert_eq!(
                 result.report().losses[0].code,
                 IgesLossCode::GeometryNotProjected.kind()
@@ -304,6 +309,10 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
             assert!(result.report().losses[0]
                 .message
                 .contains("standard position"));
+            crate::test_support::assert_given_up(
+                &result.report().losses[1],
+                "iges:entity:directory#1",
+            );
         }
     }
 }

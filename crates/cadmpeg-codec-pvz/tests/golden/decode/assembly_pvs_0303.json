@@ -498,6 +498,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record pvz:plate.ol#0x01000004 given up: pvz/geometry.exact-undecoded",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "attributes.records-undecoded",
             "kind": "attributes_not_transferred",
             "namespace": "pvz"

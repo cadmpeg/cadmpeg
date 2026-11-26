@@ -6,6 +6,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 use serde::{ser::SerializeStruct, Serialize};
@@ -14,7 +15,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{OpaqueRecord, Record};
+use crate::container::{opaque_record_id, OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16_retained, MillimeterScale};
 use crate::wire::{uuid, Uuid};
@@ -308,6 +309,8 @@ pub(crate) struct DefinitionDiagnostic {
     pub(crate) diagnostic: RhinoDiagnostic,
     /// Complete table-record range.
     source_range: Range<usize>,
+    /// The retained opaque record of a definition that did not parse.
+    pub(crate) given_up: Option<UnknownId>,
 }
 
 impl DefinitionDiagnostic {
@@ -1218,6 +1221,7 @@ pub(crate) fn parse_definitions(
             .extend(warnings.into_iter().map(|diagnostic| DefinitionDiagnostic {
                 diagnostic,
                 source_range: record.range.clone(),
+                given_up: None,
             }));
         match parsed {
             Ok((definition, userdata_degraded)) => {
@@ -1243,6 +1247,7 @@ pub(crate) fn parse_definitions(
                                 message: duplicate_message(),
                             },
                             source_range: records[first].range.clone(),
+                            given_up: None,
                         });
                     }
 
@@ -1252,6 +1257,7 @@ pub(crate) fn parse_definitions(
                             message: duplicate_message(),
                         },
                         source_range: record.range.clone(),
+                        given_up: None,
                     });
                 } else {
                     seen.insert(definition.id, source_order);
@@ -1269,6 +1275,7 @@ pub(crate) fn parse_definitions(
                         message: format!("instance definition retained: {error}"),
                     },
                     source_range: record.range.clone(),
+                    given_up: Some(opaque_record_id(table_typecode, record)),
                 });
                 insert_opaque_index(&mut opaque_indices, source_order);
             }

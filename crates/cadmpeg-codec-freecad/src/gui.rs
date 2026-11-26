@@ -17,6 +17,7 @@ use cadmpeg_ir::presentation::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
@@ -204,11 +205,12 @@ fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Gr
         attributes: BTreeMap::new(),
         states: Vec::new(),
     });
-    graph
-        .losses
-        .push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-        "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
-    )));
+    graph.losses.extend(record_given_up(
+        crate::native::native_id("entry", "GuiDocument.xml"),
+        FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
+        )),
+    ));
     graph
 }
 

@@ -115,7 +115,7 @@ fn the_tree_bodies_names_and_slots_are_collected() {
     assert_eq!(scene.current_state.as_deref(), Some("disp0"));
     assert_eq!(scene.components.len(), 1);
     assert!(!scene.components.first().unwrap().visible);
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.orphan_slots.is_empty());
     assert_eq!(scene.duplicate_objects, 0);
 }
 
@@ -148,7 +148,8 @@ fn slots_outside_a_body_and_repeated_ids_are_counted() {
     s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
     s.raw(b"z");
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
-    assert_eq!((scene.orphan_slots, scene.duplicate_objects), (1, 1));
+    assert_eq!(scene.orphan_slots, [0]);
+    assert_eq!(scene.duplicate_objects, 1);
     assert_eq!(scene.objects.len(), 1);
 }
 
@@ -246,7 +247,7 @@ fn a_solidworks_scene_collects_materials_bodies_and_states() {
     // states are no components.
     assert_eq!(scene.current_state.as_deref(), Some("disp0"));
     assert_eq!(scene.components.len(), 5);
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.orphan_slots.is_empty());
     assert_eq!(scene.duplicate_objects, 0);
 }
 
@@ -346,7 +347,7 @@ fn geometry_side_objects_take_one_object_id_each() {
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
     assert_eq!(scene.texts.get(&1).map(String::as_str), Some("after"));
     assert_eq!(scene.duplicate_objects, 0);
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.orphan_slots.is_empty());
 }
 
 #[test]
@@ -381,7 +382,7 @@ fn relative_library_paths_define_bodies_and_a_part_keeps_every_include() {
     }
     s.close().close().raw(b"z");
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.orphan_slots.is_empty());
     assert_eq!(scene.bodies.len(), 2);
     assert_eq!(scene.bodies.first().map(|b| b.slots.len()), Some(1));
     assert_eq!(scene.bodies.first().unwrap().colour, Some([1, 2, 3]));

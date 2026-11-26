@@ -8,6 +8,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_given_up;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
@@ -277,12 +278,15 @@ pub(super) fn attach(
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             snapshot.restore(ir, annotations, unknowns, losses);
-            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
-                "Native object-model attachment failed: {error}. Decoded geometry and \
-                 topology are kept. None of the attachment's features, sketches, parameters, \
-                 configurations, appearances, attributes, display tessellations, native \
-                 records, or container passthrough records are kept."
-            )));
+            losses.extend(record_given_up(
+                "nx:container",
+                NxLossCode::NativeAttachmentFailed.note(format!(
+                    "Native object-model attachment failed: {error}. Decoded geometry and \
+                     topology are kept. None of the attachment's features, sketches, \
+                     parameters, configurations, appearances, attributes, display \
+                     tessellations, native records, or container passthrough records are kept."
+                )),
+            ));
             Ok(())
         }
     }

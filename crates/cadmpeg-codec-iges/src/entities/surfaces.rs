@@ -1532,7 +1532,7 @@ pub(super) fn project(
             .integer(4)
             .is_some_and(|value| matches!(value, 0 | 1));
         if entry.transform != 0 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("placed ruled surfaces require transformed child-carrier projection"),
@@ -1601,7 +1601,7 @@ pub(super) fn project(
                 global,
             )?
         {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!(
@@ -1621,7 +1621,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                super::push_attributed_loss(
+                super::push_given_up_loss(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
@@ -1630,10 +1630,16 @@ pub(super) fn project(
                 continue;
             }
         }
-        let surface = match ruled_carrier_or_loss(ruled_surface_carrier(&first, &second, ctx))? {
+        let carrier = ruled_surface_carrier(&first, &second, ctx);
+        let push_loss = if matches!(carrier, Err(CodecError::NotImplemented(_))) {
+            super::push_retained_geometry_loss
+        } else {
+            super::push_geometry_loss
+        };
+        let surface = match ruled_carrier_or_loss(carrier)? {
             Ok(surface) => surface,
             Err(message) => {
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                push_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -1943,7 +1949,7 @@ pub(super) fn project(
             {
                 Ok(()) => directrix,
                 Err(()) => {
-                    super::push_attributed_loss(
+                    super::push_given_up_loss(
                         &mut losses,
                         entry,
                         IgesLossCode::NurbsTransformNonFinite,
@@ -2281,7 +2287,7 @@ pub(super) fn project(
             let placed_solved = (entry.transform != 0).then(|| directrix_solved.clone());
             if let Some(placed_solved) = placed_solved {
                 let Some(orientation) = similarity_orientation(transform) else {
-                    super::push_geometry_loss(
+                    super::push_retained_geometry_loss(
                         &mut losses,
                         entry,
                         format_args!(
@@ -2415,7 +2421,7 @@ pub(super) fn project(
             continue;
         };
         if revolution_pole_count_exceeds_limit(generatrix_count, angular_controls.len()) {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("revolution pole count exceeds {MAX_SURFACE_POLES}"),
@@ -2508,7 +2514,7 @@ pub(super) fn project(
             let Ok(()) = placed_generatrix
                 .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
-                super::push_attributed_loss(
+                super::push_given_up_loss(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
@@ -2675,7 +2681,7 @@ pub(super) fn project(
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("surface pole count exceeds {MAX_SURFACE_POLES}"),
@@ -3087,7 +3093,7 @@ pub(super) fn project(
             continue;
         };
         if entry.transform != 0 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("placed offset surfaces require transformed support projection"),
@@ -3131,7 +3137,7 @@ pub(super) fn project(
         };
         let signed_distance = distance * orientation;
         let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("support surface has no exact analytic offset carrier"),

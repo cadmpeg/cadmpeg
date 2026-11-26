@@ -717,6 +717,46 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
     );
 }
 
+/// A framed object record the decoder gives up also charges
+/// `record.unreadable` naming its retained source record: a pinned decode
+/// refuses with that charge in its report, and a default decode admits the
+/// document and reports both the codec's loss and the charge.
+#[test]
+fn a_given_up_framed_object_record_is_charged_as_unreadable() {
+    let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
+    let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
+    let bytes = archive(&[bad_mesh, point]);
+    let charged = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.severity == Severity::Error
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|token| token == "rhino:object:record#000000")
+        })
+    };
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up framed object record");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
+        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
+    };
+    assert!(charged(&rejection.report().losses), "{error}");
+
+    let result = decode(&bytes);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()));
+    assert!(charged(&result.report().losses));
+}
+
 #[test]
 fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     for minor in 0..=3 {

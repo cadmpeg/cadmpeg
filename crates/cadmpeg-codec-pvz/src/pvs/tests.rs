@@ -374,6 +374,7 @@ fn a_failed_property_stream_leaves_the_structure_and_is_reported() {
         loss_codes(&structure),
         [
             PvzLossCode::StructurePropertyStreamMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             PvzLossCode::StructureStreamUndecoded.kind(),
         ]
     );

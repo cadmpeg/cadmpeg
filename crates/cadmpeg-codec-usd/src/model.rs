@@ -42,12 +42,13 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::record_unreadable;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
 use crate::layers::Resource;
 use crate::loss::UsdLossCode;
-use crate::schema::curves::Curves;
+use crate::schema::curves::CurveBatch;
 use crate::schema::mesh::{MeshData, Normals};
 use crate::schema::patch::PatchData;
 use crate::schema::shading::{Bound, SurfaceShader};
@@ -226,6 +227,9 @@ struct Tallies {
     external: usize,
     metadata: BTreeMap<String, usize>,
     api_schemas: BTreeMap<String, usize>,
+    /// Records given up whole, by name, with the code of their aggregate
+    /// loss.
+    given_up: Vec<(String, UsdLossCode)>,
 }
 
 /// Layer metadata keys the model reads (spec §4.3).
@@ -855,6 +859,9 @@ impl Builder<'_, '_, '_, '_> {
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             if prim.external.is_empty() {
                 self.tallies.rejected_meshes.push(prim.path.clone());
+                self.tallies
+                    .given_up
+                    .push((prim.path.clone(), UsdLossCode::MeshRejected));
             }
             return Ok(None);
         };
@@ -890,6 +897,9 @@ impl Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies
+                    .given_up
+                    .push((prim.path.clone(), UsdLossCode::MeshRejected));
                 return Ok(None);
             }
         };
@@ -1192,10 +1202,13 @@ impl Builder<'_, '_, '_, '_> {
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        curves: Option<Curves>,
+        curves: Option<CurveBatch>,
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(curves) = curves else {
             self.tallies.rejected_curves += 1;
+            self.tallies
+                .given_up
+                .push((prim.path.clone(), UsdLossCode::CurvesRejected));
             return Ok(None);
         };
         self.tallies.rejected_curves += curves.rejected;
@@ -1292,6 +1305,11 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_curve")?;
         }
         if edges.is_empty() {
+            if !curves.unsupported_basis && (!curves.curves.is_empty() || curves.rejected > 0) {
+                self.tallies
+                    .given_up
+                    .push((prim.path.clone(), UsdLossCode::CurvesRejected));
+            }
             return Ok(None);
         }
         let region = crate::ids::region(key);
@@ -1315,10 +1333,16 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(patch) = crate::schema::patch::read(prim, &mut self.issues) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies
+                .given_up
+                .push((prim.path.clone(), UsdLossCode::NurbsPatchRejected));
             return Ok(None);
         };
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies
+                .given_up
+                .push((prim.path.clone(), UsdLossCode::NurbsPatchRejected));
             return Ok(None);
         };
         let reason = match crate::brep::patch::bounded(&patch) {
@@ -1970,6 +1994,12 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             issues.animated.len(),
             joined(issues.animated.iter().cloned())
         ),
+    );
+    losses.extend(
+        tallies
+            .given_up
+            .iter()
+            .map(|(record, code)| record_unreadable(record, code.kind())),
     );
     losses
 }

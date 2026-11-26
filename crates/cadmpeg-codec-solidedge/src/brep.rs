@@ -27,6 +27,7 @@ use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 use crate::geometry::{self, Nodes};
 use crate::loss::SolidEdgeLossCode;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 
 const MM_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
@@ -493,11 +494,12 @@ pub(crate) fn project(
             continue;
         };
         let Some(face_sense) = sense(face) else {
-            losses.push(
+            losses.extend(record_given_up(
+                face_id(stream, face_index),
                 SolidEdgeLossCode::FaceSenseUnresolved.note(
                     "a face states no orientation; the face and its loops are not transferred",
                 ),
-            );
+            ));
             continue;
         };
         let (loop_nodes, defect) = chain(&nodes, ptr(face, "loop"), "next");
@@ -509,18 +511,20 @@ pub(crate) fn project(
                 Ok(shape) => loops.push((loop_index, shape)),
                 Err(reason) => {
                     complete = false;
-                    losses.push(
+                    losses.extend(record_given_up(
+                        loop_id(stream, loop_index),
                         SolidEdgeLossCode::LoopUnreadable
                             .note(format!("a loop does not read: {reason}")),
-                    );
+                    ));
                 }
             }
         }
         if !complete {
-            losses.push(
+            losses.extend(record_given_up(
+                face_id(stream, face_index),
                 SolidEdgeLossCode::LoopUnreadable
                     .note("a face with a loop that does not read is not transferred"),
-            );
+            ));
             continue;
         }
         let surface = if let Some(surface) = ptr(face, "surface") {
@@ -855,6 +859,10 @@ pub(crate) fn project(
         };
         if ends.is_none() && carrier.curve().is_none() {
             // A vertexless edge bounds no extent without a carrier.
+            losses.push(record_unreadable(
+                edge_id(stream, edge),
+                "a vertexless edge has no carrier",
+            ));
             dropped_edges.insert(edge);
             continue;
         }
@@ -906,10 +914,11 @@ pub(crate) fn project(
             });
         }
         if !usable {
-            losses.push(
+            losses.extend(record_given_up(
+                face_id(stream, face.index),
                 SolidEdgeLossCode::LoopUnreadable
                     .note("a face whose loop uses an edge with no carrier is not transferred"),
-            );
+            ));
             // The loops already admitted for this face leave with it.
             let face_id = face_id(stream, face.index);
             ir.geometry.loops.retain(|loop_| loop_.face != face_id);

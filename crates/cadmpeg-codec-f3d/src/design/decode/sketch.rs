@@ -48,6 +48,7 @@ use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, 
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
+use cadmpeg_ir::unknown::part::record_given_up;
 use std::collections::{HashMap, HashSet};
 
 use super::meta::{
@@ -436,7 +437,7 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
-        if let Some(Some(row)) = super::record::recover(
+        if let Some(Some(row)) = super::record::recover_partial(
             sketch_container_row(bytes, metadata, &frame, losses),
             losses,
             F3dLossCode::SketchContainerUndecoded,
@@ -490,11 +491,14 @@ fn decode_sketch_visibilities_in_stream(
         })
         .flatten();
         let Some(members) = members else {
-            losses.push(F3dLossCode::SketchOrdinalCollectionUndecoded.note(format!(
-                "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
-                frame.entity_id,
-                listing_sketches(frame.entity_id)
-            )));
+            losses.extend(record_given_up(
+                format_args!("sketch ordinal collection {}", frame.entity_id),
+                F3dLossCode::SketchOrdinalCollectionUndecoded.note(format!(
+                    "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
+                    frame.entity_id,
+                    listing_sketches(frame.entity_id)
+                )),
+            ));
             unread_containers.insert(frame.entity_id);
             continue;
         };
@@ -520,11 +524,14 @@ fn decode_sketch_visibilities_in_stream(
         .then(|| parse_sketch_folder(&bytes[frame.start..frame.end]))
         .flatten();
         let Some(folder) = folder else {
-            losses.push(F3dLossCode::SketchFolderUndecoded.note(format!(
-                "F3D sketch folder {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
-                frame.entity_id,
-                listing_sketches(frame.entity_id)
-            )));
+            losses.extend(record_given_up(
+                format_args!("sketch folder {}", frame.entity_id),
+                F3dLossCode::SketchFolderUndecoded.note(format!(
+                    "F3D sketch folder {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
+                    frame.entity_id,
+                    listing_sketches(frame.entity_id)
+                )),
+            ));
             unread_containers.insert(frame.entity_id);
             continue;
         };
@@ -4259,7 +4266,7 @@ fn decode_sketch_curve_identities_from_stream(
             &frame.design_type.module,
         );
         let parsed_geometry = if let Some(curve_class) = curve_class {
-            super::record::recover(
+            super::record::recover_partial(
                 decode_sketch_curve_geometry(
                     payload,
                     geometry_shift,

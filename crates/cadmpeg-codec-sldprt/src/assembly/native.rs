@@ -37,6 +37,20 @@ impl NativeAssembly {
         assembly
     }
 
+    /// An assembly that transferred no structure because its component tree
+    /// section `tree` does not read, with its blocking loss; the section is
+    /// given up.
+    pub(super) fn structure_given_up(tree: &cadmpeg_ir::ids::UnknownId, message: String) -> Self {
+        let mut assembly = Self::default();
+        assembly
+            .losses
+            .extend(cadmpeg_ir::unknown::part::record_given_up(
+                tree,
+                SldprtLossCode::AssemblyStructureNotTransferred.note(message),
+            ));
+        assembly
+    }
+
     pub(super) fn push_definition(&mut self, definition: NativeDefinition) {
         self.definitions.push(definition);
     }

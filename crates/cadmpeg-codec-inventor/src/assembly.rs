@@ -176,6 +176,9 @@ pub(crate) struct AssemblyProjection {
     /// Hidden occurrences below a root occurrence; they stay in native records.
     pub(crate) nested_hidden: usize,
     pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
+    /// The native occurrence records whose placement transform does not
+    /// build, so that their occurrences are dropped.
+    pub(crate) unbuilt_placements: Vec<String>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -230,6 +233,7 @@ pub(crate) fn project_occurrences(
     let mut occurrences = Vec::new();
     let mut joints = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
+    let mut unbuilt_placements = Vec::new();
 
     for source in ufrx_occurrences {
         let Some(reference) =
@@ -263,6 +267,7 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let hidden = hidden_keys.contains(&source.occurrence_key);
         let invisible = suppressed || hidden;
+        let native_id = &source.id;
         let (transform, visible) = match placements
             .get(&source.occurrence_id)
             .and_then(Option::as_ref)
@@ -285,6 +290,7 @@ pub(crate) fn project_occurrences(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
                     )?;
+                    unbuilt_placements.push(native_id.clone());
                     continue;
                 };
                 (transform, invisible.then_some(false))
@@ -350,6 +356,7 @@ pub(crate) fn project_occurrences(
         joints,
         nested_hidden,
         unresolved_placements,
+        unbuilt_placements,
     })
 }
 

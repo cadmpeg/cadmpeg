@@ -259,6 +259,7 @@ fn project_brep(
         // Edge refusals and their loops. The face's profiles end before the
         // first refused loop, so no later loop takes its position.
         let mut refusals = Vec::new();
+        let mut refused_edges = Vec::<&cadmpeg_ir::ids::EdgeId>::new();
         let Some(face_loops) = face.loops.boundary() else {
             continue;
         };
@@ -315,6 +316,9 @@ fn project_brep(
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         refusals.extend(edge_refusals.into_iter().map(|record| (record, loop_id)));
+                        if !refused_edges.contains(&&edge.id) {
+                            refused_edges.push(&edge.id);
+                        }
                         continue;
                     }
                     let Some((geometry, start_aligned)) = projected else {
@@ -431,6 +435,12 @@ fn project_brep(
                     .note(format!("{record}; {consequence}")),
             );
         }
+        losses.extend(refused_edges.into_iter().map(|edge| {
+            cadmpeg_ir::unknown::part::record_unreadable(
+                edge,
+                crate::loss::SldprtLossCode::SketchProfileRejected.kind(),
+            )
+        }));
         let Some(profiles) = profiles else {
             continue;
         };

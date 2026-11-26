@@ -14,6 +14,7 @@ use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::references::{InstanceTarget, ReferenceEntity};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use serde::Serialize;
 
@@ -151,9 +152,12 @@ pub(super) fn decode(
         };
         let parameters = source_parameters(record, name);
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DrawingRecordTooFewParameters.note(format!(
+                    "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
+                )),
+            ));
             continue;
         }
 

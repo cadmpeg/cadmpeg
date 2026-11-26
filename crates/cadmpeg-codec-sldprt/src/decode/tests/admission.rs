@@ -394,6 +394,50 @@ fn a_pinned_decode_admits_unrepresentable_geometry_and_records_its_loss_codes() 
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() {
+    use crate::loss::SldprtLossCode;
+    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+
+    let mut body = crate::test_support::parasolid::entity51(1, 10, 0, &[]);
+    body.extend([0; 8]);
+    let mut fixture = outer_header();
+    fixture.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    add_solidworks_version(&mut fixture, 13100);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("a salvage decode admits the given-up partition");
+    assert!(!salvaged.report().geometry_transferred());
+    let losses = &salvaged.report().losses;
+    assert!(losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::GeometryParasolidNotTransferred.kind()));
+    let site = losses
+        .iter()
+        .filter(|note| note.code == record_unreadable_kind())
+        .flat_map(|note| note.message.split_whitespace())
+        .find(|token| token.starts_with("sldprt:file:"))
+        .expect("record.unreadable names the partition section");
+
+    let failure = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect_err("a pinned decode refuses a given-up partition");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == site));
+}
+
+#[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`

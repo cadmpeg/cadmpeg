@@ -58,6 +58,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use cadmpeg_parasolid::geometry::Refusal;
@@ -89,9 +90,10 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
     )
 }
 
-/// One loss for each graph-owned CONE or TORUS record whose otherwise valid
-/// fields state a form that has no surface.
-fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
+/// The given-up losses of each graph-owned CONE or TORUS record whose
+/// otherwise valid fields state a form that has no surface, each record named
+/// `<stream>@<byte>`.
+fn surface_refusals(stream: &str, si: usize, graph: &Graph) -> Vec<LossNote> {
     [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
         .into_iter()
         .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
@@ -112,11 +114,15 @@ fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
                 ),
                 SurfaceRefusal::Analytic(Refusal::Fields) => return None,
             };
-            Some(code.note(format!(
-                "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
-                node.pos()
-            )))
+            Some(record_given_up(
+                format!("{stream}@{}", node.pos()),
+                code.note(format!(
+                    "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
+                    node.pos()
+                )),
+            ))
         })
+        .flatten()
         .collect()
 }
 
@@ -319,16 +325,24 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
             unresolved_controls,
         } = parsed.parse_nurbs(si);
-        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
+        let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
+        for refusal in &nurbs_refusals {
+            carrier_refusals.extend(record_given_up(
+                format!("{stream_name}@{}", refusal.pos),
+                refusal.loss(si),
+            ));
+        }
         for carrier in unresolved_controls {
-            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
-                "parasolid#{si} {} at byte {} names no control values that resolve to it",
-                carrier.family, carrier.pos
-            )));
+            carrier_refusals.extend(record_given_up(
+                format!("{stream_name}@{}", carrier.pos),
+                NxLossCode::CarrierControlsUnresolved.note(format!(
+                    "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                    carrier.family, carrier.pos
+                )),
+            ));
         }
         let view = parsed.stream(si);
-        carrier_refusals.extend(surface_refusals(si, &view.graph));
-        let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
+        carrier_refusals.extend(surface_refusals(&stream_name, si, &view.graph));
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
         );

@@ -6,8 +6,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -730,23 +731,40 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 }
 
 #[test]
-fn a_pinned_decode_admits_a_destroyed_solid() {
+fn strict_decode_refuses_a_destroyed_solid() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let mut options = DecodeOptions::default();
-    options.strictness.pinned = true;
+    let names_root = |message: &str| message.split_whitespace().any(|word| word == "#18");
 
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &options)
-        .expect("a rejected topology root pins no strict floor");
-    assert!(result
-        .report()
-        .losses
+    let admitted = StepCodec::default()
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("the default decode admits a document without the rejected solid");
+    let losses = &admitted.report().losses;
+    assert!(losses
         .iter()
         .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == record_unreadable_kind() && names_root(&loss.message))
+            .count(),
+        1
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("a pinned decode refuses the given-up solid");
+    assert!(matches!(
+        error,
+        DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == record_unreadable_kind()
+                && names_root(&rejection.loss().message)
+    ));
 }
 
 #[test]

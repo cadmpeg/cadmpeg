@@ -1929,6 +1929,18 @@ fn try_decode_standard_populations(
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        for mut loss in output.report.losses {
+            if loss.code == unreadable {
+                loss.message = loss
+                    .message
+                    .split(' ')
+                    .map(|token| rescope_standard_id(token, &scope))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                merged.report.losses.push(loss);
+            }
+        }
     }
 
     for (key, value) in population_coverage {
@@ -2670,6 +2682,15 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
+    let given_up_faces: Vec<String> = match topology_failure {
+        Some(failure) if failure.gives_up_faces() => topology_ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.as_str().to_owned())
+            .collect(),
+        _ => Vec::new(),
+    };
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations.into_retained();
@@ -2836,6 +2857,12 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
+    report.losses.extend(given_up_faces.iter().map(|face| {
+        cadmpeg_ir::unknown::part::record_unreadable(
+            face,
+            CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind(),
+        )
+    }));
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
@@ -3137,6 +3164,19 @@ impl StandardTopologyFailure {
                 coverage::STANDARD_TOPOLOGY_FAILURE_INADMISSIBLE_MODEL_COUNT
             }
         }
+    }
+
+    /// Whether the failure gives up the population's face rows. A search
+    /// that ran out of its work slice is a bound, and a set of constraints
+    /// that admits distinct solutions or conflicting native endpoints is an
+    /// ambiguous reading, not an unreadable record.
+    const fn gives_up_faces(self) -> bool {
+        !matches!(
+            self,
+            Self::TopologySearchExhausted
+                | Self::AmbiguousTopologySolution
+                | Self::ConflictingNativeEndpoints
+        )
     }
 
     const fn message(self) -> &'static str {

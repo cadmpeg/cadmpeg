@@ -17,9 +17,10 @@ use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
-    push_report_loss, push_structural_layer_notes,
+    push_report_loss, push_structural_layer_notes, push_unread_legacy_rows,
 };
 use cadmpeg_ir::codec::DecodeBody;
+use cadmpeg_ir::unknown::part::record_given_up;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
@@ -94,12 +95,17 @@ pub(in super::super) fn build_report(
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
     let mut losses = Vec::new();
-    for message in &scan.framing.expansion_losses {
-        push_report_loss(
-            &mut losses,
-            CreoLossCode::CompressedSectionUnexpanded,
-            &message.message,
-        );
+    for expansion in &scan.framing.expansion_losses {
+        let note = CreoLossCode::CompressedSectionUnexpanded.note(expansion.message.clone());
+        if expansion.over_limit {
+            losses.push(note);
+        } else {
+            let section = crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(
+                &cadmpeg_ir::identity_namespace!("creo", "compressed", "section"),
+                expansion.section_offset,
+            )?;
+            losses.extend(record_given_up(section.as_str(), note));
+        }
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
     for offset in &scan.framing.unowned_physical_geometry {
@@ -178,6 +184,7 @@ pub(in super::super) fn build_report(
     }
 
     push_legacy_value_losses(&mut losses, &coverage);
+    push_unread_legacy_rows(&mut losses, scan);
 
     push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
 

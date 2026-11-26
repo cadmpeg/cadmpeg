@@ -2888,10 +2888,11 @@ mod tests {
         with_scan(&archive, |scan| {
             let mut losses = Vec::new();
             let bounds = super::decode_body_bounds(scan, &[entity, sibling], &mut losses).unwrap();
-            assert_eq!(losses.len(), 1);
             assert_eq!(
-                losses[0].code,
-                crate::loss::F3dLossCode::DesignBodyBoundsUndecoded.kind()
+                crate::test_support::loss_codes(&losses),
+                crate::test_support::given_up_codes(
+                    crate::loss::F3dLossCode::DesignBodyBoundsUndecoded
+                )
             );
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 107);

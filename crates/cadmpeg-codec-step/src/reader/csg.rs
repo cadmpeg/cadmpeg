@@ -15,6 +15,7 @@ use cadmpeg_ir::draft::CommitSession;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 
 use self::angles::AngleUnits;
 use self::brep::{Axis, SolidBuilder};
@@ -287,8 +288,10 @@ pub(super) fn decode(
                     },
                 );
             }
-            Err(message) => losses
-                .push(StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}"))),
+            Err(message) => losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}")),
+            )),
         }
     }
     for (id, record) in exchange.entities("BOOLEAN_RESULT") {
@@ -306,9 +309,12 @@ pub(super) fn decode(
                     },
                 );
             }
-            None => losses.push(StepLossCode::CsgItemUnresolved.note(format!(
-                "BOOLEAN_RESULT #{id} has no operator or no operands"
-            ))),
+            None => losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::CsgItemUnresolved.note(format!(
+                    "BOOLEAN_RESULT #{id} has no operator or no operands"
+                )),
+            )),
         }
     }
     let solids = csg_solid_roots(exchange);
@@ -666,6 +672,9 @@ fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTr
         losses.push(StepLossCode::CsgItemUnresolved.note(format!(
             "BOOLEAN_RESULT #{id} has an operand cycle in its tree, so it has no feature"
         )));
+    }
+    for &id in &refused {
+        losses.push(record_unreadable(format!("#{id}"), "Boolean operand cycle"));
     }
     refused
 }

@@ -15,6 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -418,10 +419,10 @@ impl<'a> PhysicalParse<'a> {
     fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
-            losses.push(record.loss_note());
+            losses.extend(record_given_up(record.identity(), record.loss_note()));
         }
         for record in &self.quarantined_parameters {
-            losses.push(record.loss_note()?);
+            losses.extend(record_given_up(record.identity(), record.loss_note()?));
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {

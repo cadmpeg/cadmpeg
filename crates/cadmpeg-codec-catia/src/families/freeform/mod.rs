@@ -899,6 +899,20 @@ pub(super) fn try_decode_freeform_surfaces(
                     census_face_object_ids.len(),
                     identity_statement(&census_face_object_ids)
                 )));
+                // Owned-patch faces are keyed by roster position, not by b5
+                // face record, so the b5 face records are given up only where
+                // the route states no face.
+                if ir.geometry.faces.is_empty() {
+                    let face_records = census_face_object_ids
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>();
+                    losses.extend(face_records.into_iter().map(|object_id| {
+                        cadmpeg_ir::unknown::part::record_unreadable(
+                            format_args!("catia:b5:face#{object_id}"),
+                            CatiaLossCode::TopologyB5GraphUnclosed.kind(),
+                        )
+                    }));
+                }
             }
         }
         losses.extend(owned_patch_loss);

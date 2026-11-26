@@ -123,16 +123,25 @@ fn decode_over_routes(
             let next = applicable
                 .get(index + 1)
                 .map_or("the metadata fallback", |next| next.name);
-            let note = format!(
+            fell_through.push(CatiaLossCode::SourceRouteFellThrough.note(format!(
                 "{} refused {refused} CATIA record(s) and then transferred no model; \
              the decode continued to {next}",
                 route.name
-            );
-            fell_through.push(note);
+            )));
         }
     }
 
     let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
+    // A route that refused records and fell through to the fallback leaves
+    // the payload it read undecoded.
+    if let Some(payload) = unknowns.first() {
+        if let Some(last) = fell_through.pop() {
+            fell_through.extend(cadmpeg_ir::unknown::part::record_given_up(
+                payload.id().as_str(),
+                last,
+            ));
+        }
+    }
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -213,7 +222,7 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     untyped: BTreeSet<ArenaClass>,
     admitted_model_entities: u64,
     standard_face_population: bool,
-    fell_through: &'input2 [String],
+    fell_through: &'input2 [cadmpeg_ir::report::loss::LossNote],
     refusal: &'input3 mut crate::nurbs::LaneRefusals,
 }
 
@@ -241,12 +250,7 @@ fn finish_decode(
     // `CodecError`: a refusal note is subordinate to a hard failure by design.
     // The fall-through statements say which route refused and where the decode
     // went next.
-    for statement in fell_through {
-        let message = (statement).to_owned();
-        report
-            .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
-    }
+    report.losses.extend(fell_through.iter().cloned());
     for note in refusal.take_notes() {
         report.losses.push(note);
     }

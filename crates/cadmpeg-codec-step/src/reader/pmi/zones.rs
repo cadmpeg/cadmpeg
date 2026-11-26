@@ -10,6 +10,7 @@ use cadmpeg_ir::pmi::zones::{ToleranceProjection, ToleranceZone, ToleranceZoneFo
 use cadmpeg_ir::pmi::{PmiDefinition, PmiQuantity, PmiTarget};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::CadIr;
 
 use super::super::geometry::GeometryData;
@@ -111,9 +112,12 @@ pub(super) fn attach(
         if let Some((zone, projection)) = projection(id, record, exchange, geometry, losses, ctx)? {
             projections.entry(zone).or_default().push((id, projection));
         } else {
-            losses.push(StepLossCode::PmiZoneUnresolved.note(format!(
-                "projected tolerance zone #{id} has no complete end, boundary, length, and offset"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::PmiZoneUnresolved.note(format!(
+                    "projected tolerance zone #{id} has no complete end, boundary, length, and offset"
+                )),
+            ));
         }
     }
     for (id, record) in exchange.entities("TOLERANCE_ZONE") {
@@ -136,10 +140,11 @@ pub(super) fn attach(
             })
             .and_then(|(id, form)| NonBlankString::new(form).map(|form| (id, zone_form(&form))));
         let Some((form_id, form)) = form else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::PmiZoneUnresolved
                     .note(format!("tolerance zone #{id} has no zone form")),
-            );
+            ));
             continue;
         };
         let Some(owners) = introduced(record, "TOLERANCE_ZONE", 4, 0) else {

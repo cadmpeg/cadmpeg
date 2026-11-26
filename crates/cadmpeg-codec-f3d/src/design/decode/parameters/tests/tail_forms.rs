@@ -242,7 +242,7 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
         panic!("expected one stream with unparsed parameter frames");
     };
     assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 3);
+    assert_eq!(unparsed.offsets.len(), 3);
 }
 
 #[test]

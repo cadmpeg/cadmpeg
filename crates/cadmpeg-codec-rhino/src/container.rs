@@ -13,6 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
@@ -166,6 +167,29 @@ pub(crate) struct OpaqueRecord {
     pub(crate) table_typecode: u32,
     /// Complete record descriptor.
     pub(crate) record: Record,
+}
+
+impl OpaqueRecord {
+    /// The id of this record's retained source record.
+    pub(crate) fn id(&self) -> UnknownId {
+        opaque_record_id(self.table_typecode, &self.record)
+    }
+}
+
+/// The id of the retained source record of `record` in the table of
+/// `table_typecode`.
+pub(crate) fn opaque_record_id(table_typecode: u32, record: &Record) -> UnknownId {
+    let table_key = table_typecode.to_be_bytes();
+    let record_key = record.typecode.to_be_bytes();
+    let offset_key = (cadmpeg_core::decode::u64_from_index(record.range.start)).to_be_bytes();
+    let key = IdentityKey::hex_byte(table_key[0])
+        .with_hex_bytes(&table_key[1..])
+        .dash(IdentityKey::hex_byte(record_key[0]).with_hex_bytes(&record_key[1..]))
+        .dash(IdentityKey::hex_byte(offset_key[0]).with_hex_bytes(&offset_key[1..]));
+    UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
+        key,
+    )
 }
 
 /// Losses and opaque records from one native-arena install pass.

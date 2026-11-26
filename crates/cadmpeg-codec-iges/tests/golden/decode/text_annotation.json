@@ -725,6 +725,25 @@
           "tag": "D3:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:quarantine:parameter#3 given up: iges/parameter.data-quarantined",
+        "provenance": {
+          "format": "iges",
+          "offset": 792,
+          "stream": "iges",
+          "tag": "D3:parameter"
+        },
+        "severity": "error"
       }
     ],
     "notes": [

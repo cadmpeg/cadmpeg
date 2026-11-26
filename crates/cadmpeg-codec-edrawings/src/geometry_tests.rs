@@ -418,6 +418,46 @@ fn bad_shells_are_left_out_and_charged() {
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
+    let mut items = box_shells([CUBE_EDGE; 3]);
+    items.push(Item::Shell {
+        points: vec![[0.0; 3]; 3],
+        strips: vec![vec![0, 1, 7]],
+    });
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(codes(&admitted).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .flat_map(|loss| loss.message.split_whitespace())
+        .find(|token| token.starts_with("object#"))
+        .expect("record.unreadable names the shell object")
+        .to_owned();
+    assert_eq!(admitted.ir().geometry.faces.len(), 6);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses a given-up shell");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == given_up));
+}
+
+#[test]
 fn an_instance_without_a_library_body_is_charged() {
     let mut s = Stream::new();
     s.open("includes")
@@ -431,6 +471,7 @@ fn an_instance_without_a_library_body_is_charged() {
         codes(&result),
         [
             EdrawingsLossCode::ModelObjectInvalid.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             EdrawingsLossCode::ModelNoGeometry.kind()
         ]
     );
@@ -451,7 +492,13 @@ fn broken_streams_are_blocking_losses_with_offsets() {
     let mut cut = cube_part().stream();
     cut.truncate(cut.len() / 2);
     let result = decode(&part_package(&cut));
-    assert_eq!(codes(&result), [EdrawingsLossCode::ModelMalformed.kind()]);
+    assert_eq!(
+        codes(&result),
+        [
+            EdrawingsLossCode::ModelMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
 }
 
 #[test]

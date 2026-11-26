@@ -21,6 +21,7 @@ use crate::loss::OnshapeLossCode;
 use archive::{Bundle, SCHEMA};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
+use cadmpeg_ir::unknown::part::record_given_up;
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -481,11 +482,16 @@ fn studio(
                 rollback_bar(response, features, report, &history_path),
             ),
             Err(reason) => {
-                report.push_coded(
-                    &history_path,
-                    OnshapeLossCode::HistoryNotSupported,
-                    format!("{reason}; feature history is missing"),
-                );
+                let detail = format!("{reason}; feature history is missing");
+                if response
+                    .get("features")
+                    .and_then(Value::as_array)
+                    .is_some_and(|features| features.len() > ROWS)
+                {
+                    report.push_coded(&history_path, OnshapeLossCode::HistoryNotSupported, detail);
+                } else {
+                    report.give_up(&history_path, OnshapeLossCode::HistoryNotSupported, detail);
+                }
                 (&[][..], RollbackBar::default())
             }
         },
@@ -516,11 +522,12 @@ fn studio(
             Ok((decoded, text)) => Some(Model::from_decoded(decoded, Some(text))),
             Err(error) if features.is_empty() => return Err(error.into()),
             Err(error) => {
-                report.push_coded(
-                    &step_path,
-                    OnshapeLossCode::StepUnreadable,
-                    format!("{error}; final geometry is missing"),
-                );
+                let detail = format!("{error}; final geometry is missing");
+                if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
+                    report.push_coded(&step_path, OnshapeLossCode::StepUnreadable, detail);
+                } else {
+                    report.give_up(&step_path, OnshapeLossCode::StepUnreadable, detail);
+                }
                 None
             }
         }
@@ -622,7 +629,8 @@ fn studio(
                 continue;
             }
             Err(reason) => {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("{history_path}#/features/{ordinal}"),
                     &format!("feature #{ordinal}"),
                     OnshapeLossCode::RecordMalformed,
                     format!("{reason}; omitted the feature"),
@@ -858,7 +866,8 @@ fn studio(
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
-            report.push_coded(
+            report.give_up_as(
+                &format!("{history_path}#/features/{ordinal}"),
                 name,
                 OnshapeLossCode::RecordMalformed,
                 format!("{reason}; omitted the feature"),
@@ -922,6 +931,22 @@ impl Report {
     fn push_coded(&mut self, subject: &str, code: OnshapeLossCode, detail: impl Into<String>) {
         self.notes
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
+    }
+    /// Pushes the coded note for `record`, a member path, and its `record.unreadable`.
+    fn give_up(&mut self, record: &str, code: OnshapeLossCode, detail: impl Into<String>) {
+        self.give_up_as(record, record, code, detail);
+    }
+    /// Pushes the coded note for `subject` and the `record.unreadable` of
+    /// `record`, its source address.
+    fn give_up_as(
+        &mut self,
+        record: &str,
+        subject: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) {
+        let note = code.note(format!("{}; subject: {subject}", detail.into()));
+        self.notes.extend(record_given_up(record, note));
     }
 }
 fn empty(ctx: &DecodeContext<'_>, root: View<'_>) -> Decoded {

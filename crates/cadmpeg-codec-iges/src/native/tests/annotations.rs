@@ -436,10 +436,13 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         .decode(&mut Cursor::new(bytes), &strict)
         .unwrap_err();
     match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.to_string(),
-            IgesLossCode::ParameterCountOverdeclared.kind().to_string()
-        ),
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            crate::test_support::assert_given_up(rejection.loss(), "iges:entity:directory#1");
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
+            );
+        }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
 }

@@ -49,13 +49,12 @@ fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
     }
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_index, 8);
-    assert_eq!(losses.len(), 2);
-    for loss in &losses {
-        assert_eq!(
-            loss.code,
-            crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
-        );
-    }
+    let given_up =
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchRelationUndecoded);
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [given_up.clone(), given_up].concat()
+    );
 }
 
 #[test]

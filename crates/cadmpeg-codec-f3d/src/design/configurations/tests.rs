@@ -585,9 +585,11 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     let decoded = super::decode_configurations(&ctx, &scan, &mut losses).unwrap();
     assert_eq!(decoded.documents.len(), 1);
     assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(
+            crate::loss::F3dLossCode::ConfigurationDocumentUndecoded
+        )
     );
+    assert!(losses[1].message.contains(bad), "{}", losses[1].message);
 }

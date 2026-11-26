@@ -20,6 +20,7 @@ use cadmpeg_ir::pmi::{
     PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -74,14 +75,20 @@ pub(super) fn transfer(
         return Ok(BTreeMap::new());
     }
     let Some(attributes) = attributes::attributes(ctx, neutral)? else {
-        losses.push(
+        let section = crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(
+            &cadmpeg_ir::identity_namespace!("creo", "NeuPrtSld", "section"),
+            neutral.start(),
+        )?;
+        losses.extend(record_given_up(
+            section.as_str(),
             CreoLossCode::PmiTableIncomplete
                 .note("The neutral attribute table containing PMI did not parse completely."),
-        );
+        ));
         return Ok(BTreeMap::new());
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
     let mut unresolved = 0usize;
+    let mut given_up = Vec::new();
     let unit_overrides = attributes
         .iter()
         .flatten()
@@ -102,6 +109,7 @@ pub(super) fn transfer(
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
             if attribute.name == b"PTC_GTOL_TYPE" {
                 unresolved += 1;
+                given_up.push(attribute_row(attribute.offset));
             }
             continue;
         };
@@ -179,11 +187,20 @@ pub(super) fn transfer(
     let mut inferred_targets = 0usize;
     let mut dimension_targets_used = 0usize;
     for ((owner, owner_type), tolerance) in tolerances {
-        if !matches!(owners.get(&(owner, owner_type)), Some(Some(_))) {
-            unresolved += 1;
-            continue;
-        }
         let first_key = format!("{owner_type}:{owner}");
+        match owners.get(&(owner, owner_type)) {
+            Some(Some(_)) => {}
+            // More than one annotation element claims the owner.
+            Some(None) => {
+                unresolved += 1;
+                continue;
+            }
+            None => {
+                unresolved += 1;
+                given_up.push(pmi_record(&first_key));
+                continue;
+            }
+        }
         let mut semantics = Vec::new();
         unresolved += usize::from(tolerance.invalid_decoration);
         let target = targets.get(&(owner, owner_type));
@@ -215,6 +232,7 @@ pub(super) fn transfer(
         )?;
         let Some(kind) = tolerance.kind.and_then(kind) else {
             unresolved += 1;
+            given_up.push(pmi_record(&first_key));
             continue;
         };
         if tolerance.duplicate {
@@ -245,6 +263,7 @@ pub(super) fn transfer(
             dimension_targets_used += dimension_target;
         } else {
             unresolved += 1;
+            given_up.push(pmi_record(&first_key));
         }
         if tolerance.secondary.is_some_and(|text| !text.is_empty())
             || tolerance.datums[1]
@@ -279,6 +298,7 @@ pub(super) fn transfer(
                 dimension_targets_used += dimension_target;
             } else {
                 unresolved += 1;
+                given_up.push(pmi_record(&second_key));
             }
         }
         if let Some((text, offset)) = tolerance.text_below.filter(|(text, _)| !text.is_empty()) {
@@ -310,8 +330,12 @@ pub(super) fn transfer(
                         source_settings: NativeOptions::new(),
                     });
                 }
-                Ok(_) => {}
-                Err(_) => unresolved += 1,
+                // The frame text annotates tolerances, none of which transferred.
+                Ok(_) => given_up.push(pmi_record(format_args!("{first_key}:text-below"))),
+                Err(_) => {
+                    unresolved += 1;
+                    given_up.push(pmi_record(format_args!("{first_key}:text-below")));
+                }
             }
         }
     }
@@ -319,6 +343,12 @@ pub(super) fn transfer(
     if unresolved != 0 {
         losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} geometric-tolerance attribute owner(s) have an unresolved or ambiguous type, value, or annotation-element join.")));
     }
+    let reason = CreoLossCode::PmiRecordUnresolved.kind();
+    losses.extend(
+        given_up
+            .iter()
+            .map(|record| record_unreadable(record, &reason)),
+    );
     if conflicting != 0 {
         losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
             "{conflicting} geometric tolerance(s) use the first value of conflicting attributes."
@@ -364,6 +394,16 @@ pub(super) fn transfer(
         )));
     }
     Ok(targets::dimension_targets_by_slot(&dimension_targets))
+}
+
+/// The id a PMI record of `key` takes in the document.
+fn pmi_record(key: impl std::fmt::Display) -> String {
+    format!("creo:annotation:pmi#{key}")
+}
+
+/// The source address of a neutral attribute row that forms no record.
+fn attribute_row(offset: usize) -> String {
+    format!("NeuPrtSld@{offset}")
 }
 
 fn section<'a>(scan: &'a ContainerScan<'_>, name: &str) -> Option<View<'a>> {

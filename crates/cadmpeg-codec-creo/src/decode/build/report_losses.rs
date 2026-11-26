@@ -7,6 +7,7 @@ use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_unreadable;
 
 pub(super) fn push_report_loss(
     losses: &mut Vec<LossNote>,
@@ -464,6 +465,61 @@ pub(super) fn push_legacy_value_losses(
     }
 }
 
+/// One `record.unreadable` per legacy value row that forms no record. Rows
+/// kept with a partial payload are not charged.
+pub(super) fn push_unread_legacy_rows(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
+    fn charge(
+        losses: &mut Vec<LossNote>,
+        code: CreoLossCode,
+        rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
+    ) {
+        let reason = code.kind();
+        losses.extend(rows.map(|row| record_unreadable(row, &reason)));
+    }
+    let Some(legacy) = scan.framing.layout.legacy_ascii() else {
+        return;
+    };
+    let values = &legacy.persistence;
+    charge(
+        losses,
+        CreoLossCode::LegacyRealValueUnresolved,
+        values.real_values.unresolved_ids(),
+    );
+    charge(
+        losses,
+        CreoLossCode::LegacyIntegerValueUnresolved,
+        values.integer_values.unresolved_ids(),
+    );
+    charge(
+        losses,
+        CreoLossCode::LegacyContinuationFormUndefined,
+        values
+            .type_3_values
+            .unresolved_ids()
+            .chain(values.type_4_values.unresolved_ids()),
+    );
+    charge(
+        losses,
+        CreoLossCode::LegacyUnsignedValueUnresolved,
+        values
+            .type_5_values
+            .unresolved_ids()
+            .chain(values.type_7_values.unresolved_ids())
+            .chain(values.type_9_values.unresolved_ids())
+            .chain(values.type_11_values.unresolved_ids()),
+    );
+    charge(
+        losses,
+        CreoLossCode::LegacyCompactRealUnresolved,
+        values.type_6_values.unresolved_ids(),
+    );
+    charge(
+        losses,
+        CreoLossCode::LegacyStringContinuationUndefined,
+        values.unread_string_scalar_ids(),
+    );
+}
+
 pub(super) fn push_brep_transfer_note(
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
@@ -555,6 +611,12 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.emitted_face_count,
         rejected_face_count,
     ));
+    let reason = CreoLossCode::BrepTransferIncomplete.kind();
+    losses.extend(
+        diagnostics
+            .rejected_face_record_ids()
+            .map(|face| record_unreadable(face, &reason)),
+    );
 }
 
 pub(super) fn push_carrier_transfer_notes(

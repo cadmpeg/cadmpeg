@@ -1743,6 +1743,20 @@ fn class_report_counts_terminal_outcomes_once() {
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].message, message);
         }
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            unreadable,
+            [format!(
+                "record rhino:object:record#000002 given up: {}",
+                RhinoLossCode::ObjectFramingUndecodable.kind()
+            )]
+        );
     });
 }
 

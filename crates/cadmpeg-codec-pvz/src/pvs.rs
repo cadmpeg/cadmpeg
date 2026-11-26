@@ -236,8 +236,9 @@ pub(crate) struct Residue {
     typed_properties: usize,
     /// XML elements outside the mapped subset (§3.14), by name.
     xml_elements: BTreeMap<String, usize>,
-    /// Property streams whose grammar failed, with the reason.
-    failed_property_streams: Vec<String>,
+    /// Property streams whose grammar failed: the stream's directory address
+    /// in loss messages, and the reason.
+    failed_property_streams: Vec<(String, String)>,
     /// Directory streams the decoder does not read, with the reason.
     skipped_streams: Vec<String>,
 }
@@ -323,8 +324,11 @@ impl Residue {
                 self.typed_properties
             )));
         }
-        for reason in &self.failed_property_streams {
-            losses.push(PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()));
+        for (stream, reason) in &self.failed_property_streams {
+            losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                stream,
+                PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()),
+            ));
         }
         for reason in &self.skipped_streams {
             losses.push(PvzLossCode::StructureStreamUndecoded.note(reason.clone()));
@@ -397,7 +401,7 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
     }
     let mut definitions = definitions
         .ok_or_else(|| CodecError::malformed("structure member has no structure stream"))?;
-    for stream in &streams {
+    for (index, stream) in streams.iter().enumerate() {
         match stream.kind {
             stream_type::STRING_POOL | stream_type::STRUCTURE => {}
             stream_type::PROPERTIES => {
@@ -415,9 +419,12 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
                 match applied {
                     Ok(()) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => residue.failed_property_streams.push(format!(
-                        "property stream {:?} was not transferred: {error}",
-                        stream.name
+                    Err(error) => residue.failed_property_streams.push((
+                        format!("pvz:structure-stream#{index}"),
+                        format!(
+                            "property stream {:?} was not transferred: {error}",
+                            stream.name
+                        ),
                     )),
                 }
             }

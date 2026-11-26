@@ -32,18 +32,26 @@ pub(crate) fn decode_body(
     let scene = match scene::Scene::collect(body, grammar) {
         Ok(scene) => scene,
         Err(error) => {
-            losses.push(EdrawingsLossCode::ModelMalformed.note(format!(
-                "the model stream broke a record rule ({error}); the package carries no model data"
-            )));
+            losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                crate::package::MODEL_MEMBER,
+                EdrawingsLossCode::ModelMalformed.note(format!(
+                    "the model stream broke a record rule ({error}); the package carries no model data"
+                )),
+            ));
             return Ok(false);
         }
     };
-    if scene.orphan_slots > 0 || scene.duplicate_objects > 0 {
+    if !scene.orphan_slots.is_empty() || scene.duplicate_objects > 0 {
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
             "{} shell slots lie outside every library body and {} objects repeat an earlier id; \
              they were not transferred",
-            scene.orphan_slots, scene.duplicate_objects
+            scene.orphan_slots.len(),
+            scene.duplicate_objects
         )));
+        let code = EdrawingsLossCode::ModelObjectInvalid.kind();
+        losses.extend(scene.orphan_slots.iter().map(|slot| {
+            cadmpeg_ir::unknown::part::record_unreadable(format!("object#{slot}"), &code)
+        }));
     }
     if scene.annotation_objects > 0 {
         losses.push(EdrawingsLossCode::AnnotationNotTransferred.note(format!(

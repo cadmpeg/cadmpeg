@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -19,7 +20,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::container::{opaque_record_id, NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::loss::RhinoLossCode;
 use crate::objects::{
@@ -4746,10 +4747,18 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "linetype record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            if matches!(error, PatternTransferError::Framing(_)) {
+                                losses.extend(record_given_up(
+                                    opaque_record_id(table.typecode, record),
+                                    loss,
+                                ));
+                            } else {
+                                losses.push(loss);
+                            }
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4774,10 +4783,18 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "hatch pattern record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            if matches!(error, PatternTransferError::Framing(_)) {
+                                losses.extend(record_given_up(
+                                    opaque_record_id(table.typecode, record),
+                                    loss,
+                                ));
+                            } else {
+                                losses.push(loss);
+                            }
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4974,14 +4991,13 @@ pub(crate) fn install(
                 }
             }
             if recognized && !parsed {
-                push_presentation_loss(
-                    &mut losses,
-                    RhinoLossCode::PresentationRecordDropped,
-                    format_args!(
+                losses.extend(record_given_up(
+                    opaque_record_id(table.typecode, record),
+                    RhinoLossCode::PresentationRecordDropped.note(format_args!(
                         "record at offset {} in table {table_type:#x} could not be transferred",
                         record.range.start
-                    ),
-                );
+                    )),
+                ));
                 push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
@@ -5014,14 +5030,13 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        push_presentation_loss(
-                            &mut losses,
-                            RhinoLossCode::PresentationRecordDropped,
-                            format_args!(
+                        losses.extend(record_given_up(
+                            format!("rhino:object:record#{source_order:06}"),
+                            RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "light object at offset {} could not be transferred: {error}",
                                 object.range.start
-                            ),
-                        );
+                            )),
+                        ));
                     }
                 }
             } else {

@@ -34,6 +34,7 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -699,10 +700,11 @@ pub(super) fn decode(
                         .filter(|name| !name.is_empty());
                     apll_point_names.insert(id, source_name);
                 } else {
-                    losses.push(
+                    losses.extend(record_given_up(
+                        format!("#{id}"),
                         StepLossCode::DecodeWarning
                             .note(format!("{point_type} #{id} has invalid coordinates")),
-                    );
+                    ));
                 }
             }
             Some("CARTESIAN_POINT") => {
@@ -716,10 +718,11 @@ pub(super) fn decode(
                     points2.insert(id, position);
                     typed.insert(id);
                 } else {
-                    losses.push(
+                    losses.extend(record_given_up(
+                        format!("#{id}"),
                         StepLossCode::DecodeWarning
                             .note(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
-                    );
+                    ));
                 }
             }
             Some("DIRECTION") => {
@@ -733,10 +736,11 @@ pub(super) fn decode(
                     directions2.insert(id, direction);
                     typed.insert(id);
                 } else {
-                    losses.push(
+                    losses.extend(record_given_up(
+                        format!("#{id}"),
                         StepLossCode::DecodeWarning
                             .note(format!("DIRECTION #{id} is invalid or zero")),
-                    );
+                    ));
                 }
             }
             _ => {}
@@ -865,9 +869,12 @@ pub(super) fn decode(
                 vectors2.insert(id, value);
                 typed.insert(id);
             } else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "VECTOR #{id} has an invalid direction or magnitude"
-                )));
+                losses.extend(record_given_up(
+                    format!("#{id}"),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "VECTOR #{id} has an invalid direction or magnitude"
+                    )),
+                ));
             }
         }
     }
@@ -910,10 +917,11 @@ pub(super) fn decode(
                 placements.insert(id, placement);
                 typed.insert(id);
             } else {
-                losses.push(
+                losses.extend(record_given_up(
+                    format!("#{id}"),
                     StepLossCode::DecodeWarning
                         .note(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location")),
-                );
+                ));
             }
         }
     }
@@ -923,9 +931,12 @@ pub(super) fn decode(
             transformation_operators.insert(id, transform);
             typed.insert(id);
         } else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
+                )),
+            ));
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
@@ -952,10 +963,11 @@ pub(super) fn decode(
             transformation_operators2.insert(id, transform);
             typed.insert(id);
         } else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("{name} #{id} has invalid axes, origin, or scale")),
-            );
+            ));
         }
     }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
@@ -977,10 +989,11 @@ pub(super) fn decode(
             placements2.insert(id, placement);
             typed.insert(id);
         } else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location")),
-            );
+            ));
         }
     }
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
@@ -1030,6 +1043,8 @@ pub(super) fn decode(
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
+    let mut invalid_curves = BTreeSet::new();
+    let mut invalid_surfaces = BTreeSet::new();
     for (id, record) in exchange.entities_any(LeafCurveEntity::NAMES) {
         let Some(curve_kind) = LeafCurveEntity::of(record) else {
             continue;
@@ -1179,6 +1194,7 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning
                     .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
             );
+            invalid_curves.insert(id);
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -1201,6 +1217,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
             )));
+            invalid_curves.insert(id);
         }
     }
 
@@ -1700,6 +1717,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{surface_type} #{id} has an unresolved directrix, vector, or axis"
             )));
+            invalid_surfaces.insert(id);
             continue;
         };
         let definition = match definition {
@@ -1708,6 +1726,7 @@ pub(super) fn decode(
                 losses.push(
                     StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")),
                 );
+                invalid_surfaces.insert(id);
                 continue;
             }
         };
@@ -1841,6 +1860,7 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning
                     .note(format!("{surface_type} #{id} has invalid geometry")),
             );
+            invalid_surfaces.insert(id);
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
@@ -1861,6 +1881,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
             )));
+            invalid_surfaces.insert(id);
         }
     }
 
@@ -2355,6 +2376,24 @@ pub(super) fn decode(
             e.insert(surface_index);
         }
     }
+    // An invalid carrier that no edge or face retains as an unknown carrier
+    // leaves no record.
+    for id in invalid_curves {
+        if !carrier_index.curves.contains_key(&id) {
+            losses.push(record_unreadable(
+                format!("#{id}"),
+                "invalid curve geometry",
+            ));
+        }
+    }
+    for id in invalid_surfaces {
+        if !carrier_index.surfaces.contains_key(&id) {
+            losses.push(record_unreadable(
+                format!("#{id}"),
+                "invalid surface geometry",
+            ));
+        }
+    }
     let mut surface_parameter_scales = BTreeMap::new();
     let lookup = SurfaceScaleLookup::new(ir);
     for surface in &ir.geometry.surfaces {
@@ -2398,24 +2437,31 @@ pub(super) fn decode(
             .filter(|surface| carrier_index.surfaces.contains_key(surface))
             .and(decoded)
         else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("PCURVE #{id} has no decoded surface or 2D curve")),
-            );
+            ));
             continue;
         };
         let Some(scales) = surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PCURVE #{id} has no established owning surface parameterization"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PCURVE #{id} has no established owning surface parameterization"
+                )),
+            ));
             continue;
         };
         let geometry = geometry.clone();
         let Ok(geometry) = geometry.scaled_coordinates_owned(ctx, *scales)? else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
+                )),
+            ));
             continue;
         };
         ir.geometry.pcurves.push(Pcurve {
@@ -2567,30 +2613,42 @@ fn decode_tessellated_curve_sets(
         let Some(coordinates_id) =
             tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
+                )),
+            ));
             continue;
         };
         let Some(coordinates_record) = exchange.records().get(&coordinates_id) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
+                )),
+            ));
             continue;
         };
         let scale = unit_scales.length([coordinates_id]).get();
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
+                )),
+            ));
             continue;
         };
         let Some(strips) =
             tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid line strips"
-            )));
+            losses.extend(record_given_up(
+                format!("#{id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid line strips"
+                )),
+            ));
             continue;
         };
         let source_name = representation_item_name(record)

@@ -367,6 +367,19 @@
         },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record inventor:rse:structural-issue#segment_registry given up: truncated input during segment count at space 0 offset 0",
+        "severity": "error"
       }
     ],
     "notes": [],

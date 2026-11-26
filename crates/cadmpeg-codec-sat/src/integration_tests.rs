@@ -155,6 +155,42 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
 }
 
 #[test]
+fn a_pinned_decode_refuses_an_unreadable_later_stream() {
+    let mut source = crate::test_support::test_streams::text_sphere_stream(1.0);
+    source.extend(b"9999999999 5 0 0\n");
+    let admitted = decode_bytes(&source);
+    let losses = &admitted.report().losses;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()));
+    assert!(losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss
+                .message
+                .split_whitespace()
+                .any(|token| token == "sat:source:unread#0")
+    }));
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = SatCodec
+        .decode(&mut std::io::Cursor::new(source), &options)
+        .expect_err("a pinned decode refuses a given-up stream");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == "sat:source:unread#0"));
+}
+
+#[test]
 fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
     let first = crate::test_support::test_streams::text_sphere_stream(1.0);
     for second in [b"23200 5 0 0\n".as_slice(), b"9999999999 5 0 0\n"] {

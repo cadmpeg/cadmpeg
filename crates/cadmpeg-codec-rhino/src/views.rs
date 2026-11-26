@@ -6,8 +6,10 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Fraction, PositiveReal};
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -15,7 +17,7 @@ use crate::chunks::{
     chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
-use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::container::{opaque_record_id, NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16_deferred, utf16_retained, MillimeterScale, Plane, UnitBinding};
@@ -488,17 +490,26 @@ fn located_presentation_loss(
         )
 }
 
-fn push_list_loss(
+fn list_loss(offset: usize, tag: &'static str, message: std::fmt::Arguments<'_>) -> LossNote {
+    crate::loss::RhinoLossCode::PresentationRecordDropped
+        .note(message)
+        .with_provenance(
+            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset))
+                .with_tag(tag),
+        )
+}
+
+/// Pushes the loss of a view list, or of a view in it, that the list gives
+/// up, charged to `record`: the retained list, or `<list>@<offset>` for a
+/// view in it.
+fn push_list_give_up(
     losses: &mut Vec<LossNote>,
+    record: impl std::fmt::Display,
     offset: usize,
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) {
-    let loss = crate::loss::RhinoLossCode::PresentationRecordDropped.note(message);
-
-    losses.push(loss.with_provenance(
-        SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag),
-    ));
+    losses.extend(record_given_up(record, list_loss(offset, tag, message)));
 }
 
 fn push_view_loss(
@@ -1393,6 +1404,7 @@ fn parse_list(
     archive: ArchiveVersion,
     scale: MillimeterScale,
     list_kind: ViewListKind,
+    list: &UnknownId,
 ) -> Result<(Vec<ViewRecord>, Vec<LossNote>), CodecError> {
     let kind = list_kind.as_str();
     let list_tag = match list_kind {
@@ -1403,8 +1415,9 @@ fn parse_list(
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
-            push_list_loss(
+            push_list_give_up(
                 &mut losses,
+                list,
                 record.range.start,
                 list_tag,
                 format_args!(
@@ -1418,8 +1431,9 @@ fn parse_list(
     let signed_count = match reader.i32() {
         Ok(value) => value,
         Err(error) => {
-            push_list_loss(
+            push_list_give_up(
                 &mut losses,
+                list,
                 record.range.start,
                 list_tag,
                 format_args!(
@@ -1431,8 +1445,9 @@ fn parse_list(
         }
     };
     let Ok(count) = usize::try_from(signed_count) else {
-        push_list_loss(
+        push_list_give_up(
             &mut losses,
+            list,
             record.range.start,
             list_tag,
             format_args!(
@@ -1443,15 +1458,14 @@ fn parse_list(
         return Ok((Vec::new(), losses));
     };
     if count > 1 << 16 {
-        push_list_loss(
-            &mut losses,
+        losses.push(list_loss(
             record.range.start,
             list_tag,
             format_args!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
                 record.body().start
             ),
-        );
+        ));
         return Ok((Vec::new(), losses));
     }
     let mut views = Vec::new();
@@ -1460,8 +1474,9 @@ fn parse_list(
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
             Err(error) => {
-                push_list_loss(
+                push_list_give_up(
                     &mut losses,
+                    format_args!("{list}@{}", reader.position()),
                     reader.position(),
                     "VIEW/RECORD",
                     format_args!(
@@ -1473,7 +1488,9 @@ fn parse_list(
             }
         };
         if view.typecode != VIEW_RECORD || view.short() {
-            push_list_loss( &mut losses,
+            push_list_give_up(
+                &mut losses,
+                format_args!("{list}@{child_offset}"),
                 child_offset,
                 "VIEW/RECORD",
                 format_args!(
@@ -1501,8 +1518,9 @@ fn parse_list(
                 views.push(value);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Err(error) => push_list_loss(
+            Err(error) => push_list_give_up(
                 &mut losses,
+                format_args!("{list}@{}", view.header_start),
                 view.header_start,
                 "VIEW/RECORD",
                 format_args!(
@@ -1512,8 +1530,9 @@ fn parse_list(
             ),
         }
         if let Err(error) = reader.skip(next - reader.position()) {
-            push_list_loss(
+            push_list_give_up(
                 &mut losses,
+                format_args!("{list}@{}", view.header_start),
                 view.header_start,
                 "VIEW/RECORD",
                 format_args!(
@@ -1624,7 +1643,8 @@ pub(crate) fn install(
                     Err(error) => {
                         let loss = crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start));
 
-                        losses.push(
+                        losses.extend(record_given_up(
+                            opaque_record_id(table.typecode, record),
                             loss.with_provenance(
                                 SourceProvenance::root(
                                     "rhino",
@@ -1632,7 +1652,7 @@ pub(crate) fn install(
                                 )
                                 .with_tag("VIEW/NAMED_CPLANES"),
                             ),
-                        );
+                        ));
 
                         opaque_records.push(OpaqueRecord {
                             table_typecode: table.typecode,
@@ -1660,6 +1680,7 @@ pub(crate) fn install(
                     scan.archive,
                     scale,
                     ViewListKind::Named,
+                    &opaque_record_id(table.typecode, record),
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
 
@@ -1692,6 +1713,7 @@ pub(crate) fn install(
                     scan.archive,
                     scale,
                     ViewListKind::Active,
+                    &opaque_record_id(table.typecode, record),
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
 
@@ -1836,14 +1858,33 @@ mod tests {
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
         .expect("install the views");
-        assert_eq!(installed.losses.len(), 1);
         assert_eq!(installed.opaque_records.len(), 1);
+        assert_given_up(&installed.losses, installed.opaque_records[0].id().as_str());
+    }
+
+    /// `losses` holds one codec loss and the `record.unreadable` that
+    /// names `record`, the given-up list or view.
+    fn assert_given_up(losses: &[cadmpeg_ir::report::loss::LossNote], record: &str) {
+        assert_eq!(losses.len(), 2, "{losses:?}");
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        );
+        assert_eq!(
+            losses[1].code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(losses[1]
+            .message
+            .split_whitespace()
+            .any(|token| token == record));
     }
 
     #[test]
-    fn malformed_view_list_reports_one_loss() {
+    fn malformed_view_list_is_given_up() {
         let bytes = [0_u8];
         let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
+        let list = crate::container::opaque_record_id(super::SETTINGS, &record);
         let (_, losses) = super::parse_list(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
@@ -1851,9 +1892,10 @@ mod tests {
             ArchiveVersion::V5,
             crate::settings::MillimeterScale::IDENTITY,
             super::ViewListKind::Named,
+            &list,
         )
         .expect("parse list");
-        assert_eq!(losses.len(), 1);
+        assert_given_up(&losses, list.as_str());
     }
 
     #[test]
@@ -1865,8 +1907,8 @@ mod tests {
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
         .expect("install the views");
-        assert_eq!(installed.losses.len(), 1);
         assert_eq!(installed.opaque_records.len(), 1);
+        assert_given_up(&installed.losses, installed.opaque_records[0].id().as_str());
     }
 
     #[test]
@@ -1901,6 +1943,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("parse list");
         assert_eq!(admitted.0.len(), 1);
@@ -2019,6 +2062,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("the view survives its dropped userdata");
         assert_eq!(views.len(), 1);
@@ -2253,6 +2297,7 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
+        let list = crate::container::opaque_record_id(super::SETTINGS, &record);
 
         let (views, losses) = parse_list(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -2261,14 +2306,11 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &list,
         )
         .expect("view list");
         assert!(views.is_empty());
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-        );
+        assert_given_up(&losses, &format!("{list}@4"));
     }
 
     #[test]
@@ -2286,10 +2328,17 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert!(views.is_empty());
-        assert_eq!(losses.len(), 1);
+        assert_given_up(
+            &losses,
+            &format!(
+                "{}@4",
+                crate::container::opaque_record_id(super::SETTINGS, &record)
+            ),
+        );
         assert!(losses[0].message.contains("unexpected typecode"));
     }
 
@@ -2317,6 +2366,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2362,6 +2412,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2404,6 +2455,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2605,6 +2657,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2627,6 +2680,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2703,6 +2757,7 @@ mod tests {
                 archive,
                 crate::settings::MillimeterScale::IDENTITY,
                 ViewListKind::Named,
+                &crate::container::opaque_record_id(super::SETTINGS, &record),
             )
             .expect("view list")
         };
@@ -2830,6 +2885,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);
@@ -2856,6 +2912,7 @@ mod tests {
             archive,
             crate::settings::MillimeterScale::IDENTITY,
             ViewListKind::Named,
+            &crate::container::opaque_record_id(super::SETTINGS, &record),
         )
         .expect("view list");
         assert_eq!(views.len(), 1);

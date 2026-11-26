@@ -15,7 +15,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -226,7 +226,12 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 )
                 .with_tag(tag),
             );
-            body.losses.push(loss);
+            match diagnostic.given_up {
+                Some(record) => body
+                    .losses
+                    .extend(record_given_up(format!("#{record}"), loss)),
+                None => body.losses.push(loss),
+            }
         }
 
         Self {

@@ -69,6 +69,18 @@ impl Parser<'_, '_, '_> {
             offset,
             kind,
             message: message.to_string(),
+            given_up: None,
+        });
+    }
+
+    /// Records the omission of instance `id`, which the parser gives up
+    /// whole.
+    fn give_up_record(&mut self, id: u64, offset: usize, message: std::fmt::Arguments<'_>) {
+        self.diagnostics.push(ParseDiagnostic {
+            offset,
+            kind: ParseDiagnosticKind::RecordOmitted,
+            message: message.to_string(),
+            given_up: Some(id),
         });
     }
 
@@ -248,7 +260,7 @@ impl Parser<'_, '_, '_> {
             )?;
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
-                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
+                self.give_up_record(id, record.span.start, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
                 pending.push((id, None));
             } else if given_up.is_some() {
                 pending.push((id, given_up));
@@ -337,7 +349,7 @@ impl Parser<'_, '_, '_> {
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
                             if part.is_none() {
-                                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                                self.give_up_record(user, record.span.start, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
                             }
                             pending.push((user, part));
                         }

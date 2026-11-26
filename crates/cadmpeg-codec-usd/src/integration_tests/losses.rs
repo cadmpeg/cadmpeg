@@ -113,6 +113,44 @@ fn mesh_losses_are_emitted() {
     );
 }
 
+/// A mesh prim with no points is given up: the default decode charges
+/// `mesh.rejected` and the prim's `record.unreadable`, and a pinned decode
+/// refuses on the `record.unreadable`.
+#[test]
+fn a_rejected_mesh_is_given_up_and_refuses_a_pinned_decode() {
+    use cadmpeg_ir::codec::Codec as _;
+
+    let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]");
+    let given_up = |loss: &LossNote| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.split_whitespace().any(|token| token == "/M")
+    };
+
+    let result = decode(&text);
+    assert!(result.ir().model.tessellations.is_empty());
+    let losses = &result.report().losses;
+    assert!(emitted(losses, UsdLossCode::MeshRejected), "{losses:#?}");
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .count(),
+        1,
+        "{losses:#?}"
+    );
+    assert!(losses.iter().any(given_up), "{losses:#?}");
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+        }
+        Ok(_) => panic!("expected a strict refusal"),
+        Err(other) => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
 #[test]
 fn curve_and_patch_losses_are_emitted() {
     assert_decode_emits(

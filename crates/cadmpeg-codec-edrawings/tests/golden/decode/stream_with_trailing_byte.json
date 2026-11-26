@@ -157,6 +157,19 @@
         },
         "message": "the model stream broke a record rule (bracket record is not the 24 byte trailer at byte 1315); the package carries no model data",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record eModel given up: edrawings/model.malformed",
+        "severity": "error"
       }
     ],
     "notes": [],

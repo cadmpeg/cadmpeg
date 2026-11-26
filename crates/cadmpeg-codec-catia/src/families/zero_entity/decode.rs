@@ -1099,7 +1099,19 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    let losses = vec![topology_loss.note(topology_message.to_string())];
+    let mut losses = vec![topology_loss.note(topology_message.to_string())];
+    if topology_counts.is_none() {
+        let face_records = support_runs
+            .iter()
+            .filter_map(|run| run.face.as_ref().map(|face| face.record_ordinal))
+            .collect::<std::collections::BTreeSet<_>>();
+        losses.extend(face_records.into_iter().map(|ordinal| {
+            cadmpeg_ir::unknown::part::record_unreadable(
+                format_args!("catia:zero-entity:topology-face#{ordinal}"),
+                topology_loss.kind(),
+            )
+        }));
+    }
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {

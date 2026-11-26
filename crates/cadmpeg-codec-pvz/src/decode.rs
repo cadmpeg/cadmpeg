@@ -21,7 +21,7 @@ use cadmpeg_ir::ids::{BodyId, Identity};
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::PvzLossCode;
@@ -245,10 +245,13 @@ fn exact_geometry(
         Ok(None) => return Ok(Vec::new()),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
-            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-                "geometry member {name:?}: the exact-geometry stream was not expanded ({error}); \
-                 the member keeps its tessellation"
-            )));
+            losses.extend(record_given_up(
+                format!("pvz:{}#exact", crate::ids::member_scope(name)),
+                PvzLossCode::GeometryExactUndecoded.note(format!(
+                    "geometry member {name:?}: the exact-geometry stream was not expanded \
+                     ({error}); the member keeps its tessellation"
+                )),
+            ));
             return Ok(Vec::new());
         }
     };
@@ -283,11 +286,14 @@ fn exact_geometry(
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-                "geometry member {name:?}: exact-geometry stream {:#010x} did not decode into \
-                 B-rep ({error}); the member keeps its tessellation",
-                exact.stream_id
-            )));
+            losses.extend(record_given_up(
+                crate::ids::member_stream(name, exact.stream_id),
+                PvzLossCode::GeometryExactUndecoded.note(format!(
+                    "geometry member {name:?}: exact-geometry stream {:#010x} did not decode \
+                     into B-rep ({error}); the member keeps its tessellation",
+                    exact.stream_id
+                )),
+            ));
             Ok(Vec::new())
         }
     }

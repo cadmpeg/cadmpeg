@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::record_given_up;
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -22,15 +23,17 @@ fn recover_metadata<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            losses.push(
-                crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(format!(
-                    "{field} remains source-only: {error}; independent shape geometry is retained"
-                )),
-            );
+            losses.push(metadata_unresolved(field, &error));
             Ok(None)
         }
         Err(error) => Err(error),
     }
+}
+
+fn metadata_unresolved(field: &str, error: &CodecError) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(format!(
+        "{field} remains source-only: {error}; independent shape geometry is retained"
+    ))
 }
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
@@ -355,8 +358,15 @@ pub(crate) fn parse(
                 maps: parsed.maps,
             }))
         })();
-        if let Some(map) = recover_metadata(parsed, losses, &property.id)?.flatten() {
-            maps.push(map);
+        match parsed {
+            Ok(map) => maps.extend(map),
+            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+                losses.extend(record_given_up(
+                    &property.id,
+                    metadata_unresolved(&property.id, &error),
+                ));
+            }
+            Err(error) => return Err(error),
         }
     }
     Ok((StringTables::try_from(tables)?, maps))

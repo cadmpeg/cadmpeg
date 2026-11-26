@@ -2,8 +2,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::products::Storage;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::CreoLossCode;
@@ -16,6 +17,17 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized Creo assembly should decode"),
     )
+}
+
+/// The record each `record.unreadable` names, as its message's second token.
+fn unreadable_records(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter_map(|loss| loss.message.split_whitespace().nth(1).map(str::to_owned))
+        .collect()
 }
 
 fn loss_messages(result: &EditableDecodeResult, code: CreoLossCode) -> Vec<String> {
@@ -186,6 +198,30 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
           those occurrences did not transfer"
         ]
     );
+    assert_eq!(
+        unreadable_records(&result),
+        ["NeuAsmSld:members:2575".to_owned()]
+    );
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_frame_that_is_not_rigid() {
+    let mut table = members_table();
+    replace_once(&mut table, b"\x18\x10\x18\x2d", b"\x18\x0f\x18\x2d");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(build_asm_with(table)), &options)
+        .expect_err("a pinned decode refuses a dropped component row");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == "NeuAsmSld:members:2575"));
 }
 
 #[test]

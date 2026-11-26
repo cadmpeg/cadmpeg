@@ -102,11 +102,32 @@ fn torus_record(xmt: u16, major: f64) -> Vec<u8> {
     bytes
 }
 
+/// The carrier codes of each refused record, each checked to be followed by
+/// the `record.unreadable` that names the record at its byte.
 fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     let graph = crate::topology::Graph::parse(stream);
-    super::surface_refusals(0, &graph)
-        .into_iter()
-        .map(|loss| loss.code)
+    let losses = super::surface_refusals("nx:parasolid#0:partition", 0, &graph);
+    losses
+        .chunks(2)
+        .map(|pair| {
+            let [refusal, unreadable] = pair else {
+                panic!("a refusal and its charge, got {pair:#?}");
+            };
+            assert_eq!(
+                unreadable.code,
+                cadmpeg_ir::unknown::part::record_unreadable_kind()
+            );
+            let pos = unreadable
+                .message
+                .strip_prefix("record nx:parasolid#0:partition@")
+                .and_then(|rest| rest.split_whitespace().next())
+                .expect("the charge names the record by stream and byte");
+            assert!(
+                refusal.message.contains(&format!("at byte {pos} ")),
+                "{refusal:#?}"
+            );
+            refusal.code.clone()
+        })
         .collect()
 }
 

@@ -153,11 +153,12 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
             quarantined[0].fields().unwrap()["defect"],
             "status-number-invalid"
         );
-        assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
+        assert_eq!(losses.len(), 2, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
             IgesLossCode::DirectoryRecordQuarantined.kind()
         );
+        crate::test_support::assert_given_up(&losses[1], "iges:quarantine:directory#1");
     }
 }
 

@@ -14,7 +14,7 @@ use crate::test_support::test_cards::card;
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, OwnedTestEntity,
 };
-use crate::test_support::{code_count, decode, strict_options};
+use crate::test_support::{assert_gives_up, code_count, decode, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data pointer in the first Directory card.
@@ -110,7 +110,8 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         crate::test_support::native_bytes(&fields["bytes"]),
         expected_bytes
     );
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
+    assert_gives_up(result.report(), &["iges:quarantine:directory#3"]);
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1
@@ -263,7 +264,8 @@ fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
         code_count(result.report(), IgesLossCode::PointerUnresolved),
         0
     );
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
+    assert_gives_up(result.report(), &["iges:quarantine:directory#3"]);
     assert_eq!(
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1

@@ -427,7 +427,7 @@ pub(super) fn project(
         };
         let Some(parameter_map) = source_parameter_map(source_entry, source_record, source_range)
         else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("offset source has no supported native-to-neutral parameter mapping"),
@@ -465,7 +465,7 @@ pub(super) fn project(
             };
             let Some(placed_source_geometry) = placed_offset_source(source_geometry, transform)
             else {
-                super::push_geometry_loss(
+                super::push_retained_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!("placed offset source has no exact line or circle carrier"),
@@ -580,7 +580,7 @@ pub(super) fn project(
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload))
                     }
                     _ => {
-                        super::push_geometry_loss(
+                        super::push_retained_geometry_loss(
                             &mut losses,
                             entry,
                             format_args!("source curve has no exact uniform offset carrier"),
@@ -666,7 +666,7 @@ pub(super) fn project(
                     control_origin + native_control_range.upper() * control_factor,
                 ];
                 let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
-                    super::push_geometry_loss(
+                    super::push_retained_geometry_loss(
                         &mut losses,
                         entry,
                         format_args!("linear offset source has no exact neutral carrier"),
@@ -864,7 +864,7 @@ pub(super) fn project(
                     continue;
                 }
                 let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
-                    super::push_geometry_loss(
+                    super::push_retained_geometry_loss(
                         &mut losses,
                         entry,
                         format_args!("function offset source has no exact neutral carrier"),
@@ -1044,7 +1044,7 @@ pub(super) fn project(
                 )
             }
             _ => {
-                super::push_geometry_loss(
+                super::push_retained_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!("offset curve form is unsupported"),

@@ -171,7 +171,7 @@ pub(super) struct Scene<'a> {
     /// The name of the default display state.
     default_state: Option<String>,
     /// Slots of shell placeholders that lie outside every library body.
-    pub(super) orphan_slots: usize,
+    pub(super) orphan_slots: Vec<u32>,
     /// Objects whose id was already taken.
     pub(super) duplicate_objects: usize,
     /// Number of records walked.
@@ -457,7 +457,7 @@ impl<'a> Builder<'a> {
                         body.slots.push(id);
                     }
                 }
-                None => self.scene.orphan_slots += 1,
+                None => self.scene.orphan_slots.push(id),
             },
             SlotKind::Text => match self.closed {
                 Some(Frame::RefName) => match self.enclosing_node() {

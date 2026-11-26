@@ -1617,7 +1617,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
-    model.configurations = crate::design::decode::record::recover(
+    model.configurations = crate::design::decode::record::recover_partial(
         crate::design::configurations::project_configurations(
             &design.design_configurations,
             &crate::design::configurations::ConfigurationTargets {

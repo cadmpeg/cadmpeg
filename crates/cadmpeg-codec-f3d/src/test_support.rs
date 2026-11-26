@@ -37,6 +37,17 @@ pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
 
+/// The report codes of one record given up under `code`: its own loss, then
+/// `record.unreadable`.
+pub(crate) fn given_up_codes(
+    code: crate::loss::F3dLossCode,
+) -> [cadmpeg_ir::report::loss::LossKind; 2] {
+    [
+        code.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    ]
+}
+
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
 pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
     cadmpeg_ir::topology::Face {

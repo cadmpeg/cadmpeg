@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -273,7 +274,8 @@ pub(crate) fn install(
                     "PRODUCT_OCCURRENCE/source={}/class={}",
                     identity.source_id, object.class_uuid
                 );
-                losses.push(
+                losses.extend(record_given_up(
+                    format!("rhino:object:record#{source_order:06}"),
                     loss.with_provenance(
                         SourceProvenance::root(
                             "rhino",
@@ -281,7 +283,7 @@ pub(crate) fn install(
                         )
                         .with_tag(tag),
                     ),
-                );
+                ));
                 continue;
             }
         };
@@ -360,7 +362,14 @@ mod tests {
             &mut ir,
         )
         .expect("other product records remain transferable");
-        assert_eq!(losses.len(), 1);
+        assert_eq!(losses.len(), 2);
+        assert_eq!(
+            losses[1].code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(losses[1]
+            .message
+            .starts_with("record rhino:object:record#000000 given up: "));
         let message = &losses[0].message;
         assert!(message.contains(&source_id));
         assert!(message.contains(&format!("at offset {source_offset}")));
@@ -568,10 +577,15 @@ mod tests {
                     .as_str()
                 )
             );
+            let record = format!("rhino:object:record#{index:06}");
+            assert!(decoded.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.split_whitespace().any(|token| token == record)
+            }));
             assert_eq!(
                 decoded
                     .source_fidelity()
-                    .retained_record(&format!("rhino:object:record#{index:06}"))
+                    .retained_record(&record)
                     .expect("complete malformed source retained")
                     .data(),
                 Some(objects[index].as_slice())

@@ -23,6 +23,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh, TessellationTriangleGroup};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::record_unreadable;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::frames::MILLIMETRES_PER_METRE;
@@ -162,7 +163,7 @@ pub(crate) fn occurrences(
     let depth_limit = usize::try_from(max_depth).ok();
     let mut admitted = u64_from_index(ir.entity_count());
     let mut emitted = 0_usize;
-    let mut cycles = 0_usize;
+    let mut cycles = Vec::new();
     let mut stopped = false;
     let mut past_depth = 0_usize;
     let mut not_similar = 0_usize;
@@ -239,7 +240,7 @@ pub(crate) fn occurrences(
                 break 'roots;
             }
             if reached.get(child.definition) == Some(&Reached::OnPath) {
-                cycles += 1;
+                cycles.push((parent_definition, next));
                 continue;
             }
             let transform = match placement(&child.placement) {
@@ -292,10 +293,21 @@ pub(crate) fn occurrences(
             definition.occurrences = occurrences;
         }
     }
-    if cycles > 0 {
+    if !cycles.is_empty() {
         losses.push(PvzLossCode::StructureOccurrenceCycle.note(format!(
-            "{cycles} child occurrences close a definition cycle and were left out"
+            "{} child occurrences close a definition cycle and were left out",
+            cycles.len()
         )));
+        let code = PvzLossCode::StructureOccurrenceCycle.kind();
+        losses.extend(cycles.iter().map(|(definition, occurrence)| {
+            record_unreadable(
+                format!(
+                    "{}/occurrence#{occurrence}",
+                    crate::ids::definition(*definition)
+                ),
+                &code,
+            )
+        }));
     }
     let mut truncation = Vec::new();
     if stopped {
@@ -452,6 +464,7 @@ pub(crate) fn display_geometry(
     let mut admitted = u64_from_index(ir.entity_count());
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
+    let mut rejected_ids = Vec::new();
     let mut untriangulated = 0_usize;
     for (index, mesh) in geometry.meshes.iter().enumerate() {
         if mesh.triangles.is_empty() {
@@ -481,7 +494,10 @@ pub(crate) fn display_geometry(
                     });
                 }
             }
-            Err(reason) => rejected.push(format!("mesh {index}: {reason}")),
+            Err(reason) => {
+                rejected.push(format!("mesh {index}: {reason}"));
+                rejected_ids.push(id);
+            }
         }
         ctx.admit_entities(
             u64_from_index(ir.entity_count()),
@@ -510,6 +526,8 @@ pub(crate) fn display_geometry(
             "geometry member {member:?}: {}",
             rejected.join("; ")
         )));
+        let code = PvzLossCode::TessellationMeshRejected.kind();
+        losses.extend(rejected_ids.iter().map(|id| record_unreadable(id, &code)));
     }
     if colors_rejected > 0 {
         losses.push(PvzLossCode::AttributeAppearanceColorRejected.note(format!(

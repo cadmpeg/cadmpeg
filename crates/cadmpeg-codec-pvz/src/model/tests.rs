@@ -194,6 +194,7 @@ fn cycles_and_extra_roots_are_reported() {
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
             PvzLossCode::StructureOccurrenceCycle.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 }
@@ -242,10 +243,12 @@ fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
         LIMIT,
     );
     assert_eq!(ir.model.occurrences.len(), LIMIT / 2);
-    assert_eq!(
-        codes(&losses),
-        [PvzLossCode::StructureOccurrenceCycle.kind()]
-    );
+    let mut expected = vec![PvzLossCode::StructureOccurrenceCycle.kind()];
+    expected.extend(std::iter::repeat_n(
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        LIMIT,
+    ));
+    assert_eq!(codes(&losses), expected);
     assert_eq!(
         losses[0].message,
         format!("{LIMIT} child occurrences close a definition cycle and were left out")
@@ -432,6 +435,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         [
             PvzLossCode::TessellationRecordsUndecoded.kind(),
             PvzLossCode::TessellationMeshRejected.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 

@@ -371,6 +371,8 @@ pub(crate) struct ModelName {
 pub(crate) struct SectionExpansionLoss {
     pub(crate) section_offset: usize,
     pub(crate) message: String,
+    /// The declared expansion exceeds a ceiling, so the payload was not read.
+    pub(crate) over_limit: bool,
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
@@ -1075,9 +1077,12 @@ fn expanded_sections(
         // A section above the expansion ceiling or the per-expansion
         // allowance is left compressed.
         let per_expand_allowance = ctx.per_expand_allowance();
-        let expansion = if expected_length > MAX_EXPANDED_SECTION {
+        let over_ceiling = expected_length > MAX_EXPANDED_SECTION;
+        let over_allowance =
+            cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance;
+        let expansion = if over_ceiling {
             Err("declared expansion exceeds the 256 MiB section ceiling".into())
-        } else if cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance {
+        } else if over_allowance {
             Err(format!(
                 "declared expansion of {expected_length} bytes exceeds the \
                  {per_expand_allowance}-byte per-expansion allowance"
@@ -1102,6 +1107,7 @@ fn expanded_sections(
                 losses.push(SectionExpansionLoss {
                     section_offset: section.section.offset(),
                     message,
+                    over_limit: over_ceiling || over_allowance,
                 });
                 continue;
             }

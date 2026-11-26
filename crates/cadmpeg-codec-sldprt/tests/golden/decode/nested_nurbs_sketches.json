@@ -447,6 +447,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:face#10 given up: sldprt/topology.face-withheld",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "topology.vertex-record-unresolved",
             "kind": "topology_not_transferred",
             "namespace": "sldprt"

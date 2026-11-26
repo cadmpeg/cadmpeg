@@ -1006,10 +1006,11 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             )
             .unwrap();
             assert!(decoded.scopes.is_empty());
-            assert_eq!(decoded.losses.len(), 1);
             assert_eq!(
-                decoded.losses[0].code,
-                crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()
+                crate::test_support::loss_codes(&decoded.losses),
+                crate::test_support::given_up_codes(
+                    crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed
+                )
             );
         });
     }

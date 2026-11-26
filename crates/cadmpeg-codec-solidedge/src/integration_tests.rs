@@ -320,6 +320,65 @@ fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
     assert_geometry_valid(ir);
 }
 
+#[test]
+fn a_pinned_decode_refuses_a_face_that_states_no_orientation() {
+    let mut partition = test_support::solid_with_cavity_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| {
+            node.kind() == cadmpeg_parasolid::records::node_type::FACE && node.index() == 7
+        })
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+
+    let admitted = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(charged(
+        &admitted,
+        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
+    ));
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .flat_map(|loss| loss.message.split_whitespace())
+        .find(|token| token.starts_with("solidedge:brep:face#"))
+        .expect("record.unreadable names the face")
+        .to_owned();
+    assert!(admitted
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .all(|face| face.id.as_str() != given_up));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses a given-up face");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == given_up));
+}
+
 fn surfaceless_face(sense: u8) -> cadmpeg_ir::codec::DecodeResult {
     let mut partition = test_support::sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)

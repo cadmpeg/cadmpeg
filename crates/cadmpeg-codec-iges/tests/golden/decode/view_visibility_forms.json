@@ -992,6 +992,25 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#1 given up: iges/entity.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 243,
+          "stream": "iges",
+          "tag": "directory_entry:D1"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "entity.not-projected",
             "kind": "record_not_typed",
             "namespace": "iges"
@@ -1005,6 +1024,25 @@
           "tag": "directory_entry:D5"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#5 given up: iges/entity.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 567,
+          "stream": "iges",
+          "tag": "directory_entry:D5"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -1028,6 +1066,25 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#3 given up: iges/entity.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 405,
+          "stream": "iges",
+          "tag": "directory_entry:D3"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "entity.not-projected",
             "kind": "record_not_typed",
             "namespace": "iges"
@@ -1041,6 +1098,25 @@
           "tag": "directory_entry:D7"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#7 given up: iges/entity.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 729,
+          "stream": "iges",
+          "tag": "directory_entry:D7"
+        },
+        "severity": "error"
       }
     ],
     "notes": [

@@ -106,11 +106,20 @@ fn names_history(name: Option<&str>) -> bool {
         })
 }
 
-/// Charges a Keywords history member that no record is read from.
-fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
-    losses.push(crate::loss::SldprtLossCode::HistoryUnread.note(format!(
-        "Keywords member {member}: {cause}; no configuration or feature of the history is read"
-    )));
+/// Charges a Keywords history member that no record is read from, and gives
+/// up its section `record`.
+fn report_unread(
+    losses: &mut Vec<LossNote>,
+    record: &cadmpeg_ir::ids::UnknownId,
+    member: &str,
+    cause: &str,
+) {
+    losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+        record,
+        crate::loss::SldprtLossCode::HistoryUnread.note(format!(
+            "Keywords member {member}: {cause}; no configuration or feature of the history is read"
+        )),
+    ));
 }
 
 /// Element levels of one `Application` element the native history keeps, the
@@ -348,10 +357,16 @@ pub(crate) fn histories(
                 return Ok(histories);
             }
             let stream = section.source_stream();
+            let record = section.native_id();
             let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
                 if named {
-                    report_unread(losses, stream.as_str(), "no XML payload is decoded from it");
+                    report_unread(
+                        losses,
+                        &record,
+                        stream.as_str(),
+                        "no XML payload is decoded from it",
+                    );
                 }
                 return Ok(histories);
             };
@@ -359,6 +374,7 @@ pub(crate) fn histories(
                 if named {
                     report_unread(
                         losses,
+                        &record,
                         stream.as_str(),
                         "its bytes are not UTF-8 or UTF-16LE text",
                     );
@@ -376,7 +392,7 @@ pub(crate) fn histories(
                             }
                             refused => format!("its XML is refused: {refused}"),
                         };
-                        report_unread(losses, stream.as_str(), &cause);
+                        report_unread(losses, &record, stream.as_str(), &cause);
                     }
                     return Ok(histories);
                 }
@@ -386,6 +402,7 @@ pub(crate) fn histories(
                 if named {
                     report_unread(
                         losses,
+                        &record,
                         stream.as_str(),
                         &format!(
                             "its root element {:?} is not a Keywords root",

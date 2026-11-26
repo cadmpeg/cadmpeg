@@ -256,6 +256,7 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         [
             PvzLossCode::StructureBoundsNotTransferred.kind(),
             PvzLossCode::GeometryExactUndecoded.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             PvzLossCode::AttributeRecordsUndecoded.kind(),
             PvzLossCode::AttributeAppearanceTail.kind(),
             PvzLossCode::TessellationPatchFields.kind(),
@@ -265,6 +266,39 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
     );
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
+    let bytes = assembly("PV-PVS0304");
+    let admitted = decode(&bytes);
+    let losses = &admitted.report().losses;
+    let exact = losses
+        .iter()
+        .position(|loss| loss.code == PvzLossCode::GeometryExactUndecoded.kind())
+        .expect("the exact stream is charged");
+    let given_up = &losses[exact + 1];
+    assert_eq!(given_up.code, record_unreadable_kind());
+    let stream = given_up
+        .message
+        .split_whitespace()
+        .find(|token| token.starts_with("pvz:") && token.contains("#0x"))
+        .expect("record.unreadable names the exact stream");
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = PvzCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up exact stream");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == stream));
 }
 
 #[test]
@@ -307,13 +341,19 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         RawEntry::stored("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    let malformed: Vec<_> = result
+    let (malformed, exact): (Vec<_>, Vec<_>) = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .collect();
+        .partition(|loss| loss.message.starts_with("part "));
     assert_eq!(malformed.len(), 1);
+    assert!(
+        exact
+            .iter()
+            .all(|loss| loss.message.starts_with("record pvz:plate.ol#")),
+        "{exact:?}"
+    );
     assert!(malformed[0]
         .message
         .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));

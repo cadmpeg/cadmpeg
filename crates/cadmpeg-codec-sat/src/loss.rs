@@ -195,9 +195,12 @@ impl SatLossCode {
 }
 
 /// Project shared text-stream recovery into codec losses for decode and inspection.
+/// A decode names its retained unread part in `unread_record`, which the
+/// unread diagnostic gives up.
 pub(crate) fn text_stream_losses<'a>(
     diagnostics: impl IntoIterator<Item = &'a cadmpeg_asm::sat::StreamDiagnostic>,
     unread_layout_offset: Option<usize>,
+    unread_record: Option<&str>,
     losses: &mut Vec<LossNote>,
 ) {
     use cadmpeg_asm::sat::StreamDiagnosticKind;
@@ -218,13 +221,18 @@ pub(crate) fn text_stream_losses<'a>(
             "byte {}: {}; independent records retained",
             diagnostic.error.offset, diagnostic.error.reason
         );
-        losses.push(
-            code.note(message)
-                .with_provenance(cadmpeg_ir::SourceProvenance::root(
-                    "sat",
-                    cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
-                )),
-        );
+        let note = code
+            .note(message)
+            .with_provenance(cadmpeg_ir::SourceProvenance::root(
+                "sat",
+                cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
+            ));
+        match unread_record {
+            Some(record) if diagnostic.kind == StreamDiagnosticKind::Unread => {
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(record, note));
+            }
+            _ => losses.push(note),
+        }
     }
 }
 

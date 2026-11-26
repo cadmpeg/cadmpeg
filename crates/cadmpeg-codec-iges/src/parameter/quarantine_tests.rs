@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
-use crate::test_support::{code_count, decode, strict_options};
+use crate::test_support::{assert_gives_up, code_count, decode, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data count field in the second card.
@@ -98,7 +98,8 @@ fn a_first_token_disagreeing_with_the_entity_type_quarantines_the_parameter_data
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
+    assert_gives_up(result.report(), &["iges:quarantine:parameter#1"]);
 }
 
 #[test]
@@ -132,7 +133,8 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(fields["cards"], 0);
     assert!(fields["bytes"].as_str().unwrap().is_empty());
     assert_eq!(fields["defect"], "declared-count-zero");
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
+    assert_gives_up(result.report(), &["iges:quarantine:parameter#3"]);
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
@@ -261,7 +263,8 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 3);
+    assert_gives_up(result.report(), &["iges:quarantine:parameter#3"]);
 }
 
 #[test]
@@ -298,7 +301,8 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 2);
+    assert_gives_up(result.report(), &["iges:quarantine:parameter#1"]);
 }
 
 #[test]
@@ -344,7 +348,11 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(result.report().losses.len(), 5);
+    assert_gives_up(
+        result.report(),
+        &["iges:quarantine:parameter#1", "iges:quarantine:parameter#3"],
+    );
 }
 
 #[test]

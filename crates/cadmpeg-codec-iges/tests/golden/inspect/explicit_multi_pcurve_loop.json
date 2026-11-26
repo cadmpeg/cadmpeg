@@ -103,6 +103,25 @@
         "tag": "D23:parameter"
       },
       "severity": "warning"
+    },
+    {
+      "code": {
+        "kind": "namespaced",
+        "value": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "strict_floor": "error"
+        }
+      },
+      "message": "record iges:quarantine:parameter#23 given up: iges/parameter.data-quarantined",
+      "provenance": {
+        "format": "iges",
+        "offset": 3464,
+        "stream": "iges",
+        "tag": "D23:parameter"
+      },
+      "severity": "error"
     }
   ],
   "notes": [

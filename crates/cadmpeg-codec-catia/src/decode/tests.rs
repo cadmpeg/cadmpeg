@@ -289,7 +289,8 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 
 /// The router states a fall-through by name. A route that refuses records and
 /// then transfers no model leaves both its refusal notes and one fall-through
-/// note in the report of whatever route or fallback finishes the decode.
+/// note in the report of whatever route or fallback finishes the decode; the
+/// metadata fallback gives up the payload the route read.
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {
@@ -351,6 +352,23 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 && message.contains("the decode continued to the metadata fallback")
         }),
         "the fall-through statement: {messages:?}"
+    );
+    let given_up = decoded
+        .body
+        .losses
+        .iter()
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [given_up] = given_up.as_slice() else {
+        panic!("the fallback gives up the one payload the route read: {messages:?}");
+    };
+    assert!(
+        given_up
+            .message
+            .split_whitespace()
+            .any(|token| token.starts_with("catia:payload:unknown#")),
+        "record.unreadable names the retained payload: {}",
+        given_up.message
     );
     assert!(
         refusal.take_notes().is_empty(),

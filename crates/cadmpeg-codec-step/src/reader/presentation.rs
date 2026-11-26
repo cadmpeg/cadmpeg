@@ -19,6 +19,7 @@ use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::record_given_up;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -107,9 +108,10 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            );
+            ));
             continue;
         };
         let mut supported = true;
@@ -177,15 +179,21 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            losses.extend(record_given_up(
+                format!("#{layer_id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                )),
+            ));
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            losses.extend(record_given_up(
+                format!("#{layer_id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                )),
+            ));
             continue;
         }
         let Some(name) =
@@ -200,9 +208,12 @@ pub(super) fn decode(
                 )
             })
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
+            losses.extend(record_given_up(
+                format!("#{layer_id}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
+                )),
+            ));
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -260,10 +271,11 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{style_id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            );
+            ));
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {

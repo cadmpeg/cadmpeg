@@ -62,6 +62,12 @@ pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
+    /// The one typed kernel-carrier record, whose envelope does not parse.
+    /// `record` is its `RSe` record id.
+    Unreadable {
+        record: String,
+        detail: String,
+    },
 }
 
 pub(crate) struct DecodedKernelCarrier {
@@ -197,7 +203,14 @@ pub(crate) fn select_active_carrier<'a>(
         version,
     ) {
         Ok(carrier) => ActiveCarrierState::Selected(carrier),
-        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
+        Err(error) => ActiveCarrierState::Unreadable {
+            record: format!(
+                "inventor:rse:record#{}-{}",
+                segment.pair.token.as_str(),
+                record.ordinal
+            ),
+            detail: error.to_string(),
+        },
     }
 }
 

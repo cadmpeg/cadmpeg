@@ -86,6 +86,39 @@ fn crc_failure_omits_one_member() {
 }
 
 #[test]
+fn strict_decode_refuses_a_member_with_a_crc_failure() {
+    use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+    let mut bytes = fixture("plate-fillet");
+    patch(&mut bytes, TABLE, 16, 14, &0u32.to_le_bytes());
+    let names_member = |message: &str| message.split_whitespace().any(|word| word == TABLE);
+
+    let admitted = decode(&bytes);
+    assert_eq!(has(&admitted, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(
+        admitted
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == record_unreadable_kind() && names_member(&loss.message))
+            .count(),
+        1
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up member");
+    assert!(matches!(
+        error,
+        DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == record_unreadable_kind()
+                && names_member(&rejection.loss().message)
+    ));
+}
+
+#[test]
 fn inflate_failure_omits_one_member() {
     let mut bytes = deflated_table();
     let offset = central(&bytes, TABLE);

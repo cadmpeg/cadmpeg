@@ -10,6 +10,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_unreadable;
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
@@ -146,6 +147,9 @@ impl Inventory {
                 "{} drawing records retain untyped payloads after a typed-form refusal",
                 self.issues.len()
             )));
+            losses.extend(self.issues.iter().map(|issue| {
+                record_unreadable(&issue.id, InventorLossCode::DrawingRecordMalformed.kind())
+            }));
         }
         losses
     }

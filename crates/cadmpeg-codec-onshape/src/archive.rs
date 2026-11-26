@@ -6,6 +6,7 @@ use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_given_up;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -65,11 +66,13 @@ impl<'a> Bundle<'a> {
         let mut seen = std::collections::BTreeSet::new();
         for entry in snapshot.entries() {
             let name = &entry.name;
-            if !seen.insert(name)
-                || name.contains('\\')
+            let repeated = !seen.insert(name);
+            let invalid_name = name.contains('\\')
                 || name
                     .split('/')
-                    .any(|p| p.is_empty() || p == "." || p == ".." || p.contains(':'))
+                    .any(|p| p.is_empty() || p == "." || p == ".." || p.contains(':'));
+            if repeated
+                || invalid_name
                 || entry.encrypted
                 || !matches!(
                     entry.compression,
@@ -81,7 +84,12 @@ impl<'a> Bundle<'a> {
                         "manifest name, repetition or compression is invalid",
                     ));
                 }
-                losses.push(OnshapeLossCode::MemberUnreadable.note(format!("{name}: invalid name, repeated name, encryption or unsupported method; omitted the member")));
+                let note = OnshapeLossCode::MemberUnreadable.note(format!("{name}: invalid name, repeated name, encryption or unsupported method; omitted the member"));
+                if invalid_name && !repeated {
+                    losses.extend(record_given_up(name, note));
+                } else {
+                    losses.push(note);
+                }
                 continue;
             }
             let member_limit = if has_extension(name, "json") {
@@ -122,17 +130,19 @@ impl<'a> Bundle<'a> {
                             .iter()
                             .any(|prefix| name.strip_prefix(prefix) == Some("export.step")) =>
                     {
-                        losses.push(
+                        losses.extend(record_given_up(
+                            name,
                             OnshapeLossCode::StepUnreadable
                                 .note(format!("{name}: {error}; final geometry is missing")),
-                        );
+                        ));
                         continue;
                     }
                     Err(error) => {
-                        losses.push(
+                        losses.extend(record_given_up(
+                            name,
                             OnshapeLossCode::MemberUnreadable
                                 .note(format!("{name}: {error}; omitted the member")),
-                        );
+                        ));
                         continue;
                     }
                 }
@@ -173,11 +183,12 @@ impl<'a> Bundle<'a> {
                         } else {
                             "omitted the member"
                         };
-                        losses.push(
-                            OnshapeLossCode::MemberUnreadable
-                                .note(format!("{name}: {error}; {action}")),
-                        );
-                        if !retained {
+                        let note = OnshapeLossCode::MemberUnreadable
+                            .note(format!("{name}: {error}; {action}"));
+                        if retained {
+                            losses.push(note);
+                        } else {
+                            losses.extend(record_given_up(name, note));
                             continue;
                         }
                     }
@@ -214,15 +225,19 @@ impl<'a> Bundle<'a> {
             }
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
-                    let action = if path.ends_with("/sketches.json") {
+                    let retained = path.ends_with("/sketches.json");
+                    let action = if retained {
                         "retained the member bytes"
                     } else {
                         "omitted the member"
                     };
-                    self.losses.push(
-                        OnshapeLossCode::MemberUnreadable
-                            .note(format!("{path}: {reason}; {action}")),
-                    );
+                    let note = OnshapeLossCode::MemberUnreadable
+                        .note(format!("{path}: {reason}; {action}"));
+                    if retained {
+                        self.losses.push(note);
+                    } else {
+                        self.losses.extend(record_given_up(path, note));
+                    }
                     omitted.push(path.clone());
                     break;
                 }

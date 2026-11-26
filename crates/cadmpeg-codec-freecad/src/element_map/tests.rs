@@ -827,8 +827,9 @@ fn rejects_ambiguous_string_table_property_ownership() {
     ));
 }
 
-#[test]
-fn unreadable_child_map_reference_keeps_independent_geometry() {
+/// The geometry fixture with one child-map descriptor whose map index names
+/// no map, so that its element map cannot be read.
+fn unreadable_child_map_archive() -> Vec<u8> {
     let mut source = zip::ZipArchive::new(Cursor::new(GEOMETRY)).expect("geometry archive");
     let mut entries = Vec::new();
     let mut changed = false;
@@ -858,21 +859,61 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
         .iter()
         .map(|(name, data)| (name.as_str(), data.as_slice()))
         .collect::<Vec<_>>();
+    archive_entries(&references)
+}
+
+/// Whether `losses` hold a `record.unreadable` that names the property whose
+/// element map the decode gave up, as the codec's own loss names it.
+fn element_map_given_up(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
+    let Some(property) = losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "element-map.metadata-unresolved"
+                && loss.message.contains("mapIndex")
+        })
+        .and_then(|loss| loss.message.split_whitespace().next())
+    else {
+        return false;
+    };
+    losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss
+                .message
+                .split_whitespace()
+                .any(|token| token == property)
+    })
+}
+
+#[test]
+fn unreadable_child_map_reference_keeps_independent_geometry() {
     let result = FcstdCodec.decode(
-        &mut Cursor::new(archive_entries(&references)),
+        &mut Cursor::new(unreadable_child_map_archive()),
         &DecodeOptions::default(),
     );
     let recovered = result.expect("independent BRep geometry survives invalid naming map");
     assert_eq!(recovered.ir().geometry.faces.len(), 48);
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .any(
-            |loss| loss.code.local_code() == "element-map.metadata-unresolved"
-                && loss.message.contains("mapIndex")
-        ));
+    assert!(element_map_given_up(&recovered.report().losses));
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+}
+
+/// An element map the decoder gives up charges `record.unreadable` naming its
+/// property, so a pinned decode refuses.
+#[test]
+fn strict_decode_refuses_an_unreadable_element_map() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(unreadable_child_map_archive()), &options)
+        .expect_err("a pinned decode refuses a given-up element map");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
+        panic!("a strict refusal is a policy class: {error:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(element_map_given_up(&rejection.report().losses));
 }
 
 #[test]

@@ -1621,6 +1621,9 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
         .expect("face")
         .pos();
     put_ref(&mut stream, face + 26, 1);
+    let graph = Graph::parse(&stream);
+    let shell = graph.get(NodeKind::Shell, 3).expect("shell").pos();
+    let body = graph.get(NodeKind::Body, 2).expect("body").pos();
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
@@ -1647,6 +1650,19 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
     assert!(losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
     }));
+    let charged = |pos: usize| {
+        let names_pos = |token: &str| {
+            token.rsplit_once('@').is_some_and(|(stream, byte)| {
+                stream.starts_with("nx:parasolid#0:") && byte == pos.to_string()
+            })
+        };
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.split_whitespace().any(names_pos)
+        })
+    };
+    assert!(charged(shell), "{losses:#?}");
+    assert!(charged(body), "{losses:#?}");
 }
 
 #[test]

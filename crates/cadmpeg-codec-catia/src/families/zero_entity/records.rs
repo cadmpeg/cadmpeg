@@ -2300,7 +2300,7 @@ fn zero_entity_nurbs_surface(
     for row in control_points.chunks(index_from_u32(layout.v_count)) {
         rows.push(row.to_vec());
     }
-    crate::nurbs::note_refusal(
+    crate::nurbs::give_up_refused(
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
@@ -2309,6 +2309,7 @@ fn zero_entity_nurbs_surface(
         ),
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
+        format_args!("cgm-zero-entity-nurbs-surface-frame:{record:010}"),
     )
     .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
 }

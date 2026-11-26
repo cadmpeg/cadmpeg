@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{assert_valid, decode};
@@ -63,14 +64,23 @@ fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
         .collect()
 }
 
-fn assert_one_error_loss(result: &EditableDecodeResult) {
+fn charges_the_container(loss: &LossNote) -> bool {
+    loss.code == record_unreadable_kind()
+        && loss.severity == Severity::Error
+        && loss
+            .message
+            .split_whitespace()
+            .any(|token| token == "nx:container")
+}
+
+fn assert_attachment_given_up(result: &EditableDecodeResult) {
     let errors = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.severity == Severity::Error)
         .collect::<Vec<_>>();
-    assert_eq!(errors.len(), 1, "{errors:#?}");
+    assert_eq!(errors.len(), 2, "{errors:#?}");
     assert_eq!(attachment_failures(result).len(), 1);
     assert_eq!(errors[0].code.namespace(), "nx");
     assert_eq!(errors[0].code.local_code(), "native.attachment-failed");
@@ -79,10 +89,11 @@ fn assert_one_error_loss(result: &EditableDecodeResult) {
         "{}",
         errors[0].message
     );
+    assert!(charges_the_container(errors[1]), "{:#?}", errors[1]);
 }
 
 #[test]
-fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
+fn attachment_failure_keeps_geometry_and_gives_up_the_attachment() {
     let complete = decode(prt_with_arrangements());
     assert!(attachment_failures(&complete).is_empty());
     assert!(!complete.ir().model.configurations.is_empty());
@@ -107,7 +118,7 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(model.configurations.is_empty());
     assert!(model.attributes.is_empty());
     assert!(model.features.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_given_up(&contained);
     assert_valid(&contained);
 }
 
@@ -130,7 +141,7 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
     let contained = decode_failing_at(composed_feature_history_prt(), Point::Exit);
     assert!(contained.ir().model.features.is_empty());
     assert!(contained.ir().geometry.faces.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_given_up(&contained);
 }
 
 /// A topology part whose Parasolid prologue states no schema token, so no
@@ -152,8 +163,13 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
     NxCodec
         .decode(&mut Cursor::new(schemaless_topology_prt()), &strict)
         .expect("strict decode admits the fixture without an attachment failure");
-    try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
+    let salvaged = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
         .expect("salvage decode keeps the geometry");
+    let salvaged = &salvaged.report().losses;
+    assert!(salvaged
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.attachment-failed"));
+    assert!(salvaged.iter().any(charges_the_container));
     let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
         .expect_err("strict decode refuses the attachment failure");
     match error {
@@ -162,6 +178,7 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
                 rejection.loss().code.local_code(),
                 "native.attachment-failed"
             );
+            assert!(rejection.report().losses.iter().any(charges_the_container));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

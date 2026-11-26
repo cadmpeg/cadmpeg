@@ -3900,6 +3900,11 @@ fn decode_graph_inner(
             )
         {
             out.stats.withheld_ring_edges += 1;
+            out.losses
+                .push(cadmpeg_ir::unknown::part::record_unreadable(
+                    id_edge(e),
+                    crate::loss::SldprtLossCode::TopologyRingEdgeWithheld.kind(),
+                ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
@@ -4443,10 +4448,17 @@ fn decode_graph_inner(
     };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
-        out.stats.unclaimed_faces += faces
+        for face in faces
             .iter()
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
-            .count();
+        {
+            out.stats.unclaimed_faces += 1;
+            out.losses
+                .push(cadmpeg_ir::unknown::part::record_unreadable(
+                    id_face(face.bridge_attr),
+                    crate::loss::SldprtLossCode::TopologyFaceUnclaimed.kind(),
+                ));
+        }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     // The tolerance each emitted edge states: a blend cache bounds the face
@@ -4510,6 +4522,11 @@ fn decode_graph_inner(
             FaceAdmission::Admitted => {}
             FaceAdmission::VertexLoopUnresolved => {
                 out.stats.withheld_vertex_loop_faces += 1;
+                out.losses
+                    .push(cadmpeg_ir::unknown::part::record_unreadable(
+                        id_face(f.bridge_attr),
+                        crate::loss::SldprtLossCode::TopologyVertexLoopWithheld.kind(),
+                    ));
                 continue;
             }
             FaceAdmission::FinAmbiguous => {
@@ -4518,6 +4535,11 @@ fn decode_graph_inner(
             }
             FaceAdmission::NoLoop => {
                 out.stats.withheld_faces += 1;
+                out.losses
+                    .push(cadmpeg_ir::unknown::part::record_unreadable(
+                        id_face(f.bridge_attr),
+                        crate::loss::SldprtLossCode::TopologyFaceWithheld.kind(),
+                    ));
                 continue;
             }
         }

@@ -211,6 +211,10 @@ impl FaceAdmissionDetail {
     }
 }
 
+fn face_admission_rejection_id(face_id: u32) -> String {
+    format!("creo:brep:face_admission_rejection#{face_id}")
+}
+
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) rejected_extrusion_bodies: Vec<(BodyId, String)>,
@@ -261,13 +265,23 @@ impl BrepTransferDiagnostics {
         )
     }
 
+    /// The native rejection record of each rejected face, once per face.
+    pub(in super::super) fn rejected_face_record_ids(&self) -> impl Iterator<Item = String> {
+        self.face_rejection_diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.detail.face_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(face_admission_rejection_id)
+    }
+
     pub(in super::super) fn face_admission_rejection_records(
         &self,
     ) -> Vec<CreoFaceAdmissionRejectionRecord> {
         let mut records = Vec::new();
         for diagnostic in &self.face_rejection_diagnostics {
             let detail = &diagnostic.detail;
-            let id = format!("creo:brep:face_admission_rejection#{}", detail.face_id);
+            let id = face_admission_rejection_id(detail.face_id);
             let mut boundary_half_edges = Vec::new();
             boundary_half_edges.extend(
                 detail

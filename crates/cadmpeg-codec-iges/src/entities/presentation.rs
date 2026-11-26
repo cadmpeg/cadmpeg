@@ -36,20 +36,35 @@ fn standard_color(number: i64) -> Option<Color> {
     Color::new(r, g, b, 1.0)
 }
 
-fn push_presentation_loss(
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    entry: &DirectoryEntry,
-    reason: &str,
-) {
-    push_attributed_loss(
-        losses,
+fn presentation_note(entry: &DirectoryEntry, reason: &str) -> cadmpeg_ir::report::loss::LossNote {
+    super::attributed_note(
         entry,
         IgesLossCode::DisplayDataNotProjected,
         format_args!(
             "IGES entity type {} form {} display data was not projected: {reason}",
             entry.entity_type, entry.form
         ),
-    );
+    )
+}
+
+/// Pushes the loss of a presentation definition whose record the projection
+/// cannot read, with its `record.unreadable`.
+fn push_presentation_loss(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    entry: &DirectoryEntry,
+    reason: &str,
+) {
+    super::give_up(losses, entry, presentation_note(entry, reason));
+}
+
+/// Pushes the loss of a display attribute of an entity whose record the
+/// projection keeps.
+fn push_retained_presentation_loss(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    entry: &DirectoryEntry,
+    reason: &str,
+) {
+    losses.push(presentation_note(entry, reason));
 }
 
 fn text_font_definition_pointer_valid(
@@ -532,7 +547,7 @@ pub(super) fn project(
             .color
             .is_some_and(|number| resolve_color(number).is_none())
         {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "Directory color number or definition pointer is invalid",
@@ -552,7 +567,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 406 || target.form != 1)
         }) {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "negative Directory level does not reference a decoded Definition Levels property",
@@ -567,7 +582,7 @@ pub(super) fn project(
             .line_weight
             .is_some_and(|number| !global.line_weight_number_is_valid(number))
         {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "line-weight number is outside the Global gradation range",

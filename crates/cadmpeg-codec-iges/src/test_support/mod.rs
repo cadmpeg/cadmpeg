@@ -12,6 +12,34 @@ pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
 
+/// Asserts that `loss` is the `record.unreadable` that gives up `record`.
+pub(crate) fn assert_given_up(loss: &cadmpeg_ir::report::loss::LossNote, record: &str) {
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        "{loss:#?}"
+    );
+    assert!(
+        loss.message.split_whitespace().any(|token| token == record),
+        "{}",
+        loss.message
+    );
+}
+
+/// Asserts that the `record.unreadable` entries of `report` give up `records`,
+/// in report order.
+pub(crate) fn assert_gives_up(report: &cadmpeg_ir::report::decode::DecodeReport, records: &[&str]) {
+    let given_up = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), records.len(), "{given_up:#?}");
+    for (loss, record) in given_up.into_iter().zip(records) {
+        assert_given_up(loss, record);
+    }
+}
+
 /// Parses a scanned Global section with a test-owned decode session.
 pub(crate) fn parse_global(
     scan: &crate::card::CardScan<'_>,

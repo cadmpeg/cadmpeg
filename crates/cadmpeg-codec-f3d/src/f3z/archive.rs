@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, Decode
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::record_given_up;
 use serde::Deserialize;
 
 use crate::container::ContainerScan;
@@ -267,6 +268,7 @@ pub(super) fn classify_members<'a>(
         super::observer::classifying(member_path, |timing| {
             let checkpoint = ctx.checkpoint();
             let arena = DecodeArena::new();
+            let mut opened = false;
             let classified = {
                 let root = super::observer::timed(&mut timing.nested_scan, || {
                     if scan.has_entry(member_path) {
@@ -278,6 +280,7 @@ pub(super) fn classify_members<'a>(
                     }
                 });
                 root.and_then(|view| {
+                    opened = true;
                     ctx.with_arena(&arena, |local| {
                         let member_scan = super::observer::timed(&mut timing.nested_scan, || {
                             crate::container::scan_member(local, view, member_path)
@@ -306,9 +309,14 @@ pub(super) fn classify_members<'a>(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let message = format!("{error}");
-                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    let note = F3dLossCode::XrefMemberUndecoded.note(format!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
+                    if opened {
+                        losses.extend(record_given_up(member_path, note));
+                    } else {
+                        losses.push(note);
+                    }
                     members.insert(
                         member_path.to_owned(),
                         ClassifiedMember::Unreadable(message),

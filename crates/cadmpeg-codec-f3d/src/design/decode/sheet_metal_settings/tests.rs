@@ -497,10 +497,9 @@ fn unreadable_settings_keep_the_sibling_settings() {
         let (settings, losses) = decode_two_frames(version, tail, (first, first_frame), extra);
         assert_eq!(settings.len(), 1);
         assert_eq!(settings[0].record_index, 150);
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::BendSettingsUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            crate::test_support::given_up_codes(crate::loss::F3dLossCode::BendSettingsUndecoded)
         );
     }
 }

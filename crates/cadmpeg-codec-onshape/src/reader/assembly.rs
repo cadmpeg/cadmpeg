@@ -70,7 +70,8 @@ pub(super) fn read(
         let eid = match text(element, "id") {
             Ok(eid) => eid,
             Err(reason) => {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("manifest.json#/elements/{position}"),
                     "element",
                     OnshapeLossCode::AssemblyReferenceUnresolved,
                     reason,
@@ -79,7 +80,8 @@ pub(super) fn read(
             }
         };
         if !element_id(eid) {
-            report.push_coded(
+            report.give_up_as(
+                &format!("manifest.json#/elements/{position}"),
                 eid,
                 OnshapeLossCode::AssemblyRecordUnsupported,
                 "element id has an invalid folder character",
@@ -90,8 +92,17 @@ pub(super) fn read(
             studio(ctx, root, step_decoder, report, bundle, mid, eid).map_err(Into::into)
         })? {
             Ok(part) => part,
-            Err(error) => {
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
                 report.push_coded(
+                    eid,
+                    OnshapeLossCode::AssemblyReferenceUnresolved,
+                    error.to_string(),
+                );
+                continue;
+            }
+            Err(error) => {
+                report.give_up_as(
+                    &format!("partstudios/{eid}"),
                     eid,
                     OnshapeLossCode::AssemblyReferenceUnresolved,
                     error.to_string(),
@@ -174,7 +185,8 @@ pub(super) fn read(
             .get("root_element")
             .is_some_and(|root| !root.is_null())
     {
-        report.push_coded(
+        report.give_up_as(
+            "manifest.json#/root_element",
             "root_element",
             OnshapeLossCode::AssemblyRecordUnsupported,
             "root_element requires a string or an object with a string id",
@@ -184,7 +196,15 @@ pub(super) fn read(
         return Ok(model);
     };
     if !element_id(root_id) {
-        report.push_coded(
+        let root_record = match manifest.get("root_element") {
+            None | Some(Value::Null) => declared.get(root_id).map_or_else(
+                || "manifest.json#/elements".to_owned(),
+                |position| format!("manifest.json#/elements/{position}"),
+            ),
+            Some(_) => "manifest.json#/root_element".to_owned(),
+        };
+        report.give_up_as(
+            &root_record,
             root_id,
             OnshapeLossCode::AssemblyRecordUnsupported,
             "assembly root id has an invalid folder character",
@@ -200,7 +220,8 @@ pub(super) fn read(
     }) {
         return Ok(model);
     }
-    let definition = match bundle.json(&format!("assemblies/{root_id}/definition.json")) {
+    let definition_path = format!("assemblies/{root_id}/definition.json");
+    let definition = match bundle.json(&definition_path) {
         Ok(value) => value,
         Err(error) => {
             report.push_coded(
@@ -212,7 +233,15 @@ pub(super) fn read(
         }
     };
     let studio_definitions = model.ir.model.product_definitions.len();
-    let index = index::Index::build(ctx, definition, manifest, bundle, mid, report)?;
+    let index = index::Index::build(
+        ctx,
+        definition,
+        &definition_path,
+        manifest,
+        bundle,
+        mid,
+        report,
+    )?;
     let mut products = BTreeMap::new();
     for (position, product) in model.ir.model.product_definitions.iter().enumerate() {
         ctx.charge_entities(1, "Onshape product identity index")?;
@@ -262,7 +291,8 @@ pub(super) fn read(
             }
         }
     } else {
-        structure.report.push_coded(
+        structure.report.give_up_as(
+            &definition_path,
             root_id,
             OnshapeLossCode::AssemblyRecordUnsupported,
             "rootAssembly is missing or malformed",

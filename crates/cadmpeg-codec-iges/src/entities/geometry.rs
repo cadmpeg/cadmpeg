@@ -1530,7 +1530,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         if entry.transform != 0 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Direction Entity references a prohibited transformation"),
@@ -2695,6 +2695,7 @@ pub(crate) fn project_geometry(
 
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
+    super::settle_given_up(&mut losses, &decoded);
 
     Ok(Projection {
         placement_rejections,

@@ -176,7 +176,10 @@ pub(crate) fn decode(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let message = format!("T-spline control cage not decoded: {error}");
-                losses.push(F3dLossCode::TsplineCageUndecoded.note(message));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    &entry.name,
+                    F3dLossCode::TsplineCageUndecoded.note(message),
+                ));
             }
         }
     }

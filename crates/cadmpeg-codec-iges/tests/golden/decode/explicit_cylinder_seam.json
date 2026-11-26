@@ -1967,6 +1967,25 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#17 given up: iges/geometry.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 1539,
+          "stream": "iges",
+          "tag": "directory_entry:D17"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
             "namespace": "iges"
@@ -1980,6 +1999,25 @@
           "tag": "directory_entry:D19"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#19 given up: iges/geometry.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 1701,
+          "stream": "iges",
+          "tag": "directory_entry:D19"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -2003,6 +2041,25 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:entity:directory#21 given up: iges/geometry.not-projected",
+        "provenance": {
+          "format": "iges",
+          "offset": 1863,
+          "stream": "iges",
+          "tag": "directory_entry:D21"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
             "namespace": "iges",
@@ -2017,6 +2074,25 @@
           "tag": "D15:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record iges:quarantine:parameter#15 given up: iges/parameter.data-quarantined",
+        "provenance": {
+          "format": "iges",
+          "offset": 2642,
+          "stream": "iges",
+          "tag": "D15:parameter"
+        },
+        "severity": "error"
       },
       {
         "code": {

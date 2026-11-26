@@ -160,6 +160,7 @@ pub(crate) fn read(
         return Ok(None);
     }
     let mut tree = None;
+    let mut tree_record = None;
     let mut mate_lists = Vec::new();
     let mut is_assembly = false;
     let mut carries_parasolid = false;
@@ -194,7 +195,10 @@ pub(crate) fn read(
         if unwrapped == TREE_SECTION {
             is_assembly = true;
             match tree {
-                None => tree = Some(section.payload()),
+                None => {
+                    tree = Some(section.payload());
+                    tree_record = Some(section.native_id());
+                }
                 Some(first) if first != section.payload() => trees_differ = true,
                 Some(_) => {}
             }
@@ -208,15 +212,17 @@ pub(crate) fn read(
     if !is_assembly {
         return Ok(None);
     }
-    let mut native = match tree.and_then(xml_text) {
-        Some(_) if trees_differ => NativeAssembly::structure_lost(format!(
+    let unreadable = format!(
+        "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
+         placement, or component reference is transferred."
+    );
+    let mut native = match (tree.and_then(xml_text), &tree_record) {
+        (Some(_), _) if trees_differ => NativeAssembly::structure_lost(format!(
             "The document holds different `{TREE_SECTION}` sections. No occurrence is transferred."
         )),
-        Some(text) => native_project(ctx, &text, &virtual_sections)?,
-        None => NativeAssembly::structure_lost(format!(
-            "The assembly document has no readable `{TREE_SECTION}` section. No occurrence, \
-             placement, or component reference is transferred."
-        )),
+        (Some(text), Some(record)) => native_project(ctx, &text, record, &virtual_sections)?,
+        (None, Some(record)) => NativeAssembly::structure_given_up(record, unreadable),
+        (_, None) => NativeAssembly::structure_lost(unreadable),
     };
     if !embedded.is_empty() {
         native.push_loss(
@@ -274,33 +280,49 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<AssemblyProjection, CodecError> {
-    Ok(native_project(ctx, text, &BTreeMap::new())?.into_projection())
+    Ok(native_project(ctx, text, &test_tree_record(), &BTreeMap::new())?.into_projection())
 }
 
-/// Build the native structure of the component tree text. `virtual_sections`
-/// maps the key of each virtual component section to its site key, or to
-/// `None` when sections share the key.
+/// The section a test projection reads its component tree from.
+#[cfg(test)]
+pub(crate) fn test_tree_record() -> cadmpeg_ir::ids::UnknownId {
+    cadmpeg_ir::ids::UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+        0_usize,
+    )
+}
+
+/// Build the native structure of the component tree text, which section
+/// `tree` holds. `virtual_sections` maps the key of each virtual component
+/// section to its site key, or to `None` when sections share the key.
 fn native_project(
     ctx: &DecodeContext<'_>,
     text: &str,
+    tree: &cadmpeg_ir::ids::UnknownId,
     virtual_sections: &BTreeMap<String, Option<String>>,
 ) -> Result<NativeAssembly, CodecError> {
     let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
-            return Ok(NativeAssembly::structure_lost(format!(
-                "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
-                 transferred."
-            )))
+            return Ok(NativeAssembly::structure_given_up(
+                tree,
+                format!(
+                    "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
+                     transferred."
+                ),
+            ));
         }
     };
     let root = document.root_element();
     if root.tag_name().name() != "swSolidWorks" {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
-            root.tag_name().name()
-        )));
+        return Ok(NativeAssembly::structure_given_up(
+            tree,
+            format!(
+                "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
+                root.tag_name().name()
+            ),
+        ));
     }
     let mut files = BTreeMap::new();
     let mut models = BTreeMap::new();
@@ -362,10 +384,13 @@ fn native_project(
     };
     let root_model = *root_model;
     if !models.contains_key(root_model) {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The active configuration names model `{root_model}`, which the component tree \
-             does not define. No occurrence is transferred."
-        )));
+        return Ok(NativeAssembly::structure_given_up(
+            tree,
+            format!(
+                "The active configuration names model `{root_model}`, which the component \
+                 tree does not define. No occurrence is transferred."
+            ),
+        ));
     }
 
     let mut native = NativeAssembly::default();

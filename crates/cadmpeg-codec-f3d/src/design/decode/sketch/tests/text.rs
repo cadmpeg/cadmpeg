@@ -45,10 +45,9 @@ fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
         texts[0].placement().unwrap().anchor.get(),
         Point2::new(10.0, 20.0)
     );
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchTextUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchTextUndecoded)
     );
 }
 
@@ -526,10 +525,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
     )
     .expect("an unreadable live point costs only that point")
     .is_empty());
-    assert_eq!(malformed_losses.len(), 1);
     assert_eq!(
-        malformed_losses[0].code,
-        crate::loss::F3dLossCode::SketchPointUndecoded.kind()
+        crate::test_support::loss_codes(&malformed_losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchPointUndecoded)
     );
 
     let curves = decode_sketch_curve_identities_from_stream(

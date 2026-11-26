@@ -37,6 +37,7 @@ use cadmpeg_ir::report::{
     Severity,
 };
 use cadmpeg_ir::units::{Tolerances, UnitVector3};
+use cadmpeg_ir::unknown::part::{record_given_up, record_unreadable};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
@@ -2175,9 +2176,16 @@ fn report_unparsed_parameter_records(
             F3dLossCode::ParameterRecordUnparsed,
             format_args!(
                 "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
-                records.count, records.stream
+                records.offsets.len(),
+                records.stream
             ),
         );
+        report.losses.extend(records.offsets.iter().map(|offset| {
+            record_unreadable(
+                format_args!("parameter frame at byte {offset} in {}", records.stream),
+                F3dLossCode::ParameterRecordUnparsed.kind(),
+            )
+        }));
     }
 }
 
@@ -3632,13 +3640,12 @@ impl<'a> F3dDecodeSession<'a> {
                 None => error.to_string(),
             },
         };
-        push_loss_vec(
-            &mut self.report.losses,
-            F3dLossCode::DesignIntentUndecoded,
-            format_args!(
+        self.report.losses.extend(record_given_up(
+            crate::ids::DESIGN_INTENT_FAILURE_ID,
+            F3dLossCode::DesignIntentUndecoded.note(format!(
                 "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
-            ),
-        );
+            )),
+        ));
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -4432,7 +4439,7 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_selection = crate::design::decode::body::design_model_selection(scan)?;
+    let mut model_selection = crate::design::decode::body::design_model_selection(scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
@@ -4475,6 +4482,15 @@ fn decode_scanned_document<'a>(
             // A stream that fails to frame is reported even when another
             // selected stream decoded with no geometry.
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
+                if matches!(
+                    candidate.kernel,
+                    Some(crate::container::KernelFraming::Asm { .. })
+                ) {
+                    model_selection.losses.push(record_unreadable(
+                        &candidate.name,
+                        "its ASM record stream does not frame",
+                    ));
+                }
                 brep_outcome = ModelBrepOutcome::Failed {
                     stream: candidate.name.clone(),
                 };
@@ -4671,11 +4687,14 @@ fn collect_mesh_outcome(
             error: error @ CodecError::ResourceLimit(_),
             ..
         } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::MeshContainerUndecoded,
-            format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
-        ),
+        MeshContainerOutcome::Failed { entry_name, error } => {
+            report.losses.extend(record_given_up(
+                &entry_name,
+                F3dLossCode::MeshContainerUndecoded.note(format!(
+                    "mesh geometry container `{entry_name}` was not decoded: {error}"
+                )),
+            ));
+        }
         MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
             &mut report.losses,
             F3dLossCode::MeshContainerMissing,
@@ -4791,6 +4810,11 @@ fn project_mesh_bodies(
                 F3dLossCode::MeshContainerUndecoded,
                 format_args!("mesh bodies could not be decoded: {e}"),
             );
+            report
+                .losses
+                .extend(crate::container::paramesh_entries(scan).map(|entry| {
+                    record_unreadable(&entry.name, F3dLossCode::MeshContainerUndecoded.kind())
+                }));
             return Ok(MeshProjection {
                 count: 0,
                 unjoined: 0,
@@ -5186,11 +5210,11 @@ fn annotate_docstruct(
 }
 
 fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
-    push_loss_vec(
-        &mut report.losses,
-        F3dLossCode::XrefTableUndecoded,
-        format_args!("external-reference table was not decoded: {error}"),
-    );
+    report.losses.extend(record_given_up(
+        crate::xref::REDIRECTIONS_ENTRY,
+        F3dLossCode::XrefTableUndecoded
+            .note(format!("external-reference table was not decoded: {error}")),
+    ));
 }
 
 /// Report typed occurrence placements whose role path was readable but whose

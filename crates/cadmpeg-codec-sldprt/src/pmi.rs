@@ -765,9 +765,12 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    format!("sldprt:pmi:dimension#{normalized}"),
+                    SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
+                        "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                    )),
+                ));
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;

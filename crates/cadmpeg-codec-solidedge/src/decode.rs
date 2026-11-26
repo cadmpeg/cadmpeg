@@ -114,10 +114,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     if matches!(error, CodecError::ResourceLimit(_)) {
                         return Err(error);
                     }
-                    body.losses.push(
-                        SolidEdgeLossCode::PartitionUnreadable
-                            .note(format!("partition could not be decoded: {error}")),
-                    );
+                    body.losses
+                        .extend(cadmpeg_ir::unknown::part::record_given_up(
+                            entry.path(),
+                            SolidEdgeLossCode::PartitionUnreadable
+                                .note(format!("partition could not be decoded: {error}")),
+                        ));
                 }
             }
         }

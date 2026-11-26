@@ -14,6 +14,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::{Transform, TransformError};
+use cadmpeg_ir::unknown::part::record_given_up;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -381,9 +382,12 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRODUCT_DEFINITION #{definition} has no local product prototype"
-            )));
+            losses.extend(record_given_up(
+                format!("#{definition}"),
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRODUCT_DEFINITION #{definition} has no local product prototype"
+                )),
+            ));
             continue;
         };
         roots.push((definition, prototype));
@@ -515,9 +519,12 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} references an unresolved child definition"
-                )));
+                losses.extend(record_given_up(
+                    format!("#{usage_id}"),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "NAUO #{usage_id} references an unresolved child definition"
+                    )),
+                ));
                 continue;
             };
             if u64_from_index(parent_length) >= depth_limit {
@@ -526,9 +533,12 @@ pub(super) fn decode(
                 continue;
             }
             if reached.get(&usage.child_definition) == Some(&Reached::OnPath) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} closes an assembly definition cycle"
-                )));
+                losses.extend(record_given_up(
+                    format!("#{usage_id}"),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "NAUO #{usage_id} closes an assembly definition cycle"
+                    )),
+                ));
                 continue;
             }
             let Some(owner) = definition_prototypes.get(&parent_definition).cloned() else {

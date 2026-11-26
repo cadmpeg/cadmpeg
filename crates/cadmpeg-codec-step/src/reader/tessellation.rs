@@ -12,6 +12,7 @@ use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::record_given_up;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -221,17 +222,19 @@ pub(super) fn decode(
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no COORDINATES_LIST reference")),
-            );
+            ));
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no resolved COORDINATES_LIST")),
-            );
+            ));
             continue;
         };
         let offset = entity.own_parameter_offset();
@@ -249,19 +252,21 @@ pub(super) fn decode(
             }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            losses.push(
+            losses.extend(record_given_up(
+                format!("#{id}"),
                 StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
-            );
+            ));
             continue;
         };
         let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    losses.push(
+                    losses.extend(record_given_up(
+                        format!("#{id}"),
                         StepLossCode::DecodeWarning
                             .note(format!("{kind} #{id} has an invalid pnindex")),
-                    );
+                    ));
                     continue;
                 };
                 indices
@@ -271,9 +276,12 @@ pub(super) fn decode(
             if triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
             }) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{kind} #{id} has an out-of-range one-based coordinate index"
-                )));
+                losses.extend(record_given_up(
+                    format!("#{id}"),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} has an out-of-range one-based coordinate index"
+                    )),
+                ));
                 continue;
             }
             let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
@@ -305,9 +313,12 @@ pub(super) fn decode(
             }) || triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
             }) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{kind} #{id} has an out-of-range one-based tessellation index"
-                )));
+                losses.extend(record_given_up(
+                    format!("#{id}"),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} has an out-of-range one-based tessellation index"
+                    )),
+                ));
                 continue;
             }
             (
@@ -419,9 +430,10 @@ pub(super) fn decode(
         ) {
             Ok(rows) => rows,
             Err(error) => {
-                losses.push(
+                losses.extend(record_given_up(
+                    format!("#{id}"),
                     StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                );
+                ));
                 continue;
             }
         };
@@ -442,9 +454,10 @@ pub(super) fn decode(
         ) {
             Ok(mesh) => mesh,
             Err(error) => {
-                losses.push(
+                losses.extend(record_given_up(
+                    format!("#{id}"),
                     StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                );
+                ));
                 continue;
             }
         };

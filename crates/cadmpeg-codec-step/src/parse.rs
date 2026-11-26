@@ -627,6 +627,8 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) kind: ParseDiagnosticKind,
     /// Human-readable explanation, including the observed and canonical order.
     pub(crate) message: String,
+    /// The instance name of the record the diagnostic gives up whole.
+    pub(crate) given_up: Option<u64>,
 }
 
 /// A HEADER or DATA statement the parser could not read, given up as one
@@ -1275,6 +1277,7 @@ impl Parser<'_, '_, '_> {
                     self.diagnostics.push(ParseDiagnostic {
                         offset: record.span.start,
                         kind: ParseDiagnosticKind::EntityNameUnreadable,
+                        given_up: None,
                         message: format!("{} #{id} has a non-string name; parameter positions and exact source retained", partial.name),
                     });
                 }
@@ -1372,6 +1375,7 @@ impl Parser<'_, '_, '_> {
             self.diagnostics.push(ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::OmittedEntityName,
+                given_up: None,
                 message: format!(
                     "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
                 ),
@@ -1444,6 +1448,7 @@ impl Parser<'_, '_, '_> {
                 self.diagnostics.push(ParseDiagnostic {
                     offset: start,
                     kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
+                    given_up: None,
                     message,
                 });
             }
@@ -1491,6 +1496,7 @@ impl Parser<'_, '_, '_> {
         if presentation && metadata::unreadable_literal(&parameters, self.budget)? {
             self.diagnostics.push(ParseDiagnostic {
                 offset, kind: ParseDiagnosticKind::PresentationMetadataUnusable,
+                given_up: None,
                 message: format!("{name} contains an unusable bounded presentation literal; exact record retained"),
             });
         }
@@ -1730,6 +1736,7 @@ fn push_header_metadata_diagnostic(
     diagnostics.push(ParseDiagnostic {
         offset,
         kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+        given_up: None,
         message: message.to_string(),
     });
 }
@@ -1775,6 +1782,7 @@ fn validate_header(
         diagnostics.push(ParseDiagnostic {
             offset: description.map_or(offset, |record| record.offset),
             kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+            given_up: None,
             message,
         });
     }
@@ -1940,6 +1948,7 @@ fn schema_object_identifier_diagnostics(
             .map(|message| ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                given_up: None,
                 message,
             })))
 }

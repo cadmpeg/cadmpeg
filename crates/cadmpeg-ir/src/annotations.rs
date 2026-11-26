@@ -331,6 +331,12 @@ impl StreamHandle {
     pub fn new(stream: StreamName) -> Self {
         Self(Arc::new(stream))
     }
+
+    /// Returns the stream name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 /// Update policy for one annotation builder.

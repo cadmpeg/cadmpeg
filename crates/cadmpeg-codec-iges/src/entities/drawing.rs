@@ -195,15 +195,7 @@ fn push_drawing_entity_loss(
     entry: &DirectoryEntry,
     reason: &str,
 ) {
-    push_drawing_loss(
-        losses,
-        entry,
-        IgesLossCode::EntityNotProjected,
-        format_args!(
-            "IGES entity type {} form {} was not projected: {reason}",
-            entry.entity_type, entry.form
-        ),
-    );
+    super::push_entity_loss(losses, entry, format_args!("{reason}"));
 }
 
 pub(super) fn project(

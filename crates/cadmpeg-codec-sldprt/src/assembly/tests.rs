@@ -87,6 +87,27 @@ fn synthetic_scan(
     }
 }
 
+/// The structure loss `message`, and the `record.unreadable` that gives up
+/// the component tree section `tree`.
+fn assert_structure_given_up(projection: &super::AssemblyProjection, message: &str, tree: &str) {
+    let [loss, given_up] = projection.losses() else {
+        panic!("a structure loss and its given-up tree section");
+    };
+    assert_eq!(
+        loss.code,
+        SldprtLossCode::AssemblyStructureNotTransferred.kind()
+    );
+    assert_eq!(loss.message, message);
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up
+        .message
+        .split_whitespace()
+        .any(|token| token == tree));
+}
+
 fn assert_structure_loss(projection: &super::AssemblyProjection, message: &str) {
     assert_eq!(projection.losses().len(), 1);
     assert_eq!(
@@ -347,7 +368,7 @@ fn body(id: &str) -> cadmpeg_ir::topology::Body {
 fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
     let sections =
         std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let projection = super::native_project(&ctx(), &tree(), &super::test_tree_record(), &sections)
         .expect("native project")
         .into_projection();
     let definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#13")
@@ -387,7 +408,7 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
 #[test]
 fn virtual_component_sections_that_share_a_name_leave_it_unresolved() {
     let sections = std::collections::BTreeMap::from([("box-sldprt".to_string(), None)]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let projection = super::native_project(&ctx(), &tree(), &super::test_tree_record(), &sections)
         .expect("native project")
         .into_projection();
     assert_eq!(
@@ -594,7 +615,7 @@ fn a_placed_virtual_document_with_an_unread_partition_chooses_no_active_partitio
 fn a_virtual_component_section_without_a_body_is_reported() {
     let sections =
         std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let projection = super::native_project(&ctx(), &tree(), &super::test_tree_record(), &sections)
         .expect("native project")
         .into_projection();
     let mut decoded = decoded_without_a_model();
@@ -610,8 +631,13 @@ fn affine(rows: [[f64; 4]; 3]) -> Transform {
 
 #[test]
 fn the_component_tree_records_native_structure_and_projects_it() {
-    let native = super::native_project(&ctx(), &tree(), &std::collections::BTreeMap::new())
-        .expect("native project");
+    let native = super::native_project(
+        &ctx(),
+        &tree(),
+        &super::test_tree_record(),
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("native project");
     let root_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#2")
         .expect("the root definition identity");
     let sub_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#5")
@@ -841,11 +867,13 @@ fn the_component_tree_records_native_structure_and_projects_it() {
 
 #[test]
 fn the_component_tree_structure_losses_state_the_exact_message() {
+    let tree_record = super::test_tree_record();
     let projection = project(&ctx(), "<notSolidWorks/>").expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The `swXmlContents/COMPINSTANCETREE` section root is `notSolidWorks`. No occurrence \
          is transferred.",
+        tree_record.as_str(),
     );
 
     let text = tree().replace(
@@ -863,10 +891,11 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         r#"swMostRecentConfiguration="YES" swModelRef="99""#,
     );
     let projection = project(&ctx(), &text).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The active configuration names model `99`, which the component tree does not define. \
          No occurrence is transferred.",
+        tree_record.as_str(),
     );
 }
 
@@ -876,13 +905,19 @@ fn a_document_without_a_component_tree_states_the_exact_structure_loss() {
         vec![named_block(super::TREE_SECTION, vec![0xff])],
         Vec::new(),
     );
+    let tree_record = scan
+        .sections()
+        .next()
+        .expect("the tree section")
+        .native_id();
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The assembly document has no readable `swXmlContents/COMPINSTANCETREE` section. No \
          occurrence, placement, or component reference is transferred.",
+        tree_record.as_str(),
     );
 }
 
@@ -1028,10 +1063,11 @@ fn a_bill_of_materials_exclusion_and_visibility_are_reported() {
 #[test]
 fn a_tree_that_is_not_xml_states_the_exact_structure_loss() {
     let projection = project(&ctx(), "<swSolidWorks>").expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The `swXmlContents/COMPINSTANCETREE` section is not well-formed XML. No occurrence is \
          transferred.",
+        super::test_tree_record().as_str(),
     );
 }
 

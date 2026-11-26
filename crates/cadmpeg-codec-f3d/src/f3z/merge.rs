@@ -8,6 +8,7 @@ use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, TextReplacements};
+use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
@@ -392,9 +393,12 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                            "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                            reference.relative_path
+                        parent_report.losses.extend(record_given_up(
+                            reference.relative_path.as_str(),
+                            F3dLossCode::XrefMemberUndecoded.note(format!(
+                                "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
+                                reference.relative_path
+                            )),
                         ));
                         self.failed.insert(
                             reference.relative_path.as_str().to_owned(),
