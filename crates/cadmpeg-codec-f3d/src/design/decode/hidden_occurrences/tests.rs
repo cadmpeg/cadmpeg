@@ -353,7 +353,30 @@ fn a_native_path_carrier_keeps_the_admitted_target_visibility() {
         ),
         1
     );
-    assert_eq!(occurrences[0].visible, Some(false));
+    assert_eq!(occurrences[0].visible, None);
+}
+
+#[test]
+fn an_unadmitted_ancestor_hides_no_instance_of_the_target_under_any_parent() {
+    let carriers = [carrier(30), carrier(40), carrier(41)];
+    let mut occurrences = vec![
+        occurrence("first", &carriers[1]),
+        occurrence("second", &carriers[2]),
+        occurrence("a", &carriers[0]),
+        occurrence("b", &carriers[0]),
+    ];
+    assert_eq!(
+        apply_hidden_occurrences(
+            &mut occurrences,
+            &parents(&[("a", "first"), ("b", "second")]),
+            &carriers,
+            &[],
+            &[hidden(30, &[50])],
+            &std::collections::BTreeMap::new(),
+        ),
+        1
+    );
+    assert!(occurrences.iter().all(|o| o.visible.is_none()));
 }
 
 #[test]
