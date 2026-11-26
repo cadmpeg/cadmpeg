@@ -145,7 +145,7 @@ impl DecodeContext<'_> {
                         ResourceFailure::BudgetExceeded,
                         allowance,
                         0,
-                        needed,
+                        needed.saturated_bytes(),
                         operation,
                     )
                     .into(),
@@ -163,7 +163,7 @@ impl DecodeContext<'_> {
         if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
             return Err(XmlRefusal::Allowance {
                 allowance,
-                needed: u64::MAX,
+                needed: TreeNeed::Unbounded,
                 reason: format!(
                     "{operation}: an XML tag has more than {MAX_XML_TAG_ATTRIBUTES} attributes"
                 ),
@@ -173,7 +173,7 @@ impl DecodeContext<'_> {
         if prefixes > MAX_XML_NAMESPACE_PREFIXES {
             return Err(XmlRefusal::Allowance {
                 allowance,
-                needed: u64::MAX,
+                needed: TreeNeed::Unbounded,
                 reason: format!(
                     "{operation}: the XML text declares more than \
                      {MAX_XML_NAMESPACE_PREFIXES} namespace prefixes"
@@ -276,10 +276,10 @@ impl crate::scan::ScanBudget<'_> {
 /// Why an XML text gives no tree.
 enum XmlRefusal {
     /// The tree could need more storage than the per-expansion `allowance`
-    /// bounds: `needed` bytes, `u64::MAX` where the scan bounds none.
+    /// bounds: `needed`.
     Allowance {
         allowance: u64,
-        needed: u64,
+        needed: TreeNeed,
         reason: String,
     },
     Error(CodecError),
@@ -289,7 +289,7 @@ impl XmlRefusal {
     fn tree(allowance: u64, storage: Option<u64>, operation: &str) -> Self {
         Self::Allowance {
             allowance,
-            needed: storage.unwrap_or(u64::MAX),
+            needed: storage.map_or(TreeNeed::Unbounded, TreeNeed::Bytes),
             reason: tree_too_large_reason("XML", allowance, operation),
         }
     }
@@ -298,6 +298,24 @@ impl XmlRefusal {
         match self {
             Self::Allowance { reason, .. } => CodecError::NotImplemented(reason),
             Self::Error(error) => error,
+        }
+    }
+}
+
+/// The storage an XML tree could need.
+#[derive(Clone, Copy)]
+enum TreeNeed {
+    Bytes(u64),
+    /// The scan bounds no storage for the tree.
+    Unbounded,
+}
+
+impl TreeNeed {
+    /// The need as a refusal's `additional`, which saturates at `u64::MAX`.
+    fn saturated_bytes(self) -> u64 {
+        match self {
+            Self::Bytes(bytes) => bytes,
+            Self::Unbounded => u64::MAX,
         }
     }
 }
