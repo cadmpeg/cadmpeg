@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body states as evaluations, with full-snapshot ids (§5.4).
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::design::evaluation::StateBase;
@@ -20,7 +21,7 @@ fn topology(value: &serde_json::Value) -> Topology {
     for (arena, records) in value.as_object().unwrap() {
         wire.insert(arena.clone(), records.clone());
     }
-    cadmpeg_core::serde_erase::json::from_value(serde_json::Value::Object(wire)).unwrap()
+    json::from_value(serde_json::Value::Object(wire)).unwrap()
 }
 
 /// A body of one region and one shell, and the points `points`, all keyed by
@@ -83,13 +84,13 @@ fn a_state_keeps_its_base_body_by_position_and_shares_equal_records() {
 fn a_record_that_differs_only_in_its_source_object_is_shared() {
     let with_source = |key: &str, object: &str| {
         let mut topology = state(key, &[("1", 3.0)]);
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&topology).unwrap();
+        let mut wire = json::to_value(&topology).unwrap();
         wire["points"][0]["source_object"] = serde_json::json!({
             "format": "fcstd",
             "object_id": format!("fcstd:native:object#{object}"),
             "instance_path": [],
         });
-        topology = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        topology = json::from_value(wire).unwrap();
         topology
     };
     let first = snapshot(&with_source("Pad:Shape:A.brp", "Pad"), None).unwrap();
@@ -267,7 +268,7 @@ fn the_appearance_of_a_shape_outside_the_current_geometry_is_a_loss() {
         .into_iter()
         .collect::<std::collections::HashSet<_>>();
     for binding in &ir.model.appearance_bindings {
-        let value = cadmpeg_core::serde_erase::json::to_value(&binding.target.entity).unwrap();
+        let value = json::to_value(&binding.target.entity).unwrap();
         if let Some(id) = value["value"].as_str() {
             if id.starts_with("fcstd:model:") && !id.contains(":product_definition#") {
                 assert!(records.contains(id), "{id}");

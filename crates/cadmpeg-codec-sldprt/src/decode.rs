@@ -215,55 +215,6 @@ pub(crate) fn decode_for_read_back(
     result
 }
 
-/// Content key `(sha256, byte_len)` for caching pure read-back decodes.
-pub(crate) type ReadBackKey = (cadmpeg_ir::hash::digest::Sha256Digest, usize);
-
-/// Decodes a written SLDPRT byte slice for read-back comparison, memoizing
-/// recent outputs by content digest and length so repeated read-backs of the
-/// same written bytes avoid redundant decodes.
-pub(crate) fn decode_for_read_back_cached_with_key(
-    bytes: &[u8],
-) -> Result<
-    (std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, ReadBackKey),
-    cadmpeg_ir::codec::DecodeFailure,
-> {
-    type CachedReadBack = (ReadBackKey, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>);
-    static READ_BACK_CACHE: std::sync::Mutex<Vec<CachedReadBack>> =
-        std::sync::Mutex::new(Vec::new());
-
-    let key = (
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-        bytes.len(),
-    );
-    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
-        if let Some(index) = guard.iter().position(|(cached_key, _)| *cached_key == key) {
-            let entry = guard.remove(index);
-            let cached = std::sync::Arc::clone(&entry.1);
-            guard.push(entry);
-            return Ok((cached, key));
-        }
-    }
-    let decoded = std::sync::Arc::new(decode_for_read_back(bytes)?);
-    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
-        if !guard.iter().any(|(cached_key, _)| *cached_key == key) {
-            if guard.len() >= 12 {
-                guard.remove(0);
-            }
-            guard.push((key.clone(), std::sync::Arc::clone(&decoded)));
-        }
-    }
-    Ok((decoded, key))
-}
-
-/// Decodes a written SLDPRT byte slice for read-back comparison, reusing a
-/// cached [`cadmpeg_ir::codec::DecodeResult`] when identical bytes were decoded
-/// recently.
-pub(crate) fn decode_for_read_back_cached(
-    bytes: &[u8],
-) -> Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, cadmpeg_ir::codec::DecodeFailure> {
-    decode_for_read_back_cached_with_key(bytes).map(|(decoded, _)| decoded)
-}
-
 fn decode_inner(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -690,7 +641,11 @@ pub(crate) fn append_design_losses(
 
     let native = match ir.native.namespace("sldprt") {
         None => None,
-        Some(namespace) => match crate::native::SldprtNative::load_with_context(ctx, namespace) {
+        Some(namespace) => match crate::native::SldprtNative::load_with_context(
+            ctx,
+            namespace,
+            ir.tolerances.linear,
+        ) {
             Ok(native) => Some(native),
             Err(error) => match CodecError::from(error) {
                 limit @ CodecError::ResourceLimit(_) => return Err(limit),
@@ -3798,7 +3753,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3806,12 +3761,23 @@ fn build_geometry_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &lanes,
+        &walked_patterns,
+    )?;
+    let linear = ir.tolerances.linear;
+    pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
+        ctx, &histories, &mut lanes, linear,
+    )?);
     crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
+    // `bind_unresolved_detached_sketch_objects` binds these lanes again and
+    // reports their loss notes.
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
+        linear,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     project_design_history(
@@ -3885,12 +3851,15 @@ fn build_geometry_ir(
         &lanes,
         &exact_profiles,
     );
-    crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
-        ctx,
-        &ir.model.features,
-        &histories,
-        &mut supplemental_config_lanes,
-    )?;
+    pmi_losses.extend(
+        crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+            ctx,
+            &ir.model.features,
+            &histories,
+            &mut supplemental_config_lanes,
+            linear,
+        )?,
+    );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],
@@ -4796,10 +4765,10 @@ fn project_design(
         retired = projection.retired;
         Ok(())
     })?;
+    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     if retired.is_empty() {
         return Ok(());
     }
-    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     stamp_feature_baseline(ctx, ir)
 }
 
@@ -5341,7 +5310,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -5349,12 +5318,23 @@ fn build_metadata_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &lanes,
+        &walked_patterns,
+    )?;
+    let linear = ir.tolerances.linear;
+    pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
+        ctx, &histories, &mut lanes, linear,
+    )?);
     crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
+    // `bind_unresolved_detached_sketch_objects` binds these lanes again and
+    // reports their loss notes.
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
+        linear,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     ir.model.pmi = crate::swift::annotations(
@@ -5453,12 +5433,15 @@ fn build_metadata_ir(
         &lanes,
         &exact_profiles,
     );
-    crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
-        ctx,
-        &ir.model.features,
-        &histories,
-        &mut supplemental_config_lanes,
-    )?;
+    pmi_losses.extend(
+        crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+            ctx,
+            &ir.model.features,
+            &histories,
+            &mut supplemental_config_lanes,
+            linear,
+        )?,
+    );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],

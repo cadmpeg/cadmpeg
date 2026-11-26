@@ -145,6 +145,7 @@ impl Serialize for DataBlockTargetIndexRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use serde::de::DeserializeOwned;
 
@@ -155,11 +156,8 @@ mod tests {
     {
         let json = json.replace("\"id\":\"row\"", "\"id\":\"nx:om-column-row:row#0\"");
         let record: T = serde_json::from_str(&json).unwrap();
-        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
-        assert_eq!(
-            borrowed,
-            cadmpeg_core::serde_erase::json::to_vec(&W::from(record.clone())).unwrap()
-        );
+        let borrowed = json::to_vec(&record).unwrap();
+        assert_eq!(borrowed, json::to_vec(&W::from(record.clone())).unwrap());
         assert_eq!(borrowed, json.as_bytes());
         assert_native_limit(
             &record,

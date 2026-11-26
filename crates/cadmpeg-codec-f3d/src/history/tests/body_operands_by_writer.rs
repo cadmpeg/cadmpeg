@@ -146,6 +146,7 @@ fn move_case(later_update: bool) -> (Feature, Vec<LossNote>) {
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &histories,
+        scope_histories: &std::collections::HashMap::new(),
         bodies: &bodies,
         regions: &[],
         shells: &[],

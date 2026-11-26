@@ -4,6 +4,7 @@
 //! sketch's closed regions differ from the stored profile (§6 "Sources";
 //! §6.1 "Flags" and "Profiles and regions").
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashSet;
 
 use cadmpeg_ir::design::feature::FeatureOperation;
@@ -32,8 +33,7 @@ pub(super) fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    ir.model.sketches[0].profiles =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!(loops)).unwrap();
+    ir.model.sketches[0].profiles = json::from_value(serde_json::json!(loops)).unwrap();
 }
 
 /// Projects the fixture's design with `outside` read from curve records of
@@ -43,7 +43,11 @@ pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
-    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let native = crate::native::SldprtNative::load(
+        ir.native.namespace("sldprt").unwrap(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
     let entries =
@@ -138,13 +142,12 @@ fn an_extrude_picks_its_whole_sketch() {
 #[test]
 fn a_curve_of_state_zero_is_construction() {
     let (mut ir, _) = sketch_and_extrude();
-    let mut diagonal =
-        cadmpeg_core::serde_erase::json::to_value(&ir.model.sketch_entities[4]).unwrap();
+    let mut diagonal = json::to_value(&ir.model.sketch_entities[4]).unwrap();
     diagonal["id"] = serde_json::json!(entity("diagonal").as_str());
     diagonal["geometry"]["end"] = serde_json::json!({"u": 50.0, "v": 30.0});
     ir.model
         .sketch_entities
-        .push(cadmpeg_core::serde_erase::json::from_value(diagonal).unwrap());
+        .push(json::from_value(diagonal).unwrap());
     set_profiles(
         &mut ir,
         &[
@@ -201,7 +204,7 @@ fn add_c_ring(ir: &mut CadIr) {
     ] {
         ir.model
             .sketch_entities
-            .push(cadmpeg_core::serde_erase::json::from_value(added).unwrap());
+            .push(json::from_value(added).unwrap());
     }
 }
 
@@ -247,15 +250,9 @@ fn a_line_closing_a_c_ring_charges_an_extra_region() {
     let (mut ir, _) = sketch_and_extrude();
     add_c_ring(&mut ir);
     let sketch = ir.model.sketches[0].id.as_str().to_owned();
-    ir.model.sketch_entities.push(
-        cadmpeg_core::serde_erase::json::from_value(line(
-            &sketch,
-            "chord",
-            [95.0, 0.0],
-            [105.0, 0.0],
-        ))
-        .unwrap(),
-    );
+    ir.model
+        .sketch_entities
+        .push(json::from_value(line(&sketch, "chord", [95.0, 0.0], [105.0, 0.0])).unwrap());
     set_profiles(&mut ir, PROFILE);
     let (extrude, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(

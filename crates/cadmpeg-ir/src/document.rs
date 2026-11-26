@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
+use cadmpeg_core::serde_erase::json;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -512,7 +513,7 @@ macro_rules! model_write_value {
             Vec::new()
         } else {
             let owners =
-                procedural::standard_owners($model.surfaces.iter().filter_map(|carrier| {
+                crate::hash::procedural_owners($model.surfaces.iter().filter_map(|carrier| {
                     carrier
                         .geometry
                         .procedural_construction()
@@ -522,7 +523,7 @@ macro_rules! model_write_value {
                 .procedural_surfaces
                 .iter()
                 .map(|procedural| ProceduralSurfaceWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -532,17 +533,18 @@ macro_rules! model_write_value {
         if $model.procedural_curves.is_empty() {
             Vec::new()
         } else {
-            let owners = procedural::standard_owners($model.curves.iter().filter_map(|carrier| {
-                carrier
-                    .geometry
-                    .procedural_construction()
-                    .map(|construction| (construction.as_str(), &carrier.id))
-            }));
+            let owners =
+                crate::hash::procedural_owners($model.curves.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &carrier.id))
+                }));
             $model
                 .procedural_curves
                 .iter()
                 .map(|procedural| ProceduralCurveWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -993,6 +995,23 @@ macro_rules! declare_topology {
                 ids
             }
 
+            /// The id and structural JSON value of each record whose id
+            /// `wanted` selects.
+            pub(crate) fn project_records<'a>(
+                &'a self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                mut wanted: impl FnMut(&str) -> bool,
+            ) -> Vec<(&'a str, Result<serde_json::Value, cadmpeg_core::CodecError>)> {
+                let mut projected = Vec::new();
+                $(for record in &self.$field {
+                    let id = crate::schema::ArenaRecord::record_identity(record);
+                    if wanted(id) {
+                        projected.push((id, crate::schema::structural::project(ctx, record, "annotated delta record projection")));
+                    }
+                })*
+                projected
+            }
+
             /// Moves every arena from another topology.
             pub(crate) fn append(&mut self, mut other: Self) {
                 self.append_arenas(&mut other);
@@ -1389,7 +1408,7 @@ macro_rules! declare_document_arenas {
                 &mut self,
                 arena: &crate::give_up::Arena,
                 id: &str,
-                mut rewrite: impl FnMut(&mut serde_json::Value) -> bool,
+                rewrite: &mut dyn FnMut(&mut serde_json::Value) -> bool,
             ) -> bool {
                 let crate::give_up::Arena::Home { home, field } = arena else {
                     return false;
@@ -1662,6 +1681,26 @@ macro_rules! declare_arena_name {
                 written
             }
 
+            /// Each record of an arena the CADIR wire carries whose canonical
+            /// JSON, written alone, is refused, with the refusal.
+            pub(crate) fn unwritable(self) -> Vec<(crate::give_up::Seed, crate::hash::finite_json::CanonicalJsonError)> {
+                let mut unwritable = Vec::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    for record in &self.$home.$field {
+                        if let Some(refusal) = crate::hash::canonical_refusal(record) {
+                            unwritable.push((
+                                crate::give_up::Seed {
+                                    arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                                    id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                                },
+                                refusal,
+                            ));
+                        }
+                    }
+                })*
+                unwritable
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
@@ -1833,7 +1872,6 @@ macro_rules! declare_model_wire {
             where
                 S: Serializer,
             {
-                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
                 if !self.is_finalized() {
                     let mut sorted = self.clone();
                     sorted.finalize();
@@ -1897,11 +1935,8 @@ macro_rules! declare_model_wire {
 
         impl Model {
             /// Borrow every arena the wire carries in canonical identity order.
-            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
-                if let Err(error) = feature_parents::validate(&[self]) {
-                    return Err(CodecError::malformed(format_args!("{error}")));
-                }
-                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel { $($field: sorted_model_value!(self, $field),)* }
             }
         }
     };
@@ -2045,16 +2080,14 @@ pub struct GeometrySnapshot<'a> {
 }
 
 impl Topology {
-    /// Admit `model`'s feature parents and indexed owners for a borrowed
-    /// geometry serialization view that embeds `model`'s tessellations.
+    /// Index owners for a borrowed geometry serialization view that embeds
+    /// `model`'s tessellations.
+    #[must_use]
     pub fn geometry_snapshot<'a>(
         &'a self,
         model: &'a Model,
         kind: &'a str,
-    ) -> Result<GeometrySnapshot<'a>, CodecError> {
-        if let Err(error) = feature_parents::validate(&[model]) {
-            return Err(CodecError::malformed(format_args!("{error}")));
-        }
+    ) -> GeometrySnapshot<'a> {
         let curves = if self.procedural_curves.is_empty() {
             Vec::new()
         } else {
@@ -2084,13 +2117,13 @@ impl Topology {
                 .map(|procedural| (owners.get(procedural.id.as_str()), procedural))
                 .collect()
         };
-        Ok(GeometrySnapshot {
+        GeometrySnapshot {
             geometry: self,
             tessellations: &model.tessellations,
             kind,
             curves: ProceduralCurveRows(curves),
             surfaces: ProceduralSurfaceRows(surfaces),
-        })
+        }
     }
 }
 
@@ -3076,7 +3109,7 @@ impl CadIr {
     ///
     /// Where `value` is not a document of this IR version.
     pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        let wire: CadIrReadWire = cadmpeg_core::serde_erase::json::from_value(value)?;
+        let wire: CadIrReadWire = json::from_value(value)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }
@@ -3448,7 +3481,8 @@ impl CadIr {
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
-    /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
+    /// Serializes a [`finalize`](Self::finalize)d copy where an arena is out
+    /// of order, so callers need not pre-sort.
     ///
     /// The text is written through the same finite adapter the digest uses, so
     /// a non-finite float is refused rather than written as `null`.
@@ -3464,8 +3498,18 @@ impl CadIr {
     /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
     /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
-        let mut canonical = self.clone();
-        canonical.finalize();
+        let canonical = if self.geometry.is_finalized()
+            && self.model.is_finalized()
+            && self.design.is_finalized()
+            && self.process.is_finalized()
+            && self.native.is_finalized()
+        {
+            std::borrow::Cow::Borrowed(self)
+        } else {
+            let mut sorted = self.clone();
+            sorted.finalize();
+            std::borrow::Cow::Owned(sorted)
+        };
         let (bytes, measured) = crate::hash::measured_canonical_json(&canonical)?;
         let past = measured
             .records

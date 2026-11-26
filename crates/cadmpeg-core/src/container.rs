@@ -732,11 +732,11 @@ mod tests {
     }
 
     fn admit(wire: serde_json::Value) -> ContainerEntry {
-        serde_json::from_value(wire).expect("the declared sizes are admissible")
+        crate::serde_erase::json::from_value(wire).expect("the declared sizes are admissible")
     }
 
     fn reject(wire: serde_json::Value) -> String {
-        serde_json::from_value::<ContainerEntry>(wire)
+        crate::serde_erase::json::from_value::<ContainerEntry>(wire)
             .expect_err("the declared sizes are inadmissible")
             .to_string()
     }
@@ -878,7 +878,7 @@ mod tests {
                 serde_json::to_value(entry(storage.clone())).expect("a container entry serializes");
             assert_eq!(serialized, expected);
             let read_back: ContainerEntry =
-                serde_json::from_value(serialized).expect("the wire value re-admits");
+                crate::serde_erase::json::from_value(serialized).expect("the wire value re-admits");
             assert_eq!(read_back.storage, storage);
         }
     }
@@ -941,7 +941,7 @@ mod tests {
         let error = reject(compressed_wire("storage", Some(4), Some(7)));
         assert!(error.contains("unknown field"), "{error}");
 
-        let entry: ContainerEntry = serde_json::from_value(serde_json::json!({
+        let entry: ContainerEntry = crate::serde_erase::json::from_value(serde_json::json!({
             "name": "entry",
             "role": "stream",
             "kind": "storage",
@@ -979,11 +979,12 @@ mod tests {
             "size": {"kind": "unreported"},
             "attributes": {},
         });
-        serde_json::from_value::<ContainerEntry>(wire.clone()).expect("a legal entry");
+        crate::serde_erase::json::from_value::<ContainerEntry>(wire.clone())
+            .expect("a legal entry");
 
         let mut stray = wire;
         stray["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<ContainerEntry>(stray)
+        let error = crate::serde_erase::json::from_value::<ContainerEntry>(stray)
             .expect_err("an unknown key has no encoding")
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");

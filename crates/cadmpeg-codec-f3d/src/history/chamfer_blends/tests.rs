@@ -10,6 +10,7 @@ use crate::history_records::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
 use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
@@ -270,7 +271,7 @@ fn scope() -> DesignParameterScope {
 }
 
 fn group() -> DesignConstructionOperandGroup {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "325",

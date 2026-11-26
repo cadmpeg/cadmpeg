@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 use std::rc::Rc;
 
@@ -30,16 +31,13 @@ fn model() -> CadIr {
     let partial = partial.as_object_mut().expect("partial model");
     let attributes = partial.remove("attributes").expect("attributes");
     let mut ir = CadIr::empty();
-    let mut geometry =
-        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("empty topology");
+    let mut geometry = json::to_value(&ir.geometry).expect("empty topology");
     geometry
         .as_object_mut()
         .expect("topology object")
         .extend(partial.clone());
-    ir.geometry =
-        cadmpeg_core::serde_erase::json::from_value(geometry).expect("synthetic owned solid");
-    ir.model.attributes =
-        cadmpeg_core::serde_erase::json::from_value(attributes).expect("synthetic attributes");
+    ir.geometry = json::from_value(geometry).expect("synthetic owned solid");
+    ir.model.attributes = json::from_value(attributes).expect("synthetic attributes");
     ir
 }
 
@@ -193,10 +191,8 @@ fn a_span_without_a_joined_curve_keeps_only_the_radius_check() {
 fn loft_result_requires_two_positional_sections_without_support_or_guidance() {
     let base = loft_payload();
     let admitted = |value| {
-        cadmpeg_core::serde_erase::json::from_value::<
-            cadmpeg_ir::geometry::surface_payloads::LoftSurfacePayload,
-        >(value)
-        .expect("synthetic loft payload")
+        json::from_value::<cadmpeg_ir::geometry::surface_payloads::LoftSurfacePayload>(value)
+            .expect("synthetic loft payload")
     };
     assert!(unconstrained_loft(&admitted(base.clone())));
     for field in ["surface", "direction", "first_flag"] {
@@ -266,7 +262,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     let nurbs = NurbsSurface::new(axis(), axis(), poles, false).expect("surface");
     let id = cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:procedural-surface#loft")
         .expect("id");
-    let payload = cadmpeg_core::serde_erase::json::from_value(loft_payload()).expect("payload");
+    let payload = json::from_value(loft_payload()).expect("payload");
     model
         .geometry
         .procedural_surfaces
@@ -357,15 +353,13 @@ const SIDE_CLASS: &str =
 /// by a later generator 99.
 fn legacy_model() -> CadIr {
     let mut model = model();
-    model.geometry.surfaces[2].geometry =
-        cadmpeg_core::serde_erase::json::from_value(json!({"kind":"solved","value":{
-            "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
-            "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
-        }}))
-        .expect("plane");
+    model.geometry.surfaces[2].geometry = json::from_value(json!({"kind":"solved","value":{
+        "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
+        "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
+    }}))
+    .expect("plane");
     let mut later = model.geometry.faces[2].clone();
-    later.id =
-        cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#f3")).expect("id");
+    later.id = json::from_value(json!("test:model:face#f3")).expect("id");
     model.geometry.faces.push(later);
     model
         .model
@@ -373,8 +367,7 @@ fn legacy_model() -> CadIr {
         .push(model.model.attributes[2].clone());
     let face = |i: usize| {
         AttributeTarget::Face(
-            cadmpeg_core::serde_erase::json::from_value(json!(format!("test:model:face#f{i}")))
-                .expect("face id"),
+            json::from_value(json!(format!("test:model:face#f{i}"))).expect("face id"),
         )
     };
     let attributes = [
@@ -463,10 +456,9 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     assert!(check(&curve_tail).is_none());
     let mut duplicate_side = base.clone();
     let mut side = duplicate_side.model.attributes[2].clone();
-    side.target = AttributeTarget::Face(
-        cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#f3")).expect("face id"),
-    )
-    .into();
+    side.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
     side.values[7] = Some(AttributeValue::Integer(17));
     duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());
@@ -487,14 +479,12 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     // The generator names a face on a second body.
     let mut other_body = base.clone();
     let mut body = other_body.geometry.bodies[0].clone();
-    body.id = cadmpeg_core::serde_erase::json::from_value(json!("test:model:body#b2")).expect("id");
+    body.id = json::from_value(json!("test:model:body#b2")).expect("id");
     let mut region = other_body.geometry.regions[0].clone();
-    region.id =
-        cadmpeg_core::serde_erase::json::from_value(json!("test:model:region#r2")).expect("id");
+    region.id = json::from_value(json!("test:model:region#r2")).expect("id");
     region.body = body.id.clone();
     let mut shell = other_body.geometry.shells[0].clone();
-    shell.id =
-        cadmpeg_core::serde_erase::json::from_value(json!("test:model:shell#s2")).expect("id");
+    shell.id = json::from_value(json!("test:model:shell#s2")).expect("id");
     shell.region = region.id.clone();
     other_body.geometry.faces[3].shell = shell.id.clone();
     other_body.model.attributes[3].values[7] = Some(AttributeValue::Integer(17));
@@ -556,10 +546,9 @@ fn consumed_cap() -> CadIr {
 fn copied_cap() -> CadIr {
     let mut model = legacy_model();
     let mut copy = model.model.attributes[0].clone();
-    copy.target = AttributeTarget::Face(
-        cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#f3")).expect("face id"),
-    )
-    .into();
+    copy.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
     model.model.attributes[3] = copy;
     model
 }

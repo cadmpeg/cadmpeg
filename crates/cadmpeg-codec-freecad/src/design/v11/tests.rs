@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use std::collections::BTreeSet;
@@ -355,7 +356,7 @@ fn a_parameter_with_an_empty_expression_is_stated_with_its_stored_value() {
             .iter()
             .find(|parameter| parameter.id.as_str() == "fcstd:design:parameter#Pad:Length")
             .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&length.definition).unwrap();
+        let wire = json::to_value(&length.definition).unwrap();
         assert_eq!(wire["value"]["kind"], "neutral", "{wire}");
         assert_eq!(wire["value"]["value"]["text"], "20[mm]", "{wire}");
         let empty = crate::loss::FreecadLossCode::ParameterExpressionEmpty.note("");

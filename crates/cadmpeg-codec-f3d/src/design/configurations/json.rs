@@ -12,8 +12,14 @@ pub(super) fn parse_configuration_payload(
     entry_name: &str,
     bytes: &[u8],
 ) -> Result<Value, CodecError> {
+    let malformed = |error: &dyn std::fmt::Display| {
+        CodecError::malformed(format_args!(
+            "invalid F3D configuration JSON {entry_name}: {error}"
+        ))
+    };
+    let text = std::str::from_utf8(bytes).map_err(|error| malformed(&error))?;
     let mut refusal = None;
-    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    let mut deserializer = serde_json::Deserializer::from_str(text);
     let parsed = ValueSeed {
         ctx,
         refusal: &mut refusal,
@@ -27,9 +33,7 @@ pub(super) fn parse_configuration_payload(
         Ok(value) => Ok(value),
         Err(error) => match refusal {
             Some(error) => Err(error),
-            None => Err(CodecError::malformed(format_args!(
-                "invalid F3D configuration JSON {entry_name}: {error}"
-            ))),
+            None => Err(malformed(&error)),
         },
     }
 }

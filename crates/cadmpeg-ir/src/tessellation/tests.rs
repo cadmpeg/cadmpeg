@@ -11,6 +11,7 @@ use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::NonNegativeReal;
 use crate::units::{FinitePoint2, UnitVector3};
+use cadmpeg_core::serde_erase::json;
 
 fn square() -> Vec<Point3> {
     vec![
@@ -34,9 +35,9 @@ fn mesh() -> Tessellation {
 }
 
 fn rejects_wire_field(field: &str, value: impl serde::Serialize) {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
-    wire[field] = cadmpeg_core::serde_erase::json::to_value(value).unwrap();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).is_err());
+    let mut wire = json::to_value(mesh()).unwrap();
+    wire[field] = json::to_value(value).unwrap();
+    assert!(json::from_value::<Tessellation>(wire).is_err());
 }
 
 #[test]
@@ -232,13 +233,10 @@ fn valid_metadata_retains_group_order_and_distinct_resources_for_one_asset() {
         .unwrap();
     assert_eq!(value.triangle_groups(), groups);
     assert_eq!(value.texture_assignments(), assignments);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
-    let decoded: Tessellation = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let wire = json::to_value(&value).unwrap();
+    let decoded: Tessellation = json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded, value);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_value(decoded).unwrap(), wire);
 }
 
 #[test]
@@ -257,10 +255,7 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
     assert_eq!(value.channels()[0].count(), 1);
     assert_eq!(value.vertex_count(), 4);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(
-            cadmpeg_core::serde_erase::json::to_value(&value).unwrap()
-        )
-        .unwrap(),
+        json::from_value::<Tessellation>(json::to_value(&value).unwrap()).unwrap(),
         value
     );
 }
@@ -272,15 +267,9 @@ fn tessellation_identity_admission() {
         rejects_wire_field("id", id);
     }
     let id = TessellationId::mint("test:mesh:tessellation#0").unwrap();
+    assert_eq!(json::to_value(&id).unwrap(), "test:mesh:tessellation#0");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&id).unwrap(),
-        "test:mesh:tessellation#0"
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<TessellationId>(
-            cadmpeg_core::serde_erase::json::to_value(&id).unwrap()
-        )
-        .unwrap(),
+        json::from_value::<TessellationId>(json::to_value(&id).unwrap()).unwrap(),
         id
     );
 }
@@ -447,11 +436,8 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
             value.chordal_deflection().map(NonNegativeReal::get),
             deflection
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-            value
-        );
+        let wire = json::to_value(&value).unwrap();
+        assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), value);
     }
 }
 
@@ -462,8 +448,8 @@ fn admitted_tessellation_deflection_keeps_the_same_wire_value() {
     let checked = mesh().with_chordal_deflection(Some(0.5)).unwrap();
     assert_eq!(direct.chordal_deflection(), checked.chordal_deflection());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(direct).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(checked).unwrap()
+        json::to_value(direct).unwrap(),
+        json::to_value(checked).unwrap()
     );
 }
 
@@ -543,7 +529,7 @@ fn a_refused_normal_edit_keeps_the_prior_normals() {
 // mesh. A normal run that does not cover the mesh has no spelling at all.
 #[test]
 fn the_wire_spells_the_shading_by_name() {
-    let unshaded = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let unshaded = json::to_value(mesh()).unwrap();
     assert_eq!(unshaded["mesh"]["kind"], "list");
     assert!(unshaded["mesh"].get("shading").is_none());
 
@@ -559,13 +545,10 @@ fn the_wire_spells_the_shading_by_name() {
         Vec::new(),
     )
     .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&shaded).unwrap();
+    let wire = json::to_value(&shaded).unwrap();
     assert_eq!(wire["mesh"]["kind"], "shaded_list");
     assert_eq!(wire["mesh"]["vertices"][0]["normal"]["z"], 1.0);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-        shaded
-    );
+    assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), shaded);
 
     // A lane of normals that does not cover the mesh has no rows to become, so
     // the pairing refuses it before a mesh exists.
@@ -621,41 +604,41 @@ fn the_wire_spells_the_topology_by_name() {
     .unwrap();
     assert_eq!(strips.strip_lengths(), vec![4]);
     assert_eq!(strips.triangles(), vec![[0, 1, 2], [1, 3, 2]]);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&strips).unwrap();
+    let wire = json::to_value(&strips).unwrap();
     assert_eq!(wire["mesh"]["kind"], "strips");
     assert_eq!(wire["mesh"]["strips"][0].as_array().unwrap().len(), 4);
-    let read: Tessellation = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let read: Tessellation = json::from_value(wire).unwrap();
     assert_eq!(read, strips);
 }
 
 #[test]
 fn a_strip_run_outside_the_mesh_is_an_unknown_key() {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let mut wire = json::to_value(mesh()).unwrap();
     wire["strip_lengths"] = serde_json::json!([4]);
-    let error = cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap_err();
+    let error = json::from_value::<Tessellation>(wire).unwrap_err();
     let message = error.to_string();
     assert!(message.contains("unknown field"), "{error}");
     assert!(message.contains("strip_lengths"), "{error}");
 
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let mut wire = json::to_value(mesh()).unwrap();
     wire["mesh"]["strip_lengths"] = serde_json::json!([4]);
-    let error = cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap_err();
+    let error = json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("strip_lengths"), "{error}");
 
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let mut wire = json::to_value(mesh()).unwrap();
     wire["mesh"] = serde_json::json!({"kind": "strips", "strips": []});
-    let error = cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap_err();
+    let error = json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("empty"), "{error}");
 
     // A strip of one or two vertices spans no triangle, and the document route
     // refuses it at the strip mint rather than silently emitting nothing.
     for short in [0usize, 1, 2] {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+        let mut wire = json::to_value(mesh()).unwrap();
         wire["mesh"] = serde_json::json!({
             "kind": "strips",
             "strips": [square()[..short]],
         });
-        let error = cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap_err();
+        let error = json::from_value::<Tessellation>(wire).unwrap_err();
         assert!(
             error.to_string().contains("spans no triangle"),
             "{short}: {error}"
@@ -669,12 +652,12 @@ fn a_strip_run_outside_the_mesh_is_an_unknown_key() {
 #[test]
 fn a_channel_states_its_addressing_by_name() {
     let value = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+    let wire = json::to_value(&value).unwrap();
     assert_eq!(wire["addressing"], serde_json::json!({"kind": "vertex"}));
     assert!(wire.get("indices").is_none());
     assert!(wire.get("count").is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<TessellationChannel>(wire.clone()).unwrap(),
+        json::from_value::<TessellationChannel>(wire.clone()).unwrap(),
         value
     );
 
@@ -688,13 +671,13 @@ fn a_channel_states_its_addressing_by_name() {
         vec![7],
     )
     .unwrap();
-    let corner_wire = cadmpeg_core::serde_erase::json::to_value(&corner).unwrap();
+    let corner_wire = json::to_value(&corner).unwrap();
     assert_eq!(
         corner_wire["addressing"],
         serde_json::json!({"kind": "corner", "indices": [0, 0, 0]})
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<TessellationChannel>(corner_wire).unwrap(),
+        json::from_value::<TessellationChannel>(corner_wire).unwrap(),
         corner
     );
 
@@ -705,14 +688,12 @@ fn a_channel_states_its_addressing_by_name() {
     ] {
         let mut invalid = wire.clone();
         invalid["addressing"] = orphan;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<TessellationChannel>(invalid).is_err()
-        );
+        assert!(json::from_value::<TessellationChannel>(invalid).is_err());
     }
 
     let mut restated = wire;
     restated["count"] = serde_json::json!(1);
-    let error = cadmpeg_core::serde_erase::json::from_value::<TessellationChannel>(restated)
+    let error = json::from_value::<TessellationChannel>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("count"), "{error}");
@@ -821,10 +802,7 @@ fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() 
     let sets = vec![coordinates("st", Vertex, 4), coordinates("st1", Corner, 6)];
     let value = mesh().with_texture_coordinates(sets.clone()).unwrap();
     assert_eq!(value.texture_coordinates(), sets.as_slice());
-    let round: Tessellation = cadmpeg_core::serde_erase::json::from_value(
-        cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
-    )
-    .unwrap();
+    let round: Tessellation = json::from_value(json::to_value(&value).unwrap()).unwrap();
     assert_eq!(round, value);
     for invalid in [
         vec![coordinates("st", Vertex, 3)],
@@ -850,22 +828,16 @@ fn colors(addressing: ColorAddressing, count: usize) -> MeshColors {
 #[test]
 fn colors_hold_one_value_per_element_of_their_addressing() {
     use ColorAddressing::{Corner, Triangle, Vertex};
-    assert!(cadmpeg_core::serde_erase::json::to_value(mesh())
-        .unwrap()
-        .get("colors")
-        .is_none());
+    assert!(json::to_value(mesh()).unwrap().get("colors").is_none());
     for valid in [colors(Vertex, 4), colors(Corner, 6), colors(Triangle, 2)] {
         let value = mesh().with_colors(Some(valid.clone())).unwrap();
         assert_eq!(value.colors(), Some(&valid));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert_eq!(
             wire["colors"]["addressing"],
-            cadmpeg_core::serde_erase::json::to_value(valid.addressing).unwrap()
+            json::to_value(valid.addressing).unwrap()
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-            value
-        );
+        assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), value);
     }
     for invalid in [colors(Vertex, 3), colors(Corner, 4), colors(Triangle, 6)] {
         assert!(mesh().with_colors(Some(invalid)).is_err());
@@ -892,25 +864,19 @@ fn colors_hold_one_value_per_element_of_their_addressing() {
 #[test]
 fn a_tessellation_writes_the_state_it_names_and_refuses_a_null_one() {
     let mut value = mesh();
-    assert!(cadmpeg_core::serde_erase::json::to_value(&value)
-        .unwrap()
-        .get("state")
-        .is_none());
+    assert!(json::to_value(&value).unwrap().get("state").is_none());
     value.state = Some(crate::design::refs::StateRef {
         configuration: None,
         of: crate::design::refs::Evaluated::Tool(
             crate::features::FeatureId::mint("test:design:feature#3").unwrap(),
         ),
     });
-    let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+    let wire = json::to_value(&value).unwrap();
     assert_eq!(
         wire["state"],
         serde_json::json!({"of": {"kind": "tool", "value": "test:design:feature#3"}})
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-        value
-    );
+    assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), value);
     rejects_wire_field("state", serde_json::Value::Null);
 }
 
@@ -928,25 +894,24 @@ fn triangle_groups_name_each_face_at_most_once() {
 #[test]
 fn a_triangle_group_states_its_face_only_when_it_has_one() {
     let face = crate::ids::FaceId::mint("test:mesh:face#0").unwrap();
-    let plain = cadmpeg_core::serde_erase::json::to_value(group(Some("a"), vec![0])).unwrap();
+    let plain = json::to_value(group(Some("a"), vec![0])).unwrap();
     assert_eq!(
         plain,
         serde_json::json!({ "source_id": "a", "triangles": [0] })
     );
     let faced = group(Some("a"), vec![0]).with_face(face.clone());
-    let value = cadmpeg_core::serde_erase::json::to_value(&faced).unwrap();
+    let value = json::to_value(&faced).unwrap();
     assert_eq!(
         value,
         serde_json::json!({ "source_id": "a", "face": "test:mesh:face#0", "triangles": [0] })
     );
-    let back: TessellationTriangleGroup =
-        cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+    let back: TessellationTriangleGroup = json::from_value(value).unwrap();
     assert_eq!(back.face, Some(face));
 }
 
 #[test]
 fn a_tessellation_states_what_it_is_under_of() {
-    let unresolved = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let unresolved = json::to_value(mesh()).unwrap();
     assert_eq!(unresolved["of"], serde_json::json!({"kind": "unresolved"}));
     assert!(unresolved.get("body").is_none() && unresolved.get("faces").is_none());
 
@@ -954,15 +919,12 @@ fn a_tessellation_states_what_it_is_under_of() {
         body: crate::ids::BodyId::mint("test:mesh:body#0").unwrap(),
         faces: vec![crate::ids::FaceId::mint("test:mesh:face#0").unwrap()],
     });
-    let wire = cadmpeg_core::serde_erase::json::to_value(&body).unwrap();
+    let wire = json::to_value(&body).unwrap();
     assert_eq!(
         wire["of"],
         serde_json::json!({"kind": "body", "body": "test:mesh:body#0", "faces": ["test:mesh:face#0"]})
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-        body
-    );
+    assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), body);
 
     let definition = mesh().with_of(super::Meshed::Definition {
         definition: crate::ids::ProductDefinitionId::mint("test:mesh:product#0").unwrap(),
@@ -970,7 +932,7 @@ fn a_tessellation_states_what_it_is_under_of() {
         color: crate::topology::Color::new(1.0, 0.0, 0.0, 1.0),
         visible: Some(false),
     });
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(
         wire["of"],
         serde_json::json!({
@@ -981,33 +943,24 @@ fn a_tessellation_states_what_it_is_under_of() {
             "visible": false
         })
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-        definition
-    );
+    assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), definition);
 
     rejects_wire_field("of", serde_json::json!({"kind": "display"}));
     rejects_wire_field(
         "of",
         serde_json::json!({"kind": "definition", "definition": "test:mesh:product#0", "name": null}),
     );
-    let mut legacy = cadmpeg_core::serde_erase::json::to_value(mesh()).unwrap();
+    let mut legacy = json::to_value(mesh()).unwrap();
     legacy["body"] = serde_json::json!("test:mesh:body#0");
-    assert!(cadmpeg_core::serde_erase::json::from_value::<Tessellation>(legacy).is_err());
+    assert!(json::from_value::<Tessellation>(legacy).is_err());
 }
 
 #[test]
 fn a_native_ref_round_trips_and_is_absent_when_none() {
     let mut value = mesh();
-    assert!(cadmpeg_core::serde_erase::json::to_value(&value)
-        .unwrap()
-        .get("native_ref")
-        .is_none());
+    assert!(json::to_value(&value).unwrap().get("native_ref").is_none());
     value.native_ref = Some("test:native:mesh#0".to_owned());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+    let wire = json::to_value(&value).unwrap();
     assert_eq!(wire["native_ref"], "test:native:mesh#0");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<Tessellation>(wire).unwrap(),
-        value
-    );
+    assert_eq!(json::from_value::<Tessellation>(wire).unwrap(), value);
 }

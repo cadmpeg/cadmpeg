@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_test_support::EditableDecodeResult;
@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::loss::SldprtLossCode;
 use crate::test_support::nist::{ftc_06, ftc_08};
 use crate::test_support::readback::{self, Entry};
-use crate::SldprtCodec;
+use crate::SldprtWriteSession;
 
 /// One edit: the feature, by its unique name, and the JSON pointer of the
 /// leaf of its definition's wire form.
@@ -140,11 +140,13 @@ enum Outcome {
     Named,
 }
 
-/// Edits one leaf, writes, and reads the output back with the full decoder.
-/// `baseline` is [`readback::baseline`] of `part`, and `part_doc` is the
-/// precomputed read-back document of `part`. `Err` describes a save that is
-/// refused, carries a false note, or changes what it did not edit.
+/// Edits one leaf, writes it in `session`, and reads the output back with the
+/// full decoder. `baseline` is [`readback::baseline`] of `part`, and
+/// `part_doc` is the precomputed read-back document of `part`. `Err`
+/// describes a save that is refused, carries a false note, or changes what it
+/// did not edit.
 fn run(
+    session: &SldprtWriteSession<'_>,
     part: &DecodeResult,
     part_doc: &crate::history::write::read_back::document::Document,
     baseline: &[Entry],
@@ -180,13 +182,12 @@ fn run(
         return Ok(Outcome::Invalid);
     }
     let mut output = Vec::new();
-    let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .map_err(|error| format!("{label}: refused: {error}"))?;
+    let (report, read_back) = crate::test_support::plan_in_session(
+        session,
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+    )
+    .and_then(|(plan, read_back)| Ok((plan.write_to(&mut output)?, read_back)))
+    .map_err(|error| format!("{label}: refused: {error}"))?;
     let unwritten = report
         .losses
         .iter()
@@ -199,8 +200,13 @@ fn run(
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = crate::decode::decode_for_read_back_cached(&output)
-        .map_err(|error| format!("{label}: output does not decode: {error}"))?;
+    let written = match read_back {
+        Some(written) => written,
+        None => std::sync::Arc::new(
+            crate::decode::decode_for_read_back(&output)
+                .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+        ),
+    };
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));
@@ -277,6 +283,12 @@ fn run(
     Ok(outcome)
 }
 
+/// The write session of NIST specimen `part`, which its unedited baseline
+/// writes in as well.
+fn specimen_session(part: &DecodeResult) -> &'static SldprtWriteSession<'static> {
+    crate::test_support::nist::session(part.source_fidelity()).expect("a NIST specimen")
+}
+
 /// Runs every job of `part` on a few threads and returns the wrong saves and
 /// the count of each outcome.
 fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
@@ -284,6 +296,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
     let part_doc =
         crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
     let (baseline, unedited_bytes) = readback::baseline_with_bytes(part);
+    let session = specimen_session(part);
     let next = AtomicUsize::new(0);
     let results = Mutex::new((Vec::new(), [0_usize; 3]));
     let workers = std::thread::available_parallelism().map_or(4, |count| count.get().min(6));
@@ -294,7 +307,14 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
                 let Some(job) = jobs.get(index) else {
                     break;
                 };
-                let result = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), job);
+                let result = run(
+                    session,
+                    part,
+                    &part_doc,
+                    &baseline,
+                    unedited_bytes.as_deref(),
+                    job,
+                );
                 let mut results = results.lock().unwrap();
                 match result {
                     Ok(Outcome::Invalid) => results.1[0] += 1,
@@ -365,7 +385,15 @@ fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
     let job = job(part, "Boss-Extrude1", |pointer| {
         pointer.ends_with("/length") && !pointer.contains("second")
     });
-    let outcome = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), &job);
+    let session = specimen_session(part);
+    let outcome = run(
+        session,
+        part,
+        &part_doc,
+        &baseline,
+        unedited_bytes.as_deref(),
+        &job,
+    );
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",
@@ -386,7 +414,15 @@ fn a_linear_pattern_first_direction_edit_is_carried() {
     let job = job(part, "LPattern1", |pointer| {
         pointer.ends_with("/pattern/direction/y")
     });
-    let outcome = run(part, &part_doc, &baseline, unedited_bytes.as_deref(), &job);
+    let session = specimen_session(part);
+    let outcome = run(
+        session,
+        part,
+        &part_doc,
+        &baseline,
+        unedited_bytes.as_deref(),
+        &job,
+    );
     assert!(
         matches!(outcome, Ok(Outcome::Carried)),
         "{:?}",

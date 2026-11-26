@@ -3,6 +3,7 @@ use super::{
     assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
     source_view, validate, Admission,
 };
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 use std::path::Path;
 
@@ -188,7 +189,7 @@ fn real_decode_and_inspect_error_fixtures_are_not_success_views() {
         let path = golden_root.join(relative);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-        let value: serde_json::Value = cadmpeg_core::serde_erase::json::from_slice(&bytes)
+        let value: serde_json::Value = json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
         assert_eq!(validate(&value, &registry), Ok(0), "{}", path.display());
     }

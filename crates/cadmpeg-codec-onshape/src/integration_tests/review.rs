@@ -3,6 +3,7 @@
 use crate::test_support::review::{decode, edit, members, parameter, validate, variable, wire};
 use crate::test_support::{codec, fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use serde_json::{json, Value};
@@ -508,7 +509,7 @@ fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth(
             let bytes = members(&fixture("plate-fillet"), |members| {
                 members.insert(
                     path.into(),
-                    cadmpeg_core::serde_erase::json::to_vec(
+                    json::to_vec(
                         &json!({"microversionId":{"theId":"another-snapshot"},"bodies":[]}),
                     )
                     .unwrap(),

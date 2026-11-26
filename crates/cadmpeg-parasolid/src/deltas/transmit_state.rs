@@ -86,24 +86,21 @@ impl TryFrom<TransmitWire> for TransmitState {
 #[cfg(test)]
 mod tests {
     use super::TransmitState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn transmit_wire_preserves_metadata_and_rejects_invalid_fields() {
         let json = r#"{"description":"Transmit (deltas)","schema":"SCH_3501171_35102_13006","maximum_node_type":239,"user_field_size":0}"#;
         let state: TransmitState = serde_json::from_str(json).unwrap();
+        assert_eq!(json::to_string(&state).unwrap(), json);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
-            json
+            json::to_vec(&state).unwrap(),
+            json::to_vec(&super::TransmitWire::from(state.clone())).unwrap()
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&state).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::TransmitWire::from(state.clone()))
-                .unwrap()
-        );
-        let mut plain = cadmpeg_core::serde_erase::json::to_value(&state).unwrap();
+        let mut plain = json::to_value(&state).unwrap();
         plain["schema"] = serde_json::json!("SCH_3501171_13006");
-        assert!(cadmpeg_core::serde_erase::json::from_value::<TransmitState>(plain).is_ok());
-        let valid = cadmpeg_core::serde_erase::json::to_value(&state).unwrap();
+        assert!(json::from_value::<TransmitState>(plain).is_ok());
+        let valid = json::to_value(&state).unwrap();
         for (field, value) in [
             ("description", serde_json::json!("Transmit")),
             ("description", serde_json::json!("(deltas)\n")),
@@ -114,12 +111,10 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<TransmitState>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(json::from_value::<TransmitState>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 
