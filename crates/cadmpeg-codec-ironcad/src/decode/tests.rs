@@ -63,8 +63,7 @@ fn the_result_record_decodes_and_the_feature_record_is_retained() {
     let decoded = transfer(
         &ctx,
         CadIr::empty(),
-        bodies.brep.unwrap(),
-        bodies.retained,
+        bodies,
         losses,
         Sha256Digest::digest(&payload),
     )
@@ -115,8 +114,7 @@ fn a_face_on_an_unrecognized_surface_record_is_charged() {
     let decoded = transfer(
         &ctx,
         CadIr::empty(),
-        bodies.brep.unwrap(),
-        bodies.retained,
+        bodies,
         losses,
         Sha256Digest::digest(&payload),
     )

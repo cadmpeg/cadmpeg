@@ -77,13 +77,11 @@ zero.
 
 ### 3.1 Parasolid kernel bytes
 
-The kernel bytes are a little-endian Parasolid transmit. They start with the
-byte `0x41`, a `u16` description length, and the ASCII description. A `u32`
-schema-token length and the ASCII schema token follow. The description names
-the modeller version, for example
-`: TRANSMIT FILE created by modeller version 3401176`. The schema token has the
-form `SCH_<modeller>_<schema>_<base>`, for example `SCH_3401176_34101_13006`.
-The node grammar of [`parasolid.md`](parasolid.md) follows.
+The kernel bytes are a native binary Parasolid transmit
+([`parasolid.md`](parasolid.md) §4). The description names the modeller
+version, for example `: TRANSMIT FILE created by modeller version 3401176`. The
+schema token has the form `SCH_<modeller>_<schema>_<base>`, for example
+`SCH_3401176_34101_13006`. Lengths are metres.
 
 ### 3.2 ACIS kernel bytes
 

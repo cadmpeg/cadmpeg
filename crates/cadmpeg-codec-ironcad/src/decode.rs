@@ -21,7 +21,8 @@ use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use crate::container::BREP_DATA;
 use crate::loss::IronCadLossCode;
 use crate::tree::{Kernel, KernelRecord};
-use crate::{acis, container, dialect, frame, kernel, tree};
+use crate::{acis, container, dialect, frame, kernel, parasolid, tree};
+use cadmpeg_codec_sldprt::transmit::TransmitGeometry;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
@@ -43,7 +44,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         std::collections::BTreeMap::default(),
     ));
     let digest = Sha256Digest::digest(root.window());
-    let Some(brep) = bodies.brep else {
+    if bodies.brep.is_none() && bodies.parasolid.is_empty() {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -52,35 +53,68 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             },
             source_fidelity: SourceFidelity::new(digest),
         });
-    };
-    transfer(ctx, ir, brep, bodies.retained, losses, digest)
+    }
+    transfer(ctx, ir, bodies, losses, digest)
 }
 
-/// The decoded ACIS graph and the kernel records retained beside it.
+/// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
+/// records retained beside them.
 #[derive(Default)]
 struct Bodies {
     brep: Option<AsmBrep>,
+    parasolid: Vec<TransmitGeometry>,
     retained: Vec<UnknownRecord>,
 }
 
-/// Moves the decoded ACIS graph into the document.
+/// Moves the decoded ACIS graph and Parasolid bodies into the document.
 fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
-    brep: AsmBrep,
-    retained: Vec<UnknownRecord>,
+    bodies: Bodies,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
-    let (
-        _,
-        AsmTransferRemainder {
-            unknowns,
-            stats,
-            annotation_records,
-            unbounded_faces,
+    let Bodies {
+        brep,
+        parasolid,
+        retained,
+    } = bodies;
+    let AsmTransferRemainder {
+        mut unknowns,
+        stats,
+        annotation_records,
+        unbounded_faces,
+    } = match brep {
+        Some(brep) => transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("ironcad"), brep)?.1,
+        None => AsmTransferRemainder {
+            unknowns: Vec::new(),
+            stats: cadmpeg_asm::brep::stats::Stats::default(),
+            annotation_records: Vec::new(),
+            unbounded_faces: Vec::new(),
         },
-    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("ironcad"), brep)?;
+    };
+    for decoded in parasolid {
+        let geometry = decoded.geometry;
+        ir.geometry.bodies.extend(geometry.bodies);
+        ir.geometry.regions.extend(geometry.regions);
+        ir.geometry.shells.extend(geometry.shells);
+        ir.geometry.faces.extend(geometry.faces);
+        ir.geometry.loops.extend(geometry.loops);
+        ir.geometry.coedges.extend(geometry.coedges);
+        ir.geometry.edges.extend(geometry.edges);
+        ir.geometry.vertices.extend(geometry.vertices);
+        ir.geometry.points.extend(geometry.points);
+        ir.geometry.surfaces.extend(geometry.surfaces);
+        ir.geometry
+            .procedural_surfaces
+            .extend(geometry.procedural_surfaces);
+        ir.geometry.curves.extend(geometry.curves);
+        ir.geometry
+            .procedural_curves
+            .extend(geometry.procedural_curves);
+        ir.geometry.pcurves.extend(geometry.pcurves);
+        unknowns.extend(decoded.unknowns);
+    }
     for face in &unbounded_faces {
         losses.push(IronCadLossCode::FaceBoundaryUnstated.note(format!(
             "face {} on a {} states no loop: the face is stated partial",
@@ -182,8 +216,8 @@ fn records<'a>(
     }
 }
 
-/// Adds a dialect layer for every kernel record, decodes each ACIS body, and
-/// charges each Parasolid body as pending.
+/// Adds a dialect layer for every kernel record and decodes the body of each
+/// part result record.
 fn classify(
     ctx: &DecodeContext<'_>,
     records: &[KernelRecord<'_>],
@@ -194,9 +228,11 @@ fn classify(
         .iter()
         .filter(|record| record.kernel == Kernel::Acis)
         .count();
-    let acis_results = records
+    let results = records
         .iter()
-        .filter(|record| record.kernel == Kernel::Acis && record.follows_node)
+        .filter(|record| {
+            matches!(record.kernel, Kernel::Acis | Kernel::Parasolid) && record.follows_node
+        })
         .count();
     let acis_instance = if acis_count > 1 {
         LayerInstance::Tagged
@@ -224,11 +260,7 @@ fn classify(
                             .note(format!("{carrier}: {error}")),
                     ),
                 }
-                losses.push(IronCadLossCode::BodiesPending.note(format!(
-                    "{carrier}: Parasolid body of {} bytes at nesting depth {} is not decoded",
-                    record.bytes.window().len(),
-                    record.depth
-                )));
+                parasolid_body(ctx, record, ordinal, results > 1, &mut bodies, losses)?;
             }
             Kernel::Acis => {
                 let header = match kernel::acis_header(record.bytes) {
@@ -263,7 +295,7 @@ fn classify(
                     record,
                     ordinal,
                     &header,
-                    acis_results > 1,
+                    results > 1,
                     &mut bodies,
                     losses,
                 )?;
@@ -302,10 +334,7 @@ fn acis_body(
 ) -> Result<(), CodecError> {
     let carrier = format!("{BREP_DATA}/record {ordinal}");
     if !record.follows_node {
-        losses.push(IronCadLossCode::FeatureShapeRetained.note(format!(
-            "{carrier}: the record lies in the node before a part result record and is read \
-             as a feature shape of that part; the kernel record is retained"
-        )));
+        losses.push(feature_shape(&carrier));
         return retain(ctx, record, ordinal, bodies);
     }
     let stream = format!("{BREP_DATA}/record-{ordinal}");
@@ -337,6 +366,51 @@ fn acis_body(
         retain(ctx, record, ordinal, bodies)?;
     }
     Ok(())
+}
+
+/// Decodes the Parasolid body of a result record, or retains a feature record.
+fn parasolid_body(
+    ctx: &DecodeContext<'_>,
+    record: &KernelRecord<'_>,
+    ordinal: usize,
+    qualify: bool,
+    bodies: &mut Bodies,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let carrier = format!("{BREP_DATA}/record {ordinal}");
+    if !record.follows_node {
+        losses.push(feature_shape(&carrier));
+        return retain(ctx, record, ordinal, bodies);
+    }
+    let stream = format!("{BREP_DATA}/record-{ordinal}");
+    let namespace = format!("record-{ordinal}");
+    let decoded = parasolid::decode(ctx, record.bytes, &stream).and_then(|decoded| {
+        parasolid::qualify(ctx, decoded, qualify.then_some(namespace.as_str()))
+    });
+    let mut decoded = match decoded {
+        Ok(decoded) => decoded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(error) => {
+            losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
+            return retain(ctx, record, ordinal, bodies);
+        }
+    };
+    for loss in std::mem::take(&mut decoded.losses) {
+        losses.push(
+            IronCadLossCode::ParasolidBodyPartial
+                .note(format!("{carrier}: {}: {}", loss.code, loss.message)),
+        );
+    }
+    bodies.parasolid.push(decoded);
+    Ok(())
+}
+
+/// The loss of a kernel record read as a feature shape.
+fn feature_shape(carrier: &str) -> LossNote {
+    IronCadLossCode::FeatureShapeRetained.note(format!(
+        "{carrier}: the record lies in the node before a part result record and is read as a \
+         feature shape of that part; the kernel record is retained"
+    ))
 }
 
 /// Retains the kernel bytes of `record` as a native record.

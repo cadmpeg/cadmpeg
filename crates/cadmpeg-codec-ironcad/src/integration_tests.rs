@@ -90,7 +90,18 @@ fn inspect_lists_scene_streams() {
 fn single_part_scenes_hold_two_parasolid_records() {
     for name in [BOX, CYLINDER] {
         let result = decode(name);
-        assert_eq!(count(&result, IronCadLossCode::BodiesPending), 2, "{name}");
+        assert_eq!(
+            count(&result, IronCadLossCode::FeatureShapeRetained),
+            1,
+            "{name}"
+        );
+        assert_eq!(count(&result, IronCadLossCode::BodyUnreadable), 0, "{name}");
+        assert_eq!(
+            count(&result, IronCadLossCode::ParasolidBodyPartial),
+            0,
+            "{name}"
+        );
+        assert_eq!(result.ir().geometry.bodies.len(), 1, "{name}");
         assert_eq!(count(&result, IronCadLossCode::KernelPrologueUnreadable), 0);
         assert_eq!(count(&result, IronCadLossCode::RecordHeaderUnrecognized), 0);
         let formats = layer_formats(&result);
@@ -109,9 +120,25 @@ fn single_part_scenes_hold_two_parasolid_records() {
 #[test]
 fn mixed_kernel_scene_holds_parasolid_and_acis_records() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 10);
-    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 1);
-    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 7);
+    assert_eq!(count(&result, IronCadLossCode::BodyUnreadable), 0);
+    let mut faces: Vec<_> = result
+        .ir()
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| {
+            result
+                .ir()
+                .geometry
+                .faces
+                .iter()
+                .filter(|face| face.id.as_str().starts_with(body_scope(body.id.as_str())))
+                .count()
+        })
+        .collect();
+    faces.sort_unstable();
+    assert_eq!(faces, [3, 3, 6, 6, 10]);
     assert_eq!(count(&result, IronCadLossCode::KernelPrologueUnreadable), 0);
     assert_eq!(count(&result, IronCadLossCode::KernelUnrecognized), 0);
     let formats = layer_formats(&result);
@@ -167,7 +194,8 @@ fn container_depth_reads_no_records() {
     let result = IronCadCodec
         .decode(&mut Cursor::new(corpus(SCENE)), &options)
         .unwrap();
-    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 0);
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 0);
 }
 
 #[test]
@@ -180,20 +208,68 @@ fn acis_block_decodes_one_closed_box_in_the_part_frame() {
     assert_eq!(geometry.bodies.len(), 1);
     assert_eq!(geometry.faces.len(), 6);
     assert_eq!(geometry.edges.len(), 12);
+    assert_point_box(&result, [-50.0, -25.0, 0.0, 50.0, 25.0, 20.0]);
+}
+
+#[test]
+fn parasolid_box_decodes_one_closed_box_in_the_part_frame() {
+    let result = decode(BOX);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.edges.len(), 12);
+    assert_point_box(&result, [-25.0, -20.0, 0.0, 25.0, 20.0, 25.0]);
+}
+
+/// The identity prefix that the entities of a qualified body share.
+fn body_scope(body: &str) -> &str {
+    body.find("/brep:").map_or(body, |end| &body[..=end])
+}
+
+/// Asserts the low and high corners of the box of every decoded point.
+fn assert_point_box(result: &DecodeResult, expected: [f64; 6]) {
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
-    for point in &geometry.points {
+    for point in &result.ir().geometry.points {
         let position = point.position().get();
         for (axis, value) in [position.x, position.y, position.z].into_iter().enumerate() {
             low[axis] = low[axis].min(value);
             high[axis] = high[axis].max(value);
         }
     }
-    for (value, expected) in low
-        .iter()
-        .chain(&high)
-        .zip([-50.0, -25.0, 0.0, 50.0, 25.0, 20.0])
-    {
+    for (value, expected) in low.iter().chain(&high).zip(expected) {
         assert!((value - expected).abs() <= EPS_POINT_MM, "{low:?} {high:?}");
+    }
+}
+
+#[test]
+fn parasolid_records_rewrite_into_framed_neutral_transmits() {
+    for name in [BOX, CYLINDER, SCENE, "Block_Parasolid_100x50x20.ics"] {
+        let bytes = corpus(name);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let snapshot = crate::container::open(&ctx, root).unwrap();
+        let entry = snapshot.stream(crate::container::BREP_DATA).unwrap();
+        let stream = snapshot.open(&ctx, entry).unwrap();
+        let payload = crate::frame::payload(&ctx, stream).unwrap();
+        let records = crate::tree::read(payload).unwrap();
+        for record in records
+            .iter()
+            .filter(|record| record.kernel == crate::tree::Kernel::Parasolid)
+        {
+            let neutral = cadmpeg_parasolid::native::to_neutral(record.bytes.window()).unwrap();
+            let framed = cadmpeg_parasolid::records::PrimaryRecords::read(&neutral)
+                .unwrap()
+                .unwrap();
+            assert!(
+                framed.is_terminated(),
+                "{name}: stopped at {:?}",
+                framed.stop_offset()
+            );
+            assert!(!framed.records().is_empty(), "{name}");
+        }
+        drop(snapshot);
+        ctx.finish_session().unwrap();
     }
 }

@@ -13,6 +13,7 @@ mod frame;
 mod kernel;
 mod layout;
 mod loss;
+mod parasolid;
 mod tree;
 
 use cadmpeg_core::decode::{DecodeContext, View};

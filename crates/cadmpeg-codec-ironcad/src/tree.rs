@@ -47,8 +47,6 @@ impl Kernel {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct KernelRecord<'a> {
     pub(crate) kernel: Kernel,
-    /// Node nesting depth; a record in the root node has depth 1.
-    pub(crate) depth: usize,
     /// The item before the record in its node is a node that holds records.
     pub(crate) follows_node: bool,
     /// Header words at `words` and `reserved` equal `1, 1, 1, 0`.
@@ -109,8 +107,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Vec<KernelRecord<'_>>, TreeError
             let whole = payload
                 .child(at, cursor.position())
                 .ok_or_else(|| malformed("kernel record escapes the payload"))?;
-            let depth = levels.len() - 1;
-            let mut record = kernel_record(whole, depth)?;
+            let mut record = kernel_record(whole)?;
             if let Some(level) = levels.last_mut() {
                 record.follows_node = level.after_node;
                 level.holds_record = true;
@@ -136,7 +133,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Vec<KernelRecord<'_>>, TreeError
     Ok(records)
 }
 
-fn kernel_record(whole: View<'_>, depth: usize) -> Result<KernelRecord<'_>, TreeError> {
+fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
     let header = whole.window();
     let at = whole.start();
     let field = |offset: usize| {
@@ -155,7 +152,6 @@ fn kernel_record(whole: View<'_>, depth: usize) -> Result<KernelRecord<'_>, Tree
         .ok_or_else(|| malformed(format!("kernel record at {at} is shorter than its header")))?;
     Ok(KernelRecord {
         kernel: Kernel::from_tag(tag),
-        depth,
         follows_node: false,
         canonical_header: words == [1, 1, 1, 0],
         bytes,

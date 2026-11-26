@@ -14,8 +14,8 @@ pub(crate) enum IronCadLossCode {
     KernelUnrecognized,
     KernelPrologueUnreadable,
     KernelUnverified,
-    BodiesPending,
     BodyUnreadable,
+    ParasolidBodyPartial,
     BodyRecordsRetained,
     BodyExtensionsRetained,
     FeatureShapeRetained,
@@ -48,7 +48,10 @@ impl IronCadLossCode {
                 LossTaxonomy::SourceDialectUnverified,
             ),
             Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
-            Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
+            Self::ParasolidBodyPartial => (
+                "body.parasolid-partial",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
             Self::BodyUnreadable => ("body.unreadable", LossTaxonomy::GeometryNotTransferred),
             Self::BodyRecordsRetained => ("body.records-retained", LossTaxonomy::RecordNotTyped),
             Self::BodyExtensionsRetained => (

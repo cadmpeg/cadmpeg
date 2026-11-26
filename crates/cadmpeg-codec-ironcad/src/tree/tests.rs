@@ -10,7 +10,7 @@ const ACIS: u32 = 0x8000_0001;
 const PARASOLID: u32 = 0x8000_0002;
 
 #[test]
-fn records_are_read_in_stored_order_at_their_depth() {
+fn records_are_read_in_stored_order() {
     let payload = node(&[
         node(&[node(&[node(&[])]), record(PARASOLID, b"feature")]),
         record(PARASOLID, b"result"),
@@ -21,14 +21,14 @@ fn records_are_read_in_stored_order_at_their_depth() {
     let records = read(View::over_retained(&payload)).unwrap();
     let summary: Vec<_> = records
         .iter()
-        .map(|record| (record.kernel, record.depth, record.bytes.window()))
+        .map(|record| (record.kernel, record.bytes.window()))
         .collect();
     assert_eq!(
         summary,
         [
-            (Kernel::Parasolid, 2, b"feature".as_slice()),
-            (Kernel::Parasolid, 1, b"result".as_slice()),
-            (Kernel::Acis, 2, b"acis".as_slice()),
+            (Kernel::Parasolid, b"feature".as_slice()),
+            (Kernel::Parasolid, b"result".as_slice()),
+            (Kernel::Acis, b"acis".as_slice()),
         ]
     );
     assert!(records.iter().all(|record| record.canonical_header));
