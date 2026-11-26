@@ -21,7 +21,7 @@ use super::profile_check::{Difference, Unchecked};
 use super::revolve::AxisPick;
 use super::sketch::{DimensionCircle, Sketches};
 use super::tree::Timeline;
-use super::{extrude, revolve, sketch, swept};
+use super::{extrude, pattern, revolve, sketch, swept};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
@@ -116,6 +116,7 @@ pub(super) fn project(
     };
     let extrudes = extrude::project(&mut timeline.features, &context);
     let revolves = revolve::project(&mut timeline.features, &context);
+    pattern::project(&mut timeline.features, &context);
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
     for (parameter, quantity) in sketches
         .bound

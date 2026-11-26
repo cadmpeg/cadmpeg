@@ -457,12 +457,46 @@ fn annotation_findings(
 fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
     let (ir, evaluation) = cube_with_vertex_state();
     let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
-    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, &vertex);
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, &vertex);
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.note(&key, &stream, 0, None);
     annotations.derived(&key, "point").unwrap();
     annotations.derived(&vertex, "point").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
+    use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
+    use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
+    let (mut ir, _) = cube_with_vertex_state();
+    let edge = ir.geometry.edges[0].clone();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    let mut records = crate::document::Topology::default();
+    records.edges.push(edge.clone());
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: Some(ProcessContent {
+            base: ProcessBase::Design(StateBase::Empty),
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        feature: None,
+    });
+    let key = crate::annotations::AnnotationKey::in_delta(&state, edge.id.as_str());
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.note(&key, &stream, 0, None);
+    annotations.exactness(&key, crate::provenance::Exactness::Inferred);
     let findings = annotation_findings(&ir, annotations.build());
     assert!(findings.is_empty(), "{findings:?}");
 }
@@ -474,8 +508,11 @@ fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
     let edge = ir.geometry.edges[0].id.as_str();
     let other = crate::design::ids::EvaluationId::mint("test:design:evaluation#2").unwrap();
     let keys = [
-        crate::annotations::AnnotationKey::in_evaluation(&other, vertex),
-        crate::annotations::AnnotationKey::in_evaluation(&evaluation, edge),
+        crate::annotations::AnnotationKey::in_delta(&other, vertex).to_string(),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, edge).to_string(),
+        format!("{}  {vertex}", evaluation.as_str()),
+        format!(" {vertex}"),
+        format!("{} ", evaluation.as_str()),
     ];
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
@@ -499,14 +536,14 @@ fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
             );
         }
     }
-    assert_eq!(findings.len(), 4, "{findings:?}");
+    assert_eq!(findings.len(), 2 * keys.len(), "{findings:?}");
 }
 
 #[test]
 fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
     let (ir, evaluation) = cube_with_vertex_state();
     let vertex = ir.geometry.vertices[0].id.as_str();
-    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, vertex);
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, vertex);
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.derived(&key, "not_a_serialized_field").unwrap();
     let findings = annotation_findings(&ir, annotations.build());
@@ -516,4 +553,58 @@ fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
                 && finding.message.contains("`not_a_serialized_field`")),
         "{findings:?}"
     );
+}
+
+/// The design fixture with a process state that has no content.
+fn design_with_process_state() -> (crate::CadIr, crate::design::ids::ProcessStateId) {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::process::state::{ProcessState, ProcessStateOf};
+    let mut ir = crate::validate::design::fixture::document();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: None,
+        feature: None,
+    });
+    (ir, state)
+}
+
+#[test]
+fn keys_of_design_and_process_records_resolve() {
+    let (ir, state) = design_with_process_state();
+    let named = [
+        "test:design:feature#extrude",
+        "test:design:evaluation#after-extrude",
+        state.as_str(),
+    ];
+    let absent = "test:design:feature#absent";
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in named.iter().chain([&absent]) {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    annotations
+        .derived("test:design:feature#fillet", "source_content")
+        .unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    for rule in [
+        "annotations_native.provenance-key-does-not-resolve-entity",
+        "annotations_native.exactness-key-does-not-resolve-entity",
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.severity == crate::report::Severity::Error
+                    && finding.entity.as_deref() == Some(absent)
+                    && finding.rule.as_str() == rule
+            }),
+            "{rule}: {findings:?}"
+        );
+    }
+    assert_eq!(findings.len(), 2, "{findings:?}");
 }

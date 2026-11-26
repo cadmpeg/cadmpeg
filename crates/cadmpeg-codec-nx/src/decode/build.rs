@@ -1720,33 +1720,7 @@ fn retain_live_annotations(
     for unknown in unknowns {
         ids.insert(unknown.id().as_str());
     }
-    let mut live_ids = ids.iter().peekable();
-    annotations.retain_provenance(|id| ordered_live_identity_contains(&mut live_ids, id));
-    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    let mut live_ids = ids.iter().peekable();
-    builder.retain_exactness(|id| ordered_live_identity_contains(&mut live_ids, id));
-    *annotations = builder.build();
-}
-
-/// Annotation retention visits B-tree keys in order. Advance the live identity
-/// cursor in that same order, without copying model identities or restarting
-/// an indexed search for each annotation.
-fn ordered_live_identity_contains(
-    live_ids: &mut std::iter::Peekable<std::collections::btree_set::Iter<'_, &str>>,
-    id: &str,
-) -> bool {
-    loop {
-        let Some(&&live_id) = live_ids.peek() else {
-            return false;
-        };
-        match live_id.cmp(id) {
-            std::cmp::Ordering::Less => {
-                live_ids.next();
-            }
-            std::cmp::Ordering::Equal => return true,
-            std::cmp::Ordering::Greater => return false,
-        }
-    }
+    annotations.retain_entities(|id| ids.contains(id));
 }
 
 fn retain_live_unknown_links(

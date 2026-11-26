@@ -30,6 +30,7 @@ use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationTarget;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
@@ -2352,7 +2353,9 @@ fn patch_retained_swobjects_metadata(
         .map(|attribute| attribute.id.as_str())
         .collect::<HashSet<_>>();
     for (key, provenance) in &annotations.provenance {
-        let id = key.as_str();
+        let AnnotationTarget::Entity(id) = key.target() else {
+            continue;
+        };
         let stream = provenance.stream();
         if id.starts_with("sldprt:metadata:")
             && !id.starts_with("sldprt:metadata:source_linear_unit_code#")
