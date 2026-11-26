@@ -88,11 +88,15 @@ impl ProfileIndex<'_> {
         Some((link, wire))
     }
 
-    /// The edge count of the keyed wire `ordinal` selects when it is a face
-    /// loop: every edge carries a name of the link's naming type, and the
-    /// names are the integers 1 to the edge count. Face-loop names number the
-    /// loop edges; they are not names of sketch curves.
-    pub(in crate::feature) fn face_loop_edges(&self, token: &str, ordinal: u32) -> Option<usize> {
+    /// The edge count of the keyed wire `ordinal` selects when its edges are
+    /// numbered: every edge carries a name of the link's naming type, and the
+    /// names are the integers 1 to the edge count. The check reads the wire
+    /// alone; the caller states that the selection is a face loop.
+    pub(in crate::feature) fn numbered_edge_count(
+        &self,
+        token: &str,
+        ordinal: u32,
+    ) -> Option<usize> {
         let (link, wire) = self.wire(token, ordinal)?;
         let mut names = wire
             .edges

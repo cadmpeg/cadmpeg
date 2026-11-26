@@ -11,7 +11,7 @@ use crate::feature::{
 };
 use crate::pmdc::{type_id_string, PmDcReference};
 
-use super::{LOFT_MODE_TYPE, SECTION_CONDITION_TYPE, SECTION_TYPE};
+use super::{FACE_LOOP_PARTICIPANT_TYPE, LOFT_MODE_TYPE, SECTION_CONDITION_TYPE, SECTION_TYPE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeReason {
@@ -109,9 +109,6 @@ pub(crate) fn sections<'a>(
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> Result<[PmDcReference; 2], NativeReason> {
     let admitted = admit(source, Form::Solid, property, parameter)?;
-    if admitted.iter().any(|section| section.source_value != 1) {
-        return Err(NativeReason::SectionRecord);
-    }
     Ok(admitted.map(|section| section.entity_link))
 }
 
@@ -256,6 +253,11 @@ fn admit<'a>(
         else {
             return Err(NativeReason::SectionRecord);
         };
+        // The solid loft stores `source_value` 1 in both sections; this check
+        // stays ahead of every later section check.
+        if form == Form::Solid && source_value != 1 {
+            return Err(NativeReason::SectionRecord);
+        }
         if entity_link.index() == 0 {
             return Err(NativeReason::SectionRecord);
         }
@@ -306,6 +308,39 @@ fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
                 value: 0,
             }
         )
+}
+
+/// Whether the second participant of a surface-loft label is the face-loop
+/// participant record: a record of type `7ca882b3f445b9fffe4a7486104813a4`
+/// other than the sketch participant. `type_at` gives the record type string
+/// of a record ordinal in the feature's segment.
+pub(crate) fn face_loop_participant<'a>(
+    label: &crate::feature::PmDcFeatureLabel,
+    sketch_ordinal: u32,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let [first, last] = label.participants.references() else {
+        return false;
+    };
+    let others = [first, last]
+        .into_iter()
+        .filter_map(|reference| reference.record_ordinal())
+        .filter(|ordinal| *ordinal != sketch_ordinal)
+        .collect::<Vec<_>>();
+    let [other] = others.as_slice() else {
+        return false;
+    };
+    type_at(*other) == Some(type_id_string(FACE_LOOP_PARTICIPANT_TYPE).as_str())
+}
+
+/// Whether `definition` is a surface loft that keeps a native section
+/// selection.
+pub(crate) fn has_native_section(definition: &FeatureDefinition) -> bool {
+    use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    matches!(definition,
+        FeatureDefinition::Operation(FeatureOperation::Loft { sections, solid: false, .. })
+            if sections.iter().any(|section| matches!(section,
+                LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(_))))))
 }
 
 /// Whether `definition` is the neutral form of a positional surface loft.

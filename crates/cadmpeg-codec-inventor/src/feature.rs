@@ -2592,6 +2592,13 @@ pub(crate) fn project(
                             label,
                             &index,
                             family,
+                            |ordinal| {
+                                inventory
+                                    .record_types
+                                    .get(&feature.identity.segment_token)?
+                                    .get(&ordinal)?
+                                    .as_deref()
+                            },
                             &mut loft_losses,
                         )
                     }
@@ -2924,7 +2931,10 @@ pub(crate) fn project(
         .count();
     let unresolved_extrusion_profiles = features
         .iter()
-        .filter(|feature| extrusion::has_native_profile(feature.evaluation.definition()))
+        .filter(|feature| {
+            extrusion::has_native_profile(feature.evaluation.definition())
+                || loft_sweep::controls::has_native_section(feature.evaluation.definition())
+        })
         .count();
     Ok(FeatureProjection {
         unresolved_features: total

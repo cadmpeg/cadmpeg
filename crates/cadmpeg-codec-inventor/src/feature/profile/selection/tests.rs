@@ -454,14 +454,20 @@ mod selected_path {
         assert!(open_path(offset_wire(), &closed).is_none());
     }
 
-    /// The edge count of the face loop whose edges carry `names`.
-    fn face_loop(names: &[i64]) -> Option<usize> {
+    /// The edge count of the wire whose edges carry `names` of the given
+    /// naming type.
+    fn numbered(names: &[i64], naming_type: i64) -> Option<usize> {
         let edges = names
             .iter()
             .enumerate()
             .map(|(at, name)| {
                 let x = f64::from(u32::try_from(at).expect("edge"));
-                edge(Some(*name), (x, 0.0), (x + 1.0, 0.0))
+                let mut edge = edge(Some(*name), (x, 0.0), (x + 1.0, 0.0));
+                edge.name = Some(EdgeName {
+                    naming_type,
+                    associative_id: *name,
+                });
+                edge
             })
             .collect();
         let body = ProfileBody {
@@ -475,16 +481,20 @@ mod selected_path {
         let links = [link()];
         let bodies = [body];
         let index = ProfileIndex::new(&bodies, &links, &[], &[], &[]);
-        index.face_loop_edges(TOKEN, LINK_ORDINAL)
+        index.numbered_edge_count(TOKEN, LINK_ORDINAL)
     }
 
     #[test]
-    fn a_face_loop_names_its_edges_one_to_n() {
+    fn a_numbered_wire_names_its_edges_one_to_n_with_the_link_naming_type() {
+        let naming = i64::from(NAMING_TYPE);
+        let face_loop = |names: &[i64]| numbered(names, naming);
         assert_eq!(face_loop(&[1, 2, 3]), Some(3));
         assert_eq!(face_loop(&[3, 1, 2]), Some(3));
         // Missing, repeated, or offset names are not the loop form.
         assert_eq!(face_loop(&[1, 2, 4]), None);
         assert_eq!(face_loop(&[1, 1, 2]), None);
         assert_eq!(face_loop(&[2, 3]), None);
+        // Names of another naming type are not the numbering of the link.
+        assert_eq!(numbered(&[1, 2, 3], naming + 1), None);
     }
 }

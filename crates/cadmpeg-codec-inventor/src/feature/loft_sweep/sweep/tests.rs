@@ -307,6 +307,7 @@ fn projection_emits_the_first_refused_sweep_check() {
         &label,
         &index,
         crate::feature::FeatureFamily::Sweep,
+        |_| None,
         &mut losses
     )
     .is_none());

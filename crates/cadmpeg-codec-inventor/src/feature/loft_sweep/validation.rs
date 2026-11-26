@@ -54,16 +54,19 @@ impl<'a> ValidationIndex<'a> {
     }
 
     /// Whether a neutral surface loft is the positional form of its source
-    /// operands: the sketch section selects regions of a sketch the label
-    /// consumes, and the face-loop section is the native reference to its
-    /// section record, in the stored order.
-    pub(crate) fn surface_matches(
+    /// operands: the sketch section is the whole closed profile of the sketch
+    /// that the label consumes, the face-loop section is the native reference
+    /// to its section record, the second label participant has the face-loop
+    /// participant type, and the two sections select different wires. The
+    /// sections stand in their stored order.
+    pub(crate) fn surface_matches<'t>(
         &self,
         source: &PmDcFeature,
         label: &PmDcFeatureLabel,
         definition: &FeatureDefinition,
         property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
         parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+        type_at: impl Fn(u32) -> Option<&'t str>,
     ) -> bool {
         if !controls::matches_surface_definition(definition) {
             return false;
@@ -87,34 +90,41 @@ impl<'a> ValidationIndex<'a> {
             face_loop,
             LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
                 if *id == section.id()
-        ) {
+        ) || admitted.sketch.entity_link.record_ordinal()
+            == admitted.face_loop.entity_link.record_ordinal()
+        {
             return false;
         }
-        let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::SketchRegions {
-            sketch,
-            ..
-        })) = sketch
+        let LoftSection::Profile(ProfileRef::Planar(
+            profile @ PlanarProfileRef::SketchRegions { sketch, .. },
+        )) = sketch
         else {
             return false;
         };
-        let Some(raw) = self
-            .sketches
-            .get(sketch.as_str())
-            .copied()
-            .flatten()
-            .and_then(|sketch| sketch.native_ref.as_deref())
+        let Some(sketch) = self.sketches.get(sketch.as_str()).copied().flatten() else {
+            return false;
+        };
+        let Some(raw) = sketch
+            .native_ref
+            .as_deref()
             .and_then(|id| self.raw.get(id))
             .and_then(Option::as_ref)
         else {
             return false;
         };
-        raw.identity.segment_token == source.identity.segment_token
-            && label.participants.references().len() == 2
+        let token = source.identity.segment_token.as_str();
+        raw.identity.segment_token.as_str() == token
             && label
                 .participants
                 .references()
                 .iter()
                 .any(|r| r.record_ordinal() == Some(raw.identity.record_ordinal))
+            && controls::face_loop_participant(label, raw.identity.record_ordinal, type_at)
+            && self
+                .profiles
+                .whole_sketch(token, raw.identity.record_ordinal, sketch)
+                .as_ref()
+                == Some(profile)
     }
 
     pub(crate) fn matches(
@@ -186,3 +196,6 @@ impl<'a> ValidationIndex<'a> {
         .is_some()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -2538,6 +2538,12 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
+                            |ordinal| {
+                                thicken_record_types
+                                    .get(&(token, ordinal))?
+                                    .as_ref()
+                                    .copied()
+                            },
                         )
                     })
                 });

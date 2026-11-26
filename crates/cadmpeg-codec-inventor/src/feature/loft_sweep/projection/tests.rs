@@ -117,6 +117,7 @@ fn unresolved_loft_section_scalars_emit_the_pinned_native_loss() {
         &label,
         &index,
         FeatureFamily::Loft,
+        |_| None,
         &mut losses
     )
     .is_none());

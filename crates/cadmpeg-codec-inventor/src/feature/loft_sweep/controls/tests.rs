@@ -580,3 +580,73 @@ fn surface_definition_is_the_unguided_new_body_sheet_loft() {
         assert!(!matches_surface_definition(&changed));
     }
 }
+
+#[test]
+fn a_solid_loft_with_a_bad_source_value_keeps_its_section_record_reason() {
+    let mut f = Fixture::new();
+    f.properties[6] = edited(&f.properties[6], |p| {
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 2;
+    });
+    assert_eq!(f.admitted(), Err(NativeReason::SectionRecord));
+    // The reason holds whatever later section check also fails.
+    f.properties[8] = edited(&f.properties[8], |p| {
+        let PmDcFeaturePropertyKind::Enumeration { value, .. } = &mut p.kind else {
+            panic!("condition");
+        };
+        *value = 1;
+    });
+    assert_eq!(f.admitted(), Err(NativeReason::SectionRecord));
+}
+
+#[test]
+fn the_face_loop_participant_is_the_other_participant_with_its_record_type() {
+    use crate::feature::loft_sweep::slots::SURFACE_LOFT_CLASS;
+    use crate::feature::tests::test_label;
+    let participant = type_id_string(FACE_LOOP_PARTICIPANT_TYPE);
+    let other = type_id_string(SECTION_TYPE);
+    // Participant values are record ordinals plus one.
+    let label = test_label(20, 1, SURFACE_LOFT_CLASS, &[51, 52]);
+    let typed = |ordinal: u32| match ordinal {
+        51 => Some(participant.as_str()),
+        50 => Some(other.as_str()),
+        _ => None,
+    };
+    assert!(face_loop_participant(&label, 50, typed));
+    // The sketch participant is the first one here: it is not the loop.
+    assert!(!face_loop_participant(&label, 51, typed));
+    assert!(!face_loop_participant(&label, 49, typed));
+    assert!(!face_loop_participant(&label, 50, |_| None));
+    let alone = test_label(20, 1, SURFACE_LOFT_CLASS, &[51]);
+    assert!(!face_loop_participant(&alone, 50, typed));
+    let twice = test_label(20, 1, SURFACE_LOFT_CLASS, &[51, 51]);
+    assert!(!face_loop_participant(&twice, 50, typed));
+}
+
+#[test]
+fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
+    use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    let mut base = serde_json::to_value(positional_definition()).expect("definition");
+    base["value"]["value"]["solid"] = serde_json::json!(false);
+    let surface: FeatureDefinition = serde_json::from_value(base.clone()).expect("surface loft");
+    let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = &surface else {
+        panic!("loft");
+    };
+    // The sketch sections of the positional definition are resolved.
+    assert!(!has_native_section(&surface));
+    let mut native = sections.clone();
+    native[0] = LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::native(
+        "record".to_owned(),
+    )));
+    let mut with_native = base.clone();
+    with_native["value"]["value"]["sections"] = serde_json::to_value(&native).expect("sections");
+    let with_native: FeatureDefinition = serde_json::from_value(with_native).expect("loft");
+    assert!(has_native_section(&with_native));
+    // The solid loft keeps its own accounting.
+    let mut solid = serde_json::to_value(&with_native).expect("definition");
+    solid["value"]["value"]["solid"] = serde_json::json!(true);
+    let solid: FeatureDefinition = serde_json::from_value(solid).expect("solid loft");
+    assert!(!has_native_section(&solid));
+}

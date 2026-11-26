@@ -20,12 +20,13 @@ pub(super) mod evidence;
 
 use super::controls::{self, NativeReason};
 
-pub(in crate::feature) fn project(
+pub(in crate::feature) fn project<'a>(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     family: FeatureFamily,
+    type_at: impl Fn(u32) -> Option<&'a str>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let operation = match family {
@@ -44,7 +45,7 @@ pub(in crate::feature) fn project(
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
-        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index) {
+        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, type_at) {
             Ok(operation) => operation,
             Err(_) => return None,
         },
@@ -141,13 +142,16 @@ fn section_parameter<'a>(
 }
 
 /// A positional surface loft: one sketch-wire section and one face-loop
-/// section. The sketch section resolves to the profile regions of its
-/// consumed sketch. The face-loop section stays a native reference to its
-/// section record.
-fn surface_loft(
+/// section. The sketch section selects the whole single closed profile of its
+/// consumed sketch, so that a validator recomputes it from the sketch alone.
+/// The face-loop section stays a native reference to its section record. The
+/// second label participant has the face-loop participant type, and the two
+/// sections select different wires.
+fn surface_loft<'a>(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
+    type_at: impl Fn(u32) -> Option<&'a str>,
 ) -> Result<FeatureOperation, NativeReason> {
     let token = source.identity.segment_token.as_str();
     let admitted = controls::surface_sections(
@@ -159,7 +163,7 @@ fn surface_loft(
     let [(ordinal, sketch)] = sketches.as_slice() else {
         return Err(NativeReason::Profile);
     };
-    if label.participants.references().len() != 2 {
+    if !controls::face_loop_participant(label, *ordinal, type_at) {
         return Err(NativeReason::Profile);
     }
     let sketch_link = admitted
@@ -172,13 +176,19 @@ fn surface_loft(
         .entity_link
         .record_ordinal()
         .ok_or(NativeReason::Profile)?;
+    if sketch_link == loop_link {
+        return Err(NativeReason::Profile);
+    }
     let profile = index
         .profiles
         .regions(token, *ordinal, sketch, &[sketch_link])
         .ok_or(NativeReason::Profile)?;
+    if index.profiles.whole_sketch(token, *ordinal, sketch) != Some(profile.clone()) {
+        return Err(NativeReason::Profile);
+    }
     index
         .profiles
-        .face_loop_edges(token, loop_link)
+        .numbered_edge_count(token, loop_link)
         .ok_or(NativeReason::Profile)?;
     let section = resolve_property(token, admitted.face_loop.record.index(), index)
         .ok_or(NativeReason::SectionRecord)?;
