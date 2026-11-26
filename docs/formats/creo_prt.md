@@ -6970,7 +6970,11 @@ constraints.
 A row whose frame is not a proper rigid placement is given up by the id of
 the occurrence that it places. When a row does not match the row grammar, the
 reader gives up the bytes from that row to the end of the section as a
-`component-rows` part.
+`component-rows` part. When a `NeuAsmSld` section holds a `members` field
+whose table the reader does not transfer, the reader gives up the bytes from
+that field to the end of the section as a `component-table` part. This covers
+a field that opens no table array, a section with more than one `members`
+field, and a table in each of two or more `NeuAsmSld` sections.
 
 ### 9.1 Frame slots
 

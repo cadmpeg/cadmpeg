@@ -252,6 +252,48 @@ fn decode_reports_missing_declared_section_segment_rows() {
 }
 
 #[test]
+fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() {
+    let mut payload =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let table = data
+        .windows(b"segtab_ptr\0".len())
+        .position(|window| window == b"segtab_ptr\0")
+        .expect("the segment table label");
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+        .expect("a permissive decode reports the missing rows");
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(
+        charges,
+        [format!(
+            "record creo:featdefs:segment_rows#{table} stream=\"\" offset={table} given up: \
+             {}: 1 of the 2 row(s) the table declares did not decode; dropped=[]",
+            CreoLossCode::SectionSegmentMissing.kind()
+        )]
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect_err("a pinned decode refuses the missing rows");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().message, charges[0]);
+}
+
+#[test]
 fn decode_counts_resolved_section_segment_geometry() {
     let mut payload = b"feat_defs_40\0var_arr\0\xf8\x04\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);

@@ -191,50 +191,74 @@ fn record_table_stop(table: &MemberTable, transfer_losses: &mut Vec<LossNote>) {
     }
 }
 
-/// Gives up the component rows from the first row the grammar does not
-/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part.
-/// The decode retains no other copy of those bytes.
-pub(super) fn give_up_unread_rows(
+/// Gives up each component table of a `NeuAsmSld` section that the decode
+/// reads and does not transfer, from its `members` field to the end of the
+/// section, as a `component-table` part. For the transferred table, gives up
+/// the rows from the first row the grammar does not admit to the end of the
+/// section, as a `component-rows` part. The decode retains no other copy of
+/// those bytes.
+pub(super) fn give_up_unread_tables(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Option<GivenUpPart>, CodecError> {
-    let Some(stop) = scan
-        .assembly
-        .as_ref()
-        .and_then(|table| table.stop.as_ref())
-        .filter(|stop| stop.row_unread)
-    else {
-        return Ok(None);
-    };
-    let Some(bytes) = scan
-        .framing
-        .sections
-        .iter()
-        .find(|section| {
-            section.name() == "NeuAsmSld"
-                && section.offset() <= stop.offset
-                && stop.offset < section.end()
-        })
-        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))
-    else {
-        return Ok(None);
-    };
-    let part = Part::at(
-        "creo",
-        "component-rows",
-        u64_from_index(stop.offset),
-        bytes,
-        [ArenaClass::Model],
-    );
-    ctx.give_up_part(
-        part,
-        CodecError::malformed(format_args!(
-            "{}: {}",
-            CreoLossCode::AssemblyMemberTableIncomplete.kind(),
-            stop.reason
-        )),
-    )
-    .map(Some)
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut given_up = Vec::new();
+    for section in &scan.framing.sections {
+        if section.name() != "NeuAsmSld" {
+            continue;
+        }
+        let Some(region) = crate::container::section_region(&scan.framing.data, section) else {
+            continue;
+        };
+        let fields = crate::assembly::member_fields(region).collect::<Vec<_>>();
+        let Some(&first) = fields.first() else {
+            continue;
+        };
+        let field = section.offset() + first;
+        let (kind, offset, reason) =
+            match scan.assembly.as_ref().filter(|table| table.offset == field) {
+                Some(table) => match table
+                    .stop
+                    .as_ref()
+                    .filter(|stop| stop.row_unread && stop.offset < section.end())
+                {
+                    Some(stop) => ("component-rows", stop.offset, stop.reason),
+                    None => continue,
+                },
+                None if fields.len() > 1 => (
+                    "component-table",
+                    field,
+                    "the section holds more than one members field",
+                ),
+                None if crate::assembly::member_table(region).is_some() => (
+                    "component-table",
+                    field,
+                    "another NeuAsmSld section also holds a component table",
+                ),
+                None => (
+                    "component-table",
+                    field,
+                    "the members field opens no component table array",
+                ),
+            };
+        let Some(bytes) = scan.framing.data.get(offset..section.end()) else {
+            continue;
+        };
+        let part = Part::at(
+            "creo",
+            kind,
+            u64_from_index(offset),
+            bytes,
+            [ArenaClass::Model],
+        );
+        given_up.push(ctx.give_up_part(
+            part,
+            CodecError::malformed(format_args!(
+                "{}: {reason}",
+                CreoLossCode::AssemblyMemberTableIncomplete.kind()
+            )),
+        )?);
+    }
+    Ok(given_up)
 }
 
 /// The native address of a component row.

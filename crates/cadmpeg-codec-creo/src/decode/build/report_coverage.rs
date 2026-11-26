@@ -1,12 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Coverage-drop and incomplete-feature loss notes.
 
+use std::collections::BTreeMap;
+
+use crate::container::ContainerScan;
+use crate::feature::definitions::SolverSubtable;
 use crate::loss::CreoLossCode;
 
 use super::super::coverage::{constraint_kind_breakdown, surface_family, SURFACE_KINDS};
+use super::super::feature_history::dimensions::feature_relation_table_expected_rows;
+use super::super::sketch_ids::{feature_definition_has_sketch_design, model_sketch_id};
+use super::super::sketch_transfer::transfer::expected_segment_rows;
 use super::report_losses::{coverage_count, push_report_loss};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::ids::{Identity, IdentityNamespace};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::SourceProvenance;
 
 struct CountBreakdown<'a>(&'a [(&'a str, usize)]);
 
@@ -25,6 +35,122 @@ impl std::fmt::Display for CountBreakdown<'_> {
         }
         Ok(())
     }
+}
+
+/// One feature table whose declared row count exceeds its decoded rows.
+struct UnreadRows {
+    code: CreoLossCode,
+    offset: usize,
+    expected: usize,
+    decoded: usize,
+}
+
+/// Gives up the rows of each feature table that the reader stops short of
+/// its declared count. The rows from the first one the grammar refuses have
+/// no framed end and hold their ids in the bytes not read, so one charge per
+/// table names them by the table's offset and states how many rows it lost.
+/// The scope of each table kind is the scope of its count note.
+pub(super) fn push_unread_section_rows(
+    losses: &mut Vec<LossNote>,
+    scan: &ContainerScan,
+) -> Result<(), CodecError> {
+    let mut tables = BTreeMap::<Identity, UnreadRows>::new();
+    let mut add = |namespace: &IdentityNamespace, rows: UnreadRows| {
+        if rows.decoded < rows.expected {
+            let id = crate::identity::compose_checked::<Identity>(namespace, rows.offset)?;
+            tables.entry(id).or_insert(rows);
+        }
+        Ok::<_, CodecError>(())
+    };
+    for definition in &scan.features.definitions {
+        if let Some(table) = &definition.segments {
+            if feature_definition_has_sketch_design(definition)
+                && model_sketch_id(scan, definition).is_some()
+            {
+                add(
+                    &crate::identity::FEATDEFS_SEGMENT_ROWS,
+                    UnreadRows {
+                        code: CreoLossCode::SectionSegmentMissing,
+                        offset: table.offset,
+                        expected: expected_segment_rows(definition.identity.id(), table)?,
+                        decoded: table.rows.len(),
+                    },
+                )?;
+            }
+        }
+        if let Some(relations) = &definition.relations {
+            if let Some(expected) = feature_relation_table_expected_rows(relations) {
+                add(
+                    &crate::identity::FEATDEFS_RELATION_ROWS,
+                    UnreadRows {
+                        code: CreoLossCode::SectionRelationMissing,
+                        offset: relations.offset,
+                        expected,
+                        decoded: relations.rows.len(),
+                    },
+                )?;
+            }
+            for (namespace, code, table) in [
+                (
+                    &crate::identity::FEATDEFS_INCIDENCE_ROWS,
+                    CreoLossCode::SectionIncidenceMissing,
+                    relations.skamps.as_ref().map(solver_rows),
+                ),
+                (
+                    &crate::identity::FEATDEFS_RELATION_JOIN_ROWS,
+                    CreoLossCode::SectionRelationJoinMissing,
+                    relations.triples.as_ref().map(solver_rows),
+                ),
+            ] {
+                if let Some(Some((offset, expected, decoded))) = table {
+                    add(
+                        namespace,
+                        UnreadRows {
+                            code,
+                            offset,
+                            expected,
+                            decoded,
+                        },
+                    )?;
+                }
+            }
+        }
+        if let Some(variables) = &definition.variables {
+            add(
+                &crate::identity::FEATDEFS_SOLVER_VARIABLE_ROWS,
+                UnreadRows {
+                    code: CreoLossCode::SectionSolverVariableMissing,
+                    offset: variables.offset,
+                    expected: cadmpeg_core::decode::index_from_u32(variables.declared_count),
+                    decoded: variables.rows.len(),
+                },
+            )?;
+        }
+    }
+    losses.extend(tables.into_iter().map(|(id, rows)| {
+        GivenUpRecord::new(
+            id,
+            format_args!(
+                "{}: {} of the {} row(s) the table declares did not decode",
+                rows.code.kind(),
+                rows.expected - rows.decoded,
+                rows.expected
+            ),
+        )
+        .at(SourceProvenance::root(
+            "creo",
+            cadmpeg_core::decode::u64_from_index(rows.offset),
+        ))
+        .loss()
+    }));
+    Ok(())
+}
+
+/// The offset, declared count and decoded count of a declared solver table.
+fn solver_rows<T>(table: &SolverSubtable<T>) -> Option<(usize, usize, usize)> {
+    let header = table.header()?;
+    let expected = cadmpeg_core::decode::index_from_u32(header.declared_count);
+    Some((header.offset, expected, expected - table.missing_rows()))
 }
 
 pub(super) fn push_coverage_drop_losses(
@@ -462,8 +588,87 @@ pub(super) fn push_coverage_drop_losses(
 
 #[cfg(test)]
 mod tests {
-    use super::push_coverage_drop_losses;
+    use super::{push_coverage_drop_losses, push_unread_section_rows};
+    use crate::feature::definitions::{
+        DefinitionIdentity, FeatureDefinition, FeatureRelationTable, FeatureSolverTableHeader,
+        FeatureVariableTable, SolverSubtable,
+    };
     use cadmpeg_core::CodecError;
+
+    fn solver_table<T>(declared_count: u32, offset: usize) -> SolverSubtable<T> {
+        SolverSubtable::Declared {
+            header: FeatureSolverTableHeader {
+                declared_count,
+                entity_ref: 0,
+                offset,
+            },
+            rows: Vec::new(),
+        }
+    }
+
+    fn definition_with_short_tables() -> FeatureDefinition {
+        FeatureDefinition {
+            identity: DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(42),
+                owner_feature_id: Some(42),
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 3,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 300,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(FeatureRelationTable {
+                declared_count: 5,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: Some(solver_table(2, 200)),
+                triples: Some(solver_table(0, 250)),
+                offset: 100,
+            }),
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn each_short_feature_table_is_given_up_once() {
+        let mut scan = crate::test_support::empty_container_scan();
+        // A definition read twice at one offset holds one set of tables.
+        scan.features.definitions = vec![
+            definition_with_short_tables(),
+            definition_with_short_tables(),
+        ];
+        let mut losses = Vec::new();
+        push_unread_section_rows(&mut losses, &scan).expect("charges");
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
+        let messages: Vec<_> = losses.iter().map(|loss| loss.message.as_str()).collect();
+        assert_eq!(
+            messages,
+            [
+                "record creo:featdefs:incidence_rows#200 stream=\"\" offset=200 given up: \
+                 creo/section.incidence-missing: 2 of the 2 row(s) the table declares did not \
+                 decode; dropped=[]",
+                "record creo:featdefs:relation_rows#100 stream=\"\" offset=100 given up: \
+                 creo/section.relation-missing: 3 of the 3 row(s) the table declares did not \
+                 decode; dropped=[]",
+                "record creo:featdefs:solver_variable_rows#300 stream=\"\" offset=300 given up: \
+                 creo/section.solver-variable-missing: 3 of the 3 row(s) the table declares did \
+                 not decode; dropped=[]",
+            ]
+        );
+    }
 
     #[test]
     fn driver_coverage_refuses_transferred_count_above_decoded() {

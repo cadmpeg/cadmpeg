@@ -167,12 +167,17 @@ const ROW_CONTINUES: u8 = 0xe3;
 /// Terminator after the final row.
 const TABLE_ENDS: u8 = 0xf4;
 
-fn unique_field(payload: &[u8]) -> Option<usize> {
-    let mut matches = payload
+/// The offset of each `members` field in `payload`.
+pub(crate) fn member_fields(payload: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    payload
         .windows(MEMBERS_FIELD.len())
         .enumerate()
         .filter(|(_, window)| *window == MEMBERS_FIELD)
-        .map(|(offset, _)| offset);
+        .map(|(offset, _)| offset)
+}
+
+fn unique_field(payload: &[u8]) -> Option<usize> {
+    let mut matches = member_fields(payload);
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
 }

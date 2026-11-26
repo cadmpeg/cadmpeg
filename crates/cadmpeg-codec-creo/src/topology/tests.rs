@@ -706,6 +706,60 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
 }
 
 #[test]
+fn faces_withheld_by_the_component_gate_are_given_up() {
+    let admitted = CreoCodec
+        .decode(
+            &mut Cursor::new(closed_plane_intersection_data(None)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+    let faces: BTreeSet<String> = admitted
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.to_string())
+        .collect();
+    assert!(!faces.is_empty());
+
+    let data = closed_plane_intersection_data(Some(b"n_bodies\0\x02"));
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+        .expect("a permissive decode reports the withheld faces");
+    assert!(result.ir().geometry.faces.is_empty());
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    let charged: BTreeSet<String> = charges
+        .iter()
+        .filter_map(|message| message.split_whitespace().nth(1).map(str::to_owned))
+        .collect();
+    assert_eq!(charged, faces, "{charges:#?}");
+    assert_eq!(charges.len(), faces.len(), "{charges:#?}");
+    assert!(
+        charges.iter().all(|message| message.ends_with(
+            "the component admission gate withheld the face: 1 admitted component(s), \
+             selected body count 2; selected body count mismatch; dropped=[]"
+        )),
+        "{charges:#?}"
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect_err("a pinned decode refuses the withheld faces");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert!(charges.contains(&rejection.loss().message));
+}
+
+#[test]
 fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces() {
     let a = HalfEdgeId {
         curve_id: 1,

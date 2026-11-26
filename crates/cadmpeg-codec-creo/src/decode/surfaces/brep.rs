@@ -228,6 +228,9 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) empty_component_count: usize,
     pub(in super::super) admitted_component_count: usize,
     pub(in super::super) selected_body_count: Option<usize>,
+    /// The id each face of a component the admission gate withholds would
+    /// hold as a face.
+    pub(in super::super) gated_faces: Vec<FaceId>,
 }
 
 impl BrepTransferDiagnostics {
@@ -3067,6 +3070,13 @@ pub(in super::super) fn transfer_native_brep(
         || diagnostics.legacy_body_ownership_ambiguous
         || diagnostics.empty_component_count != 0
     {
+        diagnostics.gated_faces = body_components
+            .iter()
+            .flat_map(|component| &component.faces)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|face| crate::identity::compose_checked(&crate::identity::VISIBGEOM_FACE, face))
+            .collect::<Result<_, _>>()?;
         return Ok(NativeBrepTransferSummary {
             topological_point_count: solved_point_count,
             diagnostics,

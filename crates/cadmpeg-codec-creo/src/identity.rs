@@ -190,6 +190,17 @@ pub(crate) const FEATDEFS_SAVED_DUMMY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "saved_dummy");
 pub(crate) const FEATDEFS_SECTION_CURVE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "section_curve");
+/// The undecoded rows of a feature table, keyed by the table's offset.
+pub(crate) const FEATDEFS_SEGMENT_ROWS: IdentityNamespace =
+    cadmpeg_ir::identity_namespace!("creo", "featdefs", "segment_rows");
+pub(crate) const FEATDEFS_RELATION_ROWS: IdentityNamespace =
+    cadmpeg_ir::identity_namespace!("creo", "featdefs", "relation_rows");
+pub(crate) const FEATDEFS_INCIDENCE_ROWS: IdentityNamespace =
+    cadmpeg_ir::identity_namespace!("creo", "featdefs", "incidence_rows");
+pub(crate) const FEATDEFS_RELATION_JOIN_ROWS: IdentityNamespace =
+    cadmpeg_ir::identity_namespace!("creo", "featdefs", "relation_join_rows");
+pub(crate) const FEATDEFS_SOLVER_VARIABLE_ROWS: IdentityNamespace =
+    cadmpeg_ir::identity_namespace!("creo", "featdefs", "solver_variable_rows");
 
 pub(crate) const MDL_REF_INFO_ARC_Z: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "mdl_ref_info", "arc_z");
