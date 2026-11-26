@@ -254,3 +254,69 @@ fn a_projected_fillet_with_only_listed_edge_sets_reports_no_omission_note() {
     let (inventory, feature) = projected_two_set_fillet(&ctx, &[&[7]], &[&[8]]);
     assert_eq!(omission_notes(&inventory, feature), 0);
 }
+
+/// Replaces the selection of the first fillet group with a resolved one.
+fn resolve_first_group(inventory: &FeatureInventory, feature: &mut Feature) {
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    let selection = EdgeSelection::historical(
+        crate::feature::edge_selection::historical::state_id(&inventory.features[0])
+            .expect("state"),
+        vec![crate::feature::edge_selection::historical::edge_id("test", 7).expect("edge")],
+        "test-collection".to_owned(),
+    )
+    .expect("selection");
+    feature.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition {
+            groups.iter_mut().next().expect("group").edges = selection;
+        }
+    });
+}
+
+fn note_count(notes: &[cadmpeg_ir::report::loss::LossNote], code: &str) -> usize {
+    notes
+        .iter()
+        .filter(|note| note.code.local_code() == code)
+        .count()
+}
+
+#[test]
+fn a_resolved_fillet_with_empty_items_beside_listed_items_reports_one_item_omission_note() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (inventory, mut feature) = projected_two_set_fillet(&ctx, &[&[7], &[]], &[&[8]]);
+    resolve_first_group(&inventory, &mut feature);
+    let notes = native_losses(&inventory, &[feature]);
+    assert_eq!(
+        note_count(&notes, "feature.fillet-empty-edge-items-omitted"),
+        1
+    );
+    assert_eq!(
+        note_count(&notes, "feature.fillet-empty-edge-sets-omitted"),
+        0
+    );
+    let (inventory, mut feature) = projected_two_set_fillet(&ctx, &[&[7], &[]], &[&[]]);
+    resolve_first_group(&inventory, &mut feature);
+    let notes = native_losses(&inventory, &[feature]);
+    assert_eq!(
+        note_count(&notes, "feature.fillet-empty-edge-items-omitted"),
+        1
+    );
+    assert_eq!(
+        note_count(&notes, "feature.fillet-empty-edge-sets-omitted"),
+        1
+    );
+}
+
+#[test]
+fn a_native_selection_keeps_its_empty_items_and_reports_no_item_omission_note() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (inventory, feature) = projected_two_set_fillet(&ctx, &[&[7], &[]], &[&[8]]);
+    let notes = native_losses(&inventory, &[feature]);
+    assert_eq!(
+        note_count(&notes, "feature.fillet-empty-edge-items-omitted"),
+        0
+    );
+}

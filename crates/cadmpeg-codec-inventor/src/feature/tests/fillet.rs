@@ -146,7 +146,18 @@ fn projects_generated_fillet_and_chamfer() {
         );
         for class in [FILLET_CLASS_ID, crate::feature::CORNER_ROUND_CLASS_ID] {
             let label = test_label(100, 7, class, &[]);
-            assert!(project_fillet(&ctx, &fillet, &label, &index).is_none());
+            let projected = project_fillet(&ctx, &fillet, &label, &index);
+            // An empty item selects no edge: a collection of only empty items
+            // adds no blend, and one that also lists an item keeps the fillet.
+            assert_eq!(projected.is_some(), members.len() == 2);
+            if let Some(projected) = projected {
+                let (feature, _) = projected.expect("fillet projection");
+                assert!(matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+                        if groups.len() == 1
+                ));
+            }
         }
     }
 
