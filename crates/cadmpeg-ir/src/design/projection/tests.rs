@@ -193,6 +193,19 @@ fn restated(
     crate::provenance::Exactness,
     Vec<(String, crate::provenance::Exactness)>,
 )> {
+    restated_with(RESTATEMENT, entities, marks, ids)
+}
+
+/// [`restated`] through `restatement`.
+fn restated_with(
+    restatement: super::Restatement,
+    entities: &[(&str, crate::provenance::Exactness)],
+    marks: &[(&str, &str, crate::provenance::Exactness)],
+    ids: &[&str],
+) -> Vec<(
+    crate::provenance::Exactness,
+    Vec<(String, crate::provenance::Exactness)>,
+)> {
     let ir = restated_document();
     let mut annotations = crate::AnnotationBuilder::new();
     for (id, exactness) in entities {
@@ -201,7 +214,7 @@ fn restated(
     for (id, field, exactness) in marks {
         annotations.field_exactness(id, *field, *exactness).unwrap();
     }
-    super::restate_exactness(&ir, &mut annotations, RESTATEMENT).unwrap();
+    super::restate_exactness(&ir, &mut annotations, restatement).unwrap();
     let annotations = annotations.build();
     ids.iter()
         .map(|id| {
@@ -365,29 +378,40 @@ fn a_design_sub_path_mark_is_kept_at_no_more_than_its_field() {
     );
 }
 
-/// A lowered path takes the less exact of the given exactness and the
-/// exactness its nearest marked enclosing field, or the entity, gives it.
+/// A mark under a name both records share counts toward the design field of
+/// that name, at field level, also where the codec builds the field from no
+/// model field of that name. A mark stated on the design record before the
+/// restatement is not lost.
 #[test]
-fn lowering_a_path_never_raises_its_exactness() {
-    use crate::provenance::Exactness::{Derived, Inferred, Unknown};
-    let mut annotations = crate::AnnotationBuilder::new();
-    super::lower_exactness(&mut annotations, FILLET, "definition", Derived).unwrap();
-    super::lower_exactness(&mut annotations, FILLET, "definition.side", Inferred).unwrap();
-    super::lower_exactness(&mut annotations, FILLET, "definition.side", Derived).unwrap();
-    super::lower_exactness(&mut annotations, FILLET, "definition.span", Derived).unwrap();
-    annotations.exactness(WIDTH, Unknown);
-    super::lower_exactness(&mut annotations, WIDTH, "kind", Inferred).unwrap();
-    let annotations = annotations.build();
-    let marks = |id: &str| {
-        annotations.exactness()[id]
-            .fields()
-            .iter()
-            .map(|(field, exactness)| (field.to_string(), *exactness))
-            .collect::<Vec<_>>()
+fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    fn without_definition(field: FeatureField) -> &'static [ModelFeatureField] {
+        match field {
+            FeatureField::Definition => &[],
+            other => feature_inputs(other),
+        }
+    }
+    let restatement = super::Restatement {
+        feature: without_definition,
+        parameter: parameter_inputs,
     };
-    assert_eq!(
-        marks(FILLET),
-        fields(&[("definition", Derived), ("definition.side", Inferred)])
-    );
-    assert!(marks(WIDTH).is_empty());
+    let [fillet] = <[_; 1]>::try_from(restated_with(
+        restatement,
+        &[],
+        &[
+            (FILLET, "definition.operation.value", Inferred),
+            (FILLET, "dependencies", Derived),
+        ],
+        &[FILLET],
+    ))
+    .unwrap();
+    assert_eq!(fillet, (ByteExact, fields(&[("definition", Inferred)])));
+    let [fillet] = <[_; 1]>::try_from(restated_with(
+        restatement,
+        &[],
+        &[(FILLET, "definition", Inferred)],
+        &[FILLET],
+    ))
+    .unwrap();
+    assert_eq!(fillet, (ByteExact, fields(&[("definition", Inferred)])));
 }

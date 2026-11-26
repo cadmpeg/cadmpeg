@@ -103,13 +103,14 @@ fn sub_marks<'n>(
 /// The field overrides of `note` on a design record whose fields are
 /// `stated`, built from the model fields `inputs` names.
 ///
-/// A key whose first component names a model field is a model mark. Another
-/// key whose first component names a design field is the design record's own.
 /// A model field counts at the least exact of its mark (else the entity
 /// exactness) and the marks on its sub-paths. A stated design field takes the
-/// least exact of its model fields and its own mark; an own mark on a
-/// sub-path is kept at no more than its field. Marks on a design field the
-/// record does not state, and model marks no stated field reads, leave.
+/// least exact of its model fields and the mark on its own name. Where that
+/// name is also a model field, the marks on its sub-paths fold into the field
+/// too, since the two records can shape the field differently; under a name
+/// only the design record has, a sub-path mark is kept at no more than its
+/// field. Marks on a design field the record does not state, and model marks
+/// no stated field reads, leave.
 fn restated_fields<D: Field, M: Field>(
     note: &ExactnessNote,
     stated: impl IntoIterator<Item = (D, bool)>,
@@ -129,17 +130,22 @@ fn restated_fields<D: Field, M: Field>(
             continue;
         }
         let key = field.key();
-        let own = M::parse(key).is_none();
+        let shared = M::parse(key).is_some();
+        let own = note.fields().get(key).copied().into_iter().chain(
+            sub_marks(note, key)
+                .filter(|_| shared)
+                .map(|(_, exactness)| exactness),
+        );
         let exactness = inputs(field)
             .iter()
             .map(input)
-            .chain(own.then(|| note.fields().get(key).copied()).flatten())
+            .chain(own)
             .reduce(least_exact)
             .unwrap_or(entity);
         if exactness != entity {
             overrides.push((key.to_owned(), exactness));
         }
-        if own {
+        if !shared {
             overrides.extend(
                 sub_marks(note, key)
                     .map(|(path, mark)| (path.to_owned(), least_exact(mark, exactness))),
@@ -206,38 +212,6 @@ pub fn restate_exactness(
         for (field, exactness) in overrides {
             annotations.field_exactness(id, field, exactness)?;
         }
-    }
-    Ok(())
-}
-
-/// States `exactness` on `path` of record `id` where it is less exact than
-/// the exactness the note gives `path`: the mark on `path` or on its nearest
-/// enclosing field, else the entity exactness.
-///
-/// # Errors
-///
-/// A resource refusal while the override is stated.
-pub fn lower_exactness(
-    annotations: &mut AnnotationBuilder,
-    id: &str,
-    path: &str,
-    exactness: Exactness,
-) -> Result<(), CodecError> {
-    let current =
-        annotations
-            .annotations()
-            .exactness()
-            .get(id)
-            .map_or(Exactness::ByteExact, |note| {
-                std::iter::successors(Some(path), |path| {
-                    path.rsplit_once('.').map(|(head, _)| head)
-                })
-                .find_map(|prefix| note.fields().get(prefix).copied())
-                .unwrap_or_else(|| note.entity())
-            });
-    let lowered = least_exact(current, exactness);
-    if lowered != current {
-        annotations.field_exactness(id, path, lowered)?;
     }
     Ok(())
 }

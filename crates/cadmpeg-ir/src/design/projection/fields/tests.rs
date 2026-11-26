@@ -71,3 +71,48 @@ fn a_model_feature_serializes_with_the_keys_of_its_field_enum() {
     field_keys.sort();
     assert_eq!(field_keys, wire_keys);
 }
+
+#[test]
+fn a_model_parameter_serializes_with_the_keys_of_its_field_enum() {
+    use crate::features::parameters::{
+        DesignParameter, DimensionDisplay, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+    };
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{FeatureId, ParameterId};
+    let parameter = DesignParameter {
+        product_definition: Some(
+            crate::ids::ProductDefinitionId::mint("test:model:product-definition#part").unwrap(),
+        ),
+        id: ParameterId::mint("test:model:parameter#width").unwrap(),
+        owner: Some(FeatureId::mint("test:model:feature#base").unwrap()),
+        ordinal: 0,
+        name: "width".to_owned(),
+        expression: "1".to_owned(),
+        display: Some(DimensionDisplay::Diameter),
+        value: Some(ParameterValue::Integer(1)),
+        dependencies: DistinctMembers::default(),
+        properties: std::collections::BTreeMap::default(),
+        pmi: Some(ParameterPmi {
+            subtype: PmiDimensionSubtype::Linear,
+            precision: 0,
+            display_text: None,
+            basic: false,
+            inspection: false,
+            reference_only: false,
+            native_ref: "test:native#pmi".to_owned(),
+        }),
+        native_ref: Some("test:native#width".to_owned()),
+    };
+    let value = serde_json::to_value(&parameter).unwrap();
+    let mut wire_keys = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .filter(|key| key.as_str() != "id")
+        .cloned()
+        .collect::<Vec<_>>();
+    wire_keys.sort();
+    let mut field_keys = keys(super::ModelParameterField::ALL);
+    field_keys.sort();
+    assert_eq!(field_keys, wire_keys);
+}

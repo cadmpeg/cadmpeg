@@ -14,7 +14,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
-use cadmpeg_ir::design::projection::{lower_exactness, Restatement};
+use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
@@ -65,6 +65,9 @@ pub(crate) fn restate_exactness(
     ir: &CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    for id in parameters::defaulted_kinds(ir) {
+        annotations.field_exactness(id, "kind", cadmpeg_ir::Exactness::Inferred)?;
+    }
     cadmpeg_ir::design::projection::restate_exactness(
         ir,
         annotations,
@@ -72,14 +75,11 @@ pub(crate) fn restate_exactness(
             feature: feature_inputs,
             parameter: parameters::inputs,
         },
-    )?;
-    for id in parameters::defaulted_kinds(ir) {
-        lower_exactness(annotations, id, "kind", cadmpeg_ir::Exactness::Inferred)?;
-    }
-    Ok(())
+    )
 }
 
 /// The projection states no design feature.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
         FeatureField::Name

@@ -107,6 +107,7 @@ pub(super) const RESTATEMENT: Restatement = Restatement {
 
 /// The model feature fields [`project`] reads to build `field`: the
 /// operation reads the definition, the stored outputs and the source tag.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
         FeatureField::Suppressed => &[ModelFeatureField::Suppressed],

@@ -131,6 +131,7 @@ fn dropped_inputs<'a>(
 /// The model parameter fields [`project`] reads to build `field`. The kind
 /// is the signature's `value_type` property; a literal's tree is its stored
 /// value where the stored expression restates that value.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Name => &[ModelParameterField::Name],

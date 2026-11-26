@@ -37,20 +37,16 @@ fn resolves(record: &serde_json::Value, path: &str) -> bool {
         .is_some()
 }
 
-/// The thin extrusion's design definition is read from the source feature:
-/// derived. The model `definition`, `dependencies` and `outputs` describe
-/// the model record and leave. The source states no suppression, so the
-/// model's inferred `suppressed` restates as the design `suppressed`.
+/// The thin extrusion's design definition takes the derived `definition`
+/// mark of its feature; the model `dependencies` and `outputs` describe the
+/// model record and leave. The source states no suppression, so the design
+/// feature states none (§5.10), and the model's inferred `suppressed` leaves
+/// with it.
 #[test]
 fn stored_thin_design_feature_takes_the_exactness_of_its_model_feature() {
     let (fields, record) = plate(&stored_thin(true, false, false));
-    assert_eq!(
-        fields,
-        vec![
-            ("definition".to_owned(), Exactness::Derived),
-            ("suppressed".to_owned(), Exactness::Inferred),
-        ]
-    );
+    assert_eq!(fields, vec![("definition".to_owned(), Exactness::Derived)]);
+    assert!(record.get("suppressed").is_none(), "{record}");
     for (field, _) in &fields {
         let top = field.split('.').next().unwrap_or_default();
         assert!(
@@ -61,7 +57,9 @@ fn stored_thin_design_feature_takes_the_exactness_of_its_model_feature() {
 }
 
 /// A one-sided wall over a line whose stored interval is reversed takes its
-/// side from an unresolved convention (ONSHAPE-007): the side is inferred.
+/// side from an unresolved convention (ONSHAPE-007). The inferred side is a
+/// sub-path of `definition`, a name the model record shares, so it holds for
+/// the design `definition` as a whole.
 #[test]
 fn an_assumed_thin_side_is_inferred() {
     let bytes =
@@ -74,13 +72,6 @@ fn an_assumed_thin_side_is_inferred() {
             }
         });
     let (fields, record) = plate(&bytes);
-    assert_eq!(
-        fields,
-        vec![
-            ("definition".to_owned(), Exactness::Derived),
-            (SIDE.to_owned(), Exactness::Inferred),
-            ("suppressed".to_owned(), Exactness::Inferred),
-        ]
-    );
+    assert_eq!(fields, vec![("definition".to_owned(), Exactness::Inferred)]);
     assert!(resolves(&record, SIDE));
 }

@@ -971,7 +971,6 @@ fn annotate(
     assumed_sides: &std::collections::BTreeSet<String>,
 ) -> Result<(), Error> {
     use cadmpeg_ir::annotations::AnnotationBuilder;
-    use cadmpeg_ir::design::projection::lower_exactness;
     use cadmpeg_ir::Exactness;
     let mut annotations =
         AnnotationBuilder::resume(std::mem::take(&mut model.source_fidelity.annotations));
@@ -1060,27 +1059,30 @@ fn annotate(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
     for feature in &model.ir.design.features {
         let id = feature.id.as_str();
-        lower_exactness(&mut annotations, id, "definition", Exactness::Derived)?;
         if assumed_sides.contains(id) {
-            lower_exactness(&mut annotations, id, thin::SIDE, Exactness::Inferred)?;
+            annotations
+                .field_exactness(id, thin::SIDE, Exactness::Inferred)
+                .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
     model.source_fidelity.annotations = annotations.build();
     Ok(())
 }
 
 /// The model fields the decoder reads to build each design field. A design
-/// feature's definition is read from the source feature, and its exactness is
-/// stated in [`annotate`]; the decoder states no design parameter.
+/// feature's definition is read from the source feature, and takes the
+/// `definition` mark [`annotate`] states on every feature; the decoder states
+/// no design parameter.
 const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
     cadmpeg_ir::design::projection::Restatement {
         feature: feature_inputs,
         parameter: parameter_inputs,
     };
 
+#[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
         FeatureField::Name => &[ModelFeatureField::Name],
@@ -1093,6 +1095,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     }
 }
 
+#[deny(clippy::wildcard_enum_match_arm)]
 fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Scope

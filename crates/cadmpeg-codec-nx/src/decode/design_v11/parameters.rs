@@ -72,6 +72,7 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
 /// The model parameter fields [`project`] reads to build `field`. The
 /// declared unit is in `properties`; the names a formula resolves are those
 /// of the parameters with its owner.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Name => &[ModelParameterField::Name],
