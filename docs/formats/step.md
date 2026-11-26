@@ -1606,8 +1606,7 @@ within that root. When multiple distinct roots exist, every root scopes its
 shell, edge, and vertex identities by root instance; a root with multiple shell
 owners also scopes carriers by shell. Solid roots are `Solid` bodies and
 surface roots are `Sheet` bodies. A nonempty `REPRESENTATION_ITEM.name` of a
-root is the name of its body, and the writer writes a body's name as the name
-of each solid or shell-based surface model of the body. This preserves independent roots without
+root is the name of its body. This preserves independent roots without
 claiming one global CADIR identity.
 
 Sheet and wire representations commit each independently resolvable shell or
