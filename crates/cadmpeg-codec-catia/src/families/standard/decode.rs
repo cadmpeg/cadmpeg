@@ -1936,13 +1936,7 @@ fn try_decode_standard_populations(
         let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
         for mut loss in output.report.losses {
             if loss.code == unreadable {
-                loss.message = loss
-                    .message
-                    .split(' ')
-                    .map(|token| rescope_standard_id(token, &scope))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                cadmpeg_ir::unknown::part::map_give_up(&mut loss, |id| {
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
                     Ok(rescope_standard_id(id, &scope))
                 })?;
                 merged.report.losses.push(loss);

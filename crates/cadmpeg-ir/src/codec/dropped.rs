@@ -76,10 +76,7 @@ impl DecodeResult {
                 .or_default()
                 .push(record.clone());
         }
-        let mut own = charges
-            .iter()
-            .map(|charge| charge.named.clone())
-            .collect::<BTreeSet<_>>();
+        // The charge that names each record or drops it.
         let mut owner = BTreeMap::<String, usize>::new();
         for (index, charge) in charges.iter().enumerate() {
             for id in std::iter::once(&charge.named).chain(&charge.dropped) {
@@ -87,7 +84,7 @@ impl DecodeResult {
             }
         }
         for index in 0..charges.len() {
-            reach(&mut charges, index, &needed_by, &own, &mut owner);
+            reach(&mut charges, index, &needed_by, &mut owner);
         }
         // A record whose need no give-up reaches is given up for that need,
         // from the first such record whose own need is no such record.
@@ -95,15 +92,10 @@ impl DecodeResult {
             .iter()
             .map(|(record, _)| record.as_str())
             .collect::<BTreeSet<_>>();
-        let unreached = |record: &str, owner: &BTreeMap<String, usize>, own: &BTreeSet<String>| {
-            !owner.contains_key(record) && !own.contains(record)
-        };
         for pass in [false, true] {
             for (record, needs) in &edges {
-                if !unreached(record, &owner, &own)
-                    || (!pass
-                        && dependents.contains(needs.as_str())
-                        && unreached(needs, &owner, &own))
+                if owner.contains_key(record)
+                    || (!pass && dependents.contains(needs.as_str()) && !owner.contains_key(needs))
                 {
                     continue;
                 }
@@ -115,7 +107,6 @@ impl DecodeResult {
                     )
                     .loss(),
                 );
-                own.insert(record.clone());
                 owner.insert(record.clone(), charges.len());
                 charges.push(Charge {
                     at: self.report.losses.len() - 1,
@@ -126,7 +117,7 @@ impl DecodeResult {
                     changed: false,
                 });
                 let index = charges.len() - 1;
-                reach(&mut charges, index, &needed_by, &own, &mut owner);
+                reach(&mut charges, index, &needed_by, &mut owner);
             }
         }
         let mut ids = Vec::new();
@@ -151,7 +142,7 @@ impl DecodeResult {
             let stated = released.stated();
             let charge = &mut charges[index];
             for record in released.dropped {
-                if !owner.contains_key(&record) && !own.contains(&record) {
+                if !owner.contains_key(&record) {
                     owner.insert(record.clone(), index);
                     charge.dropped.insert(record);
                     charge.changed = true;
@@ -165,12 +156,7 @@ impl DecodeResult {
             let after = record_ids(&self.ir);
             let unlisted = before
                 .difference(&after)
-                .filter(|id| {
-                    !own.contains(*id)
-                        && !charges
-                            .iter()
-                            .any(|charge| charge.named == **id || charge.dropped.contains(*id))
-                })
+                .filter(|id| !owner.contains_key(*id))
                 .collect::<Vec<_>>();
             debug_assert!(
                 unlisted.is_empty(),
@@ -204,7 +190,6 @@ fn reach(
     charges: &mut [Charge],
     index: usize,
     needed_by: &BTreeMap<String, Vec<String>>,
-    own: &BTreeSet<String>,
     owner: &mut BTreeMap<String, usize>,
 ) {
     let charge = &mut charges[index];
@@ -213,7 +198,7 @@ fn reach(
         .collect::<Vec<_>>();
     while let Some(id) = frontier.pop() {
         for record in needed_by.get(&id).into_iter().flatten() {
-            if own.contains(record) || owner.contains_key(record) {
+            if owner.contains_key(record) {
                 continue;
             }
             owner.insert(record.clone(), index);

@@ -23,23 +23,23 @@ use crate::geometry::{CurveGeometry, SurfaceGeometry};
 pub(crate) struct Schema(Value);
 
 impl Schema {
-    /// The committed CADIR schema, or `None` where it does not parse.
-    pub(crate) fn read() -> Option<Self> {
-        serde_json::from_str(crate::CADIR_JSON_SCHEMA)
-            .ok()
-            .map(Self)
-    }
-
     /// The schema of a record of the arena `field` of `home`.
     fn record(&self, home: &str, field: &str) -> Option<&Value> {
         let (home, _) = self.resolve(self.0.get("properties")?.get(home)?);
         home.get("properties")?.get(field)?.get("items")
     }
 
-    /// The CADIR schema, read once.
+    /// The committed CADIR schema, read once, or `None` where it does not
+    /// parse.
     pub(crate) fn cadir() -> Option<&'static Self> {
         static SCHEMA: std::sync::OnceLock<Option<Schema>> = std::sync::OnceLock::new();
-        SCHEMA.get_or_init(Self::read).as_ref()
+        SCHEMA
+            .get_or_init(|| {
+                serde_json::from_str(crate::CADIR_JSON_SCHEMA)
+                    .ok()
+                    .map(Self)
+            })
+            .as_ref()
     }
 
     /// The alternatives of `branches` that `value` may be: the one whose

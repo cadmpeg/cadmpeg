@@ -488,7 +488,7 @@ pub(crate) fn drop_records(
 /// expression of which nothing is read, and returns the seeds whose records
 /// it restated. The arenas are in identity order.
 pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed> {
-    let Some(schema) = Schema::read() else {
+    let Some(schema) = Schema::cadir() else {
         return Vec::new();
     };
     let gone = BTreeSet::new();
@@ -498,7 +498,7 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
             let Arena::Home { home, field } = &seed.arena else {
                 return false;
             };
-            let Some(restate) = Restate::new(&schema, &gone, &seed.id, *home == "process") else {
+            let Some(restate) = Restate::new(schema, &gone, &seed.id, *home == "process") else {
                 return false;
             };
             let restate = restate.past_the_bound();
@@ -522,8 +522,6 @@ struct Cascade {
 /// What a batch of removals reads of the document once a record needs it.
 #[derive(Default)]
 struct Lazy {
-    /// The CADIR schema.
-    schema: OnceCell<Option<Schema>>,
     /// The stored states whose delta names each id, by id.
     stated: OnceCell<HashMap<String, BTreeSet<String>>>,
 }
@@ -1025,7 +1023,7 @@ fn release(
                 None => {
                     clear_native_refs(ir, &mut holder)
                         || keep_topology(ir, &holder)
-                        || restate(ir, &holder, here, &lazy.schema)
+                        || restate(ir, &holder, here)
                         || keep_unresolved(ir, &holder)
                 }
             };
@@ -1618,17 +1616,12 @@ fn keep_topology(ir: &mut CadIr, holder: &Holder) -> bool {
 
 /// Restates `holder`, a record that names an id of `gone`, through its JSON
 /// in the partial forms of its values (§3.3), and returns whether it names
-/// none of them after. `schema` is read when first needed.
-fn restate(
-    ir: &mut CadIr,
-    holder: &Holder,
-    gone: &BTreeSet<String>,
-    schema: &OnceCell<Option<Schema>>,
-) -> bool {
+/// none of them after.
+fn restate(ir: &mut CadIr, holder: &Holder, gone: &BTreeSet<String>) -> bool {
     let Arena::Home { home, field } = &holder.arena else {
         return false;
     };
-    let Some(schema) = schema.get_or_init(Schema::read) else {
+    let Some(schema) = Schema::cadir() else {
         return false;
     };
     let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
