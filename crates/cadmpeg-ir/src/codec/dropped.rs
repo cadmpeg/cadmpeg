@@ -136,7 +136,7 @@ impl DecodeResult {
             ctx,
             &mut self.ir,
             &ids,
-            crate::give_up::Naming::References,
+            crate::give_up::References::new(crate::give_up::Naming::References),
             &mut releases,
         )?;
         for (id, released) in releases {

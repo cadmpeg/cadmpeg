@@ -15,8 +15,9 @@
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::OnceLock;
 
-use cadmpeg_core::decode::{ArenaClass, DecodeContext};
+use cadmpeg_core::decode::{ArenaClass, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 
@@ -27,10 +28,11 @@ use crate::design::refs::{EntityRef, Member, RecordRef};
 use crate::document::{ArenaHome, ArenaName, CadIr};
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::report::loss::LossNote;
-use crate::schema::ArenaRecord;
+use crate::schema::{ArenaRecord, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
 use crate::unknown::part::GivenUpPart;
 
+mod native_refs;
 mod restate;
 
 pub(crate) use restate::names;
@@ -322,6 +324,10 @@ pub(crate) struct References {
     held: HashMap<String, usize>,
     holders: Vec<(Arena, String)>,
     named_by: HashMap<String, Vec<usize>>,
+    /// Whether every record is read through its JSON, so that a test can
+    /// compare the typed walk with it.
+    #[cfg(test)]
+    json_walk: bool,
 }
 
 impl References {
@@ -329,6 +335,27 @@ impl References {
     pub(crate) fn new(naming: Naming) -> Self {
         Self {
             naming,
+            ..Self::default()
+        }
+    }
+
+    /// The references a walk by `naming` fills, which reads every record
+    /// through its JSON.
+    #[cfg(test)]
+    pub(crate) fn json_walk(naming: Naming) -> Self {
+        Self {
+            naming,
+            json_walk: true,
+            ..Self::default()
+        }
+    }
+
+    /// Empty references that a walk fills as it fills these.
+    fn alike(&self) -> Self {
+        Self {
+            naming: self.naming,
+            #[cfg(test)]
+            json_walk: self.json_walk,
             ..Self::default()
         }
     }
@@ -347,10 +374,78 @@ impl References {
         }) else {
             return;
         };
+        let targets = holder.names.into_iter().map(|(_, target)| target).collect();
+        self.push(arena, id, targets);
+    }
+
+    /// Adds the names that `records`, the records of `arena`, a neutral
+    /// arena of `geometry` or `model`, hold of the ids counted so far, as
+    /// [`Self::add`] adds them. The typed walk omits the name of a record's
+    /// own id. The caller counts every record first.
+    pub(crate) fn add_records<T: EntitySchema + ArenaRecord>(
+        &mut self,
+        arena: &Arena,
+        records: &[T],
+    ) {
+        match self.walk(arena) {
+            Walk::Json => {
+                for entity in records {
+                    self.add(arena, entity.record_identity(), entity);
+                }
+            }
+            Walk::Typed => self.add_typed(arena, records),
+            Walk::Skip => {}
+        }
+    }
+
+    /// How [`Self::add_records`] reads the records of `arena`.
+    fn walk(&self, arena: &Arena) -> Walk {
+        #[cfg(test)]
+        if self.json_walk {
+            return Walk::Json;
+        }
+        match (self.naming, arena) {
+            (Naming::References, Arena::Home { home, field }) => Walk::of(home, field),
+            _ => Walk::Json,
+        }
+    }
+
+    /// Adds the names of `records` by [`Walk::Typed`], in decode sessions of
+    /// its own, so that the walk charges no budget of the decode. A record
+    /// whose walk a session refuses is read through its JSON, and the
+    /// records after it are walked in a new session.
+    fn add_typed<T: EntitySchema + ArenaRecord>(&mut self, arena: &Arena, records: &[T]) {
+        let policy = DecodePolicy::default();
+        let mut rest = records;
+        while !rest.is_empty() {
+            let session = DecodeArena::new();
+            let Ok((ctx, _)) = DecodeContext::from_root_bytes(&[], &session, &policy) else {
+                for entity in rest {
+                    self.add(arena, entity.record_identity(), entity);
+                }
+                return;
+            };
+            let mut walked = 0;
+            for entity in rest {
+                walked += 1;
+                if let Some(targets) = typed_targets(&ctx, &self.held, entity) {
+                    self.push(arena, entity.record_identity(), targets);
+                } else {
+                    self.add(arena, entity.record_identity(), entity);
+                    break;
+                }
+            }
+            rest = &rest[walked..];
+        }
+    }
+
+    /// Adds the holder `id`, a record of `arena`, where it names an id.
+    fn push(&mut self, arena: &Arena, id: &str, targets: BTreeSet<String>) {
+        if targets.is_empty() {
+            return;
+        }
         let slot = self.holders.len();
-        let targets: BTreeSet<String> =
-            holder.names.into_iter().map(|(_, target)| target).collect();
-        self.holders.push((holder.arena, holder.id));
+        self.holders.push((arena.clone(), id.to_owned()));
         for target in targets {
             self.named_by.entry(target).or_default().push(slot);
         }
@@ -385,6 +480,102 @@ impl References {
             .collect()
     }
 }
+
+/// How [`References::add_records`] reads a record of an arena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Walk {
+    /// The record's JSON, by [`Holder::named`].
+    Json,
+    /// The record's typed references and its `native_ref` values: under
+    /// [`Naming::References`], the names its JSON, typed by the CADIR
+    /// schema, states.
+    Typed,
+    /// No walk: the CADIR schema holds no record of the arena, so a record
+    /// of it names nothing under [`Naming::References`].
+    Skip,
+}
+
+impl Walk {
+    /// The walk of the arena `field` of `home` under [`Naming::References`].
+    /// The typed walk of a topology leaves the ids local to it, which the
+    /// schema types as ids, so an arena whose records can hold a topology
+    /// is read through the JSON of its records.
+    fn of(home: &'static str, field: &'static str) -> Self {
+        static WALKS: OnceLock<HashMap<(&'static str, &'static str), Walk>> = OnceLock::new();
+        WALKS
+            .get_or_init(|| {
+                ArenaName::ALL
+                    .iter()
+                    .map(|arena| {
+                        let (home, field) = (arena.home().as_str(), arena.key());
+                        let topology = Schema::cadir()
+                            .and_then(|schema| schema.reaches(home, field, restate::TOPOLOGY));
+                        let walk = match topology {
+                            Some(false) => Self::Typed,
+                            Some(true) => Self::Json,
+                            None => Self::Skip,
+                        };
+                        ((home, field), walk)
+                    })
+                    .collect()
+            })
+            .get(&(home, field))
+            .copied()
+            .unwrap_or(Self::Json)
+    }
+}
+
+/// The ids of `held` that `entity` names by its typed references and its
+/// `native_ref` values, other than its own, or `None` where `ctx` refuses
+/// the walk or the serialization of `entity` fails.
+fn typed_targets<T: EntitySchema>(
+    ctx: &DecodeContext<'_>,
+    held: &HashMap<String, usize>,
+    entity: &T,
+) -> Option<BTreeSet<String>> {
+    let mut targets = BTreeSet::new();
+    let mut name = |target: &str| {
+        if !targets.contains(target) && held.contains_key(target) {
+            targets.insert(target.to_owned());
+        }
+    };
+    entity
+        .visit_references(ctx, &mut |target| {
+            name(target);
+            Ok(())
+        })
+        .ok()?;
+    native_refs::visit(entity, &mut |target: &str| {
+        if target != entity.identity() {
+            name(target);
+        }
+    })
+    .ok()?;
+    Some(targets)
+}
+
+/// Adds to the references `$references` the names the records `$records`
+/// of the arena `$arena` of the home `$home` hold: by
+/// [`References::add_records`] for a home whose records have typed
+/// references, and by [`References::add`] otherwise.
+macro_rules! add_references {
+    (geometry, $references:ident, $arena:expr, $records:expr) => {
+        $references.add_records($arena, $records)
+    };
+    (model, $references:ident, $arena:expr, $records:expr) => {
+        $references.add_records($arena, $records)
+    };
+    ($home:ident, $references:ident, $arena:expr, $records:expr) => {
+        for entity in $records {
+            $references.add(
+                $arena,
+                $crate::schema::ArenaRecord::record_identity(entity),
+                entity,
+            );
+        }
+    };
+}
+pub(crate) use add_references;
 
 /// The compact canonical JSON text of the copies of one record: the
 /// record's own where there is one copy, and the array of the copies
@@ -539,16 +730,15 @@ impl Cascade {
     }
 
     /// The state of a batch of releases of `lost`, ids that no record of
-    /// `ir` may hold, so that the walk of the references finds the records
-    /// that name them.
+    /// `ir` may hold, so that the walk of the references, which fills
+    /// `named`, finds the records that name them.
     fn naming(
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         lost: &[String],
-        naming: Naming,
+        mut named: References,
     ) -> Result<Self, CodecError> {
         ir.finalize();
-        let mut named = References::new(naming);
         for id in lost {
             named.name(id);
         }
@@ -610,7 +800,7 @@ fn remove(
 /// one, transitively, marks each record that holds one, and drops each
 /// carrier left with no user (§3.3). An id a record of `ir` holds names that
 /// record, so nothing needs the given-up one, and it releases nothing.
-/// `naming` states which fields of a record name an id.
+/// `references`, empty, states which fields of a record name an id.
 ///
 /// Each release goes into `released` as it runs, so `released` holds what
 /// left `ir` also when a release stops on an error.
@@ -623,10 +813,10 @@ pub(crate) fn release_lost(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     ids: &[String],
-    naming: Naming,
+    references: References,
     released: &mut Vec<(String, Released)>,
 ) -> Result<(), CodecError> {
-    let mut cascade = Cascade::naming(ctx, ir, ids, naming)?;
+    let mut cascade = Cascade::naming(ctx, ir, ids, references)?;
     let Cascade {
         references,
         lazy,
@@ -1443,7 +1633,7 @@ fn release_delta(
             }
         }
     }
-    let mut local = References::new(references.naming);
+    let mut local = references.alike();
     for id in &plan.gone {
         local.name(id);
     }

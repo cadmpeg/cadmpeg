@@ -1408,3 +1408,236 @@ fn a_member_entry_of_a_given_up_definition_drops_the_state() {
     );
     assert_closed(&ir, other.as_str(), &outcome);
 }
+
+/// The ids each holder of `ir` names by the walk that fills `references`,
+/// other than its own.
+fn names_by_holder(
+    ir: &CadIr,
+    references: super::References,
+) -> BTreeMap<(Arena, String), BTreeSet<String>> {
+    let references = ir.references_from(references);
+    let mut names: BTreeMap<(Arena, String), BTreeSet<String>> = BTreeMap::new();
+    for (target, slots) in &references.named_by {
+        for slot in slots {
+            let holder = &references.holders[*slot];
+            if holder.1 != *target {
+                names
+                    .entry(holder.clone())
+                    .or_default()
+                    .insert(target.clone());
+            }
+        }
+    }
+    names
+}
+
+/// The unit cube whose first face, edge, point, and body project native
+/// records, whose second face states the id of its third face as its
+/// `native_ref`, and whose fourth face states its own.
+fn projected_cube() -> CadIr {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let records = ["face", "edge", "point", "body"]
+        .map(|kind| {
+            crate::NativeRecord::new(
+                Identity::new(format!("test:native:{kind}#1")).unwrap(),
+                serde_json::Map::new(),
+            )
+            .unwrap()
+        })
+        .to_vec();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("records", records)
+        .unwrap();
+    ir.geometry.faces[0].native_ref = Some("test:native:face#1".to_owned());
+    ir.geometry.edges[0].native_ref = Some("test:native:edge#1".to_owned());
+    ir.geometry.points[0].native_ref = Some("test:native:point#1".to_owned());
+    ir.geometry.bodies[0].native_ref = Some("test:native:body#1".to_owned());
+    ir.geometry.faces[1].native_ref = Some(ir.geometry.faces[2].id.as_str().to_owned());
+    ir.geometry.faces[3].native_ref = Some(ir.geometry.faces[3].id.as_str().to_owned());
+    ir
+}
+
+/// Under the decode wrapper's naming, the typed walk of a record names
+/// each id that the walk of its JSON, typed by the CADIR schema, names,
+/// other than the record's own, and no other (§3.3).
+#[test]
+fn the_typed_walk_names_what_the_schema_walk_names() {
+    use super::{Naming, References, Walk};
+
+    assert_eq!(Walk::of("geometry", "faces"), Walk::Typed);
+    assert_eq!(Walk::of("model", "product_definitions"), Walk::Typed);
+    assert_eq!(Walk::of("model", "pmi"), Walk::Json);
+    assert_eq!(Walk::of("model", "features"), Walk::Skip);
+
+    let mut pointless = crate::examples::unit_cube().unwrap();
+    let point = pointless.geometry.points.remove(0).id;
+    let (stored, _, _, _) = stored_state();
+    let documents = vec![
+        ("projected cube", projected_cube(), None),
+        (
+            "cube without a point",
+            pointless,
+            Some(point.as_str().to_owned()),
+        ),
+        (
+            "cube with a history body",
+            crate::examples::unit_cube_with_history_body().unwrap(),
+            None,
+        ),
+        (
+            "directed subd sum",
+            crate::examples::directed_subd_sum().unwrap(),
+            None,
+        ),
+        ("design", crate::validate::design::fixture::document(), None),
+        ("stored state", stored, None),
+        (
+            "cyclic model",
+            crate::test_support::evaluation_cycles::cyclic_model().0,
+            None,
+        ),
+        (
+            "doubling model",
+            crate::test_support::evaluation_work::doubling_model(3).0,
+            None,
+        ),
+    ];
+    for (label, mut ir, lost) in documents {
+        ir.finalize();
+        let walk = |mut references: References| {
+            if let Some(lost) = &lost {
+                references.name(lost);
+            }
+            names_by_holder(&ir, references)
+        };
+        let typed = walk(References::new(Naming::References));
+        let schema = walk(References::json_walk(Naming::References));
+        assert!(!typed.is_empty(), "{label}");
+        assert_eq!(typed, schema, "{label}");
+    }
+
+    let typed = names_by_holder(&projected_cube(), References::new(Naming::References));
+    let cube = projected_cube();
+    let faces = Arena::home("geometry", "faces").unwrap();
+    let face = |at: usize| {
+        (
+            faces.clone(),
+            cube.geometry.faces[at].id.as_str().to_owned(),
+        )
+    };
+    assert!(typed[&face(0)].contains("test:native:face#1"));
+    assert!(typed[&face(1)].contains(cube.geometry.faces[2].id.as_str()));
+    let point = (
+        Arena::home("geometry", "points").unwrap(),
+        cube.geometry.points[0].id.as_str().to_owned(),
+    );
+    assert_eq!(
+        typed[&point],
+        BTreeSet::from(["test:native:point#1".to_owned()])
+    );
+}
+
+/// A `native_ref` names a native record at any depth of a record, as a
+/// field or as the key of a map; a label whose text is `native_ref` names
+/// nothing (§2).
+#[test]
+fn a_native_ref_names_its_text_at_any_depth() {
+    let value = json!({
+        "native_ref": "test:native:a#1",
+        "label": "native_ref",
+        "nested": {
+            "native_ref": "test:native:b#1",
+            "items": [{"native_ref": "test:native:c#1"}, "native_ref"],
+            "count": {"native_ref": 3},
+        },
+    });
+    let mut found = BTreeSet::new();
+    super::native_refs::visit(&value, &mut |text: &str| {
+        found.insert(text.to_owned());
+    })
+    .unwrap();
+    assert_eq!(
+        found,
+        BTreeSet::from([
+            "test:native:a#1".to_owned(),
+            "test:native:b#1".to_owned(),
+            "test:native:c#1".to_owned(),
+        ])
+    );
+}
+
+/// What one release of lost ids did: by id, the records it dropped and
+/// marked, and its entries for stored states.
+type Releases = Vec<(String, BTreeSet<String>, BTreeSet<String>, Vec<String>)>;
+
+/// Releases the cube's shell, which the stored state of [`stored_state`]
+/// removes and its own face names, and a native record that the cube's
+/// body projects, with both gone from the document, by the walk that fills
+/// `references`. Returns the document and the releases.
+fn release_shell(references: super::References) -> (serde_json::Value, Releases) {
+    let (mut ir, shell, _, _) = stored_state();
+    let native = "test:native:body#lost".to_owned();
+    ir.geometry.shells.retain(|kept| kept.id.as_str() != shell);
+    ir.geometry.bodies[0].native_ref = Some(native.clone());
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("root");
+    let mut released = Vec::new();
+    super::release_lost(&ctx, &mut ir, &[shell, native], references, &mut released)
+        .expect("the release runs");
+    let releases = released
+        .into_iter()
+        .map(|(id, release)| {
+            let stated = release.stated();
+            (id, release.dropped, release.marked, stated)
+        })
+        .collect();
+    (json::to_value(&ir).unwrap(), releases)
+}
+
+/// The release of lost ids by the typed walk drops, marks, and restates
+/// the records that the release by the schema walk does, transitively and
+/// in the delta of a stored state (§3.3).
+#[test]
+fn a_release_by_the_typed_walk_drops_and_marks_what_the_schema_walk_does() {
+    use super::{Naming, References};
+
+    let (typed_ir, typed) = release_shell(References::new(Naming::References));
+    let (schema_ir, schema) = release_shell(References::json_walk(Naming::References));
+
+    let (cube, shell, _, _) = stored_state();
+    let faces: BTreeSet<String> = cube
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| face.shell.as_str() == shell)
+        .map(|face| face.id.as_str().to_owned())
+        .collect();
+    let loops: BTreeSet<String> = cube
+        .geometry
+        .loops
+        .iter()
+        .filter(|kept| faces.contains(kept.face.as_str()))
+        .map(|kept| kept.id.as_str().to_owned())
+        .collect();
+    let [(_, dropped, _, stated), (_, _, marked, _)] = typed.as_slice() else {
+        panic!("one release of each lost id: {typed:?}");
+    };
+    assert!(
+        !faces.is_empty() && dropped.is_superset(&faces),
+        "{typed:?}"
+    );
+    assert!(
+        !loops.is_empty() && dropped.is_superset(&loops),
+        "{typed:?}"
+    );
+    assert!(!stated.is_empty(), "{typed:?}");
+    assert!(
+        marked.contains(cube.geometry.bodies[0].id.as_str()),
+        "{typed:?}"
+    );
+
+    assert_eq!(typed, schema);
+    assert_eq!(typed_ir, schema_ir);
+}
