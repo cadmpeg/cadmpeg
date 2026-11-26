@@ -24,6 +24,7 @@ use self::fields::{
 };
 
 pub mod fields;
+pub mod sketch;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.

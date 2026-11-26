@@ -662,6 +662,14 @@ pub(crate) enum F3dLossCode {
     ParameterReferencedDesignUnscoped,
     /// Model parameters whose owner feature has no timeline item stay v10 parameters.
     ParameterOwnerOutsideTimeline,
+    /// Sketches whose owner feature has no item of a listing timeline are
+    /// members of one unordered group of their scope.
+    DesignSketchOutsideTimeline,
+    /// Sketch entities with no planar curve state their native kind.
+    DesignSketchEntityNative,
+    /// Sketch dimensions that bind no design parameter of their scope state
+    /// the stored value of their parameter record, or no value.
+    DesignSketchDimensionUnbound,
     /// Model parameters whose owner is unresolved stay v10 parameters.
     ParameterOwnerUnresolvedOmitted,
     /// Parameters with a blank name stay v10 parameters.
@@ -1857,6 +1865,9 @@ impl F3dLossCode {
         Self::ParameterExpressionUnbound,
         Self::ParameterReferencedDesignUnscoped,
         Self::ParameterOwnerOutsideTimeline,
+        Self::DesignSketchOutsideTimeline,
+        Self::DesignSketchEntityNative,
+        Self::DesignSketchDimensionUnbound,
         Self::ParameterOwnerUnresolvedOmitted,
         Self::ParameterNameBlank,
         Self::ConfigurationReferencedDesignUnscoped,
@@ -2911,6 +2922,9 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::ParameterReferencedDesignUnscoped => "parameter.referenced-design-unscoped",
             Self::ParameterOwnerOutsideTimeline => "parameter.owner-outside-timeline",
+            Self::DesignSketchOutsideTimeline => "design.sketch-outside-timeline",
+            Self::DesignSketchEntityNative => "design.sketch-entity-native",
+            Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
             Self::ParameterOwnerUnresolvedOmitted => "parameter.owner-unresolved-omitted",
             Self::ParameterNameBlank => "parameter.name-blank",
             Self::ConfigurationReferencedDesignUnscoped => {
@@ -4366,6 +4380,9 @@ impl F3dLossCode {
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameUndecoded
+            | Self::DesignSketchOutsideTimeline
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::TopologyFaceBoundaryUnstated => Severity::Warning,
         }
     }
@@ -5193,6 +5210,9 @@ impl F3dLossCode {
             | Self::DialectLayerCollision
             | Self::LocalOccurrenceYieldedToRegistered
             | Self::FlaggedBaseFeatureBodySelected
+            | Self::DesignSketchOutsideTimeline
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
@@ -5763,6 +5783,9 @@ mod tests {
                 "parameter.expression-unbound",
                 "parameter.referenced-design-unscoped",
                 "parameter.owner-outside-timeline",
+                "design.sketch-outside-timeline",
+                "design.sketch-entity-native",
+                "design.sketch-dimension-unbound",
                 "parameter.owner-unresolved-omitted",
                 "parameter.name-blank",
                 "configuration.referenced-design-unscoped",

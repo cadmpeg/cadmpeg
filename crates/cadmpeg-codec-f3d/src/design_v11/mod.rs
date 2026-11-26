@@ -10,8 +10,15 @@
 //! that the document references keeps its own Design streams under an
 //! occurrence path and is one scope of its own, at the definition that stands
 //! for it; where the decode states no such definition, its timelines are roots
-//! of the scope that encloses it. A stream that lists no item states no container, and a document
-//! whose streams state none has no scope.
+//! of the scope that encloses it. A stream that lists no item states no
+//! container.
+//!
+//! Each planar sketch is the operation of the feature that owns it (§6.1). A
+//! sketch whose owner has no item of a listing timeline is the operation of a
+//! member of one unordered `Group` of its document's scope, a root after the
+//! timelines; a document whose streams list no item and hold such a sketch
+//! has a scope whose roots are that group and whose bodies are unproduced
+//! (§5.2, §5.5). A document with neither has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
@@ -27,6 +34,7 @@ mod operation;
 pub(crate) mod parameters;
 mod pattern;
 mod sheet_metal;
+mod sketch;
 mod split;
 #[cfg(test)]
 mod tests;
@@ -42,6 +50,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
@@ -81,9 +90,10 @@ pub(crate) fn project(
         return Ok(());
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
-    if timelines
-        .iter()
-        .all(|timeline| timeline.frame().items().is_empty())
+    if ir.model.sketches.is_empty()
+        && timelines
+            .iter()
+            .all(|timeline| timeline.frame().items().is_empty())
     {
         return Ok(());
     }
@@ -152,6 +162,28 @@ pub(crate) fn project(
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
     }
+    let restated = scopes
+        .values()
+        .flat_map(|(_, projected)| &projected.features)
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (prefix, owners) in sketch::outside(&ir.model, &restated)? {
+        let enclosing = if scopes.contains_key(&prefix) {
+            prefix.clone()
+        } else if let Some(definition) = scope_definition(&ir.model.product_definitions, &prefix) {
+            scopes.insert(prefix.clone(), (definition, timeline::Projected::default()));
+            prefix.clone()
+        } else {
+            host(&scopes, &placers, &prefix)
+        };
+        let (_, into) = scopes.entry(enclosing).or_insert_with(|| {
+            (
+                root_definition(&ir.model.product_definitions),
+                timeline::Projected::default(),
+            )
+        });
+        sketch::hold(ctx, &prefix, owners, into, losses)?;
+    }
     definitions.extend(
         scopes
             .iter()
@@ -182,6 +214,7 @@ pub(crate) fn project(
         );
     }
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
+    let mut sketches = sketch::Sketches::default();
     let owners = ir
         .model
         .features
@@ -201,26 +234,54 @@ pub(crate) fn project(
                     .map(|owner| (*owner).clone());
             }
         }
-        let Some(Container::Ordered {
-            id,
-            members,
-            rollback,
-            ..
-        }) = projected.containers.first()
-        else {
-            continue;
+        let (current, unproduced) = match projected.containers.first() {
+            Some(Container::Ordered {
+                id,
+                members,
+                rollback,
+                ..
+            }) => {
+                let at = rollback_position(id, members, rollback.as_ref());
+                let current = (!bodies.is_empty())
+                    .then(|| CurrentState {
+                        at,
+                        bodies: bodies.into_iter().collect(),
+                        poses: BTreeMap::new(),
+                        status: EvaluationStatus::Current,
+                        native_ref: None,
+                    })
+                    .into_iter()
+                    .collect();
+                (current, BTreeSet::new())
+            }
+            Some(Container::Unordered { .. }) => (Vec::new(), bodies),
+            None => continue,
         };
-        let at = rollback_position(id, members, rollback.as_ref());
-        let current = (!bodies.is_empty())
-            .then(|| CurrentState {
-                at,
-                bodies: bodies.into_iter().collect(),
-                poses: BTreeMap::new(),
-                status: EvaluationStatus::Current,
-                native_ref: None,
+        let unordered = projected
+            .containers
+            .iter()
+            .filter_map(|container| match container {
+                Container::Unordered { members, .. } => Some(members),
+                Container::Ordered { .. } => None,
             })
-            .into_iter()
-            .collect();
+            .flatten()
+            .filter_map(|member| match member {
+                Member::Feature(feature) => Some(feature.clone()),
+                Member::Container(_) => None,
+            })
+            .collect::<BTreeSet<FeatureId>>();
+        let in_scope = scoped_parameters
+            .iter()
+            .filter(|parameter| parameter.scope == definition)
+            .collect::<Vec<_>>();
+        sketch::project(
+            &ir.model,
+            &mut projected.features,
+            &unordered,
+            &in_scope,
+            &mut sketches,
+            losses,
+        );
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
@@ -233,7 +294,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
-            unproduced: BTreeSet::default(),
+            unproduced,
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
@@ -243,6 +304,16 @@ pub(crate) fn project(
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
         "project F3D v11 parameters and configurations",
     )?;
+    ctx.charge_entities(
+        u64::try_from(
+            sketches.records.len() + sketches.entities.len() + sketches.constraints.len(),
+        )
+        .map_err(|_| CodecError::malformed("F3D v11 sketch record count exceeds u64"))?,
+        "project F3D v11 sketches",
+    )?;
+    ir.design.sketches.extend(sketches.records);
+    ir.design.sketch_entities.extend(sketches.entities);
+    ir.design.sketch_constraints.extend(sketches.constraints);
     ir.design.parameters.extend(scoped_parameters);
     ir.design
         .configurations

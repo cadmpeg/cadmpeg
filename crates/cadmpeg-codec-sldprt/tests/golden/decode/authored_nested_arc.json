@@ -3,18 +3,252 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "sldprt:model:container#sketches",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "sldprt:model:sketch#348:0:0"
+            }
+          },
+          "id": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "name": "feature input arc sketch"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#sketches"
+          ],
+          "unproduced": [
+            "sldprt:brep:body#900"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_constraints": [
+        {
+          "id": "sldprt:model:sketch-constraint#348:0:0:0",
+          "native_options": {},
+          "relation": {
+            "kind": "native",
+            "value": {
+              "kind": "sldprt:coincident_loci",
+              "operands": [
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:0"
+                },
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:2"
+                }
+              ],
+              "values": []
+            }
+          },
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "id": "sldprt:model:sketch-constraint#348:0:0:1",
+          "native_options": {},
+          "relation": {
+            "kind": "native",
+            "value": {
+              "kind": "sldprt:coincident_loci",
+              "operands": [
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:0"
+                },
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:1"
+                }
+              ],
+              "values": []
+            }
+          },
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "id": "sldprt:model:sketch-constraint#348:0:0:2",
+          "native_options": {},
+          "relation": {
+            "kind": "native",
+            "value": {
+              "kind": "sldprt:coincident_loci",
+              "operands": [
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:1"
+                },
+                {
+                  "kind": "entity",
+                  "value": "sldprt:model:sketch-entity#348:0:0:2"
+                }
+              ],
+              "values": []
+            }
+          },
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        }
+      ],
+      "sketch_entities": [
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "arc",
+              "value": {
+                "center": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "end": 1.5707963267948966,
+                "radius": 1000.0,
+                "start": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:edge#40",
+          "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 1000.0
+                }
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:edge#41",
+          "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 1000.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:2",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:edge#42",
+          "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "sldprt:model:sketch#348:0:0",
+          "name": "feature input arc sketch",
+          "native_options": {},
+          "native_ref": "sldprt:feature-input:resolved-features#348",
+          "owner": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -223,6 +457,7 @@
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
+          "kind": "part",
           "occurrences": [],
           "representations": [],
           "storage": {
@@ -612,6 +847,18 @@
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "design.sketch-outside-history",
+            "kind": "decode_diagnostic",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketches that no feature-history node lists are each the operation of a feature of one unordered Group of the part's scope (interim): sldprt:model:sketch#348:0:0",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -635,6 +882,41 @@
             "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:1": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:2": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:1": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:2": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -787,6 +1069,41 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "offset": 591,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:1": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:2": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:0:0:1": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:0:0:2": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
         }
       }
     },
