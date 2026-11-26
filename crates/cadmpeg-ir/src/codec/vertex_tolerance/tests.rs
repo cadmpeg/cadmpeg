@@ -807,6 +807,13 @@ fn a_chain_of_vertices_each_kept_by_a_miss_at_the_one_before_is_widened_in_turn(
     );
     assert_close(vertex_tolerance(&ir.geometry, 1).unwrap(), 0.015_625);
     assert_close(vertex_tolerance(&ir.geometry, 2).unwrap(), 0.011_718_75);
+    let largest: f64 = loss
+        .message
+        .split_once("the largest widening is ")
+        .and_then(|(_, rest)| rest.split_once(" mm"))
+        .map(|(value, _)| value.parse().unwrap())
+        .unwrap();
+    assert_close(largest, moved_corner_gap() - ir.tolerances.linear.get());
     assert_eq!(gaps(&ir), 0);
 }
 

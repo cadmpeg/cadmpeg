@@ -190,9 +190,8 @@ fn a_state_on_a_settled_base_widens_nothing_outside_its_delta_region() {
     // `after-extrude`, on the current state, moves corner 0 off its three
     // edges, corner 1 along edge 0 toward corner 0, and corner 2 along edge 1
     // toward corner 1; measured until a measure widens nothing, it widens all
-    // three. `a-chained`, based on it,
-    // changes no record: its resolved state widens nothing, measured whole
-    // or over its delta's region.
+    // three. `a-chained`, based on it, changes no record: its resolved state
+    // widens nothing, measured whole or over its delta's region.
     let mut ir = document();
     let points = super::chained_corner_points(&ir);
     let base = &mut ir.design.evaluations[0];
