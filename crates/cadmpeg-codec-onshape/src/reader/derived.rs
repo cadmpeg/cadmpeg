@@ -4,9 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use cadmpeg_core::decode::LimitScope;
+use cadmpeg_core::json;
 use cadmpeg_core::CodecError;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{definition, features, id, rows, text, topology, Mapping, Report, Session};
 use crate::error::Error;
