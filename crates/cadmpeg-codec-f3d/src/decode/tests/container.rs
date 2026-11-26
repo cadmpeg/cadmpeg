@@ -464,10 +464,9 @@ fn malformed_text_brep_returns_an_entry_named_error() {
 }
 
 #[test]
-fn a_zero_pair_body_map_classifies_the_history_blob_it_names_and_selects_no_body() {
+fn a_zero_pair_body_map_classifies_the_blob_it_names_and_selects_no_body() {
     use crate::test_support::body_map_test::{
-        f3d_with_breps_and_design, f3d_with_model_breps, f3d_with_model_breps_and_unbound_history,
-        ModelBlob,
+        f3d_with_model_breps_and_zero_pair_carrier, ModelBlob,
     };
     let model = synthetic_smbh();
     let blobs = [ModelBlob {
@@ -475,46 +474,44 @@ fn a_zero_pair_body_map_classifies_the_history_blob_it_names_and_selects_no_body
         smbh: &model,
         selector: 0,
     }];
-    let selected = |archive: &[u8]| {
-        crate::test_support::zip_test::with_scan(archive, |scan| {
+    let selected = |blobs: &[ModelBlob<'_>], basename: &str, extra: &[(&str, &[u8])]| {
+        let archive = f3d_with_model_breps_and_zero_pair_carrier(blobs, basename, extra);
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::decode::body::design_model_selection(scan)
                 .map(|selection| (selection.blob_names, selection.explicitly_empty))
+                .map_err(|error| error.to_string())
         })
     };
-    let model_only = (vec!["BREP.model.smbh".to_string()], false);
+    let model_only = Ok((vec!["BREP.model.smbh".to_string()], false));
+    let unclassified = "do not classify every binary BREP entry exactly once";
+    let other: &[u8] = &[0; 16];
 
-    // The named blob is in the archive: the carrier classifies it.
-    let present =
-        f3d_with_model_breps_and_unbound_history(&blobs, "BREP.history.smbh", Some(&[0; 16]));
-    assert_eq!(selected(&present).unwrap(), model_only);
-
-    // The archive holds no blob of that basename: the carrier classifies nothing.
-    let absent = f3d_with_model_breps_and_unbound_history(&blobs, "BREP.history.smbh", None);
-    assert_eq!(selected(&absent).unwrap(), model_only);
-
-    // A blob that no carrier names stays unclassified.
-    let unnamed = {
-        let named = f3d_with_model_breps(&blobs);
-        crate::test_support::zip_test::with_scan(&named, |scan| {
-            let stream = |name: &str| {
-                scan.entry_bytes(&format!("FusionAssetName[Active]/Design1/{name}"))
-                    .unwrap()
-                    .to_vec()
-            };
-            f3d_with_breps_and_design(
-                &[
-                    ("BREP.model.smbh", model.as_slice()),
-                    ("BREP.history.smbh", &[0; 16]),
-                ],
-                &stream("BulkStream.dat"),
-                &stream("MetaStream.dat"),
-            )
-        })
-    };
-    assert!(selected(&unnamed)
-        .unwrap_err()
-        .to_string()
-        .contains("do not classify every binary BREP entry exactly once"));
+    // The archive holds the named blob: the carrier classifies it.
+    assert_eq!(
+        selected(&blobs, "BREP.other.smbh", &[("BREP.other.smbh", other)]),
+        model_only
+    );
+    // The archive holds no blob of that basename.
+    assert_eq!(selected(&blobs, "BREP.other.smbh", &[]), model_only);
+    // The carrier names the blob a populated map names.
+    assert_eq!(selected(&blobs, "BREP.model.smbh", &[]), model_only);
+    // A blob no carrier names stays unclassified.
+    assert!(
+        selected(&blobs, "BREP.other.smbh", &[("BREP.third.smbh", other)])
+            .unwrap_err()
+            .contains(unclassified)
+    );
+    // A zero-pair carrier names a `.smbh` basename: a `.smb` name is no carrier.
+    assert!(
+        selected(&blobs, "BREP.other.smb", &[("BREP.other.smb", other)])
+            .unwrap_err()
+            .contains(unclassified)
+    );
+    // Zero-pair carriers alone state no map: every archive blob is a model blob.
+    assert_eq!(
+        selected(&[], "BREP.other.smbh", &[("BREP.other.smbh", other)]),
+        Ok((vec!["BREP.other.smbh".to_string()], false))
+    );
 }
 
 #[test]

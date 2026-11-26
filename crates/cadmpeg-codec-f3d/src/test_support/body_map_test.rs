@@ -32,13 +32,16 @@ const FIRST_ENTITY_SUFFIX: u64 = 985;
 
 /// A Design stream of body-map carriers, one per blob, and its `MetaStream`.
 /// The carrier type is the `MetaStream`'s first type, so its class tag is 256.
-/// `unbound_history` adds a first carrier with zero pairs that names that
+/// `zero_pair_basename` adds a first carrier with zero pairs that names that
 /// basename.
-fn body_map_design(blobs: &[ModelBlob<'_>], unbound_history: Option<&str>) -> (Vec<u8>, Vec<u8>) {
+fn body_map_design(
+    blobs: &[ModelBlob<'_>],
+    zero_pair_basename: Option<&str>,
+) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     let mut carriers = Vec::new();
-    if let Some(basename) = unbound_history {
+    if let Some(basename) = zero_pair_basename {
         let carrier = FIRST_CARRIER - 1;
         records.push((u64::from(carrier), 0));
         carriers.push(u64::from(carrier));
@@ -88,21 +91,19 @@ pub(crate) fn f3d_with_model_breps(blobs: &[ModelBlob<'_>]) -> Vec<u8> {
 }
 
 /// [`f3d_with_model_breps`] with one more body-map carrier that stores zero
-/// pairs and names `basename`. `history` is the archive entry of that
-/// basename, when the archive holds one.
-pub(crate) fn f3d_with_model_breps_and_unbound_history(
+/// pairs and names `basename`. `extra_breps` are archive entries beside the
+/// model blobs.
+pub(crate) fn f3d_with_model_breps_and_zero_pair_carrier(
     blobs: &[ModelBlob<'_>],
     basename: &str,
-    history: Option<&[u8]>,
+    extra_breps: &[(&str, &[u8])],
 ) -> Vec<u8> {
     let (bulk, meta) = body_map_design(blobs, Some(basename));
     let mut breps: Vec<_> = blobs
         .iter()
         .map(|blob| (blob.basename, blob.smbh))
         .collect();
-    if let Some(history) = history {
-        breps.push((basename, history));
-    }
+    breps.extend_from_slice(extra_breps);
     f3d_with_breps_and_design(&breps, &bulk, &meta)
 }
 

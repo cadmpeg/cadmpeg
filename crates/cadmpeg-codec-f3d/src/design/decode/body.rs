@@ -787,9 +787,9 @@ struct BodyMapCarriers {
     /// Carriers that bind bodies, and carriers with zero pairs and an empty
     /// basename.
     maps: Vec<BodyMapRecord>,
-    /// Carriers with zero pairs that name a history blob. Such a carrier
-    /// classifies its blob and selects no body.
-    unbound_histories: Vec<BodyMapRecord>,
+    /// Carriers with zero pairs and a `.smbh` basename. Such a carrier
+    /// selects no body.
+    zero_pair_named: Vec<BodyMapRecord>,
 }
 
 fn body_map_carriers(
@@ -808,7 +808,7 @@ fn body_map_carriers(
 
     let mut out = BodyMapCarriers {
         maps: Vec::new(),
-        unbound_histories: Vec::new(),
+        zero_pair_named: Vec::new(),
     };
     let mut typed_entities = HashSet::new();
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
@@ -905,7 +905,7 @@ fn body_map_carriers(
             }
             if let Some(record) = matched {
                 if record.bindings.is_empty() && !record.blob_name.is_empty() {
-                    out.unbound_histories.push(record);
+                    out.zero_pair_named.push(record);
                 } else {
                     out.maps.push(record);
                 }
@@ -1009,6 +1009,7 @@ pub(crate) fn design_model_selection(
     }
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
+    let mut zero_pair_names = HashSet::<String>::new();
     let mut saw_modern_map = false;
     let mut saw_snapshot_map = false;
     let mut selected_maps_empty = true;
@@ -1026,8 +1027,11 @@ pub(crate) fn design_model_selection(
         };
         let BodyMapCarriers {
             maps: modern,
-            unbound_histories,
+            zero_pair_named,
         } = body_map_carriers(bytes, &metadata)?;
+        for record in zero_pair_named {
+            zero_pair_names.insert(record.blob_name);
+        }
         saw_modern_map |= !modern.is_empty();
         let mut snapshots = snapshot_body_map_records(bytes, &metadata)?;
         saw_snapshot_map |= !snapshots.is_empty();
@@ -1036,10 +1040,7 @@ pub(crate) fn design_model_selection(
                 || record.blob_name.is_empty()
                 || archive_counts.contains_key(&record.blob_name)
         });
-        let unbound_histories = unbound_histories
-            .iter()
-            .filter(|record| archive_counts.contains_key(&record.blob_name));
-        for record in modern.iter().chain(&snapshots).chain(unbound_histories) {
+        for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
                 if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
                     *count += 1;
@@ -1088,6 +1089,13 @@ pub(crate) fn design_model_selection(
             explicitly_empty: false,
             losses,
         });
+    }
+    // A zero-pair carrier with a basename classifies the archive entry of that
+    // basename when no other carrier names it.
+    for name in zero_pair_names {
+        if archive_counts.contains_key(&name) {
+            carrier_counts.entry(name).or_insert(1);
+        }
     }
     if carrier_counts != archive_counts || archive_counts.values().any(|count| *count != 1) {
         return Err(CodecError::malformed(
