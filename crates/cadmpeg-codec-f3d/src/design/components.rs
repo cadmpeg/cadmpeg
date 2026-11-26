@@ -1863,8 +1863,6 @@ impl<'a> Projector<'a> {
     }
 }
 
-/// A Fusion component, which holds bodies and occurrences alike and has no
-/// kind, stored in its design.
 /// How the component-ownership rule places the body of one body-map pair in
 /// its Design stream.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -1920,6 +1918,8 @@ pub(crate) fn history_body_peers<'a>(
         .collect()
 }
 
+/// A Fusion component, which holds bodies and occurrences alike and has no
+/// kind, stored in its design.
 fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> ProductDefinition {
     let mut definition = ProductDefinition::new(id, Storage::Embedded);
     definition.bodies = bodies;
