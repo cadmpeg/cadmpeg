@@ -5,6 +5,7 @@ use super::*;
 use crate::feature::{
     parse_work_axis, project_revolve, FeatureFamily, REVOLVE_CLASS_ID, REVOLVE_EXTENT_FULL,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 /// A revolve of one profile selection about a work axis through
@@ -402,10 +403,10 @@ fn parses_a_version_25_work_axis_after_its_stamps_and_third_value() {
 }
 
 fn replace_slot(source: &mut PmDcFeature, slot: usize, value: u32) {
-    let mut json = serde_json::to_value(&source).expect("feature JSON");
+    let mut json = json::to_value(&source).expect("feature JSON");
     json["properties"]["references"][slot] =
-        serde_json::to_value(reference(value)).expect("reference JSON");
-    *source = serde_json::from_value(json).expect("feature frame");
+        json::to_value(reference(value)).expect("reference JSON");
+    *source = json::from_value(json).expect("feature frame");
 }
 
 #[test]
@@ -559,9 +560,9 @@ fn revolve_requires_an_angle_parameter_and_matching_feature_dimension() {
     );
     assert!(
         generated_revolve_with(REVOLVE_EXTENT_FULL, |_, _, _, dimensions| {
-            let mut json = serde_json::to_value(&dimensions[0]).expect("dimension JSON");
-            json["parameter"] = serde_json::to_value(reference(72)).expect("reference JSON");
-            dimensions[0] = serde_json::from_value(json).expect("dimension");
+            let mut json = json::to_value(&dimensions[0]).expect("dimension JSON");
+            json["parameter"] = json::to_value(reference(72)).expect("reference JSON");
+            dimensions[0] = json::from_value(json).expect("dimension");
         })
         .is_none()
     );
@@ -570,14 +571,13 @@ fn revolve_requires_an_angle_parameter_and_matching_feature_dimension() {
 #[test]
 fn native_dimension_annotation_data_does_not_change_the_angular_travel() {
     let (feature, _) = generated_revolve_with(1, |_, _, _, dimensions| {
-        let mut json = serde_json::to_value(&dimensions[0]).expect("dimension JSON");
+        let mut json = json::to_value(&dimensions[0]).expect("dimension JSON");
         json["item_count"] = serde_json::json!(1);
-        json["metadata"] = serde_json::to_value(crate::pmdc::PmDcListMetadata::U32([1, 0]))
-            .expect("metadata JSON");
-        json["items"] =
-            serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::new([0x5au8; 24]))
-                .expect("data JSON");
-        dimensions[0] = serde_json::from_value(json).expect("dimension");
+        json["metadata"] =
+            json::to_value(crate::pmdc::PmDcListMetadata::U32([1, 0])).expect("metadata JSON");
+        json["items"] = json::to_value(cadmpeg_ir::native::bytes::NativeBytes::new([0x5au8; 24]))
+            .expect("data JSON");
+        dimensions[0] = json::from_value(json).expect("dimension");
     })
     .expect("candidate")
     .expect("revolve");
@@ -615,9 +615,9 @@ fn revolve_rejects_an_unknown_operation_a_non_axis_and_a_zero_span() {
     );
     assert!(
         generated_revolve_with(REVOLVE_EXTENT_FULL, |_, properties, _, _| {
-            let mut json = serde_json::to_value(&properties[3]).expect("axis JSON");
+            let mut json = json::to_value(&properties[3]).expect("axis JSON");
             json["kind"]["span"] = serde_json::json!([0.0, 0.0, 0.0]);
-            properties[3] = serde_json::from_value(json).expect("axis");
+            properties[3] = json::from_value(json).expect("axis");
         })
         .is_none()
     );
@@ -673,9 +673,9 @@ fn a_quarter_turn_reaches_the_side_that_the_work_axis_span_selects() {
             parameters[0].value = Some(ParameterValue::Angle(
                 Angle::new(std::f64::consts::FRAC_PI_2).expect("angle"),
             ));
-            let mut json = serde_json::to_value(&properties[3]).expect("axis JSON");
+            let mut json = json::to_value(&properties[3]).expect("axis JSON");
             json["kind"]["span"] = serde_json::json!([0.0, span, 0.0]);
-            properties[3] = serde_json::from_value(json).expect("axis");
+            properties[3] = json::from_value(json).expect("axis");
         })
         .expect("candidate")
         .expect("partial revolve");
@@ -790,16 +790,16 @@ fn revolve_axis_controls_require_the_complete_default_pattern() {
     for field in ["entity_flags", "values", "references", "marker", "state"] {
         assert!(
             generated_revolve_with(REVOLVE_EXTENT_FULL, |_, properties, _, _| {
-                let mut json = serde_json::to_value(&properties[3]).expect("axis JSON");
+                let mut json = json::to_value(&properties[3]).expect("axis JSON");
                 json["kind"][field] = match field {
                     "entity_flags" => serde_json::json!(1),
                     "values" => serde_json::json!([0, 1]),
-                    "references" => serde_json::to_value(reference_list(&[4])).expect("list JSON"),
+                    "references" => json::to_value(reference_list(&[4])).expect("list JSON"),
                     "marker" => serde_json::json!(true),
                     "state" => serde_json::json!(2),
                     _ => unreachable!(),
                 };
-                properties[3] = serde_json::from_value(json).expect("axis");
+                properties[3] = json::from_value(json).expect("axis");
             })
             .is_none(),
             "axis {field}"
@@ -868,12 +868,12 @@ fn control_enumerations_keep_all_values_and_require_exact_versioned_frames() {
 #[test]
 fn reference_qualifiers_do_not_change_dimension_or_profile_joins() {
     let projected = generated_revolve_with(REVOLVE_EXTENT_FULL, |source, _, _, dimensions| {
-        let mut json = serde_json::to_value(&source).expect("feature JSON");
+        let mut json = json::to_value(&source).expect("feature JSON");
         json["properties"]["references"][11]["qualified"] = serde_json::json!(false);
-        *source = serde_json::from_value(json).expect("feature frame");
-        let mut json = serde_json::to_value(&dimensions[0]).expect("dimension JSON");
+        *source = json::from_value(json).expect("feature frame");
+        let mut json = json::to_value(&dimensions[0]).expect("dimension JSON");
         json["parameter"]["qualified"] = serde_json::json!(false);
-        dimensions[0] = serde_json::from_value(json).expect("dimension frame");
+        dimensions[0] = json::from_value(json).expect("dimension frame");
     });
     assert!(projected.expect("same selected records").is_ok());
 }

@@ -507,7 +507,9 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
             !bodies.is_empty()
         }
         BodySelection::Historical { bodies, .. } => !bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => true,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
@@ -1783,6 +1785,7 @@ fn design_projection_gaps(
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -4157,7 +4160,11 @@ impl<'a> F3dDecodeSession<'a> {
                         model_body_maps_explicitly_empty: inputs.model_body_maps_explicitly_empty,
                         text_brep_streams: container::text_brep_names(scan).count(),
                         declared_bodies: self.native.design_body_bindings.len()
-                            + self.native.design_body_members.len(),
+                            + if inputs.model_body_maps_explicitly_empty {
+                                0
+                            } else {
+                                self.native.design_body_members.len()
+                            },
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
@@ -5293,6 +5300,10 @@ pub(crate) struct DesignCarriers {
     /// Every selected modern model-body map has zero pairs and no basename.
     pub(crate) model_body_maps_explicitly_empty: bool,
     pub(crate) text_brep_streams: usize,
+    /// The bodies of the current model: the body-map pairs, and the
+    /// bodies-root members where a model-body map can pair them. A member of
+    /// a design whose maps are explicitly empty is the body of a rolled-back
+    /// item (f3d.md §3.1, "Records of a rolled-back Extrude").
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,

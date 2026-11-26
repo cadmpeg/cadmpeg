@@ -11,8 +11,8 @@ use crate::design::ops::shared::{Limit, RadialDimension, Span};
 use crate::design::ops::swept::{
     CenterlineAt, CornerTransition, DraftNeutral, Extrude, ExtrudeDraft, GuideFrame,
     HelicalSection, HelicalSweep, HoleDraft, Loft, PathExtent, Primitive, PrimitiveShape,
-    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine, Sweep,
-    SweepControls, SweepOrientation, SweepSection,
+    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine,
+    SpineLimits, Sweep, SweepControls, SweepOrientation, SweepSection,
 };
 use crate::design::options::{
     BodyForm, Boolean, BooleanOp, SectionCondition, SolidOutput, Support,
@@ -157,6 +157,31 @@ pub(super) fn check_revolve(
     options::check_solid_output(index, site, &revolve.output, findings);
 }
 
+/// `SpineLimits` targets are points or planes (§6.6).
+pub(super) fn check_spine_limits(
+    site: Site<'_>,
+    field: &str,
+    limits: &SpineLimits,
+    findings: &mut Vec<Finding>,
+) {
+    for (end, target) in [("start", &limits.start), ("end", &limits.end)] {
+        let Some(class) = target
+            .as_ref()
+            .and_then(|target| picks::refused(target, picks::is_point_or_plane))
+        else {
+            continue;
+        };
+        error(
+            findings,
+            site.entity,
+            crate::rule!(
+                "design.spine-limit-picks-no-point-or-plane",
+                "{field}.{end} picks {class}; a spine limit is a point or a plane"
+            ),
+        );
+    }
+}
+
 pub(super) fn check_sweep(
     index: &DesignRecords<'_>,
     site: Site<'_>,
@@ -192,6 +217,7 @@ pub(super) fn check_sweep(
         }
     }
     options::check_path(site, "Sweep.path", &sweep.path, findings);
+    check_spine_limits(site, "Sweep.limits", &sweep.limits, findings);
     check_controls(site, &sweep.controls, sweep.guides.len(), findings);
     for guide in &sweep.guides {
         options::check_path(site, "SweepGuide.path", &guide.path, findings);

@@ -6,33 +6,29 @@ use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
     EncodeInput, ExportBody, WritePath,
 };
-use cadmpeg_ir::report::loss::LossNote;
 
 use crate::export::write_step_outcome;
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::StepCodec;
 
-/// Why this writer cannot reproduce a source schema outside
-/// [`StepSchema::TARGETS`].
-///
-/// STEP has no retained-image path, and every schema this writer emits stamps
-/// object-identifier arcs, so an edition-unspecified or unrecognized
-/// declaration cannot be written back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the semantic writer cannot synthesize it, and writing another schema would change what the \
-     file declares; name a target to choose one";
-
 /// Resolve the request against the source and synthesize the selected schema.
+///
+/// STEP has no retained-image path, so a source schema outside the catalog
+/// is written as the catalog default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
     codec: &StepCodec,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = resolved.index() else {
-        return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
-    };
-    let (schema, displaced) = schema_at(index);
+    let schema = resolved
+        .synthesized_row()
+        .and_then(|(index, _)| StepSchema::from_target_index(index));
+    debug_assert!(
+        schema.is_some(),
+        "the STEP catalog declares a default and is projected from StepSchema::ALL"
+    );
+    let schema = schema.unwrap_or(StepSchema::DEFAULT);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(
@@ -55,13 +51,6 @@ pub(crate) fn plan(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
-    losses.extend(displaced);
-    if let Some(message) = resolved.request_displacement_message() {
-        losses.push(StepLossCode::TargetRequestDisplaced.note(message));
-    }
-    if let Some(message) = resolved.displacement_message() {
-        losses.push(StepLossCode::SourceDialectDisplaced.note(message));
-    }
     Ok(ExportBody {
         bytes,
         census: outcome.census,
@@ -72,24 +61,9 @@ pub(crate) fn plan(
         coverage: ArenaCoverage::Declared(coverage(schema)),
         losses,
         notes: outcome.notes,
+        written_row: None,
+        annotations: None,
     })
-}
-
-/// The schema at row `index` of the catalog [`StepSchema::TARGETS`] projects
-/// from [`StepSchema::ALL`]. A row past the catalog is written as the default
-/// row, with `target.request-displaced` naming both.
-pub(super) fn schema_at(index: usize) -> (StepSchema, Option<LossNote>) {
-    if let Some(schema) = StepSchema::from_target_index(index) {
-        return (schema, None);
-    }
-    let schema = StepSchema::DEFAULT;
-    let note = StepLossCode::TargetRequestDisplaced.note(format!(
-        "requested target row {index} is outside the STEP schema catalog of {} rows; the file \
-         is written as {}",
-        StepSchema::ALL.len(),
-        schema.id()
-    ));
-    (schema, Some(note))
 }
 
 /// What the STEP writer does with each model arena.

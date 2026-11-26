@@ -31,7 +31,6 @@ mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -201,16 +200,15 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), CodecError> {
-    let Some(version) = target
-        .index()
-        .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
-    else {
-        return Err(target.unavailable(
-            "the source text version is one this writer cannot synthesize, and a USD layer \
-             has no byte-replay path",
-        ));
-    };
+) -> (ExportBody, Vec<Member>) {
+    let version = target
+        .synthesized_row()
+        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the USD catalog declares a default and is projected from TARGET_VERSIONS"
+    );
+    let version = version.unwrap_or("1.0");
     let metres = input
         .scene
         .meters_per_unit
@@ -245,8 +243,10 @@ pub(crate) fn plan(
         coverage: ArenaCoverage::Declared(COVERAGE),
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
+        written_row: None,
+        annotations: None,
     };
-    Ok((body, members))
+    (body, members)
 }
 
 /// The note text of a layer of `metres` metres per unit.

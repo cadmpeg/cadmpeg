@@ -6,6 +6,7 @@ use crate::records::feature::split_face::{
 };
 use crate::records::identity::{Located, ReferenceRun};
 use crate::test_support::split_face::metadata;
+use cadmpeg_core::serde_erase::json;
 
 fn split_face_scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
@@ -227,8 +228,8 @@ fn split_face_generic_prefix_boundaries_retain_admitted_scope_and_serde() {
                 *slot = operation;
             })
             .unwrap();
-        let wire = serde_json::to_vec(&scope).unwrap();
-        let decoded: DesignParameterScope = serde_json::from_slice(&wire).unwrap();
+        let wire = json::to_vec(&scope).unwrap();
+        let decoded: DesignParameterScope = json::from_slice(&wire).unwrap();
         assert_eq!(decoded.split_face_operation(), scope.split_face_operation());
         crate::test_support::split_face::assert_native_scope(&decoded);
     }
@@ -266,9 +267,9 @@ fn split_face_typed_local_carrier_keeps_qualifier_vector_and_width() {
             matches!(&operation.direction_reference, DesignSplitFaceDirectionReference::Local { target: Located { value: 55, offset: 22 }, inline_type_guid: Some(value) } if value == guid)
         );
         assert_eq!(operation.carrier_type_assumed(), assumed);
-        let wire = serde_json::to_vec(&operation).unwrap();
+        let wire = json::to_vec(&operation).unwrap();
         let decoded: crate::records::feature::split_face::DesignSplitFaceOperation =
-            serde_json::from_slice(&wire).unwrap();
+            json::from_slice(&wire).unwrap();
         assert_eq!(decoded, operation);
     }
 }
@@ -736,8 +737,8 @@ fn reference_ending_at_scope_boundary_survives_serde() {
             *payload = Some(operation);
         })
         .unwrap();
-    let encoded = serde_json::to_vec(&scope).unwrap();
-    let decoded: DesignParameterScope = serde_json::from_slice(&encoded).unwrap();
+    let encoded = json::to_vec(&scope).unwrap();
+    let decoded: DesignParameterScope = json::from_slice(&encoded).unwrap();
     assert_eq!(decoded.split_face_operation(), scope.split_face_operation());
 }
 
@@ -772,8 +773,8 @@ fn unavailable_reference_at_scope_boundary_survives_serde() {
             *payload = Some(operation);
         })
         .unwrap();
-    let encoded = serde_json::to_vec(&scope).unwrap();
-    let decoded: DesignParameterScope = serde_json::from_slice(&encoded).unwrap();
+    let encoded = json::to_vec(&scope).unwrap();
+    let decoded: DesignParameterScope = json::from_slice(&encoded).unwrap();
     assert_eq!(decoded.split_face_operation(), scope.split_face_operation());
 }
 
@@ -978,8 +979,8 @@ fn nonfinite_direction_retains_registered_input_slots_and_location() {
                 *slot = Some(operation.clone());
             })
             .unwrap();
-        let wire = serde_json::to_vec(&scope).unwrap();
-        let decoded: DesignParameterScope = serde_json::from_slice(&wire).unwrap();
+        let wire = json::to_vec(&scope).unwrap();
+        let decoded: DesignParameterScope = json::from_slice(&wire).unwrap();
         assert_eq!(decoded.split_face_operation(), Some(&operation));
         crate::test_support::split_face::assert_native_scope(&decoded);
     }

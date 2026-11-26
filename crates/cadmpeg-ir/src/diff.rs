@@ -592,6 +592,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     use super::diff;
@@ -692,8 +693,8 @@ mod tests {
         );
 
         assert_ne!(
-            serde_json::to_value(&left.geometry.points).expect("test fixture invariant"),
-            serde_json::to_value(&right.geometry.points).expect("test fixture invariant"),
+            json::to_value(&left.geometry.points).expect("test fixture invariant"),
+            json::to_value(&right.geometry.points).expect("test fixture invariant"),
             "the serialized documents must differ, or exact equality would pass too"
         );
         let result = diff(&left, &right);
@@ -909,7 +910,7 @@ mod tests {
         }
 
         let rendered =
-            serde_json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
+            json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
         assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
 
         assert!(diff(&bare, &bare).is_empty());
@@ -1068,8 +1069,7 @@ mod tests {
     #[test]
     fn an_unpopulated_dialect_adds_no_key_to_the_serialized_diff() {
         let ir = with_source(&[]);
-        let rendered =
-            serde_json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
+        let rendered = json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
 
         assert!(!rendered.contains("dialects_change"), "{rendered}");
     }

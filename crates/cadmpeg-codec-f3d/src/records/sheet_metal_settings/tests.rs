@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn settings_wire_couples_version_arity_and_source_identity() {
     use super::DesignSheetMetalSettings;
@@ -18,18 +20,18 @@ fn settings_wire_couples_version_arity_and_source_identity() {
         if let Some(tail) = tail {
             wire["inputs"]["rule_reference_tail"] = serde_json::json!(tail);
         }
-        let record: DesignSheetMetalSettings = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: DesignSheetMetalSettings = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
         let mut invalid = wire.clone();
         invalid["inputs"]["rule_reference_tail"] = serde_json::json!("000000");
-        assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
+        assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
         if tail.is_some() {
             let mut invalid = wire.clone();
             invalid["inputs"]
                 .as_object_mut()
                 .unwrap()
                 .remove("rule_reference_tail");
-            assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
+            assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
         }
         for (field, value) in [
             ("byte_offset", serde_json::json!(21)),
@@ -38,14 +40,14 @@ fn settings_wire_couples_version_arity_and_source_identity() {
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
-            assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
+            assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
         }
         let mut invalid = wire;
         invalid["inputs"]["slots"]
             .as_array_mut()
             .unwrap()
             .push(serde_json::Value::Null);
-        assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
+        assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
     }
 }
 
@@ -59,8 +61,8 @@ fn leading_reference_form_has_no_mask() {
         "rule_record_index": 51, "presentation_record_index": 52,
         "owner_record_index": 53, "context_record_index": 54,
     });
-    let record: DesignSheetMetalSettings = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    let record: DesignSheetMetalSettings = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&record).unwrap(), wire);
     assert_eq!(record.mask, None);
     assert_eq!(
         record.record_references().collect::<Vec<_>>(),
@@ -68,10 +70,10 @@ fn leading_reference_form_has_no_mask() {
     );
     let mut with_mask = wire.clone();
     with_mask["mask"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<DesignSheetMetalSettings>(with_mask).is_err());
+    assert!(json::from_value::<DesignSheetMetalSettings>(with_mask).is_err());
     let mut slots = wire;
     slots["inputs"] = serde_json::json!({
         "version": "v3", "slots": vec![None::<u64>; 9], "rule_reference_tail": "0000",
     });
-    assert!(serde_json::from_value::<DesignSheetMetalSettings>(slots).is_err());
+    assert!(json::from_value::<DesignSheetMetalSettings>(slots).is_err());
 }

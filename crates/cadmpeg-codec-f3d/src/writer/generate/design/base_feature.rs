@@ -28,6 +28,7 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignRegistry, TypeRow};
+use crate::writer::generate::records::ParameterRecords;
 
 /// The first value of the persistent-identity counter: a `Sketch` or
 /// `WorkPlane` scope owns one identity and the `Base Feature` scope the
@@ -213,8 +214,6 @@ struct Classes {
     /// The classes of the `Base Feature` item's own types, which a design
     /// with a geometry item in its place does not register.
     item: Option<ItemClasses>,
-    tracked_results: DesignClassTag,
-    item_companion: DesignClassTag,
     timestamps: DesignClassTag,
     owner_collection: DesignClassTag,
     component: DesignClassTag,
@@ -231,7 +230,9 @@ struct Classes {
     collection: DesignClassTag,
     collection_companion: DesignClassTag,
     aggregate: DesignClassTag,
-    body_reference: DesignClassTag,
+    /// The class of the body-reference records, which a design with no
+    /// result body does not register.
+    body_reference: Option<DesignClassTag>,
     object: DesignClassTag,
     tracking_entry: DesignClassTag,
     collection_base: DesignClassTag,
@@ -314,12 +315,12 @@ impl BaseFeaturePlan<'_> {
         &self,
         parameters: &ParameterPlan,
         registry: &mut GeneratedDesignRegistry,
-    ) -> Result<(Vec<u8>, DesignRecords, Vec<LossNote>), CodecError> {
+    ) -> Result<(ParameterRecords, DesignRecords, Vec<LossNote>), CodecError> {
         let bodies = self.body_records(registry)?;
         let parameter_indices = parameters.allocate(registry)?;
         let indices = Indices::allocate(registry)?;
         let classes = Classes::register(registry, &indices, &bodies)?;
-        let parameter_bytes =
+        let parameter_records =
             parameters.encode(registry, &parameter_indices, Some(indices.collection))?;
         let mut out = DesignRecords::default();
         let writer = Writer {
@@ -341,7 +342,7 @@ impl BaseFeaturePlan<'_> {
         writer.parameter_collection(&mut out, &parameter_indices)?;
         out.record(&classes.aggregate, indices.aggregate);
         writer.body_references(&mut out)?;
-        Ok((parameter_bytes, out, residual_losses(&indices, &bodies)))
+        Ok((parameter_records, out, residual_losses(&indices, &bodies)))
     }
 
     /// Each result body as the roster writes it.
@@ -572,12 +573,12 @@ impl Classes {
                     scope: class(types::BASE_FEATURE)?,
                     result_owner: class(types::RESULT_OWNER)?,
                     tracking: class(types::BODY_TRACKING)?,
+                    tracked_results: class(types::TRACKED_RESULTS)?,
+                    item_companion: class(types::ITEM_TAIL_COMPANION)?,
                 })
             } else {
                 None
             },
-            tracked_results: class(types::TRACKED_RESULTS)?,
-            item_companion: class(types::ITEM_TAIL_COMPANION)?,
             timestamps: class(types::RECORD_TIMESTAMPS)?,
             owner_collection: class(types::OWNER_COLLECTION)?,
             component: class(types::COMPONENT_RECORD)?,
@@ -594,7 +595,11 @@ impl Classes {
             collection: class(types::PARAMETER_COLLECTION)?,
             collection_companion: class(types::COLLECTION_COMPANION)?,
             aggregate: class(types::COMPONENT_AGGREGATE)?,
-            body_reference: class(types::BODY_REFERENCE)?,
+            body_reference: if ctx.roster.bodies.is_empty() {
+                None
+            } else {
+                Some(class(types::BODY_REFERENCE)?)
+            },
             object: class(types::DATA_MODEL_OBJECT)?,
             tracking_entry: class(types::TRACKING_ENTRY)?,
             collection_base: class(types::COLLECTION)?,
@@ -637,15 +642,15 @@ impl Classes {
                 scope: register(types::BASE_FEATURE, &item_ids(|item| item.scope))?,
                 result_owner: register(types::RESULT_OWNER, &item_ids(|item| item.result_owner))?,
                 tracking: register(types::BODY_TRACKING, &tracking)?,
+                tracked_results: register(
+                    types::TRACKED_RESULTS,
+                    &item_ids(|item| item.tracked_results),
+                )?,
+                item_companion: register(
+                    types::ITEM_TAIL_COMPANION,
+                    &item_ids(|item| item.item_companion),
+                )?,
             }),
-            tracked_results: register(
-                types::TRACKED_RESULTS,
-                &item_ids(|item| item.tracked_results),
-            )?,
-            item_companion: register(
-                types::ITEM_TAIL_COMPANION,
-                &item_ids(|item| item.item_companion),
-            )?,
             timestamps: register(types::RECORD_TIMESTAMPS, &timestamps)?,
             owner_collection: register(types::OWNER_COLLECTION, &[indices.owner_collection])?,
             component: register(types::COMPONENT_RECORD, &[indices.component])?,
@@ -665,7 +670,7 @@ impl Classes {
                 &[indices.collection_companion],
             )?,
             aggregate: register(types::COMPONENT_AGGREGATE, &[indices.aggregate])?,
-            body_reference: register(types::BODY_REFERENCE, &body_references)?,
+            body_reference: Some(register(types::BODY_REFERENCE, &body_references)?),
         };
         register(types::AGGREGATE, &[])?;
         Ok(classes)
@@ -677,6 +682,8 @@ struct ItemClasses {
     scope: DesignClassTag,
     result_owner: DesignClassTag,
     tracking: DesignClassTag,
+    tracked_results: DesignClassTag,
+    item_companion: DesignClassTag,
 }
 
 /// Writes the records of one design.
@@ -838,7 +845,7 @@ impl Writer<'_> {
             .chain(
                 self.geometry
                     .iter()
-                    .filter_map(|item| item.records.place.rolled.map(|body| body.node)),
+                    .filter_map(|item| item.records.place.rolled().map(|body| body.node)),
             )
             .collect::<Vec<_>>();
         out.record(&self.classes.context, indices.context)
@@ -982,7 +989,7 @@ impl Writer<'_> {
             (item.result_owner, self.stamps.result),
         )?;
 
-        out.record(&classes.tracked_results, item.tracked_results)
+        out.record(&item_classes.tracked_results, item.tracked_results)
             .zeros(10)
             .u32(bodies);
         for (key, body) in (1u64..).zip(self.bodies) {
@@ -998,7 +1005,7 @@ impl Writer<'_> {
                 .header(&classes.tracking_entry, body.tracking)
                 .zeros(9);
         }
-        out.record(&classes.item_companion, item.item_companion)
+        out.record(&item_classes.item_companion, item.item_companion)
             .zeros(9)
             .byte(1)
             .zeros(8)
@@ -1289,6 +1296,9 @@ impl Writer<'_> {
     /// naming the other.
     fn body_references(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         for body in self.bodies {
+            let class = self.classes.body_reference.as_ref().ok_or_else(|| {
+                CodecError::Malformed("a result body with no body-reference class".into())
+            })?;
             for (record, property, other) in [
                 (
                     body.design_reference,
@@ -1301,7 +1311,7 @@ impl Writer<'_> {
                     body.design_reference,
                 ),
             ] {
-                out.record(&self.classes.body_reference, record)
+                out.record(class, record)
                     .zeros(9)
                     .byte(1)
                     .u32(1)

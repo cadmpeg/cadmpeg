@@ -2,6 +2,7 @@
 //! Placement atom, frame, and wire admission invariants.
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn frame() -> Vec<u8> {
     let mut bytes = MAGIC_VALUE.to_vec();
@@ -66,11 +67,11 @@ fn placement_wire_reads_the_one_zero_written_for_a_negative_zero_atom() {
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
         "source_entry":ENTRY_NAME, "source_offset":123,
     });
-    let record: AssemblyPlacement = serde_json::from_value(wire.clone()).unwrap();
+    let record: AssemblyPlacement = json::from_value(wire.clone()).unwrap();
     assert_eq!(record.raw_frame.as_ref(), raw.as_slice());
     let mut moved = wire;
     moved["matrix"][1] = serde_json::json!(0.5);
-    assert!(serde_json::from_value::<AssemblyPlacement>(moved).is_err());
+    assert!(json::from_value::<AssemblyPlacement>(moved).is_err());
 }
 
 #[test]
@@ -82,11 +83,11 @@ fn placement_wire_rejects_derived_field_and_source_identity_changes() {
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
         "source_entry":ENTRY_NAME, "source_offset":123,
     });
-    let record: AssemblyPlacement = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    let record: AssemblyPlacement = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(record).unwrap(), wire);
     let mut null_reference = wire.clone();
     null_reference["object_record"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<AssemblyPlacement>(null_reference).is_err());
+    assert!(json::from_value::<AssemblyPlacement>(null_reference).is_err());
     for (field, value) in [
         ("id", serde_json::json!("nx:assembly:placement#124")),
         (
@@ -101,18 +102,18 @@ fn placement_wire_rejects_derived_field_and_source_identity_changes() {
     ] {
         let mut changed = wire.clone();
         changed[field] = value;
-        assert!(serde_json::from_value::<AssemblyPlacement>(changed).is_err());
+        assert!(json::from_value::<AssemblyPlacement>(changed).is_err());
     }
     let mut changed = wire;
     changed["matrix"][3] = serde_json::json!(1.0);
-    assert!(serde_json::from_value::<AssemblyPlacement>(changed).is_err());
+    assert!(json::from_value::<AssemblyPlacement>(changed).is_err());
 }
 
 #[test]
 fn placement_object_binding_requires_one_complete_record_at_the_frame_start() {
     let raw = frame();
     let placement = |offset: u64| -> AssemblyPlacement {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id":format!("nx:assembly:placement#{offset}"), "raw_frame":NativeBytes::new(raw.as_slice()),
             "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
             "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
@@ -120,7 +121,7 @@ fn placement_object_binding_requires_one_complete_record_at_the_frame_start() {
         })).unwrap()
     };
     let object = |id: &str, offset: u64, length: usize| -> ObjectRecord {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id":id, "object_id":17, "object_id_source_offset":16,
             "section_ordinal":0, "record_ordinal":0, "section_offset":0,
             "byte_len":length, "sha256":"0000000000000000000000000000000000000000000000000000000000000000",

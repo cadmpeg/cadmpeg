@@ -2,6 +2,7 @@
 
 use super::{assert_valid, decode};
 use crate::test_support::{build_prt, push_generated_plane_row};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn binary_units_cgs_lengths_scale_exactly_once() {
@@ -25,7 +26,7 @@ fn binary_units_cgs_lengths_scale_exactly_once() {
             &[("BasicData", basic), ("VisibGeom", visible)],
         ));
         assert_valid(&decoded);
-        let value = serde_json::to_value(decoded.ir()).expect("CADIR serializes");
+        let value = json::to_value(decoded.ir()).expect("CADIR serializes");
         let surface = value["geometry"]["surfaces"]
             .as_array()
             .expect("surfaces")

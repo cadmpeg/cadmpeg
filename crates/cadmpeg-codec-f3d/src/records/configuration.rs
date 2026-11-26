@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and the configuration tables they hold.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -50,6 +51,10 @@ enum ConfigurationContent {
     Table(table::AdmittedTables),
     Rule,
 }
+
+/// The most UTF-16 code units the reader admits for the table id or the row
+/// id of a `DesignConfigurationRoot` record (f3d.md §1.2).
+pub(crate) const ID_WIDTH: usize = 256;
 
 /// Active row that the Design `DesignConfigurationRoot` record names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,14 +275,14 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
     }
 }
 
-/// Encode the native source document.
+/// Encode `payload`, the document of configuration entry `entry_name`.
 pub(crate) fn encode_configuration_payload(
-    configuration: &DesignConfiguration,
+    entry_name: &str,
+    payload: &Map<String, Value>,
 ) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(configuration.payload()).map_err(|error| {
+    json::to_vec(payload).map_err(|error| {
         CodecError::malformed(format_args!(
-            "cannot encode F3D configuration JSON {}: {error}",
-            configuration.entry_name()
+            "cannot encode F3D configuration JSON {entry_name}: {error}"
         ))
     })
 }

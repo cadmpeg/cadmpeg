@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn component_insertions_round_trip_native_partial_and_complete_membership() {
     use crate::features::selections::InsertedComponents;
@@ -33,13 +35,13 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
         assert_eq!(components.native_reference().as_str(), "fixture:scope#10");
         let definition =
             FeatureDefinition::Operation(FeatureOperation::InsertComponents { components });
-        let wire = serde_json::to_value(&definition).unwrap();
+        let wire = json::to_value(&definition).unwrap();
         assert_eq!(
             wire,
             serde_json::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
         );
         assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            json::from_value::<FeatureDefinition>(wire).unwrap(),
             definition
         );
     }

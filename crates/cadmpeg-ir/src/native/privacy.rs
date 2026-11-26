@@ -92,7 +92,7 @@ pub(super) fn observe<T: DeserializeOwned>(id: &str, json: &str) {
                     continue;
                 };
                 *target = Value::String("__cadmpeg_repro_probe__".into());
-                if serde_json::from_str::<T>(&probe.to_string()).is_err() {
+                if cadmpeg_core::serde_erase::from_json_value::<T>(&probe).is_err() {
                     CAPTURE.with(|capture| {
                         if let Some(capture) = capture.borrow_mut().as_mut() {
                             capture.fields.entry(id.into()).or_default().insert(path);

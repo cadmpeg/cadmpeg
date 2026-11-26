@@ -32,7 +32,6 @@ sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-serde-value.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]

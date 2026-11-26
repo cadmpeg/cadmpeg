@@ -17,7 +17,7 @@ use crate::report::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisFidelity, WritePath as ReportWritePath,
     },
-    loss::LossNote,
+    loss::{LossNamespace, LossNote},
     strictness::Strictness,
     Severity,
 };
@@ -28,6 +28,7 @@ use cadmpeg_core::CodecError;
 
 pub mod approximation;
 mod cages;
+mod canonical;
 pub use cages::{cage_bodies, cage_bodies_clause, remove_cage_bodies, without_cage_bodies};
 pub mod capacity;
 mod carried;
@@ -121,8 +122,9 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// catalog's: a patch-only writer's row is reachable only from a retained
     /// source of that flavor, and `plan` refuses by name where it cannot
     /// deliver. Preservation of dialects outside the catalog is not listed
-    /// here; [`TargetRequest::Inherit`] asks for it. Ids come from this
-    /// encoder's own format namespace only.
+    /// here; [`TargetRequest::Inherit`] and [`TargetRequest::Unnamed`] on a
+    /// same-format source ask for it. Ids come from this encoder's own format
+    /// namespace only.
     fn targets(&self) -> TargetCatalog;
 
     /// The decode depth this encoder plans from, [`EncoderBackend::REQUEST`].
@@ -164,8 +166,6 @@ impl<E: EncoderBackend> Encoder for E {
         let target = E::TARGET
             .resolve(input.ir, request, E::FORMAT)
             .map_err(EncodeError::from_backend)?;
-        let identity = target.export_target().cloned();
-        let synthesized_identity = target.synthesized_target().cloned();
         let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
         let restored = self
             .restore(input, &target, &mut restore_notes, &mut restore_losses)
@@ -175,16 +175,30 @@ impl<E: EncoderBackend> Encoder for E {
             None => input,
         };
         let body = self
-            .plan_resolved(input, target)
+            .plan_resolved(input, target.clone())
             .map_err(EncodeError::from_backend)?;
         let ExportBody {
             bytes,
             census,
             write_path,
             coverage,
-            mut losses,
+            losses: body_losses,
             mut notes,
+            written_row,
+            annotations,
         } = body;
+        let namespace = const {
+            match LossNamespace::new(E::FORMAT.as_str()) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("an encoder format is a loss namespace"),
+            }
+        };
+        let (identity, mut losses) = target.report_target(
+            namespace,
+            matches!(write_path, WritePath::Synthesized { .. }),
+            written_row,
+        );
+        losses.extend(body_losses);
         notes.extend(restore_notes);
         losses.extend(restore_losses);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
@@ -217,10 +231,6 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
-        let identity = match write_path {
-            WritePath::Synthesized { .. } => synthesized_identity,
-            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
-        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -231,6 +241,7 @@ impl<E: EncoderBackend> Encoder for E {
             bytes,
             format: E::FORMAT,
             coverage,
+            annotations,
         };
         if let Some(validation) = input.validation {
             plan.charge_carried_errors(input.ir, validation);
@@ -502,6 +513,13 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
+    /// The catalog row the payload is, where the writer wrote another row
+    /// than the resolution names; `None` for the resolved row.
+    pub written_row: Option<target::WrittenRow>,
+    /// The annotations of the input's fidelity less those of each record the
+    /// payload leaves out, where it leaves out a record they name; `None`
+    /// where they describe the payload as given.
+    pub annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportBody {
@@ -520,6 +538,8 @@ impl ExportBody {
             coverage,
             losses: Vec::new(),
             notes: Vec::new(),
+            written_row: None,
+            annotations: None,
         }
     }
 }
@@ -534,12 +554,20 @@ pub struct ExportPlan {
     coverage: ArenaCoverage,
     report: ExportReport,
     bytes: Vec<u8>,
+    annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportPlan {
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report
+    }
+
+    /// The annotations that describe the payload, where the write left out a
+    /// record the input's annotations name ([`ExportBody::annotations`]).
+    #[must_use]
+    pub fn annotations(&self) -> Option<&crate::annotations::Annotations> {
+        self.annotations.as_ref()
     }
 
     /// The error findings of `report` that name something this payload may carry.
@@ -680,18 +708,290 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?
-            .into_bytes();
+        let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
+            CodecError::Malformed(error.to_string())
+        };
+        let (mut canonical, mut losses) = match canonical::canonical_form(input.ir)? {
+            Some((ir, losses)) => (Some(ir), losses),
+            None => (None, Vec::new()),
+        };
+        let (mut bytes, measured) =
+            match crate::hash::measured_canonical_json(canonical.as_ref().unwrap_or(input.ir)) {
+                Ok(measured) => measured,
+                Err(refusal) => {
+                    let (ir, unwritable) = without_unwritable_records(
+                        canonical.as_ref().unwrap_or(input.ir),
+                        &refusal,
+                    )?;
+                    losses.extend(unwritable);
+                    let measured = crate::hash::measured_canonical_json(&ir);
+                    debug_assert!(
+                        measured.is_ok(),
+                        "a document without each record whose canonical JSON alone is refused \
+                         writes: every value outside the records is a checked type"
+                    );
+                    let measured = measured.map_err(malformed)?;
+                    canonical = Some(ir);
+                    measured
+                }
+            };
+        let source = canonical.as_ref().unwrap_or(input.ir);
+        let written;
+        let ir = if measured.records.is_empty() && measured.outside.is_empty() {
+            source
+        } else {
+            let (ir, unwritable) = within_the_bounds(source, &measured)?;
+            losses.extend(unwritable);
+            bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
+                .map_err(malformed)?
+                .into_bytes();
+            written = ir;
+            &written
+        };
+        let empty;
+        let ir = if holds_records(input.ir) && !writes_records(ir) {
+            losses.push(output_empty(
+                "the written CADIR document holds no record: each record of the document is \
+                 dropped or needs one that is",
+            ));
+            empty = without_records(ir);
+            let written = crate::hash::finite_json::to_canonical_json_string(&empty);
+            debug_assert!(
+                written.is_ok(),
+                "the CADIR empty file writes: it holds no record, and each document-level \
+                 field it states is a checked type"
+            );
+            bytes = written.map_err(malformed)?.into_bytes();
+            &empty
+        } else {
+            ir
+        };
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
-        Ok(ExportBody::synthesized(
+        let mut body = ExportBody::synthesized(
             bytes,
-            input.ir,
+            ir,
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
-        ))
+        );
+        body.losses = losses;
+        body.annotations = input
+            .fidelity
+            .filter(|fidelity| !std::ptr::eq(ir, input.ir) && !fidelity.annotations.is_empty())
+            .and_then(|fidelity| {
+                let removed =
+                    crate::annotations::Removed::before(input.ir).after(std::iter::empty(), ir);
+                let mut annotations = fidelity.annotations.clone();
+                annotations.remove(&removed).then_some(annotations)
+            });
+        Ok(body)
     }
+}
+
+/// A copy of `ir` without each record whose canonical JSON is refused and
+/// without each record that needs one, as §3.3 drops a record (§3.4). Each
+/// refused record charges `export:record.invalid`, naming it and the
+/// records dropped and marked with it.
+///
+/// # Errors
+///
+/// A resource refusal for the walk of the carriers.
+fn without_unwritable_records(
+    ir: &CadIr,
+    refusal: &crate::hash::finite_json::CanonicalJsonError,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let unwritable: std::collections::BTreeMap<_, _> =
+        ir.arenas().unwritable().into_iter().collect();
+    debug_assert!(
+        !unwritable.is_empty(),
+        "a document whose canonical JSON is refused holds a record whose canonical JSON alone \
+         is refused: every value outside the records is a checked type ({refusal})"
+    );
+    debug_assert!(
+        !unwritable.values().any(|refusal| matches!(
+            refusal,
+            crate::hash::finite_json::CanonicalJsonError::NonFinite { .. }
+        )),
+        "no record the CADIR wire writes holds a non-finite number: every float of a record \
+         is a checked type"
+    );
+    let mut ir = ir.clone();
+    let seeds = unwritable.keys().cloned().collect();
+    let removed = canonical::give_up_in(&mut ir, |ctx, ir| {
+        crate::give_up::drop_records(ctx, ir, seeds)
+    })?;
+    let losses = removed
+        .into_iter()
+        .filter_map(|(seed, released)| {
+            let refusal = unwritable.get(&seed)?;
+            Some(canonical::record_invalid_code(&seed.arena).note(format!(
+                "the {} write drops record {} of arena {}, whose canonical JSON is refused \
+                 ({refusal}), with each record that needs it; dropped=[{}], marked=[{}]",
+                CadirEncoder::FORMAT.as_str(),
+                seed.id,
+                seed.arena,
+                canonical::listed(&released.dropped),
+                canonical::listed(&released.marked)
+            )))
+        })
+        .collect();
+    Ok((ir, losses))
+}
+
+/// A copy of `ir` within the bounds of §2.5 (§3.4). Each value outside every
+/// record past a bound is written as an unstated value, each expression past
+/// its bound is written in its partial form, and each record still past a
+/// bound is dropped with each record that needs it, as §3.3 drops a record.
+fn within_the_bounds(
+    ir: &CadIr,
+    measured: &crate::bounds::Measured,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let mut ir = ir.clone();
+    let mut losses = Vec::new();
+    for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
+        losses.extend(value_unwritable(
+            CadirEncoder::FORMAT.as_str(),
+            &format!("writes {}", unstated.what),
+            [unstated.field],
+        ));
+    }
+    let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
+    losses.extend(restated);
+    losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
+    Ok((ir, losses))
+}
+
+/// The CADIR empty file of `ir` (§3.4): no records, with the document-level
+/// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
+/// metadata and tolerances. Its `repro` has no root, manifest row or
+/// incomplete reason, since the file holds no record they describe.
+fn without_records(ir: &CadIr) -> CadIr {
+    let mut empty = CadIr::empty();
+    empty.fragment = ir.fragment;
+    empty.repro.clone_from(&ir.repro);
+    if let Some(repro) = &mut empty.repro {
+        repro.roots.clear();
+        repro.manifest.clear();
+        repro.incomplete_reason = None;
+    }
+    empty.source.clone_from(&ir.source);
+    empty.tolerances = ir.tolerances;
+    empty.set_scope(ir.scope());
+    empty
+}
+
+/// Whether `ir` holds a record of a home or native arena.
+fn holds_records(ir: &CadIr) -> bool {
+    ir.entity_count() > 0 || holds_native_records(ir)
+}
+
+/// Whether `ir` holds a record that its CADIR text writes: a record of a
+/// native arena or of a home arena the wire carries.
+fn writes_records(ir: &CadIr) -> bool {
+    holds_native_records(ir)
+        || ir.arenas().record_ids().iter().any(|(arena, (_, ids))| {
+            !crate::document::ArenaName::WIRE_OMITTED.contains(arena) && !ids.is_empty()
+        })
+}
+
+fn holds_native_records(ir: &CadIr) -> bool {
+    ir.native.0.values().any(|namespace| {
+        namespace
+            .arenas()
+            .values()
+            .any(|records| !records.is_empty())
+    })
+}
+
+/// States `Source` with no tokens each expression past its bound in the
+/// records of `records` that pass that bound, the partial form §3.3 gives
+/// an expression, so that each such record and each record that needs it
+/// stays. Each restated record charges one `export:value.unwritable` that
+/// names it. Returns those losses and the records of `ir` still past a
+/// bound.
+fn restate_expressions_past_the_bound(
+    ir: &mut CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<
+    (
+        Vec<LossNote>,
+        std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+    ),
+    CodecError,
+> {
+    ir.finalize();
+    let seeds: Vec<crate::give_up::Seed> = records
+        .iter()
+        .filter(|(_, bound)| **bound == crate::bounds::Bound::Expression)
+        .filter_map(|(place, _)| ir.record_at(place))
+        .collect();
+    let restated = crate::give_up::restate_past_the_bound(ir, &seeds);
+    if restated.is_empty() {
+        return Ok((Vec::new(), records.clone()));
+    }
+    let losses = restated
+        .into_iter()
+        .filter_map(|seed| {
+            let reason = format!(
+                "writes each expression of record {} of arena {} deeper than the {} levels of \
+                 an expression as Source with no tokens",
+                seed.id,
+                seed.arena,
+                crate::bounds::MAX_EXPRESSION_DEPTH
+            );
+            value_unwritable(CadirEncoder::FORMAT.as_str(), &reason, [seed.id])
+        })
+        .collect();
+    let (_, measured) = crate::hash::measured_canonical_json(&*ir)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok((losses, measured.records))
+}
+
+/// Drops from `ir` each record of `records`, which it holds past a bound of
+/// §2.5, and each record that needs one, as §3.3 drops a record (§3.4). Each
+/// such record charges one `export:value.unwritable` that names it, the
+/// bound, and the records dropped and marked with it.
+fn drop_records_past_the_bounds(
+    ir: &mut CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<Vec<LossNote>, CodecError> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
+    ir.finalize();
+    let bounds: std::collections::BTreeMap<crate::give_up::Seed, crate::bounds::Bound> = records
+        .iter()
+        .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let removed = crate::give_up::drop_records(&ctx, ir, bounds.keys().cloned().collect())?;
+    Ok(removed
+        .into_iter()
+        .filter_map(|(seed, released)| {
+            let reason = format!(
+                "drops record {} of arena {}, which {}, with each record that needs it; \
+                 marked=[{}]",
+                seed.id,
+                seed.arena,
+                bounds
+                    .get(&seed)
+                    .map_or_else(String::new, |bound| bound.describe()),
+                released
+                    .marked
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            value_unwritable(
+                CadirEncoder::FORMAT.as_str(),
+                &reason,
+                std::iter::once(seed.id).chain(released.dropped),
+            )
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use super::{
 };
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -106,7 +107,7 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
         .all(|reference| reference.qualified()));
     assert_eq!(tail.len, 46);
     assert!(record.valid(&ctx)?);
-    let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+    let restored: Record = json::from_value(json::to_value(&record)?)?;
     assert_eq!(restored, record);
     assert!(restored.valid(&ctx)?);
     Ok(())
@@ -132,7 +133,7 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
         assert_eq!(text, "Generated view");
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert_eq!(restored, record);
         assert!(restored.valid(&ctx)?);
     }
@@ -153,7 +154,7 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
         assert_eq!(stored, path);
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert!(restored.valid(&ctx)?);
     }
     for path in [

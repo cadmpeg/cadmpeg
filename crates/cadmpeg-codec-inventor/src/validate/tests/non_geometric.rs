@@ -3,6 +3,7 @@
 use super::{empty_data, sketch_point, sketch_records, TestResult};
 use crate::pmdc::{PmDcReference, PmDcReferenceList};
 use crate::sketch::PmDcSketchEntityKind;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
@@ -94,7 +95,7 @@ fn non_geometric_relations_are_rejected_as_sketch_constraints() -> TestResult {
             false,
         ),
     ] {
-        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
+        let mut wire = json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
         wire["header"]["content"]["context"] = serde_json::json!(null_reference);
         wire["header"]["group"] = serde_json::json!(null_reference);
         wire["kind"] = kind;
@@ -105,10 +106,10 @@ fn non_geometric_relations_are_rejected_as_sketch_constraints() -> TestResult {
                 .ok_or("constraint header")?
                 .remove("parameter");
         }
-        let source: crate::sketch::PmDcSketchConstraint = serde_json::from_value(wire)?;
+        let source: crate::sketch::PmDcSketchConstraint = json::from_value(wire)?;
         let mut data = empty_data();
         let native = source.id();
-        data.records.push(serde_json::from_value(serde_json::json!({
+        data.records.push(json::from_value(serde_json::json!({
             "id": "inventor:rse:record#generated-9", "token": "generated", "ordinal": 9,
             "selector": 0, "type_index": 0, "type_id": record_type,
             "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
@@ -184,7 +185,7 @@ fn every_relation_checks_its_geometric_operand_slots_for_native_helpers() -> Tes
                 data.pm_dc_sketch_entities.push(entity);
             }
             sketch_records(&mut data)?;
-            data.records.push(serde_json::from_value(serde_json::json!({
+            data.records.push(json::from_value(serde_json::json!({
                 "id": "inventor:rse:record#generated-9", "token": "generated", "ordinal": 9,
                 "selector": 0, "type_index": 0, "type_id": source.identity.type_id.as_str(),
                 "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
@@ -249,14 +250,14 @@ fn a_polygon_control_relation_with_two_different_vertices_still_requires_resolut
         (other_reference, true, false),
         (other_reference, false, true),
     ] {
-        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
+        let mut wire = json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
         wire["header"]["content"]["context"] = serde_json::json!(null_reference);
         wire["header"]["group"] = serde_json::json!(null_reference);
         wire["kind"] = serde_json::json!({"form": "polygon_control", "value": 7,
             "reference": null_reference, "vertex": [null_reference, second],
             "position": [0.0, 0.0], "flags": "000001"});
         wire["type_id"] = serde_json::json!("845c3bbfd2112ae960004bb38932edb0");
-        let source: crate::sketch::PmDcSketchConstraint = serde_json::from_value(wire)?;
+        let source: crate::sketch::PmDcSketchConstraint = json::from_value(wire)?;
         let token = source.identity.segment_token.as_str().to_owned();
         let own = source.identity.record_ordinal;
         let type_id = source.identity.type_id.as_str().to_owned();
@@ -268,7 +269,7 @@ fn a_polygon_control_relation_with_two_different_vertices_still_requires_resolut
             vec![own]
         };
         for ordinal in ordinals {
-            data.records.push(serde_json::from_value(serde_json::json!({
+            data.records.push(json::from_value(serde_json::json!({
                 "id": format!("inventor:rse:record#{token}-{ordinal}"),
                 "token": token, "ordinal": ordinal, "selector": 0, "type_index": 0,
                 "type_id": type_id,

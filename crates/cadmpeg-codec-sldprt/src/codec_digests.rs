@@ -77,7 +77,11 @@ pub(crate) fn holds_history(ir: &CadIr) -> bool {
 
 /// The codec digests a decode of the part `ir` states records, taken from `ir`
 /// itself. A write given no sidecar compares against them, so it reads the
-/// document as unedited (§3.4, Paths: the patch that holds no digest).
+/// document as unedited (§3.4, Paths: the patch that holds no digest). A
+/// native namespace that does not load under the document's tolerance gives
+/// the digests of a part without native records; the patch refuses such a
+/// namespace, and the write synthesizes the document as it does for any stale
+/// native record.
 pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
     use crate::history::hash::{
         configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
@@ -91,8 +95,9 @@ pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
     let native = ir
         .native
         .namespace("sldprt")
-        .map(|namespace| crate::native::SldprtNative::load(namespace).map_err(CodecError::from))
-        .transpose()?
+        .and_then(|namespace| {
+            crate::native::SldprtNative::load(namespace, ir.tolerances.linear).ok()
+        })
         .unwrap_or_default();
     let histories = &native.feature_histories;
     let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);

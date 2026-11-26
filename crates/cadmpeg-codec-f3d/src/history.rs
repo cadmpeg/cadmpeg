@@ -70,6 +70,7 @@ pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_envelopes;
 mod face_recipe;
+mod face_samples;
 mod face_support;
 mod fallback_face;
 pub(crate) mod fillet_blends;

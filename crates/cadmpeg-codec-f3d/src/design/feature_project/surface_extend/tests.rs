@@ -4,6 +4,7 @@ use super::project_surface_extend;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -82,7 +83,7 @@ fn operand_with(
     if let Some(state) = state {
         value["recipe_state_id"] = state.into();
     }
-    serde_json::from_value(value).expect("edge operand fixture")
+    json::from_value(value).expect("edge operand fixture")
 }
 
 fn project(scope: &DesignParameterScope, operands: &[DesignEdgeOperand]) -> FaceSelection {

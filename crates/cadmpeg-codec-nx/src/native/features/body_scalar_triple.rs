@@ -122,17 +122,17 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 #[cfg(test)]
 mod tests {
     use super::{FeatureOperationBodyScalarTriple, FeatureOperationBodyScalarTripleWire};
+    use cadmpeg_core::serde_erase::json;
 
     const WIRE: &str = r#"{"id":"nx:feature:body-scalar#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":["00","50400000","2ff0000000000000"],"source_offsets":[100,101,105]}"#;
 
     #[test]
     fn body_scalar_triple_borrowed_wire_preserves_bytes() {
         let record: FeatureOperationBodyScalarTriple = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), WIRE.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeatureOperationBodyScalarTripleWire::from(record.clone()))
-                .unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&FeatureOperationBodyScalarTripleWire::from(record.clone())).unwrap()
         );
     }
 
@@ -160,14 +160,13 @@ mod tests {
             [u64::MAX - 12, u64::MAX - 11, u64::MAX - 7],
         ] {
             wire["source_offsets"] = serde_json::json!(offsets);
-            let error = serde_json::from_value::<FeatureOperationBodyScalarTriple>(wire.clone())
-                .unwrap_err();
+            let error =
+                json::from_value::<FeatureOperationBodyScalarTriple>(wire.clone()).unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         wire["source_offsets"] = serde_json::json!([u64::MAX - 13, u64::MAX - 12, u64::MAX - 8]);
-        let triple: FeatureOperationBodyScalarTriple =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&triple).unwrap(), wire);
+        let triple: FeatureOperationBodyScalarTriple = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&triple).unwrap(), wire);
         assert!(triple.scalars.relocate(1).is_none());
     }
 }

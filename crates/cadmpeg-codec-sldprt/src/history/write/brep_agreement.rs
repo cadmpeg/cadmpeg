@@ -10,11 +10,9 @@
 //! solid.
 
 use std::collections::{BTreeSet, HashSet};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::features::{
@@ -128,9 +126,8 @@ pub(crate) fn agreement(
     let baseline = match source {
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
-            decoded = crate::SldprtCodec
-                .decode(&mut Cursor::new(image), &DecodeOptions::default())
-                .map_err(|failure| match failure {
+            decoded =
+                crate::decode::decode_for_read_back(image).map_err(|failure| match failure {
                     cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
                     other => CodecError::malformed(format_args!(
                         "SLDPRT retained source cannot be decoded: {other}"
@@ -479,7 +476,9 @@ fn native_edits(
     let source_native = source
         .native
         .namespace("sldprt")
-        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+        .map(|namespace| {
+            SldprtNative::load(namespace, source.tolerances.linear).map_err(CodecError::from)
+        })
         .transpose()?;
     let baseline = source_native
         .iter()

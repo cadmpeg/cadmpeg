@@ -498,6 +498,7 @@ pub(in crate::native) fn admit_surface_allocations(
 #[cfg(test)]
 mod tests {
     use super::{feature_surface_construction_payloads, FeatureSurfaceConstructionPayload};
+    use cadmpeg_core::serde_erase::json;
 
     fn allocation(bytes: Vec<u8>, expected_blocks: usize, kind: &str) {
         crate::test_support::with_decode_context(|ctx| {
@@ -532,18 +533,18 @@ mod tests {
             for (index, id) in ids.iter().enumerate() {
                 assert!(id.ends_with(&format!(":block#{}", index + 1)));
             }
-            let value = serde_json::to_value(payload).unwrap();
+            let value = json::to_value(payload).unwrap();
             assert_eq!(value["operation_kind"], kind);
             assert_eq!(
-                serde_json::from_value::<FeatureSurfaceConstructionPayload>(value.clone()).unwrap(),
+                json::from_value::<FeatureSurfaceConstructionPayload>(value.clone()).unwrap(),
                 *payload
             );
             let mut bad = value.clone();
             bad["block_source_offsets"][1] = serde_json::json!(0);
-            assert!(serde_json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
+            assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             let mut bad = value.clone();
             bad["data_blocks"][1] = bad["data_blocks"][0].clone();
-            assert!(serde_json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
+            assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             let mut bad = value.clone();
             for field in [
                 "data_blocks",
@@ -554,16 +555,16 @@ mod tests {
                 bad[field].as_array_mut().unwrap().pop();
             }
             bad["byte_len"] = serde_json::json!(expected_blocks - 1);
-            assert!(serde_json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
+            assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             let mut bad = value.clone();
             bad["construction_branches"] = serde_json::json!([]);
-            assert!(serde_json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
+            assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             if kind == "studio_surface" {
                 let mut bad = value.clone();
                 bad.as_object_mut()
                     .unwrap()
                     .remove("post_branch_references");
-                assert!(serde_json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
+                assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
                 assert!(run(&references, &branches, &post[..7]).is_empty());
             }
             assert!(run(&references[..13], &branches, &post).is_empty());
@@ -595,10 +596,9 @@ mod tests {
                     .is_empty()
             );
             let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
-            let original = serde_json::to_value(
-                &namespace.arenas()["feature_surface_construction_payloads"][0],
-            )
-            .unwrap();
+            let original =
+                json::to_value(&namespace.arenas()["feature_surface_construction_payloads"][0])
+                    .unwrap();
             // A surplus contiguous block passes local column/size checks, but
             // the complete graph has exactly 28 referenced blocks.
             let mut surplus = original.clone();
@@ -615,10 +615,7 @@ mod tests {
                 surplus[field].as_array_mut().unwrap().push(value);
             }
             surplus["byte_len"] = serde_json::json!(29);
-            assert!(
-                serde_json::from_value::<FeatureSurfaceConstructionPayload>(surplus.clone())
-                    .is_ok()
-            );
+            assert!(json::from_value::<FeatureSurfaceConstructionPayload>(surplus.clone()).is_ok());
             namespace
                 .set_arena(ctx, "feature_surface_construction_payloads", &[surplus])
                 .unwrap();

@@ -4,6 +4,7 @@ use crate::design::decode::scopes::base_feature::exact_base_feature_construction
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::bytes::put_u32;
 use cadmpeg_test_support::bytes::put_u64;
 
@@ -283,16 +284,16 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         u64_from_index(compact::ENVELOPE_GUID)
     );
     assert_eq!(
-        serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
+        json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
         true
     );
     assert_eq!(
         *tag_body_based_on_faces_offset,
         u64_from_index(compact::TAG_BODY_BASED_ON_FACES_VALUE)
     );
-    let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
+    let serialized = json::to_value(&compact_construction).expect("serialize compact form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+        json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize compact form"),
         compact_construction
     );
@@ -428,9 +429,9 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(parameter_body_records, &[301, 302]);
     assert_eq!(auxiliary_records, &[303, 304]);
     assert_eq!(*scope_reference, 300);
-    let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
+    let serialized = json::to_value(&expanded_construction).expect("serialize expanded form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+        json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize expanded form"),
         expanded_construction
     );

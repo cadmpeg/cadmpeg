@@ -326,6 +326,7 @@ fn fset_construction_payload_from_group(
 #[cfg(test)]
 mod tests {
     use super::{FeatureFsetReferenceGraph, FeatureFsetReferenceGraphWire};
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     fn fset_construction_fixture() -> (
@@ -392,10 +393,10 @@ mod tests {
     fn fset_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
         let json = r#"{"id":"nx:feature:fset-reference#0","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
         let record: FeatureFsetReferenceGraph = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeatureFsetReferenceGraphWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&FeatureFsetReferenceGraphWire::from(record.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -408,7 +409,7 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let json = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
         let graph: FeatureFsetReferenceGraph = serde_json::from_str(json)?;
-        assert_eq!(serde_json::to_string(&graph)?, json);
+        assert_eq!(json::to_string(&graph)?, json);
         for (field, value) in [
             ("selector", serde_json::json!("")),
             ("selector", serde_json::json!("a b")),
@@ -426,7 +427,7 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json)?;
             wire[field] = value;
-            let error = serde_json::from_value::<FeatureFsetReferenceGraph>(wire)
+            let error = json::from_value::<FeatureFsetReferenceGraph>(wire)
                 .err()
                 .ok_or("malformed FSET graph was accepted")?
                 .to_string();

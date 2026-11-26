@@ -71,7 +71,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     F3dCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut replay))
         .expect("mesh-surface native replay");
@@ -204,7 +204,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less exact spline surface encode");
         let round_trip = F3dCodec
@@ -297,7 +297,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less ruled surface encode");
         let round_trip = F3dCodec
@@ -392,7 +392,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less sum surface encode");
         let round_trip = F3dCodec
@@ -459,7 +459,7 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("cacheless exact surface source-less encode");
         let round_trip = F3dCodec
@@ -552,7 +552,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less revolution surface encode");
         let round_trip = F3dCodec
@@ -648,7 +648,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less offset surface encode");
         let round_trip = F3dCodec
@@ -739,7 +739,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound surface encode");
     let round_trip = F3dCodec
@@ -841,7 +841,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less taper encode");
         let round_trip = F3dCodec
@@ -973,7 +973,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less loft encode");
         let round_trip = F3dCodec
@@ -1080,7 +1080,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less net surface encode");
     let round_trip = F3dCodec
@@ -1147,7 +1147,7 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less profile-first sweep encode");
     let round_trip = F3dCodec
@@ -1204,7 +1204,7 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less T-spline encode");
     let round_trip = F3dCodec
@@ -1276,7 +1276,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         );
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less helix surface encode");
         let round_trip = F3dCodec

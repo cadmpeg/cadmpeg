@@ -2,6 +2,7 @@
 use super::*;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding};
 use crate::records::dimensions::DesignRecipeReference;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::extents::ExtrudeSide;
 use cadmpeg_ir::features::operation_settings::BooleanOp;
@@ -28,7 +29,7 @@ fn fixture() -> (
             draft.history_state_id = Some(22);
         })
         .unwrap();
-    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+    let group: DesignConstructionOperandGroup = json::from_value(serde_json::json!({
         "id":"f3d:test:group#1448","scope_record_index":1424,"scope_reference_ordinal":0,
         "record_index":1448,"byte_offset":0,"class_tag":"338","members":[1451],"member_offsets":[0],
         "frame":{"member_count_offset":0,"opaque_index":1,"opaque_index_offset":18,
@@ -37,7 +38,7 @@ fn fixture() -> (
         "role_offset":0,"paired_class_tag":"261","paired_byte_offset":0
     }))
     .unwrap();
-    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = json::from_value(serde_json::json!({
         "id":"f3d:test:face-operand#272639","scope_record_index":1424,"scope_reference_ordinal":1,
         "group_record_index":1448,"group_member_ordinal":0,"record_index":1451,"byte_offset":0,
         "class_tag":"283","paired_byte_offset":12,"paired_class_tag":"258",

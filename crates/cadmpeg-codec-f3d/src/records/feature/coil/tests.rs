@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Absence spellings of the flattened coil-record readers.
 
+use cadmpeg_core::serde_erase::json;
+
 fn placement(explicit: bool) -> super::DesignCoilPlacement {
     super::DesignCoilPlacement {
         selection_record_index: 1,
@@ -42,8 +44,8 @@ fn coil_placement_borrowed_wire_matches_owned_wire_bytes() {
     for record in [placement(false), placement(true)] {
         let owned = super::DesignCoilPlacementWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -83,10 +85,7 @@ fn coil_scope_borrowed_wire_matches_owned_wire_bytes() {
         },
     ] {
         let owned = super::DesignCoilScopeWire::from(scope.clone());
-        assert_eq!(
-            serde_json::to_vec(&scope).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&scope).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -121,12 +120,9 @@ fn coil_secondary_identity_wire_refuses_a_null_identity() {
     for key in ["secondary_identity", "curve_secondary_identity"] {
         let mut wire = serde_json::json!({});
         wire[key] = serde_json::Value::Null;
-        assert!(
-            serde_json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
+        assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(serde_json::json!({})).unwrap();
     assert!(absent.secondary.is_none());
 }
 
@@ -140,12 +136,9 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
     for key in ["design_id", "design_selector"] {
         let mut wire = serde_json::json!({});
         wire[key] = serde_json::Value::Null;
-        assert!(
-            serde_json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
+        assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(serde_json::json!({})).unwrap();
     assert!(absent.design.is_none());
 }
 

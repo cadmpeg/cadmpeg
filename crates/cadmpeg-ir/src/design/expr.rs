@@ -33,7 +33,7 @@ use super::units::Unit;
 use crate::scalar::{FiniteReal, NonNegativeReal};
 
 /// An expression: a neutral typed tree or the source's own text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -42,7 +42,7 @@ use crate::scalar::{FiniteReal, NonNegativeReal};
     deny_unknown_fields,
     bound(
         serialize = "R: Serialize + PartialEq + Clone",
-        deserialize = "R: Deserialize<'de> + PartialEq + Clone"
+        deserialize = "R: ::serde::de::DeserializeOwned + PartialEq + Clone"
     )
 )]
 pub enum Expression<R = ParameterRef> {
@@ -63,19 +63,22 @@ pub enum Expression<R = ParameterRef> {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "NeutralWire<R>",
-    bound(deserialize = "R: Deserialize<'de> + PartialEq + Clone")
+    bound(deserialize = "R: ::serde::de::DeserializeOwned + PartialEq + Clone")
 )]
 pub struct Neutral<R = ParameterRef>(pub Node<R>);
 
 /// One token of source expression text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "R: Serialize", deserialize = "R: Deserialize<'de>")
+    bound(
+        serialize = "R: Serialize",
+        deserialize = "R: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum ExpressionToken<R> {
     /// Source text the decoder does not resolve.
@@ -126,16 +129,38 @@ pub enum ExpressionDialect {
     Native(NonBlankString),
 }
 
+impl ExpressionDialect {
+    /// The expression language of the sources the codec `codec` reads: the
+    /// language of their process records where `process`, and of their
+    /// design otherwise. `None` where `codec` is blank.
+    pub(crate) fn of_codec(codec: &str, process: bool) -> Option<Self> {
+        Some(match (codec, process) {
+            ("catia", _) => Self::Catia,
+            ("creo", _) => Self::Creo,
+            ("f3d", false) => Self::Fusion,
+            ("f3d", true) => Self::FusionCam,
+            ("fcstd", _) => Self::FreeCad,
+            ("inventor", _) => Self::Inventor,
+            ("nx", _) => Self::Nx,
+            ("sldprt", _) => Self::SolidWorks,
+            (codec, _) => Self::Native(NonBlankString::new(codec)?),
+        })
+    }
+}
+
 /// A node of a neutral expression tree. Its clone, comparison, and drop
 /// walk the tree without recursion.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "R: Serialize", deserialize = "R: Deserialize<'de>")
+    bound(
+        serialize = "R: Serialize",
+        deserialize = "R: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Node<R> {
     /// A literal in its authored unit. A number has no sign of its own: a
@@ -581,7 +606,7 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
     let node = parse(&wire.text, &wire.refs, &wire.measures)?;
     let again = print(&node)?;
     if again.text != wire.text
-        && !read_session::repair(Repair::Spelling, || {
+        && !read_session::repair(Repair::Spelling, &|| {
             format!(
                 "expression text {:?} is restated as its canonical text {:?}",
                 wire.text, again.text
@@ -594,7 +619,7 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
         )));
     }
     if (again.refs != wire.refs || again.measures != wire.measures)
-        && !read_session::repair(Repair::Spelling, || {
+        && !read_session::repair(Repair::Spelling, &|| {
             "expression refs and measures are restated in order of first use".into()
         })
     {

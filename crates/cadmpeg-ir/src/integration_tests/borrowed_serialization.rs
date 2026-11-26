@@ -2,14 +2,15 @@
 //! Borrowed owner serialization composes with structural decode admission.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::json;
 
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
+    let value: T = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&value).unwrap(), *wire);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

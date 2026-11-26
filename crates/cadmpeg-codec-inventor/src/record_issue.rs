@@ -145,6 +145,7 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 #[cfg(test)]
 mod tests {
     use super::{RecordIssue, RecordIssueFamily, RecordIssueWire};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
@@ -161,7 +162,7 @@ mod tests {
                 "ABCDEF0123456789abcdef0123456789ab",
             ] {
                 let wire = serde_json::json!({"id": format!("{prefix}#segment-0"), "type_id": type_id, "segment_token": "segment", "record_ordinal": 0, "detail": "invalid"});
-                assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+                assert!(json::from_value::<RecordIssue>(wire).is_err());
             }
         }
     }
@@ -170,7 +171,7 @@ mod tests {
     fn record_issues_reject_invalid_segment_tokens() {
         for token in ["", "has space", "has#separator"] {
             let wire = serde_json::json!({"id": format!("inventor:assembly:record-issue#{token}-0"), "segment_token": token, "record_ordinal": 0, "detail": "invalid"});
-            assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+            assert!(json::from_value::<RecordIssue>(wire).is_err());
         }
     }
 
@@ -231,17 +232,16 @@ mod tests {
                 expected["type_id"] = serde_json::json!("0123456789abcdef0123456789abcdef");
             }
             assert_eq!(
-                serde_json::to_value(&issue).expect("valid test fixture"),
+                json::to_value(&issue).expect("valid test fixture"),
                 expected
             );
             assert_eq!(
-                serde_json::from_value::<RecordIssue>(expected.clone())
-                    .expect("valid test fixture"),
+                json::from_value::<RecordIssue>(expected.clone()).expect("valid test fixture"),
                 issue
             );
             let mut wrong_location = expected.clone();
             wrong_location["record_ordinal"] = serde_json::json!(8);
-            assert!(serde_json::from_value::<RecordIssue>(wrong_location).is_err());
+            assert!(json::from_value::<RecordIssue>(wrong_location).is_err());
             if typed {
                 expected
                     .as_object_mut()
@@ -250,7 +250,7 @@ mod tests {
             } else {
                 expected["type_id"] = serde_json::json!("0123456789abcdef0123456789abcdef");
             }
-            assert!(serde_json::from_value::<RecordIssue>(expected).is_err());
+            assert!(json::from_value::<RecordIssue>(expected).is_err());
         }
     }
 
@@ -275,12 +275,12 @@ mod tests {
         };
         let wire = RecordIssueWire::from(issue.clone());
         assert_eq!(
-            serde_json::to_vec(&issue).expect("borrowed issue"),
-            serde_json::to_vec(&wire).expect("owned issue")
+            json::to_vec(&issue).expect("borrowed issue"),
+            json::to_vec(&wire).expect("owned issue")
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &issue,
-            serde_json::to_value(wire).expect("owned issue value"),
+            json::to_value(wire).expect("owned issue value"),
         );
     }
 }

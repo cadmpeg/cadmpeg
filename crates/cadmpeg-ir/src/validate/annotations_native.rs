@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation of borrowed annotations and native product links.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::annotations::{AnnotationKey, AnnotationTarget};
 use crate::document::CadIr;
 use crate::index::identities::{BorrowedIdentities, IdentitySet};
 use crate::native::view::{NativeEntity, NativeView};
@@ -42,6 +45,87 @@ macro_rules! define_model_entity_projection {
 }
 crate::document::arena_registry!(define_model_entity_projection);
 
+/// The records that annotation keys name outside `all_ids`: the records of
+/// the design and process arenas, and the records of the deltas of the
+/// evaluations and process states that have content, with the structural
+/// JSON value of each delta record that an exactness key with field
+/// overrides names, or `None` where it could not be serialized.
+struct Unindexed<'ir> {
+    records: BTreeSet<&'ir str>,
+    ids: BTreeSet<(&'ir str, &'ir str)>,
+    projected: BTreeMap<(&'ir str, &'ir str), Option<serde_json::Value>>,
+}
+
+impl<'ir> Unindexed<'ir> {
+    /// Indexes the design and process records of `ir` where a key of
+    /// `annotations` names an entity outside `all_ids`, and the deltas of
+    /// `ir` where a key names a delta record.
+    fn of(
+        ctx: &DecodeContext<'_>,
+        ir: &'ir CadIr,
+        annotations: &crate::Annotations,
+        all_ids: &dyn IdentitySet,
+    ) -> Result<Self, CodecError> {
+        let mut unindexed = Self {
+            records: BTreeSet::new(),
+            ids: BTreeSet::new(),
+            projected: BTreeMap::new(),
+        };
+        let keys = || {
+            annotations
+                .provenance
+                .keys()
+                .chain(annotations.exactness().keys())
+        };
+        if keys().any(
+            |key| matches!(key.target(), AnnotationTarget::Entity(id) if !all_ids.contains(id)),
+        ) {
+            unindexed.records = crate::annotations::design_and_process_records(ir);
+        }
+        if !keys().any(|key| matches!(key.target(), AnnotationTarget::Delta { .. })) {
+            return Ok(unindexed);
+        }
+        unindexed.ids = crate::annotations::delta_records(ir);
+        let wanted = annotations
+            .exactness()
+            .iter()
+            .filter_map(|(key, note)| match key.target() {
+                AnnotationTarget::Delta { qualifier, record } if !note.fields().is_empty() => {
+                    Some((qualifier, record))
+                }
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        for (qualifier, records) in crate::annotations::deltas(ir) {
+            for (record, value) in
+                records.project_records(ctx, |record| wanted.contains(&(qualifier, record)))
+            {
+                let value = match value {
+                    Ok(value) => Some(value),
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => None,
+                };
+                unindexed
+                    .projected
+                    .entry((qualifier, record))
+                    .or_insert(value);
+            }
+        }
+        Ok(unindexed)
+    }
+
+    /// Whether `key` names a top-level entity of `all_ids`, a design or
+    /// process record, or a record of a delta.
+    fn resolves(&self, key: &AnnotationKey, all_ids: &dyn IdentitySet) -> bool {
+        match key.target() {
+            AnnotationTarget::Entity(id) => all_ids.contains(id) || self.records.contains(id),
+            AnnotationTarget::Delta { qualifier, record } => {
+                self.ids.contains(&(qualifier, record))
+            }
+        }
+    }
+}
+
 pub(super) fn check_annotations(
     ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
@@ -50,8 +134,9 @@ pub(super) fn check_annotations(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut wanted = BorrowedIdentities::build(|add| {
-        for (id, note) in annotations.exactness() {
-            if !note.fields().is_empty() {
+        for (key, note) in annotations.exactness() {
+            if let (AnnotationTarget::Entity(id), false) = (key.target(), note.fields().is_empty())
+            {
                 add(id, false);
             }
         }
@@ -82,13 +167,14 @@ pub(super) fn check_annotations(
     // Model entities take precedence over native records with the same id.
     // The identity index keeps the last inserted matching value.
     model_entity_projection(ctx, view.ir, &wanted, &mut add)?;
-    for id in annotations.provenance.keys() {
-        if !all_ids.contains(id) {
+    let mut unindexed = Unindexed::of(ctx, view.ir, annotations, all_ids)?;
+    for key in annotations.provenance.keys() {
+        if !unindexed.resolves(key, all_ids) {
             super::record_finding(
                 findings,
                 Check::Annotations,
                 Severity::Error,
-                Some(id),
+                Some(key.as_str()),
                 crate::rule!(
                     "annotations_native.provenance-key-does-not-resolve-entity",
                     "provenance key does not resolve to an entity"
@@ -96,8 +182,9 @@ pub(super) fn check_annotations(
             );
         }
     }
-    for (id, note) in annotations.exactness() {
-        if !all_ids.contains(id) {
+    for (key, note) in annotations.exactness() {
+        let id = key.as_str();
+        if !unindexed.resolves(key, all_ids) {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -113,7 +200,22 @@ pub(super) fn check_annotations(
         if note.fields().is_empty() {
             continue;
         }
-        let Some(position) = entities.get(id) else {
+        let projected;
+        let entity = match key.target() {
+            // Field paths are checked against geometry, model, and native records.
+            AnnotationTarget::Entity(id) if !all_ids.contains(id) => continue,
+            AnnotationTarget::Entity(id) => entities.get(id).map(|position| &values[*position]),
+            AnnotationTarget::Delta { qualifier, record } => {
+                match unindexed.projected.remove(&(qualifier, record)).flatten() {
+                    Some(value) => {
+                        projected = AnnotatedEntity::Projected(value);
+                        Some(&projected)
+                    }
+                    None => None,
+                }
+            }
+        };
+        let Some(entity) = entity else {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -126,7 +228,6 @@ pub(super) fn check_annotations(
             );
             continue;
         };
-        let entity = &values[*position];
         let product_fields = match entity {
             AnnotatedEntity::Product(product) => Some(product.fields()?),
             AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,

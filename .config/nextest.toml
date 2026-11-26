@@ -15,11 +15,14 @@ filter = '''
     test(=corpus_manifest::corpus_specimens_pass_check)
     | test(=corpus_manifest::corpus_manifest_dialects_are_pinned_from_classification)
     | test(/^integration_tests::cc0_controller::/)
+    | test(=integration_tests::nist_ftc_07::nist_ftc_07_agrees_with_its_ap242_model)
+    | test(=integration_tests::nist_ctc_01_brep_agrees_with_its_step_twin)
     | test(/^integration_tests::measured_geometry::/)
     | test(/^integration_tests::unreadable_shapes::/)
     | test(=golden_tests::golden_snapshots_hold)
     | test(/^integration_tests::csg_solids::a_sphere_and_a_torus_/)
     | test(=every_read_optional_field_refuses_a_null_spelling)
     | test(/^writer::tests::leaf_sweep::every_leaf_edit_of_/)
+    | test(/^writer::tests::edit_refusals::/)
 '''
 priority = 100

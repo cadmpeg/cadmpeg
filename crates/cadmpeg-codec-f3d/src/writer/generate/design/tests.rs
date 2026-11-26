@@ -37,7 +37,7 @@ use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";
@@ -208,7 +208,7 @@ fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport
     let report = F3dCodec
         .plan(
             EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
@@ -217,6 +217,49 @@ fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport
         .expect("the written file decodes");
     crate::test_support::assert_decodes_back(&report, decoded.report());
     (report, decoded.into_parts().0, bytes)
+}
+
+/// The item tail of a decoded scope: its family, state bytes, `s0`, `s1`,
+/// and current and preceding history-state identities.
+type Tail = (String, [u8; 3], bool, bool, Option<i64>, Option<i64>);
+
+/// The item tails of the decoded scopes that store one, in record order.
+fn tails(decoded: &CadIr) -> Vec<Tail> {
+    let mut scopes = f3d_native(decoded).design_parameter_scopes;
+    scopes.sort_by_key(|scope| scope.record_index);
+    scopes
+        .iter()
+        .filter_map(|scope| {
+            let flags = scope.tail_flags?;
+            Some((
+                format!("{:?}", scope.kind()),
+                flags.stored_state(),
+                flags.no_result,
+                flags.rolled_back,
+                scope.history_state_id(),
+                scope.previous_history_state_id(),
+            ))
+        })
+        .collect()
+}
+
+/// Makes the records of each of `ids` fail to write in every attempt on
+/// this thread while the returned guard lives.
+#[must_use]
+fn fail_records<'a>(ids: impl IntoIterator<Item = &'a str>) -> FailingRecords {
+    super::FAIL_RECORDS.with(|fail| {
+        fail.borrow_mut().extend(ids.into_iter().map(str::to_owned));
+    });
+    FailingRecords
+}
+
+/// Clears the identities [`fail_records`] made fail when it drops.
+struct FailingRecords;
+
+impl Drop for FailingRecords {
+    fn drop(&mut self) {
+        super::FAIL_RECORDS.with(|fail| fail.borrow_mut().clear());
+    }
 }
 
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {
@@ -345,6 +388,84 @@ fn a_parameter_with_no_cache_and_no_expressible_expression_is_not_written() {
         .iter()
         .any(|message| message.contains("no cached value")
             && message.contains(parameter_id("uncached").as_str())));
+}
+
+#[test]
+fn a_value_with_no_finite_literal_in_its_unit_is_written_in_its_canonical_unit() {
+    let mut ir = scoped_cube();
+    let mut spin = parameter("spin", "Spin", ParameterDefinition::Unset, Some(1.0e307));
+    spin.kind = ValueKind::Quantity(Quantity::ANGLE);
+    let huge = parameter(
+        "huge",
+        "Huge",
+        neutral(Node::mul(
+            number(1.0e300, Some(UnitSymbol::Mm)),
+            MulOp::Multiply,
+            number(1.0e300, None),
+        )),
+        None,
+    );
+    let back = parameter(
+        "back",
+        "Back",
+        neutral(Node::mul(
+            number(1.0, Some(UnitSymbol::Mm)),
+            MulOp::Divide,
+            Node::mul(number(1.0, None), MulOp::Divide, number(0.0, None)),
+        )),
+        None,
+    );
+    let twice = parameter(
+        "twice",
+        "Twice",
+        neutral(Node::mul(
+            reference("huge"),
+            MulOp::Multiply,
+            number(2.0, None),
+        )),
+        Some(5.0),
+    );
+    ir.design.parameters.extend([spin, huge, back, twice]);
+    let (report, decoded_ir) = write(&ir);
+    let spin = decoded_ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Spin")
+        .expect("Spin is written");
+    assert!(spin.expression.ends_with(" rad"), "{}", spin.expression);
+    assert!(decoded_ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.name != "Huge" && parameter.name != "Back"));
+    assert_length(&decoded_ir, "Twice", "5 mm", 5.0);
+    assert!(
+        loss(&report, "export/parameter.flattened")
+            .iter()
+            .any(
+                |message| message.contains("reference parameters the file does not write")
+                    && message.contains(parameter_id("twice").as_str())
+            ),
+        "{:#?}",
+        report.losses
+    );
+    let unwritable = loss(&report, "export/value.unwritable");
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("canonical unit")
+                && message.contains(parameter_id("spin").as_str())),
+        "{unwritable:#?}"
+    );
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("no finite number")
+                && message.contains(parameter_id("huge").as_str())
+                && message.contains(parameter_id("back").as_str())),
+        "{unwritable:#?}"
+    );
 }
 
 #[test]
@@ -493,6 +614,49 @@ fn edited_design_parameters_replace_the_native_records() {
         "{:#?}",
         report.losses
     );
+}
+
+#[test]
+fn planned_parameters_with_no_native_design_record_are_written_and_listed() {
+    let mut ir = scoped_cube();
+    add_empty_f3d_native(&mut ir);
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: parameter_id("legacy"),
+            owner: None,
+            ordinal: 0,
+            name: "Legacy".into(),
+            expression: "1 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    let native = f3d_native(&decoded_ir);
+    let listed = native
+        .design_types
+        .iter()
+        .find(|row| row.type_guid.as_str() == super::types::PARAMETER.guid)
+        .expect("parameter type row")
+        .entities
+        .values()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert!(!native.design_parameters.is_empty());
+    for parameter in &native.design_parameters {
+        assert!(
+            listed.contains(&u64::from(parameter.record_index)),
+            "{}: {:#?}",
+            parameter.name(),
+            report.losses
+        );
+    }
 }
 
 /// The Design stream of a written archive, and the frame of the one record

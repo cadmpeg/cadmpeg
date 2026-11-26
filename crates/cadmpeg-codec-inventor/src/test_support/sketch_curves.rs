@@ -5,6 +5,7 @@ use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
 use crate::sketch::{PmDcSketchEntity, PmDcSketchEntityPayload};
 use crate::test_support::test_fixtures::{content_at, parse};
+use cadmpeg_core::serde_erase::json;
 
 fn word(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
@@ -119,7 +120,7 @@ pub(crate) fn open_cubic_entities_with(pole_count: u32, t0: f64) -> Vec<PmDcSket
     });
     let point = |ordinal, position: [f64; 2]| {
         let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-        let payload = serde_json::from_value(serde_json::json!({
+        let payload = json::from_value(serde_json::json!({
             "save_version_major": 23,
             "header": {"header_value": 0, "header_id": 0,
                 "next": PmDcReference::from_packed(0), "flags": 0,
@@ -140,7 +141,7 @@ pub(crate) fn open_cubic_entities_with(pole_count: u32, t0: f64) -> Vec<PmDcSket
 }
 
 pub(crate) fn spline_midpoint() -> crate::sketch::PmDcSketchConstraint {
-    let payload = serde_json::from_value(serde_json::json!({
+    let payload = json::from_value(serde_json::json!({
         "save_version_major": 23,
         "header": {
             "content": {"header_value": 0, "header_id": 0,

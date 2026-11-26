@@ -290,6 +290,7 @@ mod tests {
         FeatureReferenceToken, PayloadIndexToken, ReferenceIndexToken, ReferenceIndexWire,
         TOKEN_INTO_WIRE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     fn assert_borrowed_token<T: serde::Serialize>(
         token: &T,
@@ -303,8 +304,8 @@ mod tests {
         }
 
         assert_eq!(
-            serde_json::to_vec(token).unwrap(),
-            serde_json::to_vec(&old_wire).unwrap()
+            json::to_vec(token).unwrap(),
+            json::to_vec(&old_wire).unwrap()
         );
         let expected = serde_json::json!({"id": id, "value": old_wire});
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(0));

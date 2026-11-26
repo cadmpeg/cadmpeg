@@ -47,6 +47,7 @@ pub(super) struct Memberships {
     coedge_pcurves: HashSet<i64>,
     point_positions: HashSet<i64>,
     edge_samples: HashSet<i64>,
+    face_samples: HashSet<i64>,
 }
 
 fn apply_entities(
@@ -202,6 +203,7 @@ impl Memberships {
         apply_rows(&mut self.coedge_pcurves, &rows.coedge_pcurves)?;
         apply_rows(&mut self.point_positions, &rows.point_positions)?;
         apply_rows(&mut self.edge_samples, &rows.edge_samples)?;
+        apply_rows(&mut self.face_samples, &rows.face_samples)?;
 
         for (members, repeats, delta, changes) in [
             (

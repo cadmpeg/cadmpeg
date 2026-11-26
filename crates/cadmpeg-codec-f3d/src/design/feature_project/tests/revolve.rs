@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn revolve_projects_with_native_profile() {
     use crate::records::feature::path_features::{
@@ -31,7 +33,7 @@ fn revolve_projects_with_native_profile() {
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+        json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!("f3d:test:group#{record_index}"),
             "scope_record_index": 12,
             "scope_reference_ordinal": ordinal,
@@ -59,7 +61,7 @@ fn revolve_projects_with_native_profile() {
         group(100, 0, 200, DesignOperandRole::PROFILE),
         group(101, 1, 201, DesignOperandRole::ROLE_0X21),
     ];
-    let axis: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
+    let axis: DesignEdgeOperand = json::from_value(serde_json::json!({
         "id": "f3d:test:edge-operand#201",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,
@@ -175,7 +177,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+        json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
             "scope_record_index": 12,
             "scope_reference_ordinal": ordinal,
@@ -204,7 +206,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         group(101, 2, 201, DesignOperandRole::ROLE_0X21),
     ];
     let selection = |primary_identity: u64| {
-        serde_json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
+        json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
             "group_record_index": 101, "group_member_ordinal": 0,
             "record_index": 201, "byte_offset": 100, "class_tag": "307",

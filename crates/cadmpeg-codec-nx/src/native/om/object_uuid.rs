@@ -140,6 +140,7 @@ mod tests {
     use super::{object_uuid_values, ObjectUuidValue};
     use crate::container::{Container, DirEntry, DirEntryBody, IndexedSectionCache, Region};
     use crate::om::{FixedEntityRecord, IndexedSection, IndexedStore};
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
     use std::sync::{Arc, OnceLock};
 
@@ -207,10 +208,10 @@ mod tests {
     fn uuid_records_preserve_order_and_reject_empty_ownership() {
         let json = r#"{"id":"u","section_ordinal":0,"uuid":"00000000-0000-0000-0000-000000000000","records":["record#1","record#2"],"source_entry":"om","source_offset":10}"#;
         let value: ObjectUuidValue = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(json::to_string(&value).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["records"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<ObjectUuidValue>(wire)
+        assert!(json::from_value::<ObjectUuidValue>(wire)
             .unwrap_err()
             .to_string()
             .contains("records"));

@@ -13,7 +13,9 @@
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
-//! scope's records takes one fallback: the design scope is not written.
+//! scope's records or of the ASM history of its timeline items drops the
+//! records it names and each record that needs them, then the next part of
+//! the design scope's form, then the design scope.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -21,6 +23,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
+use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
 use cadmpeg_ir::codec::write::{
     native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
     MissingStateForm,
@@ -32,11 +35,12 @@ use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, Identity, IdentityKeyTail, PointId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::schema::EntityKind;
@@ -49,6 +53,7 @@ use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
+use super::design::{Culprit, RecordFailure};
 use super::native_geometry::{
     native_procedural_curve, native_procedural_surface, ProceduralOwners,
 };
@@ -92,7 +97,8 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
-    /// The records of the root definition's design scope.
+    /// The records of the root definition's design scope, with the ASM
+    /// history of its timeline items.
     NeutralDesign,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
@@ -103,6 +109,8 @@ pub(super) enum Stage {
 pub(super) struct Failure {
     pub(super) stage: Stage,
     pub(super) error: CodecError,
+    /// The records the failure names, where it names any.
+    pub(super) culprit: Option<Culprit>,
 }
 
 impl Failure {
@@ -110,6 +118,7 @@ impl Failure {
         Self {
             stage: Stage::Brep,
             error,
+            culprit: None,
         }
     }
 
@@ -117,6 +126,7 @@ impl Failure {
         Self {
             stage: Stage::Design,
             error,
+            culprit: None,
         }
     }
 
@@ -124,6 +134,26 @@ impl Failure {
         Self {
             stage: Stage::NeutralDesign,
             error,
+            culprit: None,
+        }
+    }
+
+    /// A failure of the ASM history, with the feature whose state it
+    /// concerns where it names one.
+    pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error,
+            culprit: Some(Culprit::History(cause)),
+        }
+    }
+
+    /// A failure to write the design scope's records.
+    pub(super) fn records(failure: RecordFailure) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error: failure.error,
+            culprit: failure.culprit,
         }
     }
 
@@ -131,11 +161,13 @@ impl Failure {
         Self {
             stage: Stage::Archive,
             error,
+            culprit: None,
         }
     }
 }
 
 /// The document the generator writes, and the losses taken to reach it.
+#[derive(Clone)]
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
@@ -151,6 +183,9 @@ pub(super) struct Reduction<'a> {
     /// The open edges written over one arc of a curve that passes a vertex
     /// twice, charged at [`Self::finish`] for the edges still written.
     assumed_arcs: Vec<(EdgeId, LossNote)>,
+    /// The reduction before the first held state, which the writer takes
+    /// again where it no longer writes the held items.
+    unheld: Option<Box<Reduction<'a>>>,
 }
 
 impl<'a> Reduction<'a> {
@@ -164,6 +199,7 @@ impl<'a> Reduction<'a> {
             fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
+            unheld: None,
         }
     }
 
@@ -295,7 +331,11 @@ impl<'a> Reduction<'a> {
         failure: Failure,
         writes_alone: impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
     ) -> Result<(), CodecError> {
-        let Failure { stage, error } = failure;
+        let Failure {
+            stage,
+            error,
+            culprit,
+        } = failure;
         if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
             return Err(error);
         }
@@ -303,7 +343,11 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
+                let named = match culprit {
+                    Some(culprit) => self.drop_records(&reason, &culprit)?,
+                    None => false,
+                };
+                named || self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -915,6 +959,37 @@ impl<'a> Reduction<'a> {
         Ok(())
     }
 
+    /// A subset curve that cannot be restated on the parameter of the curve
+    /// it trims is written as the solved geometry its cache holds, and the
+    /// construction is dropped.
+    pub(super) fn reduce_unlowered_subsets(&mut self, unlowered: Vec<UnloweredSubset>) {
+        if unlowered.is_empty() {
+            return;
+        }
+        let geometry = &mut self.ir.to_mut().geometry;
+        for subset in unlowered {
+            let Some(curve) = geometry
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == subset.curve)
+            else {
+                continue;
+            };
+            let Some(solved) = curve.geometry.solved_cache().cloned() else {
+                continue;
+            };
+            curve.geometry = CurveGeometry::Solved(solved);
+            geometry
+                .procedural_curves
+                .retain(|row| row.id != subset.construction);
+            self.losses
+                .push(F3dLossCode::WriterProceduralReduced.note(format!(
+                "procedural construction {} was reduced to the solved geometry of carrier {}: {}",
+                subset.construction, subset.curve, subset.error
+            )));
+        }
+    }
+
     /// A procedural carrier whose construction has no native encoding is
     /// written as the solved geometry its cache holds, and the construction is
     /// dropped. Repeats until every remaining construction encodes, since a
@@ -1113,7 +1188,7 @@ impl<'a> Reduction<'a> {
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
-        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
+        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched);
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
             if unwritable.contains_key(body.id.as_str()) {
@@ -1340,10 +1415,89 @@ impl<'a> Reduction<'a> {
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design()
+        let dropped = self.writes_neutral_design()
             && self
                 .fallback
-                .drop_next(&self.ir, self.missing_states, reason)
+                .drop_next(&self.ir, self.missing_states, reason);
+        if dropped && self.fallback.drops_items() {
+            self.unhold();
+        }
+        dropped
+    }
+
+    /// Drop the records `culprit` names, and each record that needs them.
+    /// Where the history-true run ends at an item, the document keeps the
+    /// state the failed attempt wrote for the items before it.
+    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> Result<bool, CodecError> {
+        if !self.writes_neutral_design() {
+            return Ok(false);
+        }
+        let earlier = self.fallback.clone();
+        if !self
+            .fallback
+            .drop_records(&self.ir, self.missing_states, culprit, reason)
+        {
+            return Ok(false);
+        }
+        if self.fallback.drops_items() {
+            self.unhold();
+        } else {
+            self.hold(&earlier)?;
+        }
+        Ok(true)
+    }
+
+    /// Write the state the history-true design holds where the current
+    /// fallback ends its run at a feature that `earlier` does not: the
+    /// bodies outside that state are not written.
+    fn hold(&mut self, earlier: &super::design::Fallback) -> Result<(), CodecError> {
+        let Some(scope) = super::design::root_scope_at(&self.ir) else {
+            return Ok(());
+        };
+        let Some(held) = super::design::held_state(
+            &self.ir,
+            scope,
+            self.missing_states,
+            earlier,
+            &self.fallback,
+        ) else {
+            return Ok(());
+        };
+        if self.unheld.is_none() {
+            self.unheld = Some(Box::new(self.clone()));
+        }
+        let reason = format!(
+            "the history-true design writes the state of the items before {} at its timeline marker",
+            held.before
+        );
+        let dropped = self
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.state.bodies.contains(&body.id))
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let kept = held
+            .state
+            .bodies
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect::<Vec<_>>();
+        self.ir.to_mut().design.scopes[scope].current = vec![held.state];
+        let kept = kept.iter().map(String::as_str).collect();
+        self.retain_reporting_bodies(&kept, &dropped, &reason)
+    }
+
+    /// Take again the reduction before the first held state, with the
+    /// current fallback: the design no longer writes the held items, so
+    /// every body the hold removed is written.
+    fn unhold(&mut self) {
+        if let Some(unheld) = self.unheld.take() {
+            let fallback = std::mem::take(&mut self.fallback);
+            *self = *unheld;
+            self.fallback = fallback;
+        }
     }
 
     /// Write no design scope: every design scope, container, feature and
@@ -1353,6 +1507,7 @@ impl<'a> Reduction<'a> {
         if !self.writes_neutral_design() {
             return false;
         }
+        self.unhold();
         self.neutral_dropped = true;
         self.losses
             .extend(super::design::dropped_records(&self.ir, reason));
@@ -1493,7 +1648,13 @@ impl<'a> Reduction<'a> {
                 "body {body} was not written, with the topology and geometry only it uses: {reason}"
             )));
         }
-        self.retain(kept, reason)?;
+        let mut removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let omitted = dropped_bodies
+            .iter()
+            .filter(|body| removed.remove(body.as_str()))
+            .cloned()
+            .collect();
+        self.charge_removed(&removed, &omitted, reason);
         Ok(())
     }
 
@@ -1800,7 +1961,7 @@ fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
 fn split_disconnected_shells(
     geometry: &mut cadmpeg_ir::document::Topology,
     shells: &BTreeSet<String>,
-) -> Result<(), CodecError> {
+) {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Incidence<'a> {
         Edge(&'a str),
@@ -1888,19 +2049,15 @@ fn split_disconnected_shells(
             let id = if let Some(id) = components.get(&root) {
                 ShellId::clone(id)
             } else {
-                let candidate = loop {
+                let id = loop {
                     ordinal += 1;
-                    let candidate = format!("{}/component-{ordinal}", shell.id);
-                    if used.insert(candidate.clone()) {
+                    let candidate = ShellId::from(Identity::from(shell.id.clone()).with_key_tail(
+                        &IdentityKeyTail::percent_encode(&format!("/component-{ordinal}")),
+                    ));
+                    if used.insert(candidate.to_string()) {
                         break candidate;
                     }
                 };
-                let id = ShellId::mint(candidate).map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "shell {} component identity: {error}",
-                        shell.id
-                    ))
-                })?;
                 created.push((id.clone(), shell.region.clone(), after));
                 after = id.clone();
                 components.insert(root, id.clone());
@@ -1918,7 +2075,6 @@ fn split_disconnected_shells(
         }
         geometry.shells.push(Shell::new(id, region));
     }
-    Ok(())
 }
 
 /// The root of `node`, halving the path on the way.
@@ -2157,6 +2313,35 @@ pub(super) fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topolog
                         .map(|row| row.id.as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
+                ));
+            }
+        )*};
+    }
+    for_each_geometry_arena!(list);
+    arenas
+}
+
+/// The records of `geometry` that `kept` does not hold unchanged, by arena:
+/// each arena's name, row count and record ids.
+pub(super) fn geometry_records_outside(
+    geometry: &cadmpeg_ir::document::Topology,
+    kept: &cadmpeg_ir::document::Topology,
+) -> Vec<String> {
+    let mut arenas = Vec::new();
+    macro_rules! list {
+        ($($field:ident),*) => {$(
+            let outside = geometry
+                .$field
+                .iter()
+                .filter(|row| !kept.$field.contains(row))
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>();
+            if !outside.is_empty() {
+                arenas.push(format!(
+                    "{} {}: {}",
+                    outside.len(),
+                    stringify!($field),
+                    outside.join(", ")
                 ));
             }
         )*};

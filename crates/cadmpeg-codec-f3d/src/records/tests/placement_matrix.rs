@@ -1,4 +1,5 @@
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_core::serde_erase::json;
 use serde::Deserialize;
 
 #[test]
@@ -9,12 +10,12 @@ fn placement_matrix_admission_preserves_translation_reflection_and_signed_zero()
         rows[0][3] = f64::MAX;
         rows[1][3] = -3.0;
         rows[3][0] = -0.0;
-        let wire = serde_json::to_value(rows).unwrap();
+        let wire = json::to_value(rows).unwrap();
         let matrix = SketchPlacementMatrix::try_from(rows).unwrap();
         assert_eq!(matrix.rows()[3][0].to_bits(), (-0.0_f64).to_bits());
-        assert_eq!(serde_json::to_value(matrix).unwrap(), wire);
+        assert_eq!(json::to_value(matrix).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<SketchPlacementMatrix>(wire).unwrap(),
+            json::from_value::<SketchPlacementMatrix>(wire).unwrap(),
             matrix
         );
     }
@@ -33,21 +34,18 @@ fn placement_matrix_rejects_nonfinite_projective_scaled_and_sheared_forms() {
         let mut rows = SketchPlacementMatrix::IDENTITY.rows();
         rows[row][column] = value;
         assert!(SketchPlacementMatrix::try_from(rows).is_err());
-        assert!(serde_json::from_value::<SketchPlacementMatrix>(
-            serde_json::to_value(rows).unwrap()
-        )
-        .is_err());
+        assert!(json::from_value::<SketchPlacementMatrix>(json::to_value(rows).unwrap()).is_err());
     }
 }
 
 fn rejects_transform<T: for<'de> Deserialize<'de>>(mut wire: serde_json::Value, field: &str) {
-    wire[field] = serde_json::to_value(SketchPlacementMatrix::IDENTITY).unwrap();
-    let admitted = serde_json::from_value::<T>(wire.clone());
+    wire[field] = json::to_value(SketchPlacementMatrix::IDENTITY).unwrap();
+    let admitted = json::from_value::<T>(wire.clone());
     assert!(admitted.is_ok(), "valid matrix route: {:?}", admitted.err());
     let mut rows = SketchPlacementMatrix::IDENTITY.rows();
     rows[1][1] = 2.0;
-    wire[field] = serde_json::to_value(rows).unwrap();
-    assert!(serde_json::from_value::<T>(wire).is_err());
+    wire[field] = json::to_value(rows).unwrap();
+    assert!(json::from_value::<T>(wire).is_err());
 }
 
 #[test]

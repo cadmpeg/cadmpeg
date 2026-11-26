@@ -19,6 +19,7 @@ use crate::geometry::surface_curves::{
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
 use crate::units::UnitVector3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn spatial_offset_keeps_its_admitted_unit_reference_direction() {
@@ -27,13 +28,13 @@ fn spatial_offset_keeps_its_admitted_unit_reference_direction() {
     let payload = SpatialOffsetCurveConstruction::try_new(source, 2.0, direction, None).unwrap();
     let held: &UnitVector3 = payload.reference_direction();
     assert_eq!(held.as_raw(), &direction);
-    let wire = serde_json::to_value(&payload).unwrap();
+    let wire = json::to_value(&payload).unwrap();
     assert_eq!(
         wire["reference_direction"],
         serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
     assert_eq!(
-        serde_json::from_value::<SpatialOffsetCurveConstruction>(wire).unwrap(),
+        json::from_value::<SpatialOffsetCurveConstruction>(wire).unwrap(),
         payload
     );
     assert!(SpatialOffsetCurveConstruction::try_new(
@@ -75,10 +76,7 @@ fn silhouette_unit_light_direction_keeps_the_raw_construction_and_wire() {
         UnitVector3::Z_AXIS,
     );
     assert_eq!(raw, typed);
-    assert_eq!(
-        serde_json::to_vec(&raw).unwrap(),
-        serde_json::to_vec(&typed).unwrap()
-    );
+    assert_eq!(json::to_vec(&raw).unwrap(), json::to_vec(&typed).unwrap());
 }
 
 #[test]
@@ -101,13 +99,13 @@ fn third_ranged_pcurve_requires_a_nonzero_context_interval() {
     let valid = ProceduralCurveDefinition::ThreeSurfaceIntersection(
         ThreeSurfaceIntersectionCurvePayload::try_new(context([0.0, 1.0]), 0, third(true)).unwrap(),
     );
-    let mut wire = serde_json::to_value(&valid).unwrap();
+    let mut wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         valid
     );
     wire["context"]["parameter_range"] = serde_json::json!([1.0, 1.0]);
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
 #[test]
@@ -125,16 +123,16 @@ fn projection_payload_admits_finite_ordered_source_intervals() {
         )
     };
     let valid = ProceduralCurveDefinition::Projection(projection([1.0, 1.0]).unwrap());
-    let mut wire = serde_json::to_value(&valid).unwrap();
+    let mut wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         valid
     );
     for range in [[2.0, 1.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(projection(range).is_err());
     }
     wire["tail"]["parameter_range"] = serde_json::json!([2.0, 1.0]);
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
 #[test]
@@ -154,9 +152,9 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
         )
     };
     let valid = ProceduralCurveDefinition::Spring(spring([1.0, 1.0], [0.0, 0.0]).unwrap());
-    let mut wire = serde_json::to_value(&valid).unwrap();
+    let mut wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         valid
     );
     for range in [[2.0, 1.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
@@ -164,7 +162,7 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
         assert!(spring([0.0, 1.0], range).is_err());
     }
     wire["layout"]["first_pcurve"]["value"] = serde_json::json!([2.0, 1.0]);
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
 fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
@@ -193,12 +191,12 @@ fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
 #[test]
 fn cache_first_curve_form_admits_the_full_positive_revision_lane() {
     let form = cache_first_form(None);
-    let wire = serde_json::to_value(form).unwrap();
+    let wire = json::to_value(form).unwrap();
     for revision in [0_i64, -1] {
         assert!(crate::scalar::PositiveI64::new(revision).is_none());
         let mut invalid = wire.clone();
         invalid["revision"] = serde_json::json!(revision);
-        assert!(serde_json::from_value::<CacheFirstCurveForm>(invalid).is_err());
+        assert!(json::from_value::<CacheFirstCurveForm>(invalid).is_err());
     }
 
     let maximum = CacheFirstCurveForm {
@@ -209,7 +207,7 @@ fn cache_first_curve_form_admits_the_full_positive_revision_lane() {
     let mut maximum_wire = wire;
     maximum_wire["revision"] = serde_json::json!(i64::MAX);
     assert_eq!(
-        serde_json::from_value::<CacheFirstCurveForm>(maximum_wire)
+        json::from_value::<CacheFirstCurveForm>(maximum_wire)
             .expect("maximum JSON revision is admitted")
             .revision
             .get(),
@@ -319,7 +317,7 @@ fn the_cache_first_curve_admissions_refuse_every_non_finite_form_scalar() {
     let admitted = ProceduralCurveDefinition::SurfaceOffset(
         surface_offset(cache_first_form(None), [Some(0.5), None]).unwrap(),
     );
-    let wire = serde_json::to_value(&admitted).unwrap();
+    let wire = json::to_value(&admitted).unwrap();
     assert_eq!(wire["base_endpoints"], serde_json::json!([0.5, null]));
     assert_eq!(
         wire["cache"]["form"]["support_bounds"][0],
@@ -336,7 +334,7 @@ fn the_cache_first_curve_admissions_refuse_every_non_finite_form_scalar() {
         serde_json::json!([2.0, null])
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralCurveDefinition>(wire).unwrap(),
         admitted
     );
 

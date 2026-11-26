@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn draft_second_side_round_trips_as_a_tagged_key() {
     use crate::features::direct_edit::DraftSecondSide;
@@ -28,7 +30,7 @@ fn draft_second_side_round_trips_as_a_tagged_key() {
             "outward": false,
             "second_side": second_side
         }}});
-        let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+        let definition: FeatureDefinition = json::from_value(wire.clone()).unwrap();
         let FeatureDefinition::Operation(FeatureOperation::Draft {
             second_side: decoded,
             ..
@@ -37,10 +39,10 @@ fn draft_second_side_round_trips_as_a_tagged_key() {
             panic!("expected a Draft");
         };
         assert_eq!(*decoded, Some(expected));
-        assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+        assert_eq!(json::to_value(definition).unwrap(), wire);
     }
 
-    let error = serde_json::from_value::<FeatureOperation>(serde_json::json!({"kind": "draft", "value": {
+    let error = json::from_value::<FeatureOperation>(serde_json::json!({"kind": "draft", "value": {
         "faces": {"kind": "native", "value": "draft:faces"},
         "anchor": {"kind": "neutral_plane", "plane": {"kind": "native", "value": "draft:plane"}},
         "angle": 0.1,
@@ -51,10 +53,9 @@ fn draft_second_side_round_trips_as_a_tagged_key() {
     .to_string();
     assert!(error.contains("second_side"), "{error}");
 
-    let error = serde_json::from_value::<DraftSecondSide>(
-        serde_json::json!({"kind": "symmetric", "angle": 0.1}),
-    )
-    .unwrap_err()
-    .to_string();
+    let error =
+        json::from_value::<DraftSecondSide>(serde_json::json!({"kind": "symmetric", "angle": 0.1}))
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("angle"), "{error}");
 }

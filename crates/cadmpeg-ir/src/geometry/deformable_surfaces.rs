@@ -12,7 +12,14 @@ use serde::{Deserialize, Serialize};
 /// Structurally selected deformable-surface payload.
 // A source states raw values; a `DeformableSurfacePayload` holds the admitted
 // payload, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
@@ -167,7 +174,9 @@ pub struct DeformableSurfaceFrame<R = f64, V = Vector3, P = Point3> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 #[cfg_attr(
     feature = "schema",
     schemars(

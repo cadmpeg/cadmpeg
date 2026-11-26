@@ -1,3 +1,4 @@
+use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -122,7 +123,7 @@ fn circle() -> Value {
 }
 
 fn sweep<T: Serialize + for<'de> Deserialize<'de>>(schema: &Value) -> SchemaSweepReport {
-    let read = |text: &str| serde_json::to_value(serde_json::from_str::<T>(text)?);
+    let read = |text: &str| json::to_value(serde_json::from_str::<T>(text)?);
     sweep_with(schema, &[circle()], &circle(), &read)
 }
 
@@ -250,7 +251,7 @@ fn value_schema() -> Value {
 }
 
 fn sweep_values<T: Serialize + for<'de> Deserialize<'de>>(document: &Value) -> SchemaSweepReport {
-    let read = |text: &str| serde_json::to_value(serde_json::from_str::<T>(text)?);
+    let read = |text: &str| json::to_value(serde_json::from_str::<T>(text)?);
     sweep_with(
         &value_schema(),
         std::slice::from_ref(document),
@@ -299,7 +300,7 @@ fn an_array_with_no_second_member_is_reported_unprobed() {
         "required": ["set"],
     });
     let document = json!({"set": ["only"]});
-    let read = |text: &str| serde_json::to_value(serde_json::from_str::<Value>(text)?);
+    let read = |text: &str| json::to_value(serde_json::from_str::<Value>(text)?);
     let report = sweep_with(&schema, std::slice::from_ref(&document), &document, &read);
     assert_eq!(
         report.unprobed,

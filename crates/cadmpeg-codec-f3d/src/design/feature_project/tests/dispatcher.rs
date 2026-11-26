@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::ids::neutral_sketch_id;
@@ -1074,7 +1075,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     let features = unruled.features;
     // The rule's thickness governs over the stored copy.
     let ruled: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": format!("{stream}:design-sheet-metal-settings#20"),
             "record_index": 103, "byte_offset": 20, "paired_byte_offset": 100,
             "mask": 240, "inputs": {"version": "v2", "slots": vec![None::<u64>; 7]},
@@ -1515,7 +1516,7 @@ fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
         let groups = indices
             .into_iter()
             .map(|index| {
-                serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+                json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
                     "id": format!("f3d:native/BulkStream.dat:group#{index}"),
                     "scope_record_index": 12,
                     "scope_reference_ordinal": 0,

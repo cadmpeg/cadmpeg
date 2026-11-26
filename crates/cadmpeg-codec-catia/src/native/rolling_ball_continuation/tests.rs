@@ -1,6 +1,7 @@
 use super::{derive, fields, CatiaRollingBallContinuation, ScalarJet};
 use crate::test_support::test_rolling_ball_continuation::{fixture, TailForm};
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth};
+use cadmpeg_core::serde_erase::json;
 
 fn decode(bytes: &[u8]) -> Vec<CatiaRollingBallContinuation> {
     let records = crate::wire::records::consolidated_records(bytes);
@@ -183,9 +184,9 @@ fn continuation_rejects_incomplete_branches_terminals_and_extra_bytes() {
 fn continuation_wire_authenticates_every_redundant_word_and_offset() {
     let (bytes, _) = fixture(2, false, TailForm::Explicit);
     let row = decode(&bytes).remove(0);
-    let wire = serde_json::to_value(&row).expect("wire");
+    let wire = json::to_value(&row).expect("wire");
     assert_eq!(
-        serde_json::from_value::<CatiaRollingBallContinuation>(wire.clone()).expect("checked wire"),
+        json::from_value::<CatiaRollingBallContinuation>(wire.clone()).expect("checked wire"),
         row
     );
     for field in [
@@ -198,7 +199,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(0);
         assert!(
-            serde_json::from_value::<CatiaRollingBallContinuation>(invalid).is_err(),
+            json::from_value::<CatiaRollingBallContinuation>(invalid).is_err(),
             "{field}"
         );
     }
@@ -212,7 +213,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
             let mut invalid = wire.clone();
             let actual = invalid[field][slot].as_u64().expect("word");
             invalid[field][slot] = serde_json::json!(actual ^ 1);
-            assert!(serde_json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
+            assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
         }
     }
     for field in [
@@ -222,7 +223,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
     ] {
         let mut invalid = wire.clone();
         invalid["scalar_jet"][field][0] = serde_json::json!(0);
-        assert!(serde_json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
+        assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
     }
     for field in ["terminal", "kind", "header_token", "payload"] {
         let mut invalid = wire.clone();
@@ -233,7 +234,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
             "payload" => invalid["frame"][field] = serde_json::json!(""),
             _ => unreachable!(),
         }
-        assert!(serde_json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
+        assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
     }
 }
 
@@ -328,9 +329,9 @@ fn continuation_preserves_sheet_tail_fields_without_scalar_interpretation() {
                     ScalarJet::Absent
                 };
                 assert_eq!(row.scalar_jet, expected);
-                let json = serde_json::to_value(row).expect("retained continuation");
+                let json = json::to_value(row).expect("retained continuation");
                 assert_eq!(
-                    serde_json::from_value::<CatiaRollingBallContinuation>(json.clone())
+                    json::from_value::<CatiaRollingBallContinuation>(json.clone())
                         .expect("checked continuation"),
                     *row
                 );
@@ -338,9 +339,7 @@ fn continuation_preserves_sheet_tail_fields_without_scalar_interpretation() {
                     let mut changed = json;
                     changed["scalar_jet"]["first_derivative_bits"][0] =
                         serde_json::json!(1.0_f64.to_bits());
-                    assert!(
-                        serde_json::from_value::<CatiaRollingBallContinuation>(changed).is_err()
-                    );
+                    assert!(json::from_value::<CatiaRollingBallContinuation>(changed).is_err());
                 }
             }
         }

@@ -4,6 +4,7 @@
 //! Inputs come from [`crate::test_support`] builders. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -93,7 +94,7 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match PvzCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => serde_json::to_value(summary).expect("serialize inspect summary"),
+        Ok(summary) => json::to_value(summary).expect("serialize inspect summary"),
         Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)

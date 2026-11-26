@@ -4,6 +4,7 @@
 //! bound (§2.5) bounds their reading, and every operation at the deepest
 //! depth the reader admits runs on a 256 KiB stack.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -49,7 +50,7 @@ fn nests_to_the_document_depth_bound<T>(nested: impl Fn(usize) -> T)
 where
     T: Serialize + DeserializeOwned + Clone + PartialEq + Send + 'static,
 {
-    let text = |depth| serde_json::to_string(&nested(depth)).unwrap();
+    let text = |depth| json::to_string(&nested(depth)).unwrap();
     let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read_desktop::<T>(&text(depth)).is_err())
         .expect("the reader refuses a depth past the document bound");
@@ -67,7 +68,7 @@ where
         let deepest = deepest.clone();
         move || {
             let read = read_desktop::<T>(&deepest).unwrap();
-            let printed = serde_json::to_string(&read).unwrap();
+            let printed = json::to_string(&read).unwrap();
             let cloned = read.clone();
             assert!(cloned == read);
             drop(cloned);
@@ -90,8 +91,8 @@ fn program_groups_nest_to_the_document_depth_bound_on_a_default_thread() {
 
 #[test]
 fn a_cycle_expansion_holds_no_cycle() {
-    let inner = serde_json::to_value(Motion::Cycle(Box::new(cycles().remove(1)))).unwrap();
-    let mut outer = serde_json::to_value(cycles().remove(1)).unwrap();
+    let inner = json::to_value(Motion::Cycle(Box::new(cycles().remove(1)))).unwrap();
+    let mut outer = json::to_value(cycles().remove(1)).unwrap();
     outer["expansion"] = serde_json::json!([inner]);
     assert!(read_desktop::<Cycle>(&outer.to_string()).is_err());
 }

@@ -2,6 +2,8 @@
 //! Shared synthetic IGES byte-fixture builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
+
 pub(crate) mod test_cards;
 pub(crate) mod test_closed_cylinder;
 pub(crate) mod test_curves_and_surfaces;
@@ -60,6 +62,24 @@ pub(crate) fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
             &cadmpeg_ir::codec::DecodeOptions::default(),
         )
         .unwrap()
+}
+
+/// The document that the written file `bytes` reads back as. The reader
+/// charges a loss of each code in `expected` and no other loss.
+pub(crate) fn decoded_with(bytes: &[u8], expected: &[&str]) -> cadmpeg_ir::CadIr {
+    let decoded = decode(bytes.to_vec());
+    let losses = &decoded.report().losses;
+    let mut codes = losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect::<Vec<_>>();
+    codes.sort();
+    codes.dedup();
+    assert_eq!(
+        codes, expected,
+        "the written file reads back with {losses:#?}"
+    );
+    decoded.ir().clone()
 }
 
 /// Decodes a synthesized stream that must also detect at high confidence.
@@ -165,7 +185,7 @@ pub(crate) fn with_policy_context<T>(
 
 /// Decodes the exact bytes of a native wire payload for byte assertions.
 pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
-    serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+    json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
         .expect("native hexadecimal byte string")
         .into_inner()
 }

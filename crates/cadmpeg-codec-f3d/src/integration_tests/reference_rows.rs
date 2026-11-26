@@ -6,6 +6,7 @@ use crate::test_support::assembly_test::{
     f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
     f3z_archive_with_design_description, redirections_json,
 };
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 
 #[test]
@@ -28,10 +29,10 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
             "assembly-design",
             "root.f3d",
             &placements,
-            &serde_json::to_vec(&table).unwrap(),
+            &json::to_vec(&table).unwrap(),
         );
         let child = f3d_with_smbh(&synthetic_geometry_smbh());
-        let description = serde_json::to_vec(&json!({
+        let description = json::to_vec(&json!({
             "name": "Autodesk Design Description", "version": "0.1",
             "designDescription": {"id": "0", "designGraphs": [{
                 "rootIds": [0], "designObjectRefs": [], "designObjects": [{
@@ -66,7 +67,7 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
             assert!(merged.ir().geometry.bodies[0]
                 .id
                 .as_str()
-                .contains("reference-1/occurrence-0@"));
+                .starts_with("f3d:child.f3d@"));
         }
         for code in [
             crate::loss::F3dLossCode::XrefTableUndecoded,
@@ -94,7 +95,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: &[Value]) -> Vec<u8> {
-    serde_json::to_vec(&json!({
+    json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],

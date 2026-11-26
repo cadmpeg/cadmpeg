@@ -3712,6 +3712,7 @@ mod tests {
         let polycurve = crate::curves::DecodedCurve::Compound {
             children: vec![(finite(-1.5), point(1.0)), (finite(2.0), point(2.0))],
             end_parameter: finite(6.25),
+            scale: crate::settings::MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use std::collections::HashSet;
 
@@ -21,12 +22,12 @@ fn edited() -> (CadIr, CadIr, FeatureId) {
         if feature.name.is_none() {
             continue;
         }
-        let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
         let Some(leaf) = first_real(&mut wire) else {
             continue;
         };
         *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
-        if let Ok(definition) = serde_json::from_value(wire) {
+        if let Ok(definition) = json::from_value(wire) {
             feature.evaluation.set_definition(definition);
             let id = feature.id.clone();
             return (source, input, id);
@@ -47,7 +48,9 @@ fn first_real(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
 /// The write's claims for the edit of feature `id`, each edit called written
 /// or not.
 fn claims(source: &CadIr, input: &CadIr, id: &FeatureId, written: bool) -> ReadBackClaims {
-    let mut edits = SourceEdits::new(input, None, Some(source), &[]).unwrap();
+    let source_native = crate::test_support::native::sldprt_native(source);
+    let mut edits =
+        SourceEdits::new(input, None, Some((source, Some(&source_native))), &[]).unwrap();
     let find = |ir: &CadIr| {
         ir.model
             .features
@@ -84,7 +87,7 @@ fn judge_settled(
     Judge::new(input, &CodecDigests::new(), &|_| None).judge(
         claims,
         &UnwrittenEdits::default(),
-        (source, &[], &[]),
+        ((source, &Document::of(source).unwrap()), &[], &[]),
         written,
         Some(settled),
         &mut |_| Vec::new(),
@@ -239,17 +242,12 @@ fn a_moved_sketch_is_a_difference_of_that_sketch() {
         .model
         .sketches
         .iter()
-        .position(|sketch| {
-            serde_json::to_value(sketch)
-                .unwrap()
-                .pointer(pointer)
-                .is_some()
-        })
+        .position(|sketch| json::to_value(sketch).unwrap().pointer(pointer).is_some())
         .expect("a planar sketch states its origin");
-    let mut wire = serde_json::to_value(&written.model.sketches[index]).unwrap();
+    let mut wire = json::to_value(&written.model.sketches[index]).unwrap();
     let origin = wire.pointer_mut(pointer).unwrap();
     *origin = serde_json::json!(origin.as_f64().unwrap() + 1.0);
-    written.model.sketches[index] = serde_json::from_value(wire).unwrap();
+    written.model.sketches[index] = json::from_value(wire).unwrap();
     let (stated, read) = (
         Document::of(&source).unwrap(),
         Document::of(&written).unwrap(),
@@ -287,14 +285,14 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
         .features
         .iter_mut()
         .find(|feature| {
-            let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+            let wire = json::to_value(feature.evaluation.definition()).unwrap();
             super::settled_travel(&wire) == Some("/value/value/direction")
                 && wire.pointer("/value/value/direction/kind")
                     == Some(&serde_json::json!("profile_normal"))
                 && !crate::history::extrude_direction::reversal_flag(&feature.source_properties)
         })
         .expect("an extrusion along its profile normal");
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
     *wire.pointer_mut("/value/value/direction").unwrap() =
         serde_json::json!({"kind": "reversed_profile_normal"});
     if other {
@@ -303,7 +301,7 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
     }
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(json::from_value(wire).unwrap());
     let id = feature.id.clone();
     (source, input, id)
 }
@@ -546,7 +544,7 @@ fn a_difference_the_unedited_write_has_is_named_by_arena() {
     let read_back = Judge::new(&input, &CodecDigests::new(), &|_| None).judge(
         &claims,
         &UnwrittenEdits::default(),
-        (&source, &[], &[]),
+        ((&source, &Document::of(&source).unwrap()), &[], &[]),
         &written,
         Some(&HashSet::new()),
         &mut |stated| {
@@ -665,7 +663,8 @@ fn a_writer_difference_and_an_unread_part_are_named_by_their_losses() {
         ..ReadBack::default()
     };
 
-    let notes = SourceEdits::new(&input, None, Some(&source), &[])
+    let source_native = crate::test_support::native::sldprt_native(&source);
+    let notes = SourceEdits::new(&input, None, Some((&source, Some(&source_native))), &[])
         .unwrap()
         .into_parts()
         .unwritten

@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
@@ -58,7 +59,7 @@ fn schema_relation_column_marks_ref_and_refs() {
         .output()
         .unwrap();
     assert!(json.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
     let fields = value["payload"]["fields"].as_array().unwrap();
     let by_path: std::collections::BTreeMap<&str, &serde_json::Value> = fields

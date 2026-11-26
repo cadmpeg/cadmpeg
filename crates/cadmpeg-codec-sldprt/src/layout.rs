@@ -2494,6 +2494,26 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const NAME_LENGTH: usize = 5;
 }
 
+/// Byte offsets for the `revolution_turn_block` record.
+///
+/// Spec §Extrusion feature objects. Record length 9 B.
+pub(crate) mod revolution_turn_block {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `lead` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const LEAD: usize = 0;
+    /// Stated value of `lead` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const LEAD_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Offset of `reverse` (`u8`). Spec §Extrusion feature objects.
+    pub(crate) const REVERSE: usize = 2;
+    /// Offset of `pad` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const PAD: usize = 3;
+    /// Stated value of `pad` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const PAD_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Offset of `word` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const WORD: usize = 5;
+}
+
 /// Byte offsets for the `revolution_line_reference_record_tail` record.
 ///
 /// Spec §2. Record length 57 B.
@@ -2514,6 +2534,29 @@ pub(crate) mod revolution_line_reference_record_tail {
     pub(crate) const ZERO: usize = 56;
     /// Stated value of `zero` (`bytes[1]`). Spec §2.
     pub(crate) const ZERO_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `axis_tail_version_15000_prefix` record.
+///
+/// Spec §Extrusion feature objects. Record length 24 B.
+///
+/// ```text
+/// Offsets begin at the handle block's version word; the seven f64 of the tail follow at +24.
+/// ```
+pub(crate) mod axis_tail_version_15000_prefix {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 24;
+    /// Offset of `version` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const VERSION: usize = 0;
+    /// Stated value of `version` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const VERSION_VALUE: u32 = 0x0000_3a98;
+    /// Offset of `zeros` (`bytes[20]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS: usize = 4;
+    /// Stated value of `zeros` (`bytes[20]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS_VALUE: [u8; 20] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
 }
 
 /// Byte offsets for the `revolution_line_reference_nested_end` record.

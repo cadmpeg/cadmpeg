@@ -4,6 +4,7 @@
 
 use crate::history::scope_histories::bind_scope_histories;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
@@ -62,7 +63,7 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
         panic!("Base Feature payload");
     };
     *slot = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "body_entity_fields": ["000000000000"],
             "body_entity_suffix_offsets": [24],
             "body_entity_suffixes": [80],
@@ -116,7 +117,7 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
         panic!("Base Feature payload");
     };
     *slot = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "body_entity_fields": ["000000000000", "000000000000"],
             "body_entity_suffix_offsets": [24, 32],
             "body_entity_suffixes": [80, 81],

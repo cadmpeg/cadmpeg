@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -1301,25 +1302,25 @@ fn compact_rotation_cylinder_caps_order_disjoint_circular_holes() {
 fn bounded_circle_arcs_prove_disjoint_cap_holes() {
     let mut native = CadIr::empty();
     native.geometry.bodies.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "creo:visibgeom:body#2", "kind": "solid"
         }))
         .expect("native body"),
     );
     native.geometry.regions.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "creo:visibgeom:region#3", "body": "creo:visibgeom:body#2", "shells": ["creo:visibgeom:shell#6"]
         }))
         .expect("native region"),
     );
     native.geometry.shells.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "creo:visibgeom:shell#6", "region": "creo:visibgeom:region#3", "members": []
         }))
         .expect("native shell"),
     );
     native.geometry.faces.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "creo:visibgeom:face#1", "shell": "creo:visibgeom:shell#6", "surface": "creo:visibgeom:surface#1",
             "sense": "forward", "loops": {"kind": "unspecified", "loops": ["creo:visibgeom:loop#1"]}
         }))

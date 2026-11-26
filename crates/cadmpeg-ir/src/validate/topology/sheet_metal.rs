@@ -237,6 +237,7 @@ mod tests {
         };
         let state = |id, input_of| FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
             id,
             input_of,
             bodies: DistinctMembers::default(),

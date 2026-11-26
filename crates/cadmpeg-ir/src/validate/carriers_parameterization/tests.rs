@@ -10,6 +10,7 @@ use crate::report::check::Check;
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
@@ -110,7 +111,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     let carrier_id = carrier.id.as_str().to_owned();
     ir.geometry.curves.push(carrier);
     ir.finalize();
-    let mut wire = serde_json::to_value(&ir).unwrap();
+    let mut wire = json::to_value(&ir).unwrap();
     wire["native"] = serde_json::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
         {"id": "test:source:unknown#malformed", "links": [null]}

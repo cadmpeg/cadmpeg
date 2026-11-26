@@ -3,6 +3,7 @@
 mod constraint_state;
 
 use crate::records::sketch_relations::SketchRelation;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn native_rectangular_pattern_refuses_nonunit_direction() {
@@ -14,7 +15,7 @@ fn native_rectangular_pattern_refuses_nonunit_direction() {
         "distance_parameter": 4
     });
     assert!(
-        serde_json::from_value::<crate::records::sketch_relations::SketchPatternDirection>(value)
+        json::from_value::<crate::records::sketch_relations::SketchPatternDirection>(value)
             .is_err()
     );
 }
@@ -34,8 +35,8 @@ fn sketch_relation_borrowed_wire_matches_owned_wire_bytes() {
         let relation: SketchRelation = serde_json::from_str(wire).unwrap();
         let owned = super::SketchRelationSerde::from(relation.clone());
         assert_eq!(
-            serde_json::to_vec(&relation).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&relation).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -59,14 +60,14 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
         .replace(r#""resolved_return_members":[]"#, r#""resolved_return_members":[{"kind":"record","record_index":2},{"kind":"point","record_index":1,"persistent_id":10}]"#);
     for wire in [base, resolved.as_str()] {
         let relation: SketchRelation = serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+        assert_eq!(json::to_string(&relation).unwrap(), wire);
         assert_eq!(relation.member_indices(), [1, 2]);
         assert_eq!(relation.return_member_indices(), [2, 1]);
     }
     for ordinals in ["[]", "[0,0]"] {
         let wire = base.replace("[3,5]", ordinals);
         let relation: SketchRelation = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+        assert_eq!(json::to_string(&relation).unwrap(), wire);
     }
     let relation: SketchRelation = serde_json::from_str(base).unwrap();
     let mut partial_ordinals = relation.members().to_vec();
@@ -79,13 +80,13 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
         let value: serde_json::Value = serde_json::from_str(&resolved).unwrap();
         let mut mismatch = value.clone();
         mismatch[field][0]["record_index"] = serde_json::json!(3);
-        assert!(serde_json::from_value::<SketchRelation>(mismatch)
+        assert!(json::from_value::<SketchRelation>(mismatch)
             .unwrap_err()
             .to_string()
             .contains(field));
         let mut partial = value;
         partial[field].as_array_mut().unwrap().pop();
-        assert!(serde_json::from_value::<SketchRelation>(partial)
+        assert!(json::from_value::<SketchRelation>(partial)
             .unwrap_err()
             .to_string()
             .contains(field));
@@ -104,7 +105,7 @@ fn sketch_relation_owner_preserves_absence_and_nonempty_ids_on_wire_round_trip()
         relation.owner_entity_id =
             owner.map(|id| cadmpeg_core::text::NonBlankString::new(id).unwrap());
         let expected = RELATION_WIRE.replace(r#""owner_entity_id":"owner""#, field);
-        let wire = serde_json::to_string(&relation).unwrap();
+        let wire = json::to_string(&relation).unwrap();
         assert_eq!(wire, expected);
         assert_eq!(
             serde_json::from_str::<SketchRelation>(&wire).unwrap(),
@@ -123,7 +124,7 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
         "return_member_offsets",
     ] {
         for offset in [77_u32, u32::MAX] {
-            let mut wire = serde_json::to_value(&relation).unwrap();
+            let mut wire = json::to_value(&relation).unwrap();
             if field == "owner_reference_offset" {
                 wire[field] = serde_json::json!(offset);
             } else if field == "auxiliary_reference_offsets" {
@@ -132,7 +133,7 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
             } else {
                 wire[field][0] = serde_json::json!(offset);
             }
-            assert!(serde_json::from_value::<SketchRelation>(wire)
+            assert!(json::from_value::<SketchRelation>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains(field));

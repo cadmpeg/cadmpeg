@@ -394,18 +394,19 @@ mod tests {
     };
     use crate::native::om::state_status::OmOperationStateStatus;
     use crate::om::state_status::StateStatusPayload;
+    use cadmpeg_core::serde_erase::json;
     use serde::Serialize;
 
     fn preserves_wire<T: Serialize + serde::de::DeserializeOwned>(json: &str) {
         let value: T = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(json::to_string(&value).unwrap(), json);
     }
 
     fn preserves_row_wire(json: &str) {
         let wire: OmRollForwardStateRowWire = serde_json::from_str(json).unwrap();
         let row = wire.into_row(0, 0).unwrap();
         assert_eq!(
-            serde_json::to_string(&OmRollForwardStateRowWire::from_row(0, 0, row)).unwrap(),
+            json::to_string(&OmRollForwardStateRowWire::from_row(0, 0, row)).unwrap(),
             json
         );
     }
@@ -414,7 +415,7 @@ mod tests {
         let wire: OmOperationStateSlotWire = serde_json::from_str(json).unwrap();
         let slot = wire.into_slot(ordinal).unwrap();
         assert_eq!(
-            serde_json::to_string(&OmOperationStateSlotWire::from_slot(ordinal, slot)).unwrap(),
+            json::to_string(&OmOperationStateSlotWire::from_slot(ordinal, slot)).unwrap(),
             json
         );
     }
@@ -423,10 +424,10 @@ mod tests {
     fn audit_borrowed_wire_preserves_owned_bytes() {
         let json = r#"{"id":"nx:om:audit#0","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#;
         let record: OmAuditTrailRow = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&OmAuditTrailRowWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&OmAuditTrailRowWire::from(record.clone())).unwrap()
         );
     }
 
@@ -444,10 +445,10 @@ mod tests {
     fn counter_borrowed_wire_preserves_owned_bytes() {
         let json = r#"{"id":"nx:om:counter#0","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":"900000","introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
         let record: OmOperationStateCounter = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&OmOperationStateCounterWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&OmOperationStateCounterWire::from(record.clone())).unwrap()
         );
     }
 
@@ -472,7 +473,7 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid[field] = replacement;
-            assert!(serde_json::from_value::<OmAuditTrailRow>(invalid)
+            assert!(json::from_value::<OmAuditTrailRow>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains(field));
@@ -480,7 +481,7 @@ mod tests {
         let mut boundary = wire;
         boundary["source_offset"] = (u64::MAX - 11).into();
         boundary["end_offset"] = u64::MAX.into();
-        let row = serde_json::from_value::<OmAuditTrailRow>(boundary).unwrap();
+        let row = json::from_value::<OmAuditTrailRow>(boundary).unwrap();
         assert_eq!(row.end_offset(), u64::MAX);
     }
 
@@ -491,18 +492,18 @@ mod tests {
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         let mut mismatch = wire.clone();
         mismatch["object_index_source_offset"] = 103.into();
-        assert!(serde_json::from_value::<OmOperationStateCounter>(mismatch)
+        assert!(json::from_value::<OmOperationStateCounter>(mismatch)
             .unwrap_err()
             .to_string()
             .contains("object_index_source_offset"));
         let mut boundary = wire.clone();
         boundary["source_offset"] = (u64::MAX - 8).into();
         boundary["object_index_source_offset"] = (u64::MAX - 6).into();
-        assert!(serde_json::from_value::<OmOperationStateCounter>(boundary).is_ok());
+        assert!(json::from_value::<OmOperationStateCounter>(boundary).is_ok());
         let mut overflow = wire;
         overflow["source_offset"] = (u64::MAX - 7).into();
         overflow["object_index_source_offset"] = (u64::MAX - 5).into();
-        assert!(serde_json::from_value::<OmOperationStateCounter>(overflow)
+        assert!(json::from_value::<OmOperationStateCounter>(overflow)
             .unwrap_err()
             .to_string()
             .contains("source_offset"));

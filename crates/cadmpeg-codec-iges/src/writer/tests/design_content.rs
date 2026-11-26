@@ -2,6 +2,7 @@
 //! Design content IGES has no place for is left out and reported; the shape
 //! beside it is written (§3.4, Content the target cannot hold).
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -37,7 +38,7 @@ fn tetrahedron() -> CadIr {
 /// design content a part from a history-based system holds beside its shape.
 fn with_design_content(ir: &mut CadIr) {
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
             "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
             "outputs": [], "dependencies": [], "source_properties": {},

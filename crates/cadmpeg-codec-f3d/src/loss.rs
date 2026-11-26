@@ -277,6 +277,10 @@ pub(crate) enum F3dLossCode {
     AssemblyOperandDescentAmbiguous,
     /// A complete joint occurrence path has no unique merged insertion instance.
     AssemblyOperandDescentUnresolved,
+    /// A joint of an archive member names an operand of the member's root
+    /// through one placement, so the other placements of the member do not
+    /// state it.
+    AssemblyMemberJointPlacementBound,
     AssemblyJointSourceBindingAssumed,
     AssemblyConnectorOperandsAssumed,
     AssemblyMotionBindingAssumed,
@@ -825,7 +829,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
     FeatureUnevaluatedStateAssumed,
-    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    /// A scope tail before the timeline marker stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
     FeatureNoResultActiveAssumed,
     /// A scope tail stores a state byte above `1`; the byte is read as set.
     FeatureStateByteAboveOne,
@@ -959,6 +963,10 @@ pub(crate) enum F3dLossCode {
     /// A Combine operand resolved in its input state names no model body and
     /// no generating feature, so it keeps its input-state bodies.
     FeatureCombineBodyProducerUnresolved,
+    /// A generated Combine operand slot names the feature that inserts it:
+    /// the state that last updates the slot before the Combine has no unique
+    /// earlier scope.
+    FeatureCombineOperandWriterAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1345,10 +1353,6 @@ pub(crate) enum F3dLossCode {
     SourceDialectUnverified,
     /// Export omits records named by the counted loss message.
     WriterAppearancePropertiesOmitted,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
-    /// An explicitly requested row was written as another.
-    TargetRequestDisplaced,
     /// A procedural carrier with no native encoding was written as its solved geometry.
     WriterProceduralReduced,
     /// A pcurve with no native encoding was omitted; the target recomputes it.
@@ -1389,6 +1393,10 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// The history arenas of a document read from CADIR JSON were not
+    /// restored from its retained source; the file was written from its
+    /// `design` records.
+    WriterHistoryUnrestored,
     /// An integer parameter was written as a Fusion user parameter, which
     /// holds a real.
     WriterIntegerAsReal,
@@ -1591,6 +1599,7 @@ impl F3dLossCode {
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
         Self::AssemblyOperandDescentUnresolved,
+        Self::AssemblyMemberJointPlacementBound,
         Self::AssemblyJointSourceBindingAssumed,
         Self::AssemblyConnectorOperandsAssumed,
         Self::AssemblyMotionBindingAssumed,
@@ -2010,6 +2019,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
+        Self::FeatureCombineOperandWriterAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2236,8 +2246,6 @@ impl F3dLossCode {
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
-        Self::SourceDialectDisplaced,
-        Self::TargetRequestDisplaced,
         Self::WriterProceduralReduced,
         Self::WriterPcurveOmitted,
         Self::WriterSubdOmitted,
@@ -2256,6 +2264,7 @@ impl F3dLossCode {
         Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
+        Self::WriterHistoryUnrestored,
         Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -2493,6 +2502,7 @@ impl F3dLossCode {
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
             Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
+            Self::AssemblyMemberJointPlacementBound => "assembly.member-joint-placement-bound",
             Self::AssemblyJointSourceBindingAssumed => "assembly.joint-source-binding-assumed",
             Self::AssemblyConnectorOperandsAssumed => "assembly.connector-operands-assumed",
             Self::AssemblyMotionBindingAssumed => "assembly.motion-binding-assumed",
@@ -3147,6 +3157,7 @@ impl F3dLossCode {
             Self::FeatureCombineBodyProducerUnresolved => {
                 "feature.combine-body-producer-unresolved"
             }
+            Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -3476,8 +3487,6 @@ impl F3dLossCode {
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterPcurveOmitted => "writer.pcurve-omitted",
             Self::WriterSubdOmitted => "writer.subd-omitted",
@@ -3496,6 +3505,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterHistoryUnrestored => "writer.history-unrestored",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
             Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
             Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
@@ -3589,7 +3599,6 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::TargetRequestDisplaced => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterPcurveOmitted => Severity::Info,
             Self::WriterSubdOmitted => Severity::Warning,
@@ -3608,6 +3617,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterHistoryUnrestored => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
             Self::WriterDesignRecordOmitted => Severity::Warning,
             Self::WriterAppearanceGuidAllocated => Severity::Warning,
@@ -3642,7 +3652,8 @@ impl F3dLossCode {
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
             | Self::ReferenceImageFlagAssumed
-            | Self::DecalMappingAssumed => Severity::Info,
+            | Self::DecalMappingAssumed
+            | Self::VertexToleranceWidened => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -3752,6 +3763,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
             | Self::AssemblyOperandPathWordAssumed
+            | Self::AssemblyMemberJointPlacementBound
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -4152,6 +4164,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4335,7 +4348,6 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
-            | Self::VertexToleranceWidened
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
@@ -4345,7 +4357,6 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped
             | Self::TsplineRadialMapUnresolved
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
             | Self::KernelCarrierUnparseable
             | Self::DialectLayerCollision
@@ -4457,6 +4468,7 @@ impl F3dLossCode {
             Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterHistoryUnrestored => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
@@ -4931,6 +4943,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
+            | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5126,7 +5139,10 @@ impl F3dLossCode {
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
-            | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentNamingSpaceUnbound
+            | Self::AssemblyMemberJointPlacementBound => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
             Self::SketchOwnerUnresolved
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
@@ -5202,8 +5218,6 @@ impl F3dLossCode {
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
-            Self::TargetRequestDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -5212,29 +5226,32 @@ impl F3dLossCode {
         }
     }
 
-    /// Strict floor pinned by this local code.
-    ///
-    /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
-    /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
-    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
-    /// edge written over an arc the source does not state.
-    /// The other listed undecoded-record codes also pin Warning so strict
-    /// mode rejects partial Design decoding.
+    /// The strict floor `f3d.md` §4 states: each code that records a given-up
+    /// Design record pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DesignIntentUndecoded
-            | Self::PrimaryRecordUndecoded
+            | Self::SketchCurveUndecoded
+            | Self::SketchSurfaceUndecoded
+            | Self::SketchTextUndecoded
+            | Self::SketchRelationUndecoded
+            | Self::SketchFolderUndecoded
+            | Self::SketchOrdinalCollectionUndecoded
+            | Self::SketchContainerUndecoded
+            | Self::SketchGeometryGroupUndecoded
             | Self::FeatureTimelineUndecoded
+            | Self::PrimaryRecordUndecoded
+            | Self::ConfigurationProjectionNative
+            | Self::SketchOwnerConflict
+            | Self::SketchRelationOwnerUnresolved
             | Self::ConfigurationDocumentUndecoded
             | Self::BendSettingsUndecoded
-            | Self::ConfigurationProjectionNative
-            | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
+            | Self::DesignBodyBoundsUndecoded => Some(Severity::Warning),
+            _ => None,
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(
@@ -5249,7 +5266,7 @@ impl F3dLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `f3d/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -5290,10 +5307,12 @@ mod tests {
     #[test]
     fn unread_design_records_keep_strict_refusal() {
         for code in UNREAD_DESIGN_RECORD_CODES {
-            assert_eq!(
-                code.note("synthetic unread Design record")
-                    .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+            assert!(
+                cadmpeg_ir::report::strictness::Strictness {
+                    pinned: true,
+                    ..Default::default()
+                }
+                .refuses(&code.note("synthetic unread Design record"), false),
                 "{}",
                 code.kind().local_code()
             );
@@ -5478,6 +5497,7 @@ mod tests {
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
                 "assembly.operand-descent-unresolved",
+                "assembly.member-joint-placement-bound",
                 "assembly.joint-source-binding-assumed",
                 "assembly.connector-operands-assumed",
                 "assembly.motion-binding-assumed",
@@ -5897,6 +5917,7 @@ mod tests {
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
+                "feature.combine-operand-writer-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
@@ -6123,8 +6144,6 @@ mod tests {
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
-                "target.source-dialect-displaced",
-                "target.request-displaced",
                 "writer.procedural-reduced",
                 "writer.pcurve-omitted",
                 "writer.subd-omitted",
@@ -6143,6 +6162,7 @@ mod tests {
                 "writer.rollback-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
+                "writer.history-unrestored",
                 "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

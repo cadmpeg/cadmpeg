@@ -2,6 +2,7 @@
 
 use super::{parse, Tables};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -45,7 +46,7 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
     assert_eq!(table.pairs.len(), 1);
     assert_eq!(table.revisions.len(), 1);
     assert_eq!(table.external.len(), 1);
-    let restored: Tables = serde_json::from_value(serde_json::to_value(&table)?)?;
+    let restored: Tables = json::from_value(json::to_value(&table)?)?;
     assert_eq!(restored, table);
     assert!(restored.valid(&ctx)?);
     let target = table
@@ -137,7 +138,7 @@ fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestRes
 }
 
 fn cache_record() -> Result<crate::drawing::Record, serde_json::Error> {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "inventor:drawing:record#generated-0", "segment_token": "generated", "record_ordinal": 0,
         "segment_version_major": 19, "type_id": "81136d8ad111566b600038bd861c3cb0", "family": "DlSheetSmSegmentType", "payload": "",
         "fields": {"form": "cached_view", "prefix": "00".repeat(28), "view": crate::pmdc::PmDcReference::from_packed(1), "tail": {"offset": 32, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])}}
@@ -147,7 +148,7 @@ fn cache_record() -> Result<crate::drawing::Record, serde_json::Error> {
 fn view_record() -> Result<crate::drawing::Record, serde_json::Error> {
     let mut prefix = [0_u8; 30];
     prefix[4..6].copy_from_slice(&17_u16.to_le_bytes());
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "inventor:drawing:record#target-0", "segment_token": "target", "record_ordinal": 0,
         "segment_version_major": 19, "type_id": "5942cb22d111c557600037bd861c3cb0", "family": "DlSheetDcSegmentType", "payload": "",
         "fields": {"form": "view", "prefix": cadmpeg_ir::native::bytes::NativeBytes::new(prefix), "operands": {"marker": 2, "metadata": null, "references": []}, "word": 0, "values": [0, 0], "extension": null, "text": "Generated", "tail": {"offset": 0, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])}}
@@ -260,7 +261,7 @@ fn sheet_view_lists_require_unique_local_targets_of_the_exact_class() -> TestRes
         tail_prefix: [0; 14].into(),
         auxiliary_lists: Box::new([empty()?, empty()?, empty()?]),
         terminal: [0; 8].into(),
-        tail: serde_json::from_value(serde_json::json!({
+        tail: json::from_value(serde_json::json!({
             "offset": 0, "len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[])
         }))?,
     };

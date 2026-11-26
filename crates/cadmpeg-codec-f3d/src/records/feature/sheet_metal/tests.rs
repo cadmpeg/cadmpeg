@@ -4,6 +4,7 @@ use crate::records::feature::sheet_metal::{
     DesignEdgeFlangeEdge, DesignEdgeFlangeOperation, DesignEdgeFlangeSelection,
     DesignEdgeFlangeShape, DesignHemOperation,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn edge_flange_wire_for_borrowed(mode: &str) -> serde_json::Value {
     let (owners, owners_by_edge) = match mode {
@@ -39,11 +40,11 @@ fn edge_flange_operation_borrowed_wire_matches_owned_wire_bytes() {
         "two_sides_per_edge",
     ] {
         let wire = edge_flange_wire_for_borrowed(mode);
-        let operation: DesignEdgeFlangeOperation = serde_json::from_value(wire).unwrap();
+        let operation: DesignEdgeFlangeOperation = json::from_value(wire).unwrap();
         let owned = super::DesignEdgeFlangeOperationSerde::from(operation.clone());
         assert_eq!(
-            serde_json::to_vec(&operation).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&operation).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -56,7 +57,7 @@ fn edge_flange_operation_native_retained_limit_refuses_before_clone() {
         value: &'a DesignEdgeFlangeOperation,
     }
     let operation: DesignEdgeFlangeOperation =
-        serde_json::from_value(edge_flange_wire_for_borrowed("two_sides_per_edge")).unwrap();
+        json::from_value(edge_flange_wire_for_borrowed("two_sides_per_edge")).unwrap();
     let record = NestedRecord {
         id: "f3d:native:edge-flange#0",
         value: &operation,
@@ -80,9 +81,9 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     });
     let mut flipped = wire.clone();
     flipped["flipped"] = true.into();
-    let reversed: DesignHemOperation = serde_json::from_value(flipped.clone()).unwrap();
+    let reversed: DesignHemOperation = json::from_value(flipped.clone()).unwrap();
     assert!(reversed.flipped);
-    assert_eq!(serde_json::to_value(reversed).unwrap(), flipped);
+    assert_eq!(json::to_value(reversed).unwrap(), flipped);
     for (field, value) in [
         ("flipped", serde_json::json!(2)),
         ("bend_position", serde_json::json!("unknown")),
@@ -91,10 +92,10 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
-        assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
+        assert!(json::from_value::<DesignHemOperation>(invalid).is_err());
     }
-    let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    let mut operation: DesignHemOperation = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(operation).unwrap(), wire);
     for (group, operand) in [
         ("edge_group_record_index", "edge_operand_record_index"),
         (
@@ -105,13 +106,13 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         let mut invalid = wire.clone();
         invalid[group] = serde_json::json!(u32::MAX);
         invalid[operand] = serde_json::json!(u32::MAX);
-        assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
+        assert!(json::from_value::<DesignHemOperation>(invalid).is_err());
     }
     operation.edge_group_record_index = 20_u32.try_into().unwrap();
     operation.aggregate_group_record_index = 30_u32.try_into().unwrap();
     assert_eq!(operation.edge_operand_record_index(), 23);
     assert_eq!(operation.aggregate_operand_record_index(), 33);
-    let changed = serde_json::to_value(operation).unwrap();
+    let changed = json::to_value(operation).unwrap();
     assert_eq!(changed["edge_operand_record_index"], 23);
     assert_eq!(changed["aggregate_operand_record_index"], 33);
     for field in [
@@ -120,7 +121,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(99);
-        assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
+        assert!(json::from_value::<DesignHemOperation>(invalid).is_err());
     }
 }
 
@@ -183,19 +184,19 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
         "width_distance_owner_record_indices":[], "settings_record_index":42, "bend_radius":0.25,
         "bend_radius_offset":50, "reference_side_code":4, "height_datum":"inner_faces", "bend_position":"adjacent"
     });
-    assert!(serde_json::from_value::<DesignEdgeFlangeOperation>(wire.clone()).is_ok());
+    assert!(json::from_value::<DesignEdgeFlangeOperation>(wire.clone()).is_ok());
     for field in [
         "edge_operand_record_indices",
         "aggregate_operand_record_indices",
     ] {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!([99]);
-        assert!(serde_json::from_value::<DesignEdgeFlangeOperation>(invalid).is_err());
+        assert!(json::from_value::<DesignEdgeFlangeOperation>(invalid).is_err());
     }
     let mut multiple = wire;
     multiple["edge_wrapper_record_indices"] = serde_json::json!([10, 11]);
     multiple["edge_group_record_indices"] = serde_json::json!([20, 21]);
     multiple["edge_operand_record_indices"] = serde_json::json!([23, 24]);
     multiple["aggregate_operand_record_indices"] = serde_json::json!([34, 35]);
-    assert!(serde_json::from_value::<DesignEdgeFlangeOperation>(multiple).is_ok());
+    assert!(json::from_value::<DesignEdgeFlangeOperation>(multiple).is_ok());
 }

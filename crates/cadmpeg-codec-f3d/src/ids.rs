@@ -52,24 +52,22 @@ pub(crate) fn member_definition_id(
     placing: Option<&str>,
     key: &str,
 ) -> Result<cadmpeg_ir::ids::ProductDefinitionId, cadmpeg_ir::ids::IdentityError> {
-    let local = format!("xref:{MEMBER_DEFINITION_KIND}#{key}");
+    let local = format!("{MEMBER_DEFINITION_SCOPE}{key}");
     cadmpeg_ir::ids::ProductDefinitionId::mint(match placing {
         Some(placing) => format!("{SCHEME_PREFIX}{placing}@{local}"),
         None => format!("{SCHEME_PREFIX}{local}"),
     })
 }
 
-/// The kind of an archive member's `File` definition.
-const MEMBER_DEFINITION_KIND: &str = "product-definition";
+/// The scope and kind of an archive member's `File` definition, up to its
+/// key.
+pub(crate) const MEMBER_DEFINITION_SCOPE: &str = "xref:product-definition#";
 
 /// The definition key of the archive member whose `File` definition `id` is.
 pub(crate) fn member_definition_key(id: &str) -> Option<&str> {
     let local = id.strip_prefix(SCHEME_PREFIX)?;
     let local = local.split_once('@').map_or(local, |(_, local)| local);
-    local
-        .strip_prefix("xref:")?
-        .strip_prefix(MEMBER_DEFINITION_KIND)?
-        .strip_prefix('#')
+    local.strip_prefix(MEMBER_DEFINITION_SCOPE)
 }
 
 /// Whether `id` is a record of an archive member, or the `File` definition
@@ -1163,6 +1161,7 @@ mod tests {
     use crate::records::{
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn sheet_metal_rule_ids_preserve_owner_stream_and_record_identity() {
@@ -1339,8 +1338,8 @@ mod tests {
             "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         );
         assert_eq!(
-            serde_json::to_string(&guid).unwrap(),
-            serde_json::to_string(text).unwrap()
+            json::to_string(&guid).unwrap(),
+            json::to_string(text).unwrap()
         );
         let token_text = format!("{text}_Post2015_Post2015");
         let token: crate::records::references::DesignVisualToken =
@@ -1350,8 +1349,8 @@ mod tests {
             format!("f3d:design:appearance#{token_text}")
         );
         assert_eq!(
-            serde_json::to_string(&token).unwrap(),
-            serde_json::to_string(&token_text).unwrap()
+            json::to_string(&token).unwrap(),
+            json::to_string(&token_text).unwrap()
         );
         assert!(crate::records::mesh::DesignRelaxedGuidText::try_from(String::new()).is_err());
         assert!(crate::records::references::DesignVisualToken::try_from(String::new()).is_err());

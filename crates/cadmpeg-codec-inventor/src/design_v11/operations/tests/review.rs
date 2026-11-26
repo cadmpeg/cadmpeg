@@ -124,7 +124,9 @@ fn extrusion_draft_keeps_unread_sign_and_neutral_plane_native() {
 
 #[test]
 fn loft_and_sweep_defaults_do_not_state_source_controls() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&extrude(), selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude")
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeDirection::Along { direction, .. }) =
@@ -201,7 +203,7 @@ fn validator_checks_the_shared_projection_and_native_gate() {
     project_part(&mut ir);
     assert!(validate(&ir).expect("valid native gate").is_empty());
     ir.design.features[0].definition.operation =
-        typed(&extrude(), &[], &[]).expect("unsupported replacement");
+        typed(&extrude(), selections::SketchData::default(), &[]).expect("unsupported replacement");
     assert_eq!(validate(&ir).expect("gate bypass").len(), 1);
 }
 
@@ -258,10 +260,10 @@ fn native_draft_operands_validate_after_canonical_zero_round_trip() {
 }
 
 #[test]
-fn native_body_motion_operands_validate_after_canonical_zero_round_trip() {
+fn native_body_scale_operands_validate_after_canonical_zero_round_trip() {
     assert_canonical_native_round_trip(&legacy(
-        "move_body",
-        json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[-0.0,1.0,2.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+        "scale",
+        json!({"bodies":native_selection(),"center":{"kind":"point","value":[-0.0,1.0,2.0]},"factors":{"kind":"uniform","factor":2.0}}),
     ));
 }
 

@@ -13,6 +13,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::history::edge_sample;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
@@ -1499,7 +1500,7 @@ fn named_group(
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": id,
         "byte_offset": 0,
         "class_tag": "325",
@@ -1807,8 +1808,8 @@ fn a_group_without_a_constant_radius_keeps_its_selection() {
 fn a_group_of_another_stream_keeps_its_selection() {
     const OTHER: &str = "f3d:Design/Other.dat:group#43";
     let mut other = group(42, &[7]);
-    other = serde_json::from_value({
-        let mut value = serde_json::to_value(&other).unwrap();
+    other = json::from_value({
+        let mut value = json::to_value(&other).unwrap();
         value["id"] = OTHER.into();
         value
     })

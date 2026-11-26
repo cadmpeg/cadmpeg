@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -393,17 +394,16 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
 fn identity_lead_wire_admits_only_defined_bytes() {
     for lead in u8::MIN..=u8::MAX {
         let wire = serde_json::json!({"byte_offset": 0, "entity_id": 1, "lead": lead});
-        let identity =
-            serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(wire.clone());
+        let identity = json::from_value::<crate::native::CatiaLegacyEntityIdentity>(wire.clone());
         assert_eq!(identity.is_ok(), matches!(lead, 0x81 | 0x82 | 0xe5 | 0xfd));
         match identity {
-            Ok(identity) => assert_eq!(serde_json::to_value(identity).unwrap(), wire),
+            Ok(identity) => assert_eq!(json::to_value(identity).unwrap(), wire),
             Err(error) => assert!(error.to_string().contains("lead")),
         }
     }
     let missing = serde_json::json!({"byte_offset": 0, "entity_id": 1});
     assert!(
-        serde_json::from_value::<crate::native::CatiaLegacyEntityIdentity>(missing)
+        json::from_value::<crate::native::CatiaLegacyEntityIdentity>(missing)
             .unwrap_err()
             .to_string()
             .contains("lead")

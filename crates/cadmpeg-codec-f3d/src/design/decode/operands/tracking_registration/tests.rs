@@ -3,6 +3,7 @@ use super::*;
 use crate::metastream::RecordIndexEntry;
 use crate::records::entity_header::BaseTypeGuid;
 use crate::records::identity::ReferenceRun;
+use cadmpeg_core::serde_erase::json;
 
 fn row(guid: &str, base: &str, version: u32, entity: u64) -> SegmentTypeData {
     SegmentTypeData {
@@ -48,7 +49,7 @@ fn fixture() -> (MetaStream, DesignConstructionTrackingPath) {
         ],
         secondary_records: Vec::new(),
     };
-    let path = serde_json::from_value(serde_json::json!({
+    let path = json::from_value(serde_json::json!({
         "wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"256",
         "carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"257",
         "primary_identity":268,"primary_identity_offset":70,"selector":1,"selector_offset":90,
@@ -155,7 +156,7 @@ fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primar
         ],
         secondary_records: Vec::new(),
     };
-    let transform = serde_json::from_value(serde_json::json!({
+    let transform = json::from_value(serde_json::json!({
         "record_index":300, "byte_offset":17, "class_tag":"256",
         "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "transform_offset":39,
         "following_record_index":309, "following_byte_offset":169, "following_class_tag":"257"

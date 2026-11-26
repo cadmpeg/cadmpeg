@@ -2,10 +2,11 @@
 //! Source-less F3D archive generation: assemble a ZIP archive from a neutral
 //! `CadIr` with no retained source.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions, MissingStateForm};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -15,6 +16,7 @@ use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 mod attributes;
+pub(in crate::writer) mod configuration_root;
 mod design;
 mod index;
 mod native_bytes;
@@ -56,10 +58,24 @@ pub(super) fn write_new(
     missing_states: MissingStateForm,
     writer: &mut dyn Write,
 ) -> Result<Generated, CodecError> {
+    // The history-true form writes the state at its timeline marker, which
+    // an evaluation can hold in place of the current state.
+    let staged = match missing_states {
+        MissingStateForm::HistoryTrue => design::state_at_marker(target),
+        MissingStateForm::GeometryTrue => None,
+    };
+    let (target, staged_loss) = match &staged {
+        Some((staged, loss)) => (staged, loss.clone()),
+        None => (target, None),
+    };
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
+    let SubsetLowering {
+        ir: lowered,
+        unlowered,
+    } = lower_subset_curves(target, |_| true);
     let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
+    reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
     let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
@@ -92,6 +108,7 @@ pub(super) fn write_new(
         .flatten()
         .is_some_and(|design| design.rolls_back());
     let mut losses = reduction.finish();
+    losses.extend(staged_loss);
     losses.extend(design_losses);
     Ok(Generated {
         coverage,
@@ -208,10 +225,15 @@ fn attempt<W: Write + Seek>(
         }
         Err(error) => return Err(Failure::brep(error)),
     };
-    let smbh = if stamped {
-        design::history::with_insertion_history(&smbh).map_err(Failure::neutral_design)?
-    } else {
-        smbh
+    let (smbh, history_notes) = match neutral.as_ref().filter(|_| stamped) {
+        Some(neutral) => {
+            let states = neutral
+                .history_states(target)
+                .map_err(|missing| Failure::history(missing.error, Some(missing.feature)))?;
+            design::history::with_insertion_history(&smbh, &states)
+                .map_err(|error| Failure::history(error, None))?
+        }
+        None => (smbh, Vec::new()),
     };
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
@@ -251,7 +273,7 @@ fn attempt<W: Write + Seek>(
                 target,
                 snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
             )
-            .map_err(Failure::neutral_design)?;
+            .map_err(Failure::records)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
         let mut coverage = coverage(
@@ -269,6 +291,7 @@ fn attempt<W: Write + Seek>(
         }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
+        losses.extend(history_notes);
         if body_less {
             omit_geometry(&mut coverage);
             losses.push(crate::loss::F3dLossCode::WriterGeometryOmitted.note(format!(
@@ -291,53 +314,63 @@ fn attempt<W: Write + Seek>(
         return Ok((coverage, losses));
     }
     let mut neutral_records = None;
-    let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
+    let parameter_records = match (neutral.as_mut(), &native_parameters) {
         (Some(neutral), _) => {
-            let (parameter_bytes, records) = neutral
+            let (parameter_records, records) = neutral
                 .records(&mut design_registry)
                 .map_err(Failure::neutral_design)?;
             neutral_records = Some(records);
-            parameter_bytes
+            parameter_records
         }
         (None, Some(source)) => design::parameters::encode(source, &native, &mut design_registry)
             .map_err(Failure::design)?,
-        (None, None) => Vec::new(),
+        (None, None) => records::ParameterRecords::default(),
     };
     let mut configurations = Vec::new();
+    let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
+    let mut root = None;
     if write_design {
-        let mut configuration_names = BTreeSet::new();
-        for configuration in &native.design_configurations {
-            if !configuration_names.insert(configuration.entry_name().as_str()) {
-                return Err(Failure::design(CodecError::malformed(format_args!(
-                    "duplicate F3D configuration identity: {}",
+        let plan = configuration_root::plan(target, &native.design_configurations);
+        let names = configuration_entry_names(&native.design_configurations);
+        for (index, (configuration, (name, fault))) in
+            native.design_configurations.iter().zip(names).enumerate()
+        {
+            let payload = plan
+                .payload(index, configuration)
+                .map_err(Failure::design)?;
+            if let Some(fault) = fault {
+                renamed.entry(fault).or_default().push(format!(
+                    "{} from {} to {name}",
+                    configuration.id(),
                     configuration.entry_name()
-                ))));
+                ));
             }
-            if configuration.active_row().is_some() {
-                return Err(Failure::design(CodecError::NotImplemented(
-                    "source-less F3D generation does not write the Design configuration root record"
-                        .into(),
-                )));
-            }
-            let payload =
-                crate::records::configuration::encode_configuration_payload(configuration)
-                    .map_err(Failure::design)?;
-            configurations.push((configuration.entry_name(), payload));
+            configurations.push((name, payload));
         }
+        root = Some(plan);
     }
-    let design_bulk = encode_design_bulkstream(
+    let mut configuration_losses = renamed
+        .into_iter()
+        .filter_map(|(fault, entries)| {
+            cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
+        })
+        .collect::<Vec<_>>();
+    let mut design_bulk = encode_design_bulkstream(
         target,
         &native,
         &design_registry,
-        parameter_bytes,
+        parameter_records,
         neutral_records.as_ref(),
     )
     .map_err(design_failure)?;
-    let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
-        bulk_stream.primary_records.as_slice()
-    });
+    if let Some(root) = root {
+        configuration_losses.extend(
+            root.write(&mut design_registry, &mut design_bulk)
+                .map_err(design_failure)?,
+        );
+    }
     let meta_stream =
-        encode_design_metastream(&design_registry, primary_records).map_err(design_failure)?;
+        encode_design_metastream(&design_registry, design_bulk.as_ref()).map_err(design_failure)?;
     let proteins = target
         .model
         .appearances
@@ -363,6 +396,7 @@ fn attempt<W: Write + Seek>(
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
             let mut losses = plan.into_losses();
             losses.extend(unstated_visibility);
+            losses.extend(configuration_losses);
             return Ok((
                 coverage(
                     write_design,
@@ -379,6 +413,7 @@ fn attempt<W: Write + Seek>(
     let written = neutral.is_some();
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
     losses.extend(unstated_visibility);
+    losses.extend(configuration_losses);
     Ok((
         coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
@@ -449,13 +484,122 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     losses
 }
 
+/// The folder of the design asset that holds its configuration documents.
+const CONFIGURATION_FOLDER: &str = "DesignConfigurationTable.BlobParts";
+/// The largest value of a ZIP u16 length field.
+const ZIP_U16_FIELD_MAX: usize = 0xFFFF;
+/// The fixed fields of a ZIP local file header, its signature included.
+const ZIP_LOCAL_HEADER_BYTES: usize = 30;
+/// The longest entry name the archive writer accepts: the `zip` crate
+/// writes a local header and its name only when together they are less
+/// than the u16 maximum.
+const ENTRY_NAME_LIMIT: usize = ZIP_U16_FIELD_MAX - 1 - ZIP_LOCAL_HEADER_BYTES;
+
+/// Why a configuration document is written under another entry name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum EntryNameFault {
+    /// The name is longer than a ZIP local header holds.
+    ContainerWidth,
+    /// The name is outside the folder of the written design asset.
+    OutsideDesign,
+    /// An earlier configuration document has the same name.
+    Repeated,
+}
+
+impl EntryNameFault {
+    fn reason(self) -> String {
+        match self {
+            Self::ContainerWidth => format!(
+                "writes these configuration documents under other entry names: the ZIP \
+                 container holds an entry name and its {ZIP_LOCAL_HEADER_BYTES}-byte local \
+                 header in fewer than {ZIP_U16_FIELD_MAX} bytes, the maximum of its u16 length \
+                 field, so a name is at most {ENTRY_NAME_LIMIT} bytes"
+            ),
+            Self::OutsideDesign => "writes these configuration documents under other entry \
+                 names: the written archive holds one design asset, and an entry outside its \
+                 folder is not a document of that asset"
+                .to_owned(),
+            Self::Repeated => "writes these configuration documents under other entry names: \
+                 Fusion reads a repeated configuration entry name as invalid"
+                .to_owned(),
+        }
+    }
+}
+
+/// The entry name each configuration document is written under, with the
+/// fault of its own name where that differs: its own name where the
+/// container holds it in the design folder as the first of its spelling,
+/// and otherwise a free name in the design's configuration folder that keeps
+/// its base name where it can.
+fn configuration_entry_names(
+    configurations: &[crate::records::configuration::DesignConfiguration],
+) -> Vec<(String, Option<EntryNameFault>)> {
+    use crate::records::configuration::DesignConfigurationKind;
+    let mut taken = BTreeSet::new();
+    let faults = configurations
+        .iter()
+        .map(|configuration| {
+            let name = configuration.entry_name();
+            entry_name_fault(name)
+                .or_else(|| (!taken.insert(name.clone())).then_some(EntryNameFault::Repeated))
+        })
+        .collect::<Vec<_>>();
+    let mut ordinal = 0usize;
+    configurations
+        .iter()
+        .zip(faults)
+        .map(|(configuration, fault)| {
+            let Some(fault) = fault else {
+                return (configuration.entry_name().clone(), None);
+            };
+            let base = configuration
+                .entry_name()
+                .rsplit('/')
+                .next()
+                .unwrap_or_default();
+            let named = format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{base}");
+            if entry_name_fault(&named).is_none() && taken.insert(named.clone()) {
+                return (named, Some(fault));
+            }
+            let (stem, extension) = match configuration.kind() {
+                DesignConfigurationKind::Table => ("DesignConfigurationTable", "dsgcfg"),
+                DesignConfigurationKind::Rule => ("DesignConfigurationRule", "dsgcfgrule"),
+            };
+            loop {
+                ordinal += 1;
+                let numbered =
+                    format!("{DESIGN_FOLDER}/{CONFIGURATION_FOLDER}/{stem}.{ordinal}.{extension}");
+                if taken.insert(numbered.clone()) {
+                    return (numbered, Some(fault));
+                }
+            }
+        })
+        .collect()
+}
+
+/// Why `name` cannot be written as an entry of the design asset, apart from
+/// a repeat.
+fn entry_name_fault(name: &str) -> Option<EntryNameFault> {
+    if name.len() > ENTRY_NAME_LIMIT {
+        Some(EntryNameFault::ContainerWidth)
+    } else if name
+        .strip_prefix(DESIGN_FOLDER)
+        .and_then(|path| path.strip_prefix('/'))
+        .is_none_or(str::is_empty)
+    {
+        Some(EntryNameFault::OutsideDesign)
+    } else {
+        None
+    }
+}
+
 /// The members of a written archive.
 enum ArchiveEntries<'a> {
     /// The generic form: the history stream, the configurations, one Design
     /// segment and one Protein package per appearance.
     Generated {
         smbh: &'a [u8],
-        configurations: &'a [(&'a String, Vec<u8>)],
+        configurations: &'a [(String, Vec<u8>)],
         design_bulk: Option<&'a [u8]>,
         meta_stream: Option<&'a [u8]>,
         proteins: &'a [Vec<u8>],
@@ -502,7 +646,7 @@ fn write_archive<W: Write + Seek>(
                 smbh,
             )?;
             for (name, payload) in *configurations {
-                entry((*name).clone(), payload)?;
+                entry(name.clone(), payload)?;
             }
             if let Some(bulk_stream) = design_bulk {
                 entry(

@@ -8,6 +8,7 @@ use crate::records::{
     },
     identity::{Located, ReferenceRun},
 };
+use cadmpeg_core::serde_erase::json;
 
 fn native() -> crate::native::F3dNative {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -246,8 +247,8 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
             prefix: prefix.into(),
             scope_backlink: scope_backlink.as_slice().try_into().unwrap(),
         });
-        let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
-        native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
+        let encoded = json::to_value(&native.design_parameter_scopes[1]).unwrap();
+        native.design_parameter_scopes[1] = json::from_value(encoded).unwrap();
         let valid = findings(&native);
         assert!(valid.is_empty(), "{valid:?}");
 
@@ -599,7 +600,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let operation = serde_json::from_value(serde_json::json!({
+    let operation = json::from_value(serde_json::json!({
         "edge_wrapper_record_indices":[51,61], "edge_group_record_indices":[52,62],
         "edge_operand_record_indices":[55,65], "aggregate_group_record_index":101,
         "aggregate_operand_record_indices":[104,108], "height_owner_record_index":81,
@@ -611,9 +612,9 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(operation).into();
     }
-    let wire = serde_json::to_value(&scope).unwrap();
-    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    let wire = json::to_value(&scope).unwrap();
+    let decoded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&decoded).unwrap(), wire);
     let findings = |scope: DesignParameterScope| {
         crate::test_support::with_decode_context(|service_ctx| {
             let ir = cadmpeg_ir::document::CadIr::empty();

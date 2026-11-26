@@ -30,6 +30,7 @@ use crate::curve::Fc02ShortPcurveEndpoints;
 use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
 use crate::curve::TopologySuffixCandidate;
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
@@ -1224,7 +1225,7 @@ fn cross_section_suffix_keeps_pointer_roles_out_of_parameters() {
     assert_eq!(row.opaque_spans.len(), 1);
     assert_eq!(row.opaque_spans[0].raw, [0xe4]);
     assert_eq!(
-        serde_json::to_value(row.suffix).expect("stored pointer tuple"),
+        json::to_value(row.suffix).expect("stored pointer tuple"),
         serde_json::json!([0, 1280, 0, 1536, 1792, 0]),
     );
 }
