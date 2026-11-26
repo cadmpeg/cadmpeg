@@ -58,7 +58,7 @@ fn a_model_feature_serializes_with_the_keys_of_its_field_enum() {
         native_ref: Some("test:native#base".to_owned()),
     };
     let wire = crate::features::serialization::FeatureWriteWire::new(&feature, Some(&feature.id));
-    let value = serde_json::to_value(&wire).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(&wire).unwrap();
     let mut wire_keys = value
         .as_object()
         .unwrap()
@@ -103,7 +103,7 @@ fn a_model_parameter_serializes_with_the_keys_of_its_field_enum() {
         }),
         native_ref: Some("test:native#width".to_owned()),
     };
-    let value = serde_json::to_value(&parameter).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(&parameter).unwrap();
     let mut wire_keys = value
         .as_object()
         .unwrap()

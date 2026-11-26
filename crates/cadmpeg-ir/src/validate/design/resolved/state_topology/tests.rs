@@ -513,7 +513,7 @@ const RULE_REFERENCES: &[(&str, &str)] = &[
 
 #[test]
 fn every_topology_rule_states_the_references_it_reads() {
-    let source = include_str!("../../../../validate.rs");
+    let source = include_str!("../../../../validate.rs").replace("\r\n", "\n");
     let start = source
         .find("fn check_topology_rules(")
         .expect("check_topology_rules is in validate.rs");
