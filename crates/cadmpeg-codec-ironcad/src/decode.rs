@@ -4,7 +4,7 @@
 use cadmpeg_asm::dialect::KernelHeaderRef;
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::dialect::{DialectLayerError, DialectLayers, LayerInstance};
+use cadmpeg_core::dialect::{DialectLayers, DuplicateDialectLayer, LayerInstance};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
@@ -164,19 +164,12 @@ fn classify(records: &[KernelRecord<'_>], layers: &mut DialectLayers, losses: &m
     }
 }
 
-fn collision(error: &DialectLayerError, carrier: &str) -> String {
-    match error {
-        DialectLayerError::Duplicate(rejected) => format!(
-            "the scene produced a duplicate {} dialect layer at carrier {carrier}; \
-             the later classification was omitted",
-            rejected.format()
-        ),
-        DialectLayerError::MissingInstance(rejected) => format!(
-            "the scene produced an untagged {} dialect layer at carrier {carrier}; \
-             the later classification was omitted",
-            rejected.format()
-        ),
-    }
+fn collision(DuplicateDialectLayer(rejected): &DuplicateDialectLayer, carrier: &str) -> String {
+    format!(
+        "the scene produced a duplicate {} dialect layer at carrier {carrier}; \
+         the later classification was omitted",
+        rejected.format()
+    )
 }
 
 /// Charges every scene stream other than `Brep Data` that holds bytes.
