@@ -146,8 +146,10 @@ jobs:
               case "$check" in ''|'#'*) continue ;; esac
               count=$((count + 1))
               printf '%s\n' "$check" > "$logs/$count.command"
-              ( if bash -c "$check" > "$logs/$count.log" 2>&1; then echo 0; else echo $?; fi \
-                  > "$logs/$count.status" ) &
+              ( start=$SECONDS
+                if bash -c "$check" > "$logs/$count.log" 2>&1; then status=0; else status=$?; fi
+                echo "$((SECONDS - start))" > "$logs/$count.seconds"
+                echo "$status" > "$logs/$count.status" ) &
             done
           }
           launch <<'CHECKS'
@@ -198,7 +200,7 @@ jobs:
           wait
           failed=0
           for index in $(seq "$count"); do
-            echo "::group::$(cat "$logs/$index.command")"
+            echo "::group::$(cat "$logs/$index.command") ($(cat "$logs/$index.seconds")s)"
             cat "$logs/$index.log"
             echo "::endgroup::"
             if [ "$(cat "$logs/$index.status")" != 0 ]; then
