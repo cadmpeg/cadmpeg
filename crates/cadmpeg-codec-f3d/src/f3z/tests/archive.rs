@@ -124,7 +124,7 @@ fn f3z_archive_merges_identity_occurrences() {
         .annotations
         .provenance
         .keys()
-        .all(|id| id.starts_with(prefix)));
+        .all(|id| id.as_str().starts_with(prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
     // synthesize. A request that names no target writes the catalog default and

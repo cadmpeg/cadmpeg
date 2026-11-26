@@ -412,3 +412,113 @@ fn a_native_record_links_no_neutral_record_while_a_stub_may() {
         "{findings:?}"
     );
 }
+
+/// The unit cube with one evaluation whose delta holds a copy of its first
+/// vertex, and the evaluation's id.
+fn cube_with_vertex_state() -> (crate::CadIr, crate::design::ids::EvaluationId) {
+    use crate::design::evaluation::{
+        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+    };
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let id = crate::design::ids::EvaluationId::mint("test:design:evaluation#1").unwrap();
+    let mut records = crate::document::Topology::default();
+    records.vertices.push(ir.geometry.vertices[0].clone());
+    ir.design.evaluations.push(Evaluation {
+        id: id.clone(),
+        scope: crate::ids::ProductDefinitionId::mint("test:model:definition#1").unwrap(),
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
+        ),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    });
+    (ir, id)
+}
+
+fn annotation_findings(
+    ir: &crate::CadIr,
+    annotations: crate::Annotations,
+) -> Vec<crate::report::check::Finding> {
+    let mut source_fidelity =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    source_fidelity.annotations = annotations;
+    crate::validate_neutral_with_source_fidelity(ir, &source_fidelity, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Annotations)
+        .collect()
+}
+
+#[test]
+fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
+    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, &vertex);
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.note(&key, &stream, 0, None);
+    annotations.derived(&key, "point").unwrap();
+    annotations.derived(&vertex, "point").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str();
+    let edge = ir.geometry.edges[0].id.as_str();
+    let other = crate::design::ids::EvaluationId::mint("test:design:evaluation#2").unwrap();
+    let keys = [
+        crate::annotations::AnnotationKey::in_evaluation(&other, vertex),
+        crate::annotations::AnnotationKey::in_evaluation(&evaluation, edge),
+    ];
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in &keys {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    for key in &keys {
+        for rule in [
+            "annotations_native.provenance-key-does-not-resolve-entity",
+            "annotations_native.exactness-key-does-not-resolve-entity",
+        ] {
+            assert!(
+                findings.iter().any(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.entity.as_deref() == Some(key.as_str())
+                        && finding.rule.as_str() == rule
+                }),
+                "{key}: {rule}: {findings:?}"
+            );
+        }
+    }
+    assert_eq!(findings.len(), 4, "{findings:?}");
+}
+
+#[test]
+fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str();
+    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, vertex);
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.derived(&key, "not_a_serialized_field").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}

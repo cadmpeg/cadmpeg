@@ -15,11 +15,19 @@ use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
+mod key;
 mod sparse;
+pub use key::{AnnotationKey, AnnotationTarget};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
-/// Document-wide provenance and exactness tables keyed by globally unique
-/// entity id.
+/// Document-wide provenance and exactness tables keyed by annotation key.
+///
+/// The key of a top-level entity is its globally unique entity id. The key
+/// of a record inside the delta of an evaluation or a process state is the
+/// id of that evaluation or process state, one space, and the record's id.
+/// Validation reports a key whose qualifier names no evaluation or process
+/// state, or whose record that delta does not hold, as it reports a key that
+/// names no entity.
 ///
 /// An entity absent from `exactness` is byte-exact.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,10 +36,15 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 pub struct Annotations {
     /// Source location for each annotated entity.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub provenance: BTreeMap<String, AnnotationProvenance>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "BTreeMap<String, AnnotationProvenance>")
+    )]
+    pub provenance: BTreeMap<AnnotationKey, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    exactness: BTreeMap<String, ExactnessNote>,
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<String, ExactnessNote>"))]
+    exactness: BTreeMap<AnnotationKey, ExactnessNote>,
 }
 
 /// Candidate annotation tables held until a transaction commits or is discarded.
@@ -485,12 +498,13 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         Ok(self)
     }
 
-    /// Retain exactness selected by identity.
+    /// Retain the exactness entries whose owner [`AnnotationKey::owner`]
+    /// `keep` selects, in increasing key order.
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
         self.state
             .annotations
             .exactness
-            .retain(|identity, _| keep(identity));
+            .retain(|key, _| keep(key.owner()));
         self
     }
 
@@ -563,7 +577,9 @@ impl AnnotationState {
             AnnotationProvenance::annotation(stream.0.clone(), offset, tag.map(str::to_owned));
         match id {
             std::borrow::Cow::Owned(id) => {
-                self.annotations.provenance.insert(id, provenance);
+                self.annotations
+                    .provenance
+                    .insert(AnnotationKey::from(id), provenance);
             }
             std::borrow::Cow::Borrowed(id) => {
                 if let Some(previous) = self.annotations.provenance.get_mut(id) {
@@ -571,7 +587,7 @@ impl AnnotationState {
                 } else {
                     self.annotations
                         .provenance
-                        .insert(id.to_owned(), provenance);
+                        .insert(AnnotationKey::from(id), provenance);
                 }
             }
         }
@@ -617,12 +633,8 @@ impl AnnotationState {
                 };
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
-            let id = match id {
-                std::borrow::Cow::Owned(id) => id,
-                std::borrow::Cow::Borrowed(id) => id.to_owned(),
-            };
             self.annotations.exactness.insert(
-                id,
+                AnnotationKey::from(id.into_owned()),
                 ExactnessNote::Entity {
                     entity,
                     fields: BTreeMap::new(),
@@ -671,7 +683,7 @@ impl AnnotationState {
 
     fn set_field_exactness(&mut self, id: String, field: FieldName, exactness: Exactness) {
         if exactness == Exactness::ByteExact {
-            if let Some(note) = self.annotations.exactness.get_mut(&id) {
+            if let Some(note) = self.annotations.exactness.get_mut(id.as_str()) {
                 match note {
                     ExactnessNote::Entity { fields, .. } => {
                         fields.insert(field, exactness);
@@ -681,11 +693,11 @@ impl AnnotationState {
                     }
                 }
                 if matches!(note, ExactnessNote::Fields { fields } if fields.0.is_empty()) {
-                    self.annotations.exactness.remove(&id);
+                    self.annotations.exactness.remove(id.as_str());
                 }
             }
         } else {
-            match self.annotations.exactness.entry(id) {
+            match self.annotations.exactness.entry(AnnotationKey::from(id)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(ExactnessNote::Fields {
                         fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),
@@ -712,93 +724,78 @@ impl Annotations {
         }
     }
 
-    /// Retain provenance selected by identity.
+    /// Retain the provenance entries whose owner [`AnnotationKey::owner`]
+    /// `keep` selects, in increasing key order.
     pub fn retain_provenance(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.provenance.retain(|identity, _| keep(identity));
+        self.provenance.retain(|key, _| keep(key.owner()));
     }
 
-    /// Retain the provenance and exactness entries selected by identity.
+    /// Retain the provenance and exactness entries whose owner
+    /// [`AnnotationKey::owner`] `keep` selects.
     pub fn retain_entities(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.provenance.retain(|identity, _| keep(identity));
-        self.exactness.retain(|identity, _| keep(identity));
+        self.provenance.retain(|key, _| keep(key.owner()));
+        self.exactness.retain(|key, _| keep(key.owner()));
     }
 
-    /// Remap both tables. A collision leaves both tables unchanged.
+    /// Replace each id that a key of either table holds by `map` of that id,
+    /// calling `map` once per id in increasing order. A collision leaves both
+    /// tables unchanged.
     pub fn map_ids(
         &mut self,
         mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
-        enum Destination {
-            Provenance(String),
-            Exactness(String),
-            Both {
-                provenance: String,
-                exactness: String,
-            },
-        }
-        let mut ids = std::collections::BTreeSet::new();
-        for id in self.provenance.keys().chain(self.exactness.keys()) {
-            ids.insert(id);
+        let keys = self
+            .provenance
+            .keys()
+            .chain(self.exactness.keys())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut mapped = BTreeMap::new();
+        for id in keys
+            .iter()
+            .flat_map(|key| key.ids())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            mapped.insert(id, map(id)?);
         }
         let mut targets = std::collections::BTreeSet::new();
-        let mut remapping = Vec::new();
-        for id in ids {
-            let target = map(id)?;
-            if targets.contains(&target) {
-                return Ok(Err(AnnotationIdentityCollision { id: target }));
+        let mut remapping = Vec::with_capacity(keys.len());
+        for key in keys {
+            let target = key.map(|id| mapped[id].clone());
+            if !targets.insert(target.clone()) {
+                return Ok(Err(AnnotationIdentityCollision {
+                    id: target.to_string(),
+                }));
             }
-            targets.insert(target.clone());
-            remapping.push((id.to_owned(), target));
-        }
-        let mut destinations = Vec::new();
-        for (id, target) in remapping {
-            let destination = match (
-                self.provenance.contains_key(&id),
-                self.exactness.contains_key(&id),
-            ) {
-                (true, true) => Destination::Both {
-                    provenance: target.clone(),
-                    exactness: target,
-                },
-                (true, false) => Destination::Provenance(target),
-                (false, true) => Destination::Exactness(target),
-                (false, false) => continue,
-            };
-
-            destinations.push((id, destination));
+            remapping.push((key.clone(), target));
         }
         let mut remapped = Self::default();
-        for (id, destination) in destinations {
-            match destination {
-                Destination::Provenance(target) => {
-                    if let Some(provenance) = self.provenance.remove(&id) {
-                        remapped.provenance.insert(target, provenance);
-                    }
-                }
-                Destination::Exactness(target) => {
-                    if let Some(exactness) = self.exactness.remove(&id) {
-                        remapped.exactness.insert(target, exactness);
-                    }
-                }
-                Destination::Both {
-                    provenance,
-                    exactness,
-                } => {
-                    if let Some(value) = self.provenance.remove(&id) {
-                        remapped.provenance.insert(provenance, value);
-                    }
-                    if let Some(value) = self.exactness.remove(&id) {
-                        remapped.exactness.insert(exactness, value);
-                    }
-                }
+        for (key, target) in remapping {
+            if let Some(provenance) = self.provenance.remove(&key) {
+                remapped.provenance.insert(target.clone(), provenance);
+            }
+            if let Some(exactness) = self.exactness.remove(&key) {
+                remapped.exactness.insert(target, exactness);
             }
         }
         *self = remapped;
         Ok(Ok(()))
     }
 
-    /// Sparse non-byte-exact annotations keyed by entity identity.
-    pub fn exactness(&self) -> &BTreeMap<String, ExactnessNote> {
+    /// Annotate `to` as the entity `from` is annotated, replacing the
+    /// annotations of `to`.
+    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+        match self.provenance.get(from).cloned() {
+            Some(provenance) => self.provenance.insert(to.clone(), provenance),
+            None => self.provenance.remove(&to),
+        };
+        match self.exactness.get(from).cloned() {
+            Some(note) => self.exactness.insert(to, note),
+            None => self.exactness.remove(&to),
+        };
+    }
+
+    /// Sparse non-byte-exact annotations by annotation key.
+    pub fn exactness(&self) -> &BTreeMap<AnnotationKey, ExactnessNote> {
         &self.exactness
     }
 
@@ -816,7 +813,7 @@ impl Annotations {
     pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
-                return Err(AnnotationIdentityCollision { id: id.to_owned() });
+                return Err(AnnotationIdentityCollision { id: id.to_string() });
             }
         }
         self.provenance.append(&mut other.provenance);
@@ -886,6 +883,7 @@ mod tests {
         assert_eq!(annotated.build(), expected.build());
     }
 
+    mod delta_keys;
     mod entity_exactness;
     mod identity_merges;
     mod provenance;

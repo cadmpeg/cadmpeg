@@ -994,6 +994,23 @@ macro_rules! declare_topology {
                 ids
             }
 
+            /// The id and structural JSON value of each record whose id
+            /// `wanted` selects.
+            pub(crate) fn project_records<'a>(
+                &'a self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                mut wanted: impl FnMut(&str) -> bool,
+            ) -> Vec<(&'a str, Result<serde_json::Value, cadmpeg_core::CodecError>)> {
+                let mut projected = Vec::new();
+                $(for record in &self.$field {
+                    let id = crate::schema::ArenaRecord::record_identity(record);
+                    if wanted(id) {
+                        projected.push((id, crate::schema::structural::project(ctx, record, "annotated delta record projection")));
+                    }
+                })*
+                projected
+            }
+
             /// Moves every arena from another topology.
             pub(crate) fn append(&mut self, mut other: Self) {
                 self.append_arenas(&mut other);

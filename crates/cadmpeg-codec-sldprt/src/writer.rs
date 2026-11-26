@@ -615,7 +615,7 @@ pub(crate) fn write_semantic_with_records_cached(
         .flat_map(|native| &native.feature_histories)
         .enumerate()
     {
-        let section = annotations.provenance.get(&history.id).map_or_else(
+        let section = annotations.provenance.get(history.id.as_str()).map_or_else(
             || format!("Contents/Keywords-{index}"),
             |provenance| provenance.stream().to_owned(),
         );
@@ -2209,11 +2209,12 @@ fn patch_retained_swobjects_metadata(
         .into_iter()
         .map(|attribute| attribute.id.as_str())
         .collect::<HashSet<_>>();
-    for (id, provenance) in &annotations.provenance {
+    for (key, provenance) in &annotations.provenance {
+        let id = key.as_str();
         let stream = provenance.stream();
         if id.starts_with("sldprt:metadata:")
             && !id.starts_with("sldprt:metadata:source_linear_unit_code#")
-            && !stated.contains(id.as_str())
+            && !stated.contains(id)
             && (owners.carried.contains(stream) || sections.iter().any(|(name, _)| name == stream))
         {
             unwritten.record(id, Unwritten::Removed, Held::Source);
@@ -3409,9 +3410,12 @@ fn retained_history_sections(
         .feature_histories
         .into_iter()
         .map(|history| {
-            let provenance = annotations.provenance.get(&history.id).ok_or_else(|| {
-                CodecError::Malformed("reparsed SLDPRT history has no source owner".into())
-            })?;
+            let provenance = annotations
+                .provenance
+                .get(history.id.as_str())
+                .ok_or_else(|| {
+                    CodecError::Malformed("reparsed SLDPRT history has no source owner".into())
+                })?;
             let name = provenance.stream();
             let mut sources = scan.sections().filter(|source| source.name() == Some(name));
             let source = sources.next().ok_or_else(|| {
