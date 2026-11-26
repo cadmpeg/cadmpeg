@@ -373,8 +373,10 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) registry: ParsedState<SegmentRegistry>,
     pub(crate) revisions: ParsedState<RevisionTable>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
-    pub(crate) unpaired_metadata: Vec<SegmentToken>,
-    pub(crate) unpaired_bulk: Vec<SegmentToken>,
+    /// The metadata streams without a bulk stream, by token.
+    pub(crate) unpaired_metadata: Vec<(SegmentToken, CompoundStreamId)>,
+    /// The bulk streams without a metadata stream, by token.
+    pub(crate) unpaired_bulk: Vec<(SegmentToken, CompoundStreamId)>,
     pub(crate) active_carrier: ActiveCarrierState<'a>,
 }
 
@@ -523,14 +525,14 @@ impl<'a> RseInventory<'a> {
         }
         let segments = frame_segment_records(segments)?;
         let unpaired_metadata = metadata
-            .keys()
-            .filter(|token| !bulk.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !bulk.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let unpaired_bulk = bulk
-            .keys()
-            .filter(|token| !metadata.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !metadata.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(&segments, &document_kind);

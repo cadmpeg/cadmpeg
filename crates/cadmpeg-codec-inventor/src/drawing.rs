@@ -191,6 +191,31 @@ impl Inventory {
     }
 }
 
+/// The metadata section `section` of the segment whose token is `token`, as
+/// a part of its expanded metadata stream.
+fn meta_section_part<'a>(
+    token: &str,
+    section: &crate::records::MetaSection<'a>,
+) -> Result<Part<'a>, CodecError> {
+    Ok(Part::new(
+        "inventor",
+        "meta-section",
+        section.payload,
+        [ArenaClass::Model],
+    )
+    .in_stream(
+        cadmpeg_ir::StreamName::try_from(format!("RSeStorage/M{token}:expanded"))
+            .map_err(CodecError::malformed)?,
+    )
+    .contained_in(
+        cadmpeg_ir::ids::Identity::try_from(format!(
+            "inventor:rse:meta-section#{token}-{}",
+            section.number
+        ))
+        .map_err(CodecError::malformed)?,
+    ))
+}
+
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
@@ -216,21 +241,20 @@ pub(crate) fn inventory(
                     ctx.charge_entities(1, "retain Inventor drawing reference tables")?;
                     inventory.reference_tables.push(table);
                 }
-                Err(error) => {
+                Err((index, error)) => {
                     let detail = crate::issue_detail(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
                     let token = segment.pair.token.as_str();
                     let id = format!("inventor:drawing:reference-tables#{token}");
-                    inventory.refusals.push(
-                        GivenUpRecord::new(
-                            cadmpeg_ir::ids::Identity::new(&id)?,
-                            format_args!(
-                                "{}: {detail}",
-                                InventorLossCode::DrawingRecordMalformed.kind()
-                            ),
-                        )
-                        .loss(),
-                    );
+                    let part = meta_section_part(token, &meta.tables.sections[index])?
+                        .dropping([cadmpeg_ir::ids::Identity::new(&id)?]);
+                    inventory.given_up.push(ctx.give_up_part(
+                        part,
+                        CodecError::malformed(format_args!(
+                            "{}: {detail}",
+                            InventorLossCode::DrawingRecordMalformed.kind()
+                        )),
+                    )?);
                     inventory.failed_tables.insert(token.to_owned(), id);
                     let scope = format!("reference-tables-{token}");
                     inventory.issues.push(StructuralIssueRecord {
@@ -303,24 +327,7 @@ pub(crate) fn inventory(
                     let detail = crate::issue_detail(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing metadata-reference refusal")?;
                     let token = segment.pair.token.as_str();
-                    let section = &meta.tables.sections[8];
-                    let part = Part::new(
-                        "inventor",
-                        "meta-section",
-                        section.payload,
-                        [ArenaClass::Model],
-                    )
-                    .in_stream(
-                        cadmpeg_ir::StreamName::try_from(format!("RSeStorage/M{token}:expanded"))
-                            .map_err(CodecError::malformed)?,
-                    )
-                    .contained_in(
-                        cadmpeg_ir::ids::Identity::try_from(format!(
-                            "inventor:rse:meta-section#{token}-{}",
-                            section.number
-                        ))
-                        .map_err(CodecError::malformed)?,
-                    );
+                    let part = meta_section_part(token, &meta.tables.sections[8])?;
                     inventory.given_up.push(ctx.give_up_part(
                         part,
                         CodecError::malformed(format_args!(

@@ -20,7 +20,7 @@ use super::records::{
     FRAME_ROW, GEOMETRY, GEOMETRY_LINK, HOLE_NOTE_OWNER, HOLE_VALUE, INTENT, LINEAR_OWNER,
     NAMING_TABLE, PARAMETER, PLANE, SIZE_RELATION, STYLE, TOLERANCE_FEATURE, VALUE,
 };
-use super::{fit, losses, project_segment, tolerance, Label, Outcome, Selections};
+use super::{fit, losses, project_segment, tolerance, Label, Malformed, Outcome, Selections};
 use crate::loss::InventorLossCode;
 
 const VALUE_TOLERANCE: f64 = 1.0e-12;
@@ -401,6 +401,28 @@ fn run_with(
     (annotations, outcome)
 }
 
+/// The records `outcome` refuses, each with the annotation it drops.
+fn refused(outcome: &Outcome) -> Vec<(u32, Option<&str>)> {
+    outcome
+        .malformed
+        .iter()
+        .map(|record| {
+            assert_eq!(record.segment_token, "segment");
+            (
+                record.record_ordinal,
+                record
+                    .annotation
+                    .as_ref()
+                    .map(cadmpeg_ir::ids::PmiId::as_str),
+            )
+        })
+        .collect()
+}
+
+fn pmi(owner: u32) -> String {
+    format!("inventor:annotation:pmi#segment-{owner}")
+}
+
 fn has_note(outcome: &Outcome, code: InventorLossCode) -> bool {
     losses(outcome)
         .iter()
@@ -470,6 +492,22 @@ fn measure_of_another_owner_kind_stays_native() {
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     assert!(annotations.is_empty());
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(
+        refused(&outcome),
+        [(VALUE_AT, Some(pmi(OWNER_AT).as_str()))]
+    );
+}
+
+#[test]
+fn a_dimension_without_a_decoded_nominal_gives_up_its_value_record() {
+    let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
+    fixture.parameters.remove(&NOMINAL_AT);
+    let (annotations, outcome) = run(&fixture, OWNER_AT);
+    assert!(annotations.is_empty());
+    assert_eq!(
+        refused(&outcome),
+        [(VALUE_AT, Some(pmi(OWNER_AT).as_str()))]
+    );
 }
 
 #[test]
@@ -526,6 +564,7 @@ fn malformed_second_selector_withholds_the_item_target() {
     assert!(annotations[0].targets.is_empty());
     assert!(has_note(&outcome, InventorLossCode::PmiTargetUnresolved));
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(refused(&outcome), [(SECOND_SELECTOR_AT, None)]);
 }
 
 #[test]
@@ -538,6 +577,7 @@ fn malformed_relation_is_charged_against_its_intent() {
     assert_eq!(annotations[0].targets.len(), 1);
     assert!(has_note(&outcome, InventorLossCode::PmiTargetUnresolved));
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(refused(&outcome), [(SECOND_RELATION_AT, None)]);
 }
 
 #[test]
@@ -552,6 +592,10 @@ fn every_intent_precedes_every_style() {
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     assert!(annotations.is_empty());
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(
+        refused(&outcome),
+        [(OWNER_AT, Some(pmi(OWNER_AT).as_str()))]
+    );
     fixture.put(
         OWNER_AT,
         LINEAR_OWNER,
@@ -916,6 +960,40 @@ fn annotation_header_v28(source: u32) -> Vec<u8> {
 }
 
 #[test]
+fn a_frame_row_outside_its_grammar_gives_up_the_row_with_its_tolerance() {
+    let mut fixture = frame_fixture(9, 0);
+    let mut long = frame_row_record(9, [0, 0, 0], 0);
+    long.extend([0; 20]);
+    fixture.put(ROW_AT, FRAME_ROW, long);
+    let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
+    assert!(annotations
+        .iter()
+        .all(|annotation| annotation.id.as_str() != pmi(FRAME_OWNER_AT)));
+    assert_eq!(
+        refused(&outcome),
+        [(ROW_AT, Some(pmi(FRAME_OWNER_AT).as_str()))]
+    );
+}
+
+#[test]
+fn a_datum_feature_with_an_empty_label_gives_up_the_feature_with_its_datum() {
+    let mut fixture = frame_fixture(9, 0);
+    fixture.put(
+        DATUM_FEATURE_AT,
+        DATUM_FEATURE,
+        datum_feature_record(DATUM_OWNER_AT, ""),
+    );
+    let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
+    assert!(annotations
+        .iter()
+        .all(|annotation| annotation.id.as_str() != pmi(DATUM_OWNER_AT)));
+    assert_eq!(
+        refused(&outcome),
+        [(DATUM_FEATURE_AT, Some(pmi(DATUM_OWNER_AT).as_str()))]
+    );
+}
+
+#[test]
 fn frame_row_length_follows_its_version() {
     let fixture = frame_fixture(9, 0);
     let segment = fixture.segment();
@@ -1038,7 +1116,19 @@ fn every_loss_variant_has_its_note() {
         ),
         (
             Outcome {
-                malformed: 1,
+                shared_malformed: 1,
+                ..Outcome::default()
+            },
+            InventorLossCode::PmiRecordMalformed,
+        ),
+        (
+            Outcome {
+                malformed: vec![Malformed {
+                    segment_token: "segment".to_owned(),
+                    record_ordinal: OWNER_AT,
+                    detail: "dimension owner is outside the established grammar",
+                    annotation: None,
+                }],
                 ..Outcome::default()
             },
             InventorLossCode::PmiRecordMalformed,
@@ -1268,7 +1358,7 @@ fn resolved_feature_outcome() -> Outcome {
 #[test]
 fn tolerance_feature_faces_target_an_owner_without_intent_targets() {
     let outcome = resolved_feature_outcome();
-    assert_eq!(outcome.malformed, 0);
+    assert!(outcome.malformed.is_empty());
 }
 
 #[test]
@@ -1281,7 +1371,7 @@ fn member_tolerance_feature_faces_target_the_owner() {
     );
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert_eq!(targets, [face_target()]);
-    assert_eq!(outcome.malformed, 0);
+    assert!(outcome.malformed.is_empty());
 }
 
 #[test]
@@ -1294,7 +1384,7 @@ fn member_tolerance_feature_reached_from_its_own_label_targets_its_faces() {
     );
     let (targets, outcome) = run_features(&fixture, &[MEMBER_AT]);
     assert_eq!(targets, [face_target()]);
-    assert_eq!(outcome.malformed, 0);
+    assert!(outcome.malformed.is_empty());
 }
 
 #[test]
@@ -1303,6 +1393,7 @@ fn top_tolerance_feature_without_attachments_gives_no_target() {
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert!(targets.is_empty());
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(refused(&outcome), [(FEATURE_AT, None)]);
 }
 
 #[test]
@@ -1314,7 +1405,7 @@ fn top_tolerance_feature_with_two_attachments_targets_its_faces() {
     fixture.put(SECOND_ATTACHMENT_AT, ATTACHMENT, Vec::new());
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert_eq!(targets, [face_target()]);
-    assert_eq!(outcome.malformed, 0);
+    assert!(outcome.malformed.is_empty());
 }
 
 #[test]
@@ -1328,6 +1419,7 @@ fn member_tolerance_feature_with_an_attachment_gives_no_target() {
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert!(targets.is_empty());
     assert!(has_note(&outcome, InventorLossCode::PmiRecordMalformed));
+    assert_eq!(refused(&outcome), [(MEMBER_AT, None)]);
 }
 
 #[test]

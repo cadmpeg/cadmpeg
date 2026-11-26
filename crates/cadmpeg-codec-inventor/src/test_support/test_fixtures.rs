@@ -256,10 +256,32 @@ pub(crate) fn primary_envelope_fixture_with_drawing(
     )
 }
 
+/// A drawing envelope whose drawing segment stores the segment-pair,
+/// revision, and external-reference tables of `tables` in metadata
+/// sections 6, 7, and 9.
+pub(crate) fn primary_envelope_fixture_with_drawing_tables(
+    kernel: &[u8],
+    drawing: &[([u8; 16], Vec<u8>)],
+    tables: &BaseEnvelopeRecords,
+) -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        (&DRAWING_SEGMENT, drawing),
+        false,
+        false,
+        [1, 1],
+        Some(tables),
+    )
+}
+
 pub(crate) struct BaseEnvelopeRecords {
     pub(crate) design_version: u8,
     pub(crate) brep: Vec<([u8; 16], Vec<u8>)>,
     pub(crate) pairs: Vec<u8>,
+    /// The stored count of the segment-pair section, in place of the count
+    /// of whole 32-byte entries in `pairs`.
+    pub(crate) pair_count: Option<u32>,
     pub(crate) revisions: Vec<u8>,
     pub(crate) references: Vec<u8>,
 }
@@ -786,6 +808,9 @@ fn meta_table_body(records: &[([u8; 16], usize)], base: Option<&BaseEnvelopeReco
             payloads[index].clone_from(bytes);
             discriminators[index] =
                 u32::try_from(bytes.len() / width).expect("synthetic table count");
+        }
+        if let Some(count) = base.pair_count {
+            discriminators[2] = count;
         }
     }
     push_u32(&mut body, discriminators[0]);
