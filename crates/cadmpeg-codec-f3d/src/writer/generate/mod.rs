@@ -12,9 +12,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
-use crate::writer::primitives::{
-    f3d_native, validate_assembly_projection, validate_configuration_projection,
-};
+use crate::writer::primitives::{f3d_native, validate_configuration_projection};
 mod attributes;
 pub(in crate::writer) mod configuration_root;
 mod design;
@@ -197,9 +195,6 @@ fn attempt<W: Write + Seek>(
         neutral
             .stamp(&mut native)
             .map_err(Failure::neutral_design)?;
-    }
-    if write_design {
-        validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
     }
     // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);

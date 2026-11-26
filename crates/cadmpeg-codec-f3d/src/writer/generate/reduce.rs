@@ -423,6 +423,7 @@ impl<'a> Reduction<'a> {
         if !self.writes_design() {
             self.drop_design_only_arenas();
         }
+        self.drop_assembly_joints();
         self.drop_unwritten_arenas();
         self.strip_carrier_metadata();
         self.complete_vertex_free_edges()?;
@@ -519,10 +520,7 @@ impl<'a> Reduction<'a> {
     /// or charged with that parameter.
     fn drop_design_only_arenas(&mut self) {
         let model = &self.ir.model;
-        if model.parameters.is_empty()
-            && model.configurations.is_empty()
-            && model.assembly_joints.is_empty()
-        {
+        if model.parameters.is_empty() && model.configurations.is_empty() {
             return;
         }
         let restated = if self.writes_neutral_design() {
@@ -536,7 +534,6 @@ impl<'a> Reduction<'a> {
         let model = &mut self.ir.to_mut().model;
         let parameters = std::mem::take(&mut model.parameters);
         let configurations = std::mem::take(&mut model.configurations);
-        let joints = std::mem::take(&mut model.assembly_joints);
         let reason = "the source-less F3D generator writes it only from native Design records";
         self.losses.extend(named_loss(
             F3dLossCode::WriterParameterOmitted,
@@ -553,10 +550,19 @@ impl<'a> Reduction<'a> {
             reason,
             configurations.iter().map(|row| row.id.to_string()),
         ));
+    }
+
+    /// Neither Design stream form holds a joint record: the source-less
+    /// generator writes the joints of no design.
+    fn drop_assembly_joints(&mut self) {
+        if self.ir.model.assembly_joints.is_empty() {
+            return;
+        }
+        let joints = std::mem::take(&mut self.ir.to_mut().model.assembly_joints);
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
             "assembly joint",
-            reason,
+            "the source-less F3D Design stream holds no joint record",
             joints.iter().map(|row| row.id.to_string()),
         ));
     }
