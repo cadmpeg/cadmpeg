@@ -10,6 +10,7 @@ mod patterns;
 mod schema;
 mod unit_variants;
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
@@ -161,12 +162,15 @@ fn frame_construction() -> Construction<kinds::Frame> {
 }
 
 fn options() -> NativeOptions {
-    NativeOptions::from([(text("nx:single_output"), NativeOption::Bool(literal(true)))])
+    NativeOptions::from([(
+        crate::codec_name!("nx:single_output"),
+        NativeOption::Bool(literal(true)),
+    )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:flex_accuracy"),
+        crate::codec_name!("sldprt:flex_accuracy"),
         NativeOption::Integer(literal(3)),
     )])
 }
@@ -176,10 +180,10 @@ fn settings() -> NativeOptions {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -190,7 +194,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.

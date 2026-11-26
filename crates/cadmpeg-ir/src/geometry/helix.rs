@@ -14,7 +14,7 @@ pub(super) const EPS_HELIX_SURFACE_RADIUS_RELATIVE: f64 = 1.0e-9;
 pub(super) const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
 
 /// Finite circular path of a helix surface.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixPathConstructionWire")]
 pub struct HelixPathConstruction {
@@ -193,7 +193,7 @@ impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
 }
 
 /// Finite ordered helix curve with a non-degenerate radial frame.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCurveConstructionWire")]
 pub struct HelixCurveConstruction {
@@ -417,7 +417,7 @@ impl HelixCurveConstruction {
 }
 
 /// Finite circular helix profile with a nonzero signed radius.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
@@ -466,7 +466,7 @@ impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
 }
 
 /// Finite non-degenerate linear helix profile.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixLineProfileWire")]
 pub struct HelixLineProfile {
@@ -508,7 +508,15 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 }
 
 /// Profile-specific tail of a helix surface.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -520,7 +528,7 @@ pub enum HelixSurfaceProfile {
 }
 
 /// Complete helix-surface construction with finite native intervals.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixSurfaceConstructionWire")]
 pub struct HelixSurfaceConstruction {

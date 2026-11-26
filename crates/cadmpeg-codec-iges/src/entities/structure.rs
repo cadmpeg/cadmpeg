@@ -1757,7 +1757,7 @@ fn plane_face_draft(
 ) -> Result<ModelDraft, LegacyPlaneError> {
     let tolerance = if resolution > 0.0 {
         Some(
-            cadmpeg_ir::scalar::PositiveReal::new(resolution)
+            cadmpeg_ir::scalar::PositiveLength::new(resolution)
                 .ok_or("face tolerance must be finite")?,
         )
     } else {
@@ -1830,12 +1830,11 @@ fn plane_face_draft(
     let region_shells = vec![shell_id];
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
-    candidate.geometry_mut().regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: region_shells,
-        native_ref: None,
-    });
+    candidate.geometry_mut().regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        region_shells,
+    ));
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.geometry_mut().bodies.push(Body {
@@ -1846,6 +1845,7 @@ fn plane_face_draft(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     candidate.model_mut().finalize();
     Ok(candidate)
@@ -2333,7 +2333,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2537,7 +2537,7 @@ pub(super) fn project(
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("property value layout, attachment, or owner kind is invalid"),
@@ -2550,7 +2550,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2625,7 +2625,7 @@ pub(super) fn project(
                 attribute_shapes.insert(entry.sequence, shape);
             }
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("attribute-table definition header, value type, value, or display link is invalid"));
+            super::push_entity_finding(&mut losses, entry, format_args!("attribute-table definition header, value type, value, or display link is invalid"));
         }
     }
 
@@ -2634,7 +2634,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2679,7 +2679,7 @@ pub(super) fn project(
         if values_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2694,7 +2694,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2729,7 +2729,7 @@ pub(super) fn project(
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2742,7 +2742,7 @@ pub(super) fn project(
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2775,7 +2775,7 @@ pub(super) fn project(
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2791,7 +2791,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2820,7 +2820,7 @@ pub(super) fn project(
         if members_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("group member list or required association back pointer is invalid"),
@@ -2833,7 +2833,7 @@ pub(super) fn project(
             && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2887,7 +2887,7 @@ pub(super) fn project(
                 }
             }
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3032,7 +3032,7 @@ pub(super) fn project(
         if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3048,7 +3048,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3064,7 +3064,7 @@ pub(super) fn project(
         if fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3093,7 +3093,7 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3150,7 +3150,7 @@ pub(super) fn project(
         if target_valid && !cyclic && transform_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3165,7 +3165,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3229,7 +3229,7 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3245,7 +3245,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3259,7 +3259,7 @@ pub(super) fn project(
         if let Some(target) = target {
             solid_instances.insert(entry.sequence, target);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-instance target pointer is invalid"),
@@ -3286,7 +3286,7 @@ pub(super) fn project(
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-instance form, target, transform, or acyclicity is invalid"),
@@ -3299,7 +3299,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3307,7 +3307,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-assembly item count is not positive"),
@@ -3333,7 +3333,7 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-assembly item tuple is invalid"),
@@ -3409,7 +3409,7 @@ pub(super) fn project(
             || cyclic
             || !own_transform_valid
         {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3503,9 +3503,15 @@ pub(super) fn project(
             placement_rejections
                 .entry(entry.sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                super::pointer(record, 1).filter(|target| {
+                    placement_valid
+                        && entries
+                            .get(target)
+                            .is_none_or(|target| target.entity_type == 308)
+                }),
                 format_args!("subfigure-instance definition pointer is invalid"),
             );
             continue;
@@ -3650,6 +3656,7 @@ pub(super) fn project(
         if !placement_valid {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
+        let connect_points_valid = connect_points.is_some();
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             placement_rejections
                 .entry(entry.sequence)
@@ -3657,9 +3664,20 @@ pub(super) fn project(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 });
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                super::pointer(record, 1).filter(|target| {
+                    definition.is_none()
+                        && entries
+                            .get(target)
+                            .is_none_or(|target| target.entity_type == 320)
+                        && connect_points_valid
+                        && placement_valid
+                        && type_flag_valid
+                        && designator_valid
+                        && display_valid
+                }),
                 format_args!("network instance definition or count is invalid"),
             );
             continue;
@@ -3724,9 +3742,12 @@ pub(super) fn project(
             placement_rejections
                 .entry(*sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                instance_fields_valid
+                    .contains(sequence)
+                    .then_some(*definition_sequence),
                 format_args!("subfigure-instance placement or decoded definition is invalid"),
             );
         }
@@ -3792,9 +3813,12 @@ pub(super) fn project(
                     PlacementRejection::InvalidDefinition
                 },
             );
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                (network_instance_fields_valid.contains(sequence)
+                    && !decoded.contains(&instance.definition))
+                .then_some(instance.definition),
                 format_args!("network instance placement or connection list is invalid"),
             );
         }

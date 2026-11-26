@@ -1,3 +1,4 @@
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 use cadmpeg_ir::attributes::AttributeValue;
@@ -274,12 +275,11 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
 
     let id = |index| format!("inventor:brep:entity#{index}");
     let mut brep = AsmBrep::default();
-    brep.regions.push(Region {
-        id: id(2).try_into().expect("synthetic identity"),
-        body: id(1).try_into().expect("synthetic identity"),
-        shells: vec![id(3).try_into().expect("synthetic identity")],
-        native_ref: None,
-    });
+    brep.regions.push(Region::new(
+        id(2).try_into().expect("synthetic identity"),
+        id(1).try_into().expect("synthetic identity"),
+        vec![id(3).try_into().expect("synthetic identity")],
+    ));
     brep.shells.push(Shell::new(
         id(3).try_into().expect("synthetic identity"),
         id(2).try_into().expect("synthetic identity"),
@@ -315,7 +315,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
     let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
     for (i, (x, y)) in (0..4).zip(points) {
         brep.points.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": id(41+i), "position": {"x": x, "y": y, "z": 0.0}
             }))
             .expect("synthetic profile fixture"),
@@ -471,7 +471,7 @@ fn a_loop_inside_another_selected_loop_is_a_hole_of_its_region() {
 /// A raw sketch entity record of `kind` at `ordinal`, in the sketch or block
 /// definition at one-based `sketch`.
 fn raw_entity(ordinal: u32, sketch: u32, kind: &serde_json::Value) -> PmDcSketchEntity {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
         "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
         "segment_token": "segment",
@@ -500,7 +500,7 @@ fn a_curve_that_a_block_instance_places_resolves_through_the_instance_identifier
     let instance = raw_entity(
         16,
         SKETCH_ORDINAL + 1,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "form": "block_instance",
             "definition": {"index": 41, "qualified": true},
             "group": {"index": 0, "qualified": false},
@@ -512,7 +512,7 @@ fn a_curve_that_a_block_instance_places_resolves_through_the_instance_identifier
     let circle = raw_entity(
         41,
         41,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "form": "circle",
             "points": {
                 "marker": 2,

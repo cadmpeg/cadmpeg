@@ -1454,7 +1454,7 @@ fn configuration_solid(
         .regions
         .iter()
         .filter(|region| bodies.contains(&region.body))
-        .flat_map(|region| &region.shells)
+        .flat_map(cadmpeg_ir::topology::Region::stated_shells)
         .collect::<HashSet<_>>();
     let faces = geometry
         .faces
@@ -1519,7 +1519,7 @@ fn configuration_surface_carriers(
     let mut shells = HashSet::new();
     for region in &ir.geometry.regions {
         if bodies.contains(&region.body) {
-            for id in &region.shells {
+            for id in region.stated_shells() {
                 shells.insert(id);
             }
         }
@@ -1537,6 +1537,56 @@ fn configuration_surface_carriers(
         }
     }
     surfaces
+}
+
+/// Relative tolerance of two stored numbers that state one value.
+const EPS_CONFIGURATION_DISPLAYED_NUMBER: f64 = 1.0e-9;
+
+/// Keep each configuration's value of a parameter whose bare Keywords number
+/// became a length in step with it (`docs/formats/sldprt.md`). A configuration
+/// states such a value as a real or integer in the unit the parameter was
+/// displayed in. The value is the parameter's length where it is the displayed
+/// number, and that number converted to millimetres otherwise.
+pub(crate) fn convert_refined_configuration_values(
+    ir: &mut cadmpeg_ir::CadIr,
+    refined: &[crate::pmi::RefinedLength],
+) {
+    for refined in refined {
+        let Some(ParameterValue::Length(length)) = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == refined.parameter)
+            .and_then(|parameter| parameter.value.as_ref())
+        else {
+            continue;
+        };
+        let length = *length;
+        for configuration in &mut ir.model.configurations {
+            let Some(value) = configuration.parameter_values.get_mut(&refined.parameter) else {
+                continue;
+            };
+            let number = match &*value {
+                ParameterValue::Real(real) => real.get(),
+                ParameterValue::Integer(integer) => match exact_integer_f64(*integer) {
+                    Some(number) => number,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            let shown = refined.displayed.number;
+            let converted = if (number - shown).abs()
+                <= EPS_CONFIGURATION_DISPLAYED_NUMBER * number.abs().max(shown.abs())
+            {
+                Some(length)
+            } else {
+                Length::new(number * refined.displayed.mm_per_unit)
+            };
+            if let Some(converted) = converted {
+                *value = ParameterValue::Length(converted);
+            }
+        }
+    }
 }
 
 /// Give configuration-local numeric overrides the kind established by their

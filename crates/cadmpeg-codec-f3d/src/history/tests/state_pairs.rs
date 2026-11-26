@@ -57,6 +57,7 @@ use crate::history_records::AsmHistoricalTransition;
 use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::historical_context::AsmFaceBoundary;
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[test]
@@ -1309,13 +1310,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    brep.regions.push(Region {
-        id: RegionId::mint(id(2)).expect("identity grammar"),
-        body: BodyId::mint(id(1)).expect("identity grammar"),
-        shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
-        native_ref: None,
-    });
+    brep.regions.push(Region::new(
+        RegionId::mint(id(2)).expect("identity grammar"),
+        BodyId::mint(id(1)).expect("identity grammar"),
+        vec![ShellId::mint(id(3)).expect("identity grammar")],
+    ));
     brep.shells.push(Shell::new(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),
@@ -1847,7 +1848,7 @@ fn edge_recipe_scope_binding_with_peer(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{stream}:design-edge-operand#{}", index + 20),
                 "scope_record_index": scope.record_index,
                 "scope_reference_ordinal": index,

@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::geometry::{pcurve::Pcurve, Curve, Surface};
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::CadIr;
@@ -43,6 +44,7 @@ impl ModelRecords for CadIr {
 /// per topology use, and the face supports of each pcurve.
 pub(super) struct TopologyIndex<'ir> {
     pub(super) ir: &'ir CadIr,
+    pub(super) model: ModelIndex<'ir>,
     pub(super) bodies: BTreeMap<&'ir str, &'ir Body>,
     pub(super) regions: BTreeMap<&'ir str, &'ir Region>,
     pub(super) shells: BTreeMap<&'ir str, &'ir Shell>,
@@ -67,7 +69,7 @@ impl<'ir> TopologyIndex<'ir> {
         for face in &geometry.faces {
             for loop_ in face
                 .loops
-                .iter()
+                .stated()
                 .filter_map(|loop_id| loops.get(loop_id.as_str()).copied())
             {
                 for coedge in loop_
@@ -86,6 +88,7 @@ impl<'ir> TopologyIndex<'ir> {
         }
         Self {
             ir,
+            model: ModelIndex::new_model_only(ir),
             bodies: first_by_id(&geometry.bodies),
             regions: first_by_id(&geometry.regions),
             shells: first_by_id(&geometry.shells),

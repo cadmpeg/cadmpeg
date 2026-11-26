@@ -63,7 +63,7 @@ pub(super) struct SolidBuilder {
 pub(super) struct BuiltSolid {
     pub(super) draft: ModelDraft,
     pub(super) body: BodyId,
-    pub(super) identities: Vec<String>,
+    pub(super) identities: Vec<cadmpeg_ir::annotations::AnnotationKey>,
     pub(super) faces: usize,
 }
 
@@ -322,55 +322,50 @@ impl SolidBuilder {
         let region = RegionId::from(ids::csg(kind!("region"), self.item));
         let shell = self.shell_id();
         let mut identities = vec![
-            body.as_str().to_owned(),
-            region.as_str().to_owned(),
-            shell.as_str().to_owned(),
+            cadmpeg_ir::annotations::AnnotationKey::from(&body),
+            cadmpeg_ir::annotations::AnnotationKey::from(&region),
+            cadmpeg_ir::annotations::AnnotationKey::from(&shell),
         ];
         let faces = self.faces.len();
         let mut draft = ModelDraft::new();
         let failed = |error: cadmpeg_ir::draft::DraftError| error.to_string();
         for point in self.points {
-            identities.push(point.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&point.id));
             draft.insert(point).map_err(failed)?;
         }
         for vertex in self.vertices {
-            identities.push(vertex.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&vertex.id));
             draft.insert(vertex).map_err(failed)?;
         }
         for curve in self.curves {
-            identities.push(curve.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&curve.id));
             draft.insert(curve).map_err(failed)?;
         }
         for edge in self.edges {
-            identities.push(edge.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&edge.id));
             draft.insert(edge).map_err(failed)?;
         }
         for coedge in self.coedges {
-            identities.push(coedge.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&coedge.id));
             draft.insert(coedge).map_err(failed)?;
         }
         for face_loop in self.loops {
-            identities.push(face_loop.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&face_loop.id));
             draft.insert(face_loop).map_err(failed)?;
         }
         for surface in self.surfaces {
-            identities.push(surface.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&surface.id));
             draft.insert(surface).map_err(failed)?;
         }
         for face in self.faces {
-            identities.push(face.id.as_str().to_owned());
+            identities.push(cadmpeg_ir::annotations::AnnotationKey::from(&face.id));
             draft.insert(face).map_err(failed)?;
         }
         draft
             .insert(Shell::new(shell.clone(), region.clone()))
             .map_err(failed)?;
         draft
-            .insert(Region {
-                id: region,
-                body: body.clone(),
-                shells: vec![shell],
-                native_ref: None,
-            })
+            .insert(Region::new(region, body.clone(), vec![shell]))
             .map_err(failed)?;
         draft
             .insert(Body {
@@ -381,6 +376,7 @@ impl SolidBuilder {
                 color: None,
                 visible: None,
                 native_ref: Some(format!("#{}", self.item)),
+                unstated: None,
             })
             .map_err(failed)?;
         Ok(BuiltSolid {

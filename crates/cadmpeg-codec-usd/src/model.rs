@@ -12,13 +12,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetData};
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -33,14 +34,15 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::tessellation::{
-    ShadedTriangle, ShadedVertex, Tessellation, TessellationMesh, TessellationTriangleGroup,
-    TextureCoordinateAddressing, TextureCoordinates,
+    Meshed, ShadedTriangle, ShadedVertex, Tessellation, TessellationMesh,
+    TessellationTriangleGroup, TextureCoordinateAddressing, TextureCoordinates,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Color, Edge, EdgeCarrier, Face, FaceLoops, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
@@ -193,6 +195,8 @@ struct Tallies {
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
+    /// Faces of `BrepArray` prims stated partial, with the reason.
+    unstated_boundaries: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -223,6 +227,12 @@ struct Tallies {
     external: usize,
     metadata: BTreeMap<String, usize>,
     api_schemas: BTreeMap<String, usize>,
+    /// Records given up whole, each named by the id of the record that its
+    /// prim would define, with the code of their aggregate loss as the error.
+    given_up: Vec<GivenUpRecord>,
+    /// The `record.dropped-with` notes of the records dropped only because
+    /// they need a given-up record.
+    dependents: Vec<LossNote>,
 }
 
 /// Layer metadata keys the model reads (spec §4.3).
@@ -294,21 +304,28 @@ struct Builder<'s, 'l, 'c, 'a> {
     physical_materials: BTreeSet<String>,
     /// Definitions that own a body.
     bodied: BTreeSet<String>,
+    /// Definitions whose geometry is a mesh.
+    meshed: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
+    /// The design joint feature stated for each joint.
+    joint_features: BTreeMap<cadmpeg_ir::products::JointId, cadmpeg_ir::features::FeatureId>,
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
+    /// Whether the stage holds joints that the decode depth leaves out of
+    /// the design.
+    joints_beyond_depth: bool,
 }
 
-/// Writes the model of the root layer stack of `layers` into `ir`. Returns
-/// whether any geometry was transferred.
+/// Writes the model of the root layer stack of `layers` into `ir` and its
+/// losses into `body`. Returns whether any geometry was transferred.
 pub(crate) fn build<'a>(
     ctx: &DecodeContext<'a>,
     layers: &crate::layers::Layers<'a>,
     metrics: &Metrics,
     ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
+    body: &mut DecodeBody,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
     let admitted = u64_from_index(ir.entity_count());
@@ -329,10 +346,13 @@ pub(crate) fn build<'a>(
         appearances: BTreeSet::new(),
         physical_materials: BTreeSet::new(),
         bodied: BTreeSet::new(),
+        meshed: BTreeSet::new(),
         pending_joints: Vec::new(),
+        joint_features: BTreeMap::new(),
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
+        joints_beyond_depth: false,
     };
     for root in stage.roots.clone() {
         builder.prim(root, None, &IDENTITY)?;
@@ -342,6 +362,7 @@ pub(crate) fn build<'a>(
     builder.joints(pending)?;
     builder.finish_physx()?;
     let transferred = builder.transferred;
+    let joints_beyond_depth = builder.joints_beyond_depth;
     let issues = std::mem::take(&mut builder.issues);
     let tallies = std::mem::take(&mut builder.tallies);
     builder.ir.finalize();
@@ -353,14 +374,16 @@ pub(crate) fn build<'a>(
         .filter(|key| !LAYER_KEYS_READ.contains(key))
         .collect();
     if !layer_keys.is_empty() {
-        losses.push(UsdLossCode::MetadataNotTransferred.note(format!(
-            "layer metadata was not transferred: {}",
-            joined(layer_keys.into_iter().map(str::to_owned))
-        )));
+        body.losses
+            .push(UsdLossCode::MetadataNotTransferred.note(format!(
+                "layer metadata was not transferred: {}",
+                joined(layer_keys.into_iter().map(str::to_owned))
+            )));
     }
-    losses.extend(layers.losses.iter().cloned());
+    body.losses.extend(layers.losses.iter().cloned());
     if !layers.unavailable.is_empty() {
-        losses.push(UsdLossCode::CompositionLayerUnavailable.note(format!(
+        body.losses
+            .push(UsdLossCode::CompositionLayerUnavailable.note(format!(
             "{} named layers did not open: {}",
             layers.unavailable.len(),
             joined(
@@ -371,8 +394,11 @@ pub(crate) fn build<'a>(
             )
         )));
     }
-    losses.extend(composition_losses(&stage));
-    losses.extend(tally_losses(&tallies, &issues, metrics));
+    body.losses.extend(composition_losses(&stage));
+    body.losses.extend(tally_losses(&tallies, &issues, metrics));
+    if joints_beyond_depth {
+        body.source_holds(ArenaClass::Design);
+    }
     Ok(transferred)
 }
 
@@ -570,8 +596,14 @@ impl Builder<'_, '_, '_, '_> {
             .or_default()
             .push(id);
         self.admit("usd_occurrence")?;
-        let bodied = self.bodied.contains(&definition);
-        self.physics_apis(prim, &definition, bodied)?;
+        let owner = if self.bodied.contains(&definition) {
+            physics::PhysicsOwner::Body
+        } else if self.meshed.contains(&definition) {
+            physics::PhysicsOwner::Mesh
+        } else {
+            physics::PhysicsOwner::Occurrence
+        };
+        self.physics_apis(prim, &definition, owner)?;
         // A definition another instance already wrote states its prototype's
         // descendants once, in it.
         if !first {
@@ -705,7 +737,6 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies,
             sketches: Vec::new(),
-            tessellations: Vec::new(),
             native_ref: Some(prim.path.clone()),
             generated_from: None,
             storage: cadmpeg_ir::products::Storage::Embedded,
@@ -819,6 +850,7 @@ impl Builder<'_, '_, '_, '_> {
             color,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -830,6 +862,7 @@ impl Builder<'_, '_, '_, '_> {
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             if prim.external.is_empty() {
                 self.tallies.rejected_meshes.push(prim.path.clone());
+                self.give_up_mesh(prim, key, UsdLossCode::MeshRejected.kind(), &[]);
             }
             return Ok(None);
         };
@@ -865,15 +898,26 @@ impl Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.give_up_mesh(
+                    prim,
+                    key,
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                    &mesh.subsets,
+                );
                 return Ok(None);
             }
         };
-        let body = crate::ids::body(key);
-        self.body(prim, key, BodyKind::General);
+        let color = self.display_color(prim);
         self.ir
             .model
             .tessellations
-            .push(tessellation.with_body(Some(body.clone())));
+            .push(tessellation.with_of(Meshed::Definition {
+                definition: crate::ids::definition(key),
+                name: None,
+                color,
+                visible: None,
+            }));
+        self.meshed.insert(key.to_owned());
         let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
         self.material(prim, key, target)?;
         for subset in &mesh.subsets {
@@ -881,7 +925,52 @@ impl Builder<'_, '_, '_, '_> {
         }
         self.transferred = true;
         self.admit("usd_mesh")?;
-        Ok(Some(body))
+        Ok(None)
+    }
+
+    /// Gives up the tessellation that mesh `prim` would define for `key`,
+    /// for `error`, and drops with it each appearance binding that would
+    /// target it.
+    fn give_up_mesh(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        error: impl std::fmt::Display,
+        subsets: &[crate::schema::mesh::Subset],
+    ) {
+        let tessellation = crate::ids::tessellation(key);
+        self.tallies
+            .given_up
+            .push(GivenUpRecord::new(&tessellation, error));
+        // The readers run again only to learn which bindings exist; their
+        // issues were tallied on the first read.
+        let mut issues = Issues::default();
+        if matches!(
+            crate::schema::shading::bound_material(self.stage, prim, &mut issues),
+            Some(Bound::Surface(_))
+        ) {
+            self.tallies.dependents.push(dropped_with(
+                crate::ids::appearance_binding(key),
+                &tessellation,
+            ));
+        }
+        for subset in subsets {
+            let bound = self
+                .stage
+                .find(&subset.path)
+                .and_then(|prim| {
+                    prim.relationship_targets("material:binding")
+                        .into_iter()
+                        .next()
+                })
+                .map(|target| crate::schema::shading::material(self.stage, &target, &mut issues));
+            if matches!(bound, Some(Bound::Surface(_))) {
+                self.tallies.dependents.push(dropped_with(
+                    crate::ids::subset_binding(key, &subset.path),
+                    &tessellation,
+                ));
+            }
+        }
     }
 
     fn tessellation(&self, key: &str, mesh: &MeshData) -> Result<Tessellation, String> {
@@ -1000,6 +1089,7 @@ impl Builder<'_, '_, '_, '_> {
             id: crate::ids::appearance_binding(key),
             target: target.into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
@@ -1056,6 +1146,7 @@ impl Builder<'_, '_, '_, '_> {
             }
             .into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
@@ -1164,6 +1255,10 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(curves) = curves else {
             self.tallies.rejected_curves += 1;
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::CurvesRejected.kind(),
+            ));
             return Ok(None);
         };
         self.tallies.rejected_curves += curves.rejected;
@@ -1260,17 +1355,22 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_curve")?;
         }
         if edges.is_empty() {
+            if !curves.curves.is_empty() || curves.rejected > 0 {
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::body(key),
+                    UsdLossCode::CurvesRejected.kind(),
+                ));
+            }
             return Ok(None);
         }
         let region = crate::ids::region(key);
         let shell = Shell::with_members(crate::ids::shell(key), region.clone(), edges, Vec::new());
         self.ir.geometry.shells.push(shell);
-        self.ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body: crate::ids::body(key),
-            shells: vec![crate::ids::shell(key)],
-            native_ref: None,
-        });
+        self.ir.geometry.regions.push(Region::new(
+            region.clone(),
+            crate::ids::body(key),
+            vec![crate::ids::shell(key)],
+        ));
         self.body(prim, key, BodyKind::Wire);
         self.transferred = true;
         self.admit("usd_curves")?;
@@ -1284,10 +1384,18 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(patch) = crate::schema::patch::read(prim, &mut self.issues) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let reason = match crate::brep::patch::bounded(&patch) {
@@ -1374,12 +1482,11 @@ impl Builder<'_, '_, '_, '_> {
         });
         let shell_record = Shell::new(shell.clone(), region.clone());
         self.ir.geometry.shells.push(shell_record);
-        self.ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body: crate::ids::body(key),
-            shells: vec![shell],
-            native_ref: None,
-        });
+        self.ir.geometry.regions.push(Region::new(
+            region.clone(),
+            crate::ids::body(key),
+            vec![shell],
+        ));
         self.body(prim, key, BodyKind::Sheet);
         self.material(prim, key, AppearanceTarget::Face(face))?;
         self.transferred = true;
@@ -1730,6 +1837,15 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         ),
     );
     push(
+        UsdLossCode::TopologyFaceBoundaryUnstated,
+        !tallies.unstated_boundaries.is_empty(),
+        format!(
+            "faces of BrepArray prims do not state their boundary in full and are stated \
+             partial: {}",
+            joined(tallies.unstated_boundaries.iter().cloned())
+        ),
+    );
+    push(
         UsdLossCode::XformMalformed,
         !tallies.xform.is_empty(),
         format!(
@@ -1932,6 +2048,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(issues.animated.iter().cloned())
         ),
     );
+    losses.extend(tallies.given_up.iter().cloned().map(GivenUpRecord::loss));
+    losses.extend(tallies.dependents.iter().cloned());
     losses
 }
 

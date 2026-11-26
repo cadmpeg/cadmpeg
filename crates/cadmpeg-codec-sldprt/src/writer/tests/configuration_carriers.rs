@@ -95,7 +95,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
     let mut source = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut source))
     .unwrap();
@@ -212,7 +212,7 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -273,7 +273,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -357,7 +357,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&inactive, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()
@@ -479,7 +479,10 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
                 Vec::new(),
             )
             .expect("valid tessellation")
-            .with_body(Some(body.clone()))
+            .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                body: body.clone(),
+                faces: Vec::new(),
+            })
         })
         .collect();
     ir.model.configurations = body_ids
@@ -506,7 +509,7 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -728,7 +731,7 @@ fn semantic_writer_reassigns_a_repeated_configuration_source_index() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()
@@ -757,7 +760,7 @@ fn semantic_writer_names_empty_and_repeated_configuration_names() {
         SldprtCodec
             .plan(
                 EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .unwrap()
             .report()
@@ -835,7 +838,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -899,7 +902,7 @@ fn encoder_bakes_rigid_body_transform() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -1162,7 +1165,7 @@ fn semantic_writer_omits_a_body_whose_face_names_a_missing_surface() {
     ir.geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -1183,30 +1186,24 @@ pub(crate) fn semantic_writer_omits_subds_and_names_them() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded
-        .ir_mut()
-        .geometry
-        .subds
-        .push(cadmpeg_ir::SubdSurface {
-            id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
-            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-            source_object: None,
-            cage: cadmpeg_ir::subd::SubdCage::default(),
-            native_ref: None,
-        });
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut decoded.ir_mut(), "sldprt");
 
+    let mut bytes = Vec::new();
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
-        .unwrap()
-        .report()
-        .clone();
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.code.local_code() == "writer.subd-omitted"
-            && loss.message.contains("test:sldprt:subd#0")
+        loss.code.local_code() == "writer.subd-omitted" && loss.message.contains(cage.subd.as_str())
     }));
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().geometry.bodies.len(), 1);
 }
 
 #[test]
@@ -1293,7 +1290,7 @@ fn semantic_writer_omits_bodies_on_cones_compact_records_cannot_hold() {
             .as_str()
             .to_owned();
         let report = SldprtCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
             .unwrap()
             .report()
             .clone();
@@ -1387,7 +1384,12 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .geometry
         .shells
         .iter()
-        .all(|shell| regenerated.ir().geometry.shell_faces(&shell.id).count() == 1));
+        .all(|shell| regenerated
+            .ir()
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .count()
+            == 1));
     assert!(regenerated.ir().geometry.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
@@ -1784,7 +1786,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_configuration_edits() {
+fn semantic_writer_patch_declines_conflicting_configuration_edits() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
@@ -1797,15 +1799,9 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         native.feature_histories[0].configurations[0].name = "Native".to_string();
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT configuration edits"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting neutral and native SLDPRT configuration edits"));
 }
 
 #[test]
@@ -1953,6 +1949,30 @@ fn active_metadata_edit_does_not_patch_only_one_field_of_a_structured_manifest()
         br#"<swSolidWorks><swModel id="m" swConfigurationName="Old" swConfigurationId="0"/><swConfiguration swName="Old" swID="0" swModelRef="m" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#.as_slice(),
         br#"<swSolidWorks><swModel swConfigurationName="First"/><swModel swConfigurationName="Second"/></swSolidWorks>"#.as_slice(),
     ] {
-        assert!(matches!(super::super::patch_active_configuration_xml(payload, "New"), Err(cadmpeg_core::CodecError::NotImplemented(_))));
+        assert!(super::super::patch_active_configuration_xml(payload, "New").is_err());
     }
+}
+
+/// The stale mark sets `swConfigurationNeedsUpdate="YES"` on each named
+/// configuration row (§3.4, States) and keeps the other rows and the stored
+/// encoding.
+#[test]
+fn the_stale_mark_sets_needs_update_on_the_named_configuration_rows() {
+    let source = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="B" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
+    let expected = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="YES"/><swConfiguration swName="B" swConfigurationNeedsUpdate="YES" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
+    let names = std::collections::BTreeSet::from(["A".to_owned(), "B".to_owned()]);
+    let utf16 = |text: &str| {
+        let mut bytes = vec![0x85, 0xff, 0xfe];
+        bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes
+    };
+    for (payload, written) in [
+        (source.as_bytes().to_vec(), expected.as_bytes().to_vec()),
+        (utf16(source), utf16(expected)),
+    ] {
+        let (marked, rows) = crate::writer::stale::mark(&payload, &names).unwrap();
+        assert_eq!(rows, ["A", "B"]);
+        assert_eq!(marked, written);
+    }
+    assert!(crate::writer::stale::mark(b"<swSolidWorks/>", &names).is_none());
 }

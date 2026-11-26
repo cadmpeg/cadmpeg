@@ -293,7 +293,7 @@ fn result_faces_fit_circle(
         let Some(body) = only(inputs.bodies.iter().filter(|body| body.id == *output)) else {
             return false;
         };
-        if body.kind != BodyKind::Solid {
+        if body.kind != BodyKind::Solid || body.unstated.is_some() {
             return false;
         }
         for region in inputs
@@ -301,7 +301,10 @@ fn result_faces_fit_circle(
             .iter()
             .filter(|region| region.body == body.id)
         {
-            shells.extend(region.shells.iter());
+            if region.unstated.is_some() {
+                return false;
+            }
+            shells.extend(region.stated_shells());
         }
     }
     let matches = |radius: f64, target: f64| (radius - target).abs() <= inputs.linear_tolerance;

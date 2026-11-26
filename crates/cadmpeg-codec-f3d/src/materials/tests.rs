@@ -1230,7 +1230,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .unwrap();
     let vertex = source.geometry.vertices[0].id.clone();
     source.geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("positive finite tolerance"));
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
             id: "f3d:asm:creation-timestamp#generated".into(),
@@ -1242,7 +1242,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1254,7 +1254,12 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.025))
+        .find(|vertex| {
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get)
+                == Some(0.025)
+        })
         .expect("tolerant vertex");
     let attribute = round_trip
         .ir()

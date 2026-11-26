@@ -9,8 +9,8 @@ use super::construction::{
 use super::dimension::{Dimension, ParameterRef, RefTarget};
 use super::expr::{Expression, ExpressionToken, Neutral, Node};
 use super::names::{
-    CodecId, GenerationRole, Generator, InstanceIndex, NameKind, NativeName, NativeNameValue,
-    TopoName,
+    CodecId, CodecName, GenerationRole, Generator, InstanceIndex, NameKind, NativeName,
+    NativeNameValue, TopoName,
 };
 use super::options::NativeOption;
 use super::parameter::Deviations;
@@ -39,10 +39,10 @@ impl<T: Ord + RewriteIdentities> RewriteIdentities for std::collections::BTreeSe
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite structured name set")?;
         let mut values = Self::new();
@@ -71,10 +71,10 @@ impl<T, P: RewriteIdentities> RewriteIdentities for Dimension<T, P> {
         }
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Literal(value) => Self::Literal(value),
@@ -97,16 +97,17 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Self::new(self.into_vec().rewrite_identities(ctx, map)?).map_err(CodecError::malformed)
     }
 }
 
 rewrite_scalar!(CodecId);
+rewrite_scalar!(CodecName);
 rewrite_scalar!(super::parameter::Tolerance);
 rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);
@@ -156,10 +157,10 @@ impl RewriteIdentities for ConfigurationRef {
             Self::Named(_) => Ok(()),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Local(id) => Self::Local(id.rewrite_identities(ctx, map)?),
@@ -187,7 +188,7 @@ rewrite_enum!(StepRef, []; {Occurrence(value), Native(value)});
 rewrite_record!(Witness, []; {point, direction, endpoints, frame, curves, surface, body});
 rewrite_enum!(PickDomain, []; {EdgeInterval {start, end}, Limits {start, end}, Fragment(value), Containing(value)});
 rewrite_record!(RuleTerm<O>, [O: MemberOrder]; {rule, seeds, propagation});
-rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Native(literal)});
+rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Affected, Native(literal)});
 rewrite_enum!(Propagation, []; {Off, Minimal, Connected {continuity, angle, gap}, Native(literal)});
 rewrite_record!(SketchRegion, []; {outer, holes});
 rewrite_record!(BoundaryUse, []; {entity, fragment});
@@ -242,10 +243,10 @@ impl RewriteIdentities for Expression {
             }),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let mut rewrite = |reference: &mut ParameterRef| -> Result<(), CodecError> {
             *reference = reference.clone().rewrite_identities(ctx, map)?;

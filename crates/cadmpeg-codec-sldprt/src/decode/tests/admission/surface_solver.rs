@@ -79,7 +79,7 @@ fn intersection_chart_edge_tolerance_is_the_chordal_error() {
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
         .collect();
     let approximations: Vec<_> = decoded
         .report()

@@ -14,6 +14,7 @@ fn finding(entity: Option<&str>, related: &[&str], message: &str) -> Finding {
     Finding {
         related: related.iter().map(|id| (*id).to_owned()).collect(),
         check: Check::ReferentialIntegrity,
+        rule: crate::rule_name!("test.fixture-reference"),
         severity: Severity::Error,
         entity: entity.map(str::to_owned),
         message: message.into(),
@@ -21,18 +22,21 @@ fn finding(entity: Option<&str>, related: &[&str], message: &str) -> Finding {
 }
 
 fn insert_native(ir: &mut CadIr, format: &str, ids: &[&str]) {
-    ir.native.namespace_mut(format).arenas_mut().insert(
-        "asm_histories".into(),
-        ids.iter()
-            .map(|id| {
-                NativeRecord::new(
-                    Identity::new(*id).expect("valid identity"),
-                    serde_json::Map::default(),
-                )
-                .expect("valid native identity")
-            })
-            .collect(),
-    );
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            ids.iter()
+                .map(|id| {
+                    NativeRecord::new(
+                        Identity::new(*id).expect("valid identity"),
+                        serde_json::Map::default(),
+                    )
+                    .expect("valid native identity")
+                })
+                .collect(),
+        );
     ir.finalize();
 }
 

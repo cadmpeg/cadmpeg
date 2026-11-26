@@ -82,17 +82,10 @@ pub(super) fn encode_without_unwritable_bodies<T>(
             if all.is_empty() {
                 return Err(error);
             }
-            entries.extend(
-                all.iter()
-                    .map(|body| format!("{} ({reason})", body.as_str())),
-            );
+            entries.extend(all.iter().map(|body| entry(current, body, &reason)));
             Vec::new()
         } else {
-            entries.extend(
-                named
-                    .iter()
-                    .map(|body| format!("{} ({reason})", body.as_str())),
-            );
+            entries.extend(named.iter().map(|body| entry(current, body, &reason)));
             current
                 .geometry
                 .bodies
@@ -102,12 +95,37 @@ pub(super) fn encode_without_unwritable_bodies<T>(
                 .collect()
         };
         let mut subset = super::body_subset(current, &kept)?;
+        subset
+            .model
+            .tessellations
+            .retain(|mesh| mesh.of.body().is_none_or(|body| kept.contains(body)));
         for configuration in &mut subset.model.configurations {
             if let Some(bodies) = &mut configuration.bodies {
                 bodies.retain(|body| kept.contains(body));
             }
         }
         reduced = Some(subset);
+    }
+}
+
+/// The note entry of `body`, left out of `ir` with its tessellations for
+/// `reason`.
+fn entry(ir: &CadIr, body: &BodyId, reason: &str) -> String {
+    let meshes = ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| mesh.of.body() == Some(body))
+        .map(|mesh| mesh.id.as_str())
+        .collect::<Vec<_>>();
+    if meshes.is_empty() {
+        format!("{} ({reason})", body.as_str())
+    } else {
+        format!(
+            "{} with tessellation {} ({reason})",
+            body.as_str(),
+            meshes.join(", ")
+        )
     }
 }
 
@@ -154,7 +172,7 @@ fn owned_records(ir: &CadIr) -> HashMap<&BodyId, HashSet<&str>> {
         records.insert(region.id.as_str());
         let mut edge_ids = Vec::new();
         let mut vertex_ids = Vec::new();
-        for shell_id in &region.shells {
+        for shell_id in region.stated_shells() {
             records.insert(shell_id.as_str());
             let Some(shell) = shells.get(shell_id) else {
                 continue;
@@ -164,7 +182,7 @@ fn owned_records(ir: &CadIr) -> HashMap<&BodyId, HashSet<&str>> {
             for face in faces_by_shell.get(shell_id).into_iter().flatten() {
                 records.insert(face.id.as_str());
                 records.insert(face.surface.as_str());
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     records.insert(loop_id.as_str());
                     let Some(loop_) = loops.get(loop_id) else {
                         continue;

@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::equations::{CarrierEquation, PlaneEquation};
 use super::{
-    existing_plane_agrees_with_topology, placed_carriers, topology_bound_face_points,
-    transfer_topology_bound_planes,
+    existing_plane_agrees_with_topology, placed_carriers, report_non_visible_carriers,
+    topology_bound_face_points, transfer_topology_bound_planes,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -721,3 +721,32 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
 }
 
 mod predicates;
+
+#[test]
+fn a_non_visible_namespace_carrier_charges_its_visibility() {
+    let mut ir = CadIr::empty();
+    for (id, object) in [(1, "NovisGeom:7"), (2, "VisibGeom:8")] {
+        let mut surface = cylinder_surface(id, 1.0);
+        surface.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::codec_id!("creo"),
+            object_id: cadmpeg_core::text::NonBlankString::new(object).expect("object id"),
+            geometry_role: None,
+            instance_path: Vec::new(),
+        });
+        ir.geometry.surfaces.push(surface);
+    }
+    let mut losses = Vec::new();
+    report_non_visible_carriers(&ir, &mut losses);
+    let [loss] = losses.as_slice() else {
+        panic!("{losses:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::CreoLossCode::NonVisibleCarrierVisibilityNotStated.kind()
+    );
+    assert!(
+        loss.message.starts_with("1 surface carrier(s)"),
+        "{}",
+        loss.message
+    );
+}

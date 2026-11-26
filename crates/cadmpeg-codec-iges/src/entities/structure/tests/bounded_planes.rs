@@ -35,13 +35,13 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
             .unwrap();
         assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
-        assert_eq!(face.loops.len(), 1);
+        assert_eq!(face.loops.stated().count(), 1);
         let loop_ = result
             .ir()
             .geometry
             .loops
             .iter()
-            .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+            .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
             .unwrap();
         assert_eq!(
             result
@@ -93,6 +93,40 @@ fn bounded_plane_requires_a_closed_boundary_curve() {
 }
 
 #[test]
+fn a_rejected_bounded_plane_face_gives_up_no_decoded_plane() {
+    // The surface pass decodes the plane carrier; the structure pass rejects
+    // its face.
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        110,
+        "110,0,0,0,1,0,0;",
+    ));
+
+    assert!(result
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D1")
+    }));
+    assert!(
+        !result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with("part entity \"D1\" ")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn bounded_plane_requires_the_boundary_curve_to_lie_in_the_plane() {
     let result = decode(bounded_plane_entity_file(
         GLOBAL_V5_0,
@@ -119,7 +153,7 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("piecewise-linear NURBS boundary face");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert!(
         !has_entity_projection_loss(&result),
         "{:#?}",
@@ -231,7 +265,7 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("composite line boundary face");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert!(
         !has_entity_projection_loss(&result),
         "{:#?}",

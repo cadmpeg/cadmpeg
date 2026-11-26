@@ -117,7 +117,7 @@ fn a_retained_reversed_edge_writes_its_curve_reversed() {
 
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect(name);
         let round_trip = F3dCodec

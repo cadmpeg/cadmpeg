@@ -3,16 +3,17 @@
 //! the two texts are equal. The stated wire forms of these types, and their
 //! schemas.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -161,7 +162,7 @@ fn frame() -> Construction<kinds::Frame> {
 
 fn native_options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:translate_surface"),
+        crate::codec_name!("sldprt:translate_surface"),
         crate::design::options::NativeOption::Bool(lit(true)),
     )])
 }
@@ -188,10 +189,10 @@ fn unstated_output() -> SolidOutput {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -202,7 +203,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.
@@ -1279,10 +1280,7 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
         mode: None,
         connectors: Vec::new(),
     };
-    assert_eq!(
-        serde_json::to_string(&empty).unwrap(),
-        r#"{"connectors":[]}"#
-    );
+    assert_eq!(json::to_string(&empty).unwrap(), r#"{"connectors":[]}"#);
     refuses::<Correspondence>("{}");
     refuses::<Correspondence>(r#"{"connectors": [], "mode": null}"#);
     refuses::<Correspondence>(r#"{"connectors": [], "colour": 1}"#);

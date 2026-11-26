@@ -6,6 +6,7 @@ use crate::records::feature::patterns::{
     DesignRectangularPatternDirection,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::features::patterns::{LinearPatternDirection, PatternKind};
 use cadmpeg_ir::features::FeatureId;
@@ -55,7 +56,7 @@ fn scope(
             directions,
             secondary_direction: None,
             distribution: Some(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "record_index": 15,
                     "symmetric": { "value": symmetric, "offset": 109 },
                     "symmetric_two": { "value": false, "offset": 110 },
@@ -126,11 +127,11 @@ fn linear(operation: FeatureOperation) -> (LinearRun, Option<LinearRun>) {
         picks.as_slice()[0].target,
         PickTarget::FeatureResult(FeatureId::mint("f3d:model:feature#seed").unwrap())
     );
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second,
         seed_only,
-    } = pattern.layout
+    }) = pattern.layout
     else {
         panic!("linear layout");
     };

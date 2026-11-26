@@ -11,6 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use serde_json::Value;
 
 use super::brep_agreement::stale_after_edit;
@@ -74,6 +75,9 @@ pub(crate) struct ReadBack {
     /// The definition each claimed feature must read back with, in wire
     /// form: its source definition with each edit as the claims judge it.
     definitions: HashMap<FeatureId, Value>,
+    /// The written part as the full decoder read it back; `None` when the
+    /// pass was judged without decoding it.
+    pub(crate) decoded: Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
 }
 
 /// The relative difference up to which two real numbers read back the same:
@@ -177,10 +181,11 @@ pub(crate) type Writer<'a> =
 /// write, is named.
 pub(crate) fn write_until_read_back(
     input: &CadIr,
+    digests: &CodecDigests,
     write: &mut Writer<'_>,
     round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
-    let mut judge = Judge::new(input, round_trip);
+    let mut judge = Judge::new(input, digests, round_trip);
     let mut withheld = Vec::<(FeatureId, String)>::new();
     let mut pass = write(&withheld)?;
     let mut read_back = judge.read(&pass);
@@ -309,33 +314,31 @@ fn held_back(features: &[FeatureId], changes: &[String]) -> String {
 /// passes of one write.
 struct Judge<'a> {
     input: &'a CadIr,
+    /// The codec digests the decode of `input` recorded.
+    digests: &'a CodecDigests,
     round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
     stated: Option<Document>,
-    /// The decoded source document, from the first pass that states one.
-    source: Option<Document>,
-    /// The differences of the source document written with no edit; `None`
-    /// until a pass needs them.
-    baseline: Option<Vec<Difference>>,
 }
 
 impl<'a> Judge<'a> {
-    fn new(input: &'a CadIr, round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>) -> Self {
+    fn new(
+        input: &'a CadIr,
+        digests: &'a CodecDigests,
+        round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    ) -> Self {
         Self {
             input,
+            digests,
             round_trip,
             stated: None,
-            source: None,
-            baseline: None,
         }
     }
 
     /// Judges one pass. A claim that asks to withhold its feature needs no
     /// decode: that part is written again.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
-        use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
         let claims = &output.claims;
-        let Some(source) = output.source.as_ref() else {
+        let Some(source) = output.source.as_deref() else {
             return ReadBack::default();
         };
         let withhold = claims
@@ -350,13 +353,19 @@ impl<'a> Judge<'a> {
                 ..ReadBack::default()
             };
         }
-        let decoded = match crate::SldprtCodec
-            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        {
+        let edit_free = !claims.features.iter().any(FeatureClaims::any_written);
+        let decoded = match source.read_back(bytes, edit_free) {
             Ok(decoded) => decoded,
             Err(error) => {
                 return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
             }
+        };
+        let Some(source_records) = source
+            .records
+            .get_or_init(|| Document::of(&source.decoded.ir))
+            .as_ref()
+        else {
+            return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
         let round_trip = self.round_trip;
         // The writer's own losses that name a record as omitted or as
@@ -372,34 +381,50 @@ impl<'a> Judge<'a> {
             })
             .map(|loss| loss.message.clone())
             .chain(
-                crate::resolved_features::write_prepare::omitted_driven_parameters(self.input)
-                    .iter()
-                    .map(|id| id.as_str().to_owned()),
+                crate::resolved_features::write_prepare::omitted_driven_parameters(
+                    self.input,
+                    self.digests,
+                )
+                .iter()
+                .map(|id| id.as_str().to_owned()),
             )
             .collect::<Vec<_>>();
-        self.judge(
+        let mut read_back = self.judge(
             claims,
             &output.written,
-            (&source.ir, &output.coverage.omitted(self.input), &naming),
+            (
+                (&source.decoded.ir, source_records),
+                &output.coverage.omitted(self.input),
+                &naming,
+            ),
             decoded.ir(),
             None,
-            &mut |stated| baseline_of(round_trip, source, stated),
-        )
+            &mut |stated| {
+                source
+                    .unedited
+                    .get_or_init(|| baseline_of(round_trip, &source.decoded, stated))
+                    .clone()
+            },
+        );
+        read_back.decoded = Some(decoded);
+        read_back
     }
 
     /// Judges `written`, the written part decoded, against the document the
     /// write must read back as. `unwritten` holds the edits the write states
-    /// it does not carry; `source` is the decoded source document, the
-    /// labels of the arenas the write omits, whose `arena.omitted` losses
-    /// name their records, and the messages of the writer's losses that
-    /// name a record as omitted or as dropping its edit. `settled` holds the
-    /// claimed features whose travel reads back as the stored solid settles
-    /// it; `None` finds them ([`settled_by_solid`]).
+    /// it does not carry; `source` is the decoded source document and its
+    /// records, the labels of the arenas the write omits, whose
+    /// `arena.omitted` losses name their records, and the messages of the
+    /// writer's losses that name a record as omitted or as dropping its edit.
+    /// `settled` holds the claimed features whose travel reads back as the
+    /// stored solid settles it; `None` finds them ([`settled_by_solid`]).
+    /// `baseline` gives the differences of the source written with no edit,
+    /// from the source records.
     fn judge(
         &mut self,
         claims: &ReadBackClaims,
         unwritten: &UnwrittenEdits,
-        (source, omitted, naming): (&CadIr, &[&str], &[String]),
+        ((source, source_records), omitted, naming): ((&CadIr, &Document), &[&str], &[String]),
         written: &CadIr,
         settled: Option<&HashSet<FeatureId>>,
         baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
@@ -407,14 +432,7 @@ impl<'a> Judge<'a> {
         if self.stated.is_none() {
             self.stated = Document::of(self.input);
         }
-        if self.source.is_none() {
-            self.source = Document::of(source);
-        }
-        let (Some(stated), Some(source_records), Some(read)) = (
-            self.stated.as_ref(),
-            self.source.as_ref(),
-            Document::of(written),
-        ) else {
+        let (Some(stated), Some(read)) = (self.stated.as_ref(), Document::of(written)) else {
             return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
         let expected = expected(self.input, stated, source_records, claims, unwritten);
@@ -507,10 +525,7 @@ impl<'a> Judge<'a> {
         if general.is_empty() {
             return read_back;
         }
-        if self.baseline.is_none() {
-            self.baseline = Some(baseline(source_records));
-        }
-        let base = self.baseline.as_deref().unwrap_or_default();
+        let base = baseline(source_records);
         let (defects, unexplained): (Vec<_>, Vec<_>) = general
             .into_iter()
             .partition(|difference| base.iter().any(|base| same_difference(base, difference)));
@@ -693,14 +708,10 @@ fn baseline_of(
     source: &Decoded,
     stated: &Document,
 ) -> Vec<Difference> {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
     let Some(bytes) = round_trip(source) else {
         return Vec::new();
     };
-    let Ok(decoded) =
-        crate::SldprtCodec.decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-    else {
+    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes) else {
         return Vec::new();
     };
     let Some(read) = Document::of(decoded.ir()) else {
@@ -1289,7 +1300,7 @@ impl ReadBack {
             let read = claim.read(written, pairing).and_then(|read| {
                 Some((
                     read,
-                    serde_json::to_value(read.evaluation.definition()).ok()?,
+                    cadmpeg_core::serde_erase::to_json_value(read.evaluation.definition()).ok()?,
                 ))
             });
             let Some((read, read_definition)) = read else {

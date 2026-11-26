@@ -4,10 +4,10 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::sketch::{
-    AngleOperands, Derivation, DerivationMode, DistanceAxis, EntityDefinition, EntityForm, Operand,
-    Sketch, SketchConstraint, SketchEntity, SketchPattern, SketchPatternAxis,
-    SketchPatternDirection, SketchPatternLayout, SketchPlane, SketchRelation, SketchSpace,
-    SpatialSketch,
+    AngleOperands, BlockInstance, Derivation, DerivationMode, DistanceAxis, EntityDefinition,
+    EntityForm, InterpolatedSpline, Operand, Sketch, SketchConstraint, SketchEntity, SketchOffset,
+    SketchPattern, SketchPatternAxis, SketchPatternDirection, SketchPatternLayout, SketchPlane,
+    SketchRelation, SketchSpace, SketchText, SpatialSketch, SplineHandle, TextContent,
 };
 
 use super::{Collect, Walk};
@@ -18,6 +18,19 @@ impl<S: SketchSpace> Walk for AngleOperands<S> {
             Self::Between(f0) => f0.walk(into),
             Self::Sweep(_) | Self::Points(_) => Ok(()),
         }
+    }
+}
+
+impl Walk for BlockInstance {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            block: _,
+            angle,
+            scale,
+        } = self;
+        angle.walk(into)?;
+        scale.walk(into)?;
+        Ok(())
     }
 }
 
@@ -43,11 +56,11 @@ impl Walk for DerivationMode {
                 direction.walk(into)?;
                 Ok(())
             }
+            Self::Offset { distance } => distance.walk(into),
             Self::Project
             | Self::Include
             | Self::Intersect
             | Self::Silhouette
-            | Self::Offset { distance: _ }
             | Self::Native(_) => Ok(()),
         }
     }
@@ -75,14 +88,24 @@ impl<S: SketchSpace> Walk for EntityForm<S> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Derived(f0) => f0.walk(into),
-            Self::Interpolated(_)
-            | Self::Conic { rho: _ }
-            | Self::Text(_)
-            | Self::BlockInstance(_)
-            | Self::Instanced { instance: _, of: _ }
-            | Self::Frame
-            | Self::Native(_) => Ok(()),
+            Self::Interpolated(f0) => f0.walk(into),
+            Self::Conic { rho } => rho.walk(into),
+            Self::Text(f0) => f0.walk(into),
+            Self::BlockInstance(f0) => f0.walk(into),
+            Self::Instanced { instance: _, of: _ } | Self::Frame | Self::Native(_) => Ok(()),
         }
+    }
+}
+
+impl<S: SketchSpace> Walk for InterpolatedSpline<S> {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            degree: _,
+            closed: _,
+            handles,
+        } = self;
+        handles.walk(into)?;
+        Ok(())
     }
 }
 
@@ -121,11 +144,12 @@ impl<S: SketchSpace> Walk for SketchConstraint<S> {
             sketch: _,
             relation,
             name: _,
-            active: _,
+            active,
             native_options,
             source_settings,
             native_ref: _,
         } = self;
+        active.walk(into)?;
         relation.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;
@@ -150,6 +174,14 @@ impl<S: SketchSpace> Walk for SketchEntity<S> {
         definition.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;
+        Ok(())
+    }
+}
+
+impl<S: SketchSpace> Walk for SketchOffset<S> {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self { pairs: _, distance } = self;
+        distance.walk(into)?;
         Ok(())
     }
 }
@@ -184,7 +216,7 @@ impl<S: SketchSpace> Walk for SketchPatternDirection<S> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Along { line, reversed: _ } => line.walk(into),
-            Self::Angle(_) => Ok(()),
+            Self::Angle(f0) => f0.walk(into),
         }
     }
 }
@@ -284,8 +316,9 @@ impl<S: SketchSpace> Walk for SketchRelation<S> {
                 b,
                 along,
                 doubled: _,
-                value: _,
+                value,
             } => {
+                value.walk(into)?;
                 a.walk(into)?;
                 b.walk(into)?;
                 along.walk(into)?;
@@ -294,28 +327,42 @@ impl<S: SketchSpace> Walk for SketchRelation<S> {
             Self::Angle {
                 between,
                 sector: _,
-                value: _,
-            } => between.walk(into),
+                value,
+            } => {
+                value.walk(into)?;
+                between.walk(into)
+            }
             Self::Pattern(f0) => f0.walk(into),
             Self::Pierce { point: _, curve } => curve.walk(into),
             Self::Native {
                 kind: _,
                 operands,
-                values: _,
-            } => operands.walk(into),
+                values,
+            } => {
+                values.walk(into)?;
+                operands.walk(into)
+            }
             Self::Radial {
                 of: _,
                 measure: _,
-                value: _,
-            }
-            | Self::Length { of: _, value: _ }
-            | Self::Offset(_)
-            | Self::Polygon(_)
+                value,
+            } => value.walk(into),
+            Self::Length { of: _, value } => value.walk(into),
+            Self::Offset(f0) => f0.walk(into),
+            Self::Weight { pole: _, value } => value.walk(into),
+            Self::Polygon(_)
             | Self::Slot(_)
-            | Self::Weight { pole: _, value: _ }
             | Self::FixedLength { of: _ }
             | Self::FixedAngle { of: _ } => Ok(()),
         }
+    }
+}
+
+impl<S: SketchSpace> Walk for SketchText<S> {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self { text, layout: _ } = self;
+        text.walk(into)?;
+        Ok(())
     }
 }
 
@@ -332,6 +379,44 @@ impl Walk for SpatialSketch {
         } = self;
         native_options.walk(into)?;
         source_settings.walk(into)?;
+        Ok(())
+    }
+}
+
+impl<S: SketchSpace> Walk for SplineHandle<S> {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            direction: _,
+            magnitude,
+            curvature: _,
+        } = self;
+        magnitude.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for TextContent {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            content: _,
+            font: _,
+            height,
+            width_factor,
+            angle,
+            horizontal: _,
+            vertical: _,
+            horizontal_box: _,
+            vertical_box: _,
+            tracking,
+            oblique,
+            filled,
+        } = self;
+        height.walk(into)?;
+        width_factor.walk(into)?;
+        angle.walk(into)?;
+        tracking.walk(into)?;
+        oblique.walk(into)?;
+        filled.walk(into)?;
         Ok(())
     }
 }

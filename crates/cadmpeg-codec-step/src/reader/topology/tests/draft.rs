@@ -1,6 +1,6 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -336,7 +336,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
 #[test]
 fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = crate::StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("data/tp09_unsampled_divergence.p21")),
@@ -363,10 +363,11 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
         admissions[0].severity,
         cadmpeg_ir::report::Severity::Warning
     );
-    assert_eq!(
-        admissions[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
-    );
+    assert!(!cadmpeg_ir::report::strictness::Strictness {
+        pinned: true,
+        ..Default::default()
+    }
+    .refuses(admissions[0], false));
 }
 
 /// The document reports one admission warning for all admitted relations. The
@@ -739,12 +740,7 @@ fn shared_surface_carrier_is_staged_once() {
         curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
-        region: Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: Vec::new(),
-            native_ref: None,
-        },
+        region: Region::new(region_id.clone(), body_id.clone(), Vec::new()),
         body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
@@ -753,6 +749,7 @@ fn shared_surface_carrier_is_staged_once() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     })
     .expect("duplicate references to one source surface must stage");

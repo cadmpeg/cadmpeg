@@ -1576,7 +1576,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             0.25
@@ -1939,6 +1939,8 @@ mod numerical_followup;
 mod construction_parameters;
 
 mod analytic_ranges;
+
+mod analytic_points;
 
 mod surface_inversion;
 

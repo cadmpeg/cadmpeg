@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body boxes from the box pass, against the body rows of a full pass.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, FaceLoops, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -20,7 +21,7 @@ use crate::test_support::builders::{
 use crate::value::{BoxKind, Quantity, Reading};
 
 fn json<T: serde::Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).expect("a quantity serializes")
+    json::to_value(value).expect("a quantity serializes")
 }
 
 /// The agreement of each body of `ir`.
@@ -151,7 +152,7 @@ fn the_box_pass_gives_no_box_for_a_face_with_a_missing_boundary_record() {
     let squares = side_by_side_squares();
     let second = squares.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .nth(1)
         .expect("two loops")
         .clone();
@@ -207,7 +208,7 @@ fn the_box_pass_gives_no_box_for_a_ring_that_leaves_out_a_coedge() {
     let mut ir = cylinder_solid(5.0, 10.0);
     let side = ir.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("one loop")
         .clone();
@@ -290,7 +291,11 @@ fn the_box_pass_gives_no_box_for_a_cylinder_face_that_lists_one_of_its_two_loops
     );
     let band = builder.finish(BodyKind::Sheet);
     assert_eq!(agreement_of(&band), [Agreement::Equal]);
-    let loops = band.geometry.faces[0].loops.to_vec();
+    let loops = band.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
     for kept in &loops {
         let message = no_box_in_either_pass(&listing(&band, vec![kept.clone()]), kept.as_str());
         assert!(message.ends_with("boundary.nesting-invalid"), "{message}");
@@ -327,7 +332,12 @@ fn the_box_pass_gives_no_box_for_a_plane_face_that_leaves_out_its_outer_loop() {
     builder.face(&surface, Sense::Forward, &rings, true);
     let plate = builder.finish(BodyKind::Sheet);
     assert_eq!(agreement_of(&plate), [Agreement::Equal]);
-    let holes = plate.geometry.faces[0].loops.to_vec()[1..].to_vec();
+    let holes = plate.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>()[1..]
+        .to_vec();
     let message = no_box_in_either_pass(&listing(&plate, holes), "holes only");
     assert!(message.ends_with("boundary.nesting-invalid"), "{message}");
 }
@@ -358,7 +368,11 @@ fn the_box_pass_gives_no_box_for_a_face_bounded_by_a_vertex_loop() {
 #[test]
 fn the_box_pass_bounds_a_nurbs_face_without_a_region_by_its_control_hull() {
     let mut ir = nurbs_rectangle(None);
-    let lost = ir.geometry.faces[0].loops.to_vec();
+    let lost = ir.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
     ir.geometry
         .loops
         .retain(|face_loop| !lost.contains(&face_loop.id));

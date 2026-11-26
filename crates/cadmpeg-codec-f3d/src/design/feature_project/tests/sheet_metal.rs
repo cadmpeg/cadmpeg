@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::sheet_metal::SheetMetalEdgeFlangeConstruction;
 
 use crate::records::topology::{
@@ -1127,7 +1128,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
             })
             .collect();
     }
-    let source = serde_json::to_value(&scope).unwrap();
+    let source = json::to_value(&scope).unwrap();
     let conditions = crate::test_support::with_decode_context(|_ctx| {
         crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(&scope)
     });
@@ -1149,7 +1150,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
             },
         ]
     );
-    assert_eq!(serde_json::to_value(&scope).unwrap(), source);
+    assert_eq!(json::to_value(&scope).unwrap(), source);
     for (boundary, (_, scale)) in scope.surface_patch_boundaries().iter().zip(raw) {
         assert_eq!(boundary.scale.get().to_bits(), scale.to_bits());
     }
@@ -1312,7 +1313,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+        })) if continuity.as_ref().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
                     cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
@@ -1347,7 +1348,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+        })) if continuity.as_ref().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
                     cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},

@@ -22,7 +22,13 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [],
+      "bodies": [
+        {
+          "id": "rhino:object:body#record-000000-offset-177",
+          "kind": "sheet",
+          "visible": true
+        }
+      ],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -32,8 +38,27 @@
       "points": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "regions": [],
-      "shells": [],
+      "regions": [
+        {
+          "body": "rhino:object:body#record-000000-offset-177",
+          "id": "rhino:object:region#record-000000-offset-177",
+          "shells": [
+            "rhino:object:shell#record-000000-offset-177"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "rhino:object:shell#record-000000-offset-177",
+          "members": [
+            {
+              "id": "rhino:object:subd#record-000000-offset-177",
+              "kind": "subd"
+            }
+          ],
+          "region": "rhino:object:region#record-000000-offset-177"
+        }
+      ],
       "subds": [
         {
           "cage": {
@@ -178,8 +203,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -191,20 +215,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -213,30 +230,23 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
+          "bodies": [
+            "rhino:object:body#record-000000-offset-177"
+          ],
           "bom_properties": {},
           "id": "rhino:model:product-definition#root",
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -288,7 +298,7 @@
           {
             "id": "rhino:object:record#000000",
             "links": [
-              "rhino:object:subd#record-000000-offset-177"
+              "rhino:object:body#record-000000-offset-177"
             ]
           }
         ],
@@ -389,8 +399,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa77bfe90",
@@ -414,8 +423,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "f09ba4d9-455b-42c3-ba3b-e6ccacef853b: SubD anonymous CRC mismatch at offset 258",
@@ -435,9 +443,27 @@
   },
   "source_fidelity": {
     "annotations": {
-      "exactness": {},
+      "exactness": {
+        "rhino:object:body#record-000000-offset-177": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "rhino:object:region#record-000000-offset-177": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "rhino:object:shell#record-000000-offset-177": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        }
+      },
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "0533f2fe0c1055e12a0b8792f7707a4fab5547164ebe40161487ab0c6bdc7013",
     "file_digests": {},
     "retained_records": {

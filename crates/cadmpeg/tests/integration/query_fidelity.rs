@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 
 use predicates::prelude::{predicate, PredicateBooleanExt};
@@ -28,6 +29,8 @@ const FIDELITY_SIDECAR: &str = r#"{
   "fidelity": {
     "decode_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "file_digests": {},
+    "content_digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    "codec_digests": {"sldprt_native_history_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
     "unrepresented": ["model", "design"],
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
@@ -225,7 +228,7 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         .output()
         .unwrap();
     assert!(json.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["payload"]["annotations"]["provenance"], 1);
     assert_eq!(
@@ -236,13 +239,24 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         value["payload"]["decode_digest"],
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
-    assert_eq!(value["payload"]["file_digests"], serde_json::json!({}));
+    assert_eq!(value["payload"]["file_digests"], cadmpeg_core::json!({}));
+    assert_eq!(
+        value["payload"]["content_digest"],
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        value["payload"]["codec_digests"],
+        cadmpeg_core::json!({
+            "sldprt_native_history_sha256":
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        })
+    );
     assert_eq!(
         value["payload"]["unrepresented"],
-        serde_json::json!(["model", "design"])
+        cadmpeg_core::json!(["model", "design"])
     );
     assert_eq!(
         value["payload"]["retained_records"][1]["untyped"],
-        serde_json::json!(["model"])
+        cadmpeg_core::json!(["model"])
     );
 }

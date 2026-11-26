@@ -103,21 +103,22 @@ impl TryFrom<Wire> for SegmentStreamLink {
 mod tests {
     use super::{Wire, LINK_INTO_WIRE_COUNT};
     use crate::native::segments::{SegmentStreamLink, STREAM_LINK_CLONE_COUNT};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn row_identity_round_trips_and_rejects_noncanonical_strings() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "link", "row": "nx:segment-index:row#2", "slot": "type_code",
             "stream_ordinal": 0, "stream_kind": "partition", "wrapper_byte_len": 8,
             "source_offset": 0
         });
-        let link: SegmentStreamLink = serde_json::from_value(wire.clone()).unwrap();
+        let link: SegmentStreamLink = json::from_value(wire.clone()).unwrap();
         assert_eq!(link.row, 2);
         assert_eq!(
-            serde_json::to_vec(&link).unwrap(),
-            serde_json::to_vec(&Wire::from(link.clone())).unwrap()
+            json::to_vec(&link).unwrap(),
+            json::to_vec(&Wire::from(link.clone())).unwrap()
         );
-        assert_eq!(serde_json::to_value(link).unwrap(), wire);
+        assert_eq!(json::to_value(link).unwrap(), wire);
         for row in [
             "",
             "other#2",
@@ -126,7 +127,7 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid["row"] = row.into();
-            assert!(serde_json::from_value::<SegmentStreamLink>(invalid)
+            assert!(json::from_value::<SegmentStreamLink>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("row"));
@@ -135,12 +136,12 @@ mod tests {
 
     #[test]
     fn segment_stream_link_retained_limit_refuses_before_clone_or_row_format() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:segment-stream:link#1", "row": "nx:segment-index:row#2",
             "slot": "type_code", "stream_ordinal": 0, "stream_kind": "partition",
             "wrapper_byte_len": 8, "source_offset": 0
         });
-        let link: SegmentStreamLink = serde_json::from_value(wire.clone()).unwrap();
+        let link: SegmentStreamLink = json::from_value(wire.clone()).unwrap();
         STREAM_LINK_CLONE_COUNT.with(|count| count.set(0));
         LINK_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(&link, wire);

@@ -4,7 +4,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -663,7 +662,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 #[test]
 fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = IgesCodec
         .decode(
@@ -785,7 +784,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert_eq!(result.ir().geometry.pcurves.len(), 1);
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().geometry.pcurves[0].geometry

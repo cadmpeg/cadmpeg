@@ -170,26 +170,14 @@ impl<R> Walk for Neutral<R> {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
         let mut stack: Vec<&mut Node<R>> = vec![&mut self.0];
         while let Some(node) = stack.pop() {
-            match node {
-                Node::Measure(measure) => match &mut measure.of {
-                    MeasureTarget::Selection(selection) => selection.walk(into)?,
-                    MeasureTarget::Model => {}
-                },
-                Node::Unary { operand, .. } => stack.push(operand),
-                Node::Binary { left, right, .. } => {
-                    stack.push(right);
-                    stack.push(left);
+            if let Node::Measure(measure) = &mut *node {
+                if let MeasureTarget::Selection(selection) = &mut measure.of {
+                    selection.walk(into)?;
                 }
-                Node::Call { args, .. } => stack.extend(args.iter_mut().rev()),
-                Node::If(branches) => stack.extend(branches.iter_mut().rev()),
-                Node::Number { .. }
-                | Node::Constant(_)
-                | Node::Boolean(_)
-                | Node::Text(_)
-                | Node::Reference(_)
-                | Node::LawParameter
-                | Node::Bend(_) => {}
+                continue;
             }
+            let operands: Vec<_> = node.operands_mut().collect();
+            stack.extend(operands.into_iter().rev());
         }
         Ok(())
     }

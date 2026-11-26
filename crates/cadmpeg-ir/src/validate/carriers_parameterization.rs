@@ -40,9 +40,38 @@ fn collect_law_curves<'a, R, V, P>(
     Ok(())
 }
 
+/// The surfaces, curves, pcurves, and points of `ir`'s geometry that no
+/// record reaches, as [`check_carrier_reachability`] reaches them. A
+/// fragment states none, since its carriers may be reached from outside it.
+pub(crate) fn unreached_carriers(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    if ir.fragment {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let mut findings = Vec::new();
+    check_carrier_reachability(
+        ctx,
+        crate::native::view::NativeView::new(ir, None),
+        &ir.geometry,
+        &mut findings,
+    )?;
+    let orphan = crate::rule_name!("carriers_parameterization.orphan-carrier");
+    Ok(findings
+        .into_iter()
+        .filter(|finding| finding.rule == orphan)
+        .filter_map(|finding| finding.entity)
+        .collect())
+}
+
+/// Every surface, curve, pcurve, and point carrier of `geometry` is reached:
+/// by a record of `geometry`, or by an appearance binding, a presentation
+/// layer item, or a native link of `view`'s document.
 pub(super) fn check_carrier_reachability(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     view: crate::native::view::NativeView<'_>,
+    geometry: &crate::document::Topology,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ir = view.ir;
@@ -62,15 +91,15 @@ pub(super) fn check_carrier_reachability(
     let mut curves = BorrowedIdentities::new();
     let mut pcurves = BorrowedIdentities::new();
     let mut points = BorrowedIdentities::new();
-    for face in &ir.geometry.faces {
+    for face in &geometry.faces {
         surfaces.insert_unique(face.surface.as_str(), ());
     }
-    for edge in &ir.geometry.edges {
+    for edge in &geometry.edges {
         if let Some(curve) = edge.curve() {
             curves.insert_unique(curve.as_str(), ());
         }
     }
-    for coedge in &ir.geometry.coedges {
+    for coedge in &geometry.coedges {
         if let Some(use_) = &coedge.use_curve {
             curves.insert_unique(use_.curve.as_str(), ());
         }
@@ -78,22 +107,22 @@ pub(super) fn check_carrier_reachability(
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.geometry.surfaces {
+    for surface in &geometry.surfaces {
         if surface.source_object.is_some() {
             surfaces.insert_unique(surface.id.as_str(), ());
         }
     }
-    for curve in &ir.geometry.curves {
+    for curve in &geometry.curves {
         if curve.source_object.is_some() {
             curves.insert_unique(curve.id.as_str(), ());
         }
     }
-    for loop_ in &ir.geometry.loops {
+    for loop_ in &geometry.loops {
         for use_ in loop_.vertex_pcurves() {
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.geometry.procedural_surfaces {
+    for surface in &geometry.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
         } = surface.definition()
@@ -105,23 +134,23 @@ pub(super) fn check_carrier_reachability(
             );
         }
     }
-    for vertex in &ir.geometry.vertices {
+    for vertex in &geometry.vertices {
         points.insert_unique(vertex.point.as_str(), ());
     }
-    for point in &ir.geometry.points {
+    for point in &geometry.points {
         if point.source_object.is_some() {
             points.insert_unique(point.id.as_str(), ());
         }
     }
     let surface_owners = BorrowedIdentities::build(|add| {
-        for surface in &ir.geometry.surfaces {
+        for surface in &geometry.surfaces {
             if let Some(procedural) = surface.geometry.procedural_construction() {
                 add(procedural.as_str(), &surface.id);
             }
         }
     });
     let curve_owners = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
+        for curve in &geometry.curves {
             if let Some(procedural) = curve.geometry.procedural_construction() {
                 add(procedural.as_str(), &curve.id);
             }
@@ -162,7 +191,7 @@ pub(super) fn check_carrier_reachability(
         }
     }
 
-    for procedural in &ir.geometry.procedural_surfaces {
+    for procedural in &geometry.procedural_surfaces {
         if let Some(surface) = surface_owners.get_unique(procedural.id.as_str()).copied() {
             surfaces.insert_unique(surface.as_str(), ());
         }
@@ -659,7 +688,7 @@ pub(super) fn check_carrier_reachability(
             }
         }
     }
-    for procedural in &ir.geometry.procedural_curves {
+    for procedural in &geometry.procedural_curves {
         if let Some(curve) = curve_owners.get_unique(procedural.id.as_str()).copied() {
             curves.insert_unique(curve.as_str(), ());
         }
@@ -868,7 +897,7 @@ pub(super) fn check_carrier_reachability(
         curves.insert_unique(link.as_ref(), ());
     }
     let composite_segments = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
+        for curve in &geometry.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
@@ -894,7 +923,7 @@ pub(super) fn check_carrier_reachability(
     }
     macro_rules! check_orphans {
         ($arena:ident, $reachable:ident, $kind:literal) => {
-            for entity in &ir.geometry.$arena {
+            for entity in &geometry.$arena {
                 let id = entity.id.as_str();
                 if !$reachable.contains(id) {
                     super::record_finding(
@@ -902,7 +931,11 @@ pub(super) fn check_carrier_reachability(
                         Check::CarrierReachability,
                         Severity::Error,
                         Some(id),
-                        format_args!("orphan {} carrier", $kind),
+                        crate::rule!(
+                            "carriers_parameterization.orphan-carrier",
+                            "orphan {} carrier",
+                            $kind
+                        ),
                     );
                 }
             }
@@ -957,7 +990,8 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(edge.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "carriers_parameterization.edge-parameter-range-outside-local-domain",
                         "edge parameter range [{start}, {end}] is outside the local domain \
                          [0, {span}] of its subset curve"
                     ),
@@ -1006,7 +1040,10 @@ pub(super) fn check_parameter_domains(
                 Check::ParameterDomain,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!("edge parameter range is outside its canonical carrier domain"),
+                crate::rule!(
+                    "carriers_parameterization.edge-parameter-range-outside-canonical-carrier",
+                    "edge parameter range is outside its canonical carrier domain"
+                ),
             );
         }
     }
@@ -1024,7 +1061,10 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge use-curve names no curve carrier"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-use-curve-names-no-curve",
+                        "coedge use-curve names no curve carrier"
+                    ),
                 ),
                 Some(curve)
                     if !curve_range_in_domain(
@@ -1039,7 +1079,8 @@ pub(super) fn check_parameter_domains(
                         Check::ParameterDomain,
                         Severity::Error,
                         Some(coedge.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "carriers_parameterization.coedge-use-curve-range-outside-carrier",
                             "coedge use-curve range [{start}, {end}] is outside its carrier domain"
                         ),
                     );
@@ -1081,7 +1122,10 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge pcurve range is outside its carrier domain"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-pcurve-range-outside-carrier-domain",
+                        "coedge pcurve range is outside its carrier domain"
+                    ),
                 );
             }
         }

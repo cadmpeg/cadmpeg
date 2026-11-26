@@ -7,7 +7,6 @@ use serde_json::Value;
 use super::picks::{self, Class};
 use super::{error, Site};
 use crate::design::container::{Container, OrderedKind};
-use crate::design::dimension::Dimension;
 use crate::design::names::NameKind;
 use crate::design::ops::shared::{Limit, Span};
 use crate::design::options::{
@@ -19,8 +18,7 @@ use crate::scalar::{Angle, Length};
 
 use super::super::records::{DesignRecords, MemberKey};
 
-/// `native_options` and `source_settings` keys have the form `codec:name`,
-/// and no key is in both maps of one record.
+/// No key is in both `native_options` and `source_settings` of one record.
 pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
     let mut pending = vec![(wire, "design")];
     while let Some((value, owner)) = pending.pop() {
@@ -35,20 +33,11 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
                 };
                 let native = keys("native_options");
                 let settings = keys("source_settings");
-                for key in native.iter().chain(&settings) {
-                    if !codec_key(key) {
-                        error(
-                            findings,
-                            owner,
-                            format_args!("native key {key:?} does not have the form codec:name"),
-                        );
-                    }
-                }
                 for key in native.iter().filter(|key| settings.contains(key)) {
                     error(
                         findings,
                         owner,
-                        format_args!(
+                        crate::rule!("design.key-both-native-options-source-settings", 
                             "key {key:?} is in both native_options and source_settings of one record"
                         ),
                     );
@@ -59,12 +48,6 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
             _ => {}
         }
     }
-}
-
-fn codec_key(key: &str) -> bool {
-    key.split_once(':').is_some_and(|(codec, name)| {
-        !codec.is_empty() && !name.trim().is_empty() && !codec.contains(char::is_whitespace)
-    })
 }
 
 /// A profile holds at least one pick or is `Unread`, and its picks target
@@ -79,7 +62,10 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a profile holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-profile-holds-least",
+                "{field} holds no pick; a profile holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -99,7 +85,10 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no profile is made of"),
+            crate::rule!(
+                "design.picks-no-profile-made",
+                "{field} picks {class}, which no profile is made of"
+            ),
         );
     }
 }
@@ -111,7 +100,10 @@ pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a path holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-path-holds-least",
+                "{field} holds no pick; a path holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -128,7 +120,10 @@ pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no path is made of"),
+            crate::rule!(
+                "design.picks-no-path-made",
+                "{field} picks {class}, which no path is made of"
+            ),
         );
     }
 }
@@ -198,7 +193,11 @@ pub(super) fn check_boolean(
         BooleanOp::Assemble | BooleanOp::Compound | BooleanOp::UnionTrim => error(
             findings,
             site.entity,
-            format_args!("Boolean op {} occurs only as a Combine's op", op_name(op)),
+            crate::rule!(
+                "design.boolean-op-occurs-only-combine-op",
+                "Boolean op {} occurs only as a Combine's op",
+                op_name(op)
+            ),
         ),
         BooleanOp::Sew => {
             let sheet = match at {
@@ -210,7 +209,10 @@ pub(super) fn check_boolean(
                 error(
                     findings,
                     site.entity,
-                    format_args!("Sew occurs only in an output whose result is a sheet"),
+                    crate::rule!(
+                        "design.sew-occurs-only-output-result-sheet",
+                        "Sew occurs only in an output whose result is a sheet"
+                    ),
                 );
             }
         }
@@ -232,7 +234,10 @@ pub(super) fn check_targets(
             error(
                 findings,
                 site.entity,
-                format_args!("Targets::Selected picks {class}; its picks resolve to bodies"),
+                crate::rule!(
+                    "design.targets-selected-picks-picks-resolve-bodies",
+                    "Targets::Selected picks {class}; its picks resolve to bodies"
+                ),
             );
         }
     }
@@ -240,7 +245,10 @@ pub(super) fn check_targets(
         error(
             findings,
             site.entity,
-            format_args!("a member of a Body container states targets; its target is its body"),
+            crate::rule!(
+                "design.member-body-container-states-targets-target",
+                "a member of a Body container states targets; its target is its body"
+            ),
         );
     }
 }
@@ -284,15 +292,10 @@ pub(super) fn check_length_span(
             check_limit(site, field, start, false, findings);
             check_limit(site, field, end, false, findings);
         }
-        Span::Symmetric { amount, .. } => {
-            if matches!(amount, Dimension::Literal(value) if value.get() == 0.0) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("{field} is a symmetric span of zero"),
-                );
-            }
-        }
+        Span::Symmetric { amount, .. } => site.bound(findings, |values| {
+            (values.get(amount)?.get() == 0.0)
+                .then(|| format!("{field} is a symmetric span of zero"))
+        }),
     }
 }
 
@@ -311,23 +314,16 @@ pub(super) fn check_angle_span(
             check_limit(site, field, end, true, findings);
         }
         Span::Symmetric { amount, measure } => {
-            let Dimension::Literal(value) = amount else {
-                return;
-            };
-            let value = value.get();
             let most = match measure {
                 Some(SymmetricMeasure::PerSide) => std::f64::consts::PI,
                 Some(SymmetricMeasure::Total) | None => std::f64::consts::TAU,
             };
-            if value == 0.0 || value.abs() > most {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!(
-                        "{field} is a symmetric angular span of {value}; a literal amount is nonzero and at most π per side or 2π in total"
-                    ),
-                );
-            }
+            site.bound(findings, |values| {
+                let value = values.get(amount)?.get();
+                (value == 0.0 || value.abs() > most).then(|| {
+                    format!("{field} is a symmetric angular span of {value}; an amount is nonzero and at most π per side or 2π in total")
+                })
+            });
         }
     }
 }
@@ -343,7 +339,10 @@ fn check_between<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} is a Span::Between with AtOrigin at both start and end"),
+            crate::rule!(
+                "design.span-between-atorigin-both-start-end",
+                "{field} is a Span::Between with AtOrigin at both start and end"
+            ),
         );
     }
 }
@@ -377,7 +376,8 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.togeometry-target-picks-picks-faces-surfaces",
                 "{field} ToGeometry.target picks {class}; it picks faces, surfaces, or bodies"
             ),
         );
@@ -386,37 +386,39 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} ToGeometry.far occurs only where target picks bodies"),
+            crate::rule!(
+                "design.togeometry-far-occurs-only-where-target",
+                "{field} ToGeometry.far occurs only where target picks bodies"
+            ),
         );
     }
     match offset {
         Some(LimitOffset::Angle(_)) if !angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Angle occurs only in an angular limit"),
+            crate::rule!(
+                "design.limitoffset-angle-occurs-only-angular-limit",
+                "{field} LimitOffset::Angle occurs only in an angular limit"
+            ),
         ),
         Some(LimitOffset::Translated(_)) if angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Translated occurs only in a length limit"),
+            crate::rule!(
+                "design.limitoffset-translated-occurs-only-length-limit",
+                "{field} LimitOffset::Translated occurs only in a length limit"
+            ),
         ),
         _ => {}
     }
 }
 
-/// Two literal `Offsets` sum to a positive wall.
+/// Two `Offsets` sum to a positive wall.
 pub(super) fn check_thickness(site: Site<'_>, thickness: &Thickness, findings: &mut Vec<Finding>) {
-    if let Thickness::Offsets {
-        outside: Dimension::Literal(outside),
-        inside: Dimension::Literal(inside),
-    } = thickness
-    {
-        if outside.get() + inside.get() <= 0.0 {
-            error(
-                findings,
-                site.entity,
-                format_args!("Thickness::Offsets has outside + inside not above zero"),
-            );
-        }
+    if let Thickness::Offsets { outside, inside } = thickness {
+        site.bound(findings, |values| {
+            (values.get(outside)?.get() + values.get(inside)?.get() <= 0.0)
+                .then(|| "Thickness::Offsets has outside + inside not above zero".to_owned())
+        });
     }
 }

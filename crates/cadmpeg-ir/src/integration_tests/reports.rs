@@ -6,6 +6,7 @@ use crate::report::{
     Severity,
 };
 use crate::SourceProvenance;
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 #[test]
@@ -19,7 +20,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         SourceProvenance::root("rhino", 42)
             .with_tag("OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020"),
     );
-    let json = serde_json::to_value(&note).unwrap();
+    let json = json::to_value(&note).unwrap();
     assert_eq!(json["provenance"]["format"], "rhino");
     assert!(json["provenance"].get("stream").is_none());
     assert_eq!(json["provenance"]["offset"], 42);
@@ -33,14 +34,14 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 #[test]
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
-        "rhino",
+        crate::codec_id!("rhino"),
         DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
         TransferLedger::default(),
     );
-    let rendered = serde_json::to_string(&decode).unwrap();
+    let rendered = json::to_string(&decode).unwrap();
     assert!(
         rendered.contains("\"identity\":{\"kind\":\"unclassified\",\"format\":\"rhino\"}"),
         "{rendered}"
@@ -61,7 +62,7 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         Vec::new(),
         Vec::new(),
     );
-    let rendered = serde_json::to_string(&export).unwrap();
+    let rendered = json::to_string(&export).unwrap();
     assert!(
         rendered.contains("\"identity\":{\"kind\":\"cadir\"}"),
         "{rendered}"

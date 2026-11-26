@@ -54,7 +54,8 @@ fn expect(suppressed: &BTreeMap<String, bool>, expected: &[(&str, bool)]) {
 }
 
 /// The rolled-back Combine and Fillet store the no-result flag and no
-/// suppression state byte: they are active with no current result.
+/// suppression state byte: f3d.md §3.1 states them active with no current
+/// result.
 #[test]
 fn rolled_back_features_after_an_edit_are_active() {
     let (suppressed, marker, codes) = timeline_state(include_bytes!(
@@ -63,7 +64,7 @@ fn rolled_back_features_after_an_edit_are_active() {
     expect(&suppressed, &[("Combine 1", false), ("Fillet 1", false)]);
     assert_eq!(marker.as_deref(), Some("Combine 1"));
     assert!(
-        codes
+        !codes
             .iter()
             .any(|code| code == "feature.no-result-active-assumed"),
         "{codes:?}"

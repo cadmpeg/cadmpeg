@@ -1221,7 +1221,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
 pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
-        for shell in &region.shells {
+        for shell in region.stated_shells() {
             shell_bodies.insert(shell, &region.body);
         }
     }
@@ -1244,8 +1244,11 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         face_bodies.insert(&face.id, body);
     }
     // A single-sided face without loops covers a whole closed surface (a
-    // full sphere or torus), so it bounds a volume by itself. A body bounded
-    // only by such faces is a solid; any other face needs its edges closed.
+    // full sphere or torus), so it bounds a volume by itself. On a plane,
+    // cylinder, or cone it is stated partial, and its sidedness is still the
+    // source's only statement about the volume: it has no edge to close. A
+    // body bounded only by such faces is a solid; any other face needs its
+    // edges closed.
     let double_sided = out
         .face_sidedness
         .iter()
@@ -1258,10 +1261,11 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
-        if !face.loops.is_empty() || double_sided.contains(&face.id) {
+        let loopless = face.loops.stated().next().is_none();
+        if !loopless || double_sided.contains(&face.id) {
             body_has_bounded_faces.insert(body);
         }
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             loop_bodies.insert(loop_id, body);
         }
     }

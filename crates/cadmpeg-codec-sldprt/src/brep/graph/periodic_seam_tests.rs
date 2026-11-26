@@ -201,7 +201,8 @@ fn synthesize_seams(brep: &mut Brep, derived: [bool; 2]) {
     for (index, derived) in derived.into_iter().enumerate() {
         if derived {
             annotations.exactness(
-                format!("test:seam:point#circle-{index}"),
+                cadmpeg_ir::ids::Identity::new(format!("test:seam:point#circle-{index}"))
+                    .expect("identity grammar"),
                 Exactness::Derived,
             );
         }
@@ -260,7 +261,7 @@ fn seam_runs_through_a_circle_vertex_another_edge_ends_at() {
     assert!(line.origin().get().distance(tangent) <= 1.0e-12);
     let direction = *line.direction().as_raw();
     assert!((direction.z - 1.0).abs() <= 1.0e-12);
-    assert_eq!(brep.faces[0].loops.len(), 1);
+    assert_eq!(brep.faces[0].loops.stated().count(), 1);
 }
 
 #[test]
@@ -281,7 +282,7 @@ fn seam_moves_derived_circle_vertices_to_the_reference_ruling() {
         Point3::new(-5.0, 0.0, 10.0)
     );
     assert!(seam_edge(&brep).is_some());
-    assert_eq!(brep.faces[0].loops.len(), 1);
+    assert_eq!(brep.faces[0].loops.stated().count(), 1);
 }
 
 #[test]
@@ -294,7 +295,7 @@ fn shared_circle_vertices_on_different_rulings_get_no_seam() {
     assert_eq!(circle_vertex_position(&brep, 0), vertices[0]);
     assert_eq!(circle_vertex_position(&brep, 1), vertices[1]);
     assert!(seam_edge(&brep).is_none());
-    assert_eq!(brep.faces[0].loops.len(), 2);
+    assert_eq!(brep.faces[0].loops.stated().count(), 2);
 }
 
 #[test]
@@ -317,7 +318,7 @@ fn seam_runs_through_a_stored_circle_vertex_no_other_edge_ends_at() {
     };
     assert!(line.origin().get().distance(stored) <= 1.0e-12);
     assert!((line.direction().as_raw().z - 1.0).abs() <= 1.0e-12);
-    assert_eq!(brep.faces[0].loops.len(), 1);
+    assert_eq!(brep.faces[0].loops.stated().count(), 1);
 }
 
 #[test]
@@ -330,7 +331,7 @@ fn stored_circle_vertices_on_different_rulings_get_no_seam() {
     assert_eq!(circle_vertex_position(&brep, 0), vertices[0]);
     assert_eq!(circle_vertex_position(&brep, 1), vertices[1]);
     assert!(seam_edge(&brep).is_none());
-    assert_eq!(brep.faces[0].loops.len(), 2);
+    assert_eq!(brep.faces[0].loops.stated().count(), 2);
 }
 
 #[test]
@@ -346,5 +347,5 @@ fn a_stored_circle_vertex_within_resolution_of_the_reference_point_keeps_its_pos
         Point3::new(-5.0, 0.0, 10.0)
     );
     assert!(seam_edge(&brep).is_some());
-    assert_eq!(brep.faces[0].loops.len(), 1);
+    assert_eq!(brep.faces[0].loops.stated().count(), 1);
 }

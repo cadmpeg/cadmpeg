@@ -725,6 +725,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
     ir.geometry.bodies.push(Body {
@@ -735,6 +736,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),

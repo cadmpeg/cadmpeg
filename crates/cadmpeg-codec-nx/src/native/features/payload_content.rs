@@ -213,6 +213,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FeaturePayloadBlock, FeaturePayloadContent};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn payload_content_columns_stream_once_with_native_retained_limit() {
@@ -230,7 +231,7 @@ mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": record.id,
                 "content": serde_json::from_str::<serde_json::Value>(TWO_BLOCKS).unwrap(),
             }),
@@ -244,10 +245,10 @@ mod tests {
         let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
         assert_eq!(content.byte_len(), 8);
-        assert_eq!(serde_json::to_string(&content).unwrap(), TWO_BLOCKS);
+        assert_eq!(json::to_string(&content).unwrap(), TWO_BLOCKS);
         let variable: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
-        assert_eq!(serde_json::to_string(&variable).unwrap(), TWO_BLOCKS);
+        assert_eq!(json::to_string(&variable).unwrap(), TWO_BLOCKS);
     }
 
     #[test]

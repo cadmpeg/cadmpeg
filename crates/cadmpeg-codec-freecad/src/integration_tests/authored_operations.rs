@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::patterns::PatternSeed;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
 use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
@@ -22,9 +23,17 @@ fn shape_occurrences(
     let properties = namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .unwrap();
-    let payloads = namespace
+    // The payloads of the current model: the records of every other payload
+    // left the geometry for a state or the native record (§5.4).
+    let mut payloads = namespace
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .unwrap();
+    payloads.retain(|payload| {
+        let key = crate::native::id_key(&payload.id);
+        decoded.ir().geometry.bodies.iter().any(|body| {
+            crate::native::payload_of(body.id.as_str(), |candidate| candidate == key).is_some()
+        })
+    });
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
@@ -55,7 +64,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             .find(|f| f.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
     };
-    let operation = |name: &str| serde_json::to_value(operation_definition(feature(name))).unwrap();
+    let operation = |name: &str| json::to_value(operation_definition(feature(name))).unwrap();
     let native_properties = decoded
         .ir()
         .native
@@ -334,11 +343,6 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     let draft_base = native_property("Draft", "Base");
     let draft_base_id = crate::native::native_id("object", "DraftBase");
     assert_link(draft_base, draft_base_id.as_str(), &["Face1", "Face2"]);
-    let draft_shape = native_property("DraftBase", "Shape");
-    let expected_draft_faces = [
-        expected_topology_id(draft_shape, "Face", 1),
-        expected_topology_id(draft_shape, "Face", 2),
-    ];
     let draft_feature = feature("Draft");
     let FeatureOperation::Draft { faces, anchor, .. } = operation_definition(draft_feature) else {
         panic!(
@@ -346,21 +350,13 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             draft_feature.evaluation.definition()
         )
     };
-    let FaceSelection::Resolved {
-        faces: resolved_draft_faces,
-        native,
-    } = faces
-    else {
-        panic!("Draft.Base resolves to transferred faces")
+    // DraftBase is a member of the Draft's Body: its faces are records of the
+    // state after it, an evaluation, so the selection keeps its source token
+    // (§5.4).
+    let FaceSelection::Native(native) = faces else {
+        panic!("Draft.Base names faces of a Body state")
     };
     assert_eq!(native, &draft_base.id);
-    assert_eq!(
-        resolved_draft_faces
-            .iter()
-            .map(cadmpeg_ir::ids::FaceId::as_str)
-            .collect::<Vec<_>>(),
-        expected_draft_faces
-    );
     let draft_plane = native_property("Draft", "NeutralPlane");
     let draft_plane_id = crate::native::native_id("object", "DatumPlane");
     assert_link(draft_plane, draft_plane_id.as_str(), &[""]);
@@ -671,13 +667,6 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         1
     );
     assert_eq!(
-        operation("Draft")["value"]["faces"]["value"]["faces"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
-    assert_eq!(
         operation("Thickness")["value"]["removed_faces"]["value"]["faces"]
             .as_array()
             .unwrap()
@@ -727,10 +716,10 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             .find(|candidate| &candidate.id == body)
             .unwrap();
         let in_body = geometry
-            .body_regions(&body.id)
-            .flat_map(|region| &region.shells)
-            .flat_map(|id| geometry.shell_faces(id))
-            .flat_map(|face| face.loops.iter())
+            .stated_body_regions(&body.id)
+            .flat_map(cadmpeg_ir::topology::Region::stated_shells)
+            .flat_map(|id| geometry.stated_shell_faces(id))
+            .flat_map(|face| face.loops.stated())
             .filter_map(|id| geometry.loops.iter().find(|item| &item.id == id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|id| geometry.coedges.iter().find(|item| &item.id == id))
@@ -865,6 +854,7 @@ fn auxiliary_sweep_path_resolves_selected_native_edges() {
         &entries,
         &occurrences,
         &BTreeSet::new(),
+        &std::collections::HashSet::new(),
     )
     .unwrap();
 
@@ -969,44 +959,57 @@ fn authored_core_operation_bodies_match_source_dimensions() {
             [-4.0, -4.0, 0.0, 4.0, 4.0, 14.0],
         ),
     ];
-    let mut bodies = rows
-        .iter()
-        .map(|(name, _, _)| {
-            let [id] = feature(name).evaluation.outputs().as_slice() else {
-                panic!("{name}: expected one body")
-            };
-            id.clone()
-        })
-        .collect::<Vec<_>>();
-    let [revolution_body] = feature("Revolution").evaluation.outputs().as_slice() else {
-        panic!("Revolution: expected one surface body")
-    };
-    bodies.push(revolution_body.clone());
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
-    let report = Measurer::new(
-        MeasureInput {
-            ir: decoded.ir(),
-            fidelity: None,
-            geometry_transferred: true,
-        },
-        MeasureOptions::default(),
-    )
-    .measure(
-        &ctx,
-        &Selection {
-            bodies: bodies.clone(),
-            ..Selection::default()
-        },
-    )
-    .unwrap();
-    for ((name, (expected_volume, expected_area), bounds), id) in rows.into_iter().zip(&bodies) {
-        let body = report
+    // A free feature's result is a body of the current model; a Body
+    // member's is the state after it, which an evaluation or the Body's
+    // current state holds (§5.4).
+    let result = |name: &str| {
+        let ir = if feature(name).evaluation.outputs().iter().any(|body| {
+            decoded
+                .ir()
+                .geometry
+                .bodies
+                .iter()
+                .any(|row| &row.id == body)
+        }) {
+            let mut ir = decoded.ir().clone();
+            let outputs = feature(name).evaluation.outputs().clone();
+            ir.geometry.bodies.retain(|body| outputs.contains(&body.id));
+            ir
+        } else {
+            crate::test_support::state_of(decoded.ir(), name, false)
+                .unwrap_or_else(|| panic!("{name}: no state"))
+        };
+        let [body] = ir.geometry.bodies.as_slice() else {
+            panic!("{name}: expected one body")
+        };
+        let report = Measurer::new(
+            MeasureInput {
+                ir: &ir,
+                fidelity: None,
+                geometry_transferred: true,
+            },
+            MeasureOptions::default(),
+        )
+        .measure(
+            &ctx,
+            &Selection {
+                bodies: vec![body.id.clone()],
+                ..Selection::default()
+            },
+        )
+        .unwrap();
+        report
             .bodies()
             .iter()
-            .find(|body| body.body() == id.as_str())
-            .unwrap();
+            .find(|row| row.body() == body.id.as_str())
+            .unwrap()
+            .clone()
+    };
+    for (name, (expected_volume, expected_area), bounds) in rows {
+        let body = result(name);
         let volume = body.volume().as_ref().unwrap().measured().unwrap();
         let area = body.area().as_ref().unwrap().measured().unwrap();
         assert!(
@@ -1031,11 +1034,7 @@ fn authored_core_operation_bodies_match_source_dimensions() {
             );
         }
     }
-    let revolution = report
-        .bodies()
-        .iter()
-        .find(|body| body.body() == revolution_body.as_str())
-        .expect("Revolution body measures");
+    let revolution = result("Revolution");
     let cadmpeg_measure::value::Quantity::Unavailable(volume) =
         revolution.volume().as_ref().expect("Revolution volume")
     else {

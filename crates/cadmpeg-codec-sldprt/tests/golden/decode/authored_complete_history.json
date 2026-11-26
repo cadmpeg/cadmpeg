@@ -334,194 +334,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {
-            "sldprt:model:feature#350:0": {
-              "definition": {
-                "kind": "operation",
-                "value": {
-                  "kind": "extrude",
-                  "value": {
-                    "direction": {
-                      "kind": "profile_normal"
-                    },
-                    "extent": {
-                      "kind": "one_sided",
-                      "side": {
-                        "termination": {
-                          "kind": "blind",
-                          "length": 12.5
-                        }
-                      }
-                    },
-                    "op": "join",
-                    "profile": {
-                      "kind": "planar",
-                      "value": {
-                        "kind": "unresolved",
-                        "value": "sldprt:history:feature#350:0"
-                      }
-                    },
-                    "solid": true,
-                    "start": {
-                      "kind": "profile_plane"
-                    }
-                  }
-                }
-              },
-              "dependencies": [],
-              "evaluation": {
-                "kind": "active",
-                "outputs": []
-              }
-            },
-            "sldprt:model:feature#350:1": {
-              "definition": {
-                "kind": "operation",
-                "value": {
-                  "kind": "native",
-                  "value": {
-                    "kind": "EquationDrivenCurve",
-                    "parameters": {}
-                  }
-                }
-              },
-              "dependencies": [],
-              "evaluation": {
-                "kind": "active",
-                "outputs": []
-              }
-            }
-          },
-          "id": "sldprt:model:configuration#350:0",
-          "material": "Steel",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#350:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {
-            "sldprt:model:parameter#350:0:0": {
-              "kind": "length",
-              "value": 12.5
-            }
-          },
-          "properties": {
-            "DisplayState": "Shaded"
-          },
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "extrude",
-              "value": {
-                "direction": {
-                  "kind": "profile_normal"
-                },
-                "extent": {
-                  "kind": "one_sided",
-                  "side": {
-                    "termination": {
-                      "kind": "blind",
-                      "length": 12.5
-                    }
-                  }
-                },
-                "op": "join",
-                "profile": {
-                  "kind": "planar",
-                  "value": {
-                    "kind": "unresolved",
-                    "value": "sldprt:history:feature#350:0"
-                  }
-                },
-                "solid": true,
-                "start": {
-                  "kind": "profile_plane"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#350:0",
-          "name": "Boss",
-          "native_ref": "sldprt:history:feature#350:0",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "sldprt:model:parameter#350:0:0"
-            },
-            {
-              "kind": "feature",
-              "value": "sldprt:model:feature#350:1"
-            }
-          ],
-          "source_properties": {
-            "Scope": "Body1"
-          },
-          "source_tag": "Extrusion",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "EquationDrivenCurve",
-                "parameters": {}
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#350:1",
-          "name": "Profile",
-          "native_ref": "sldprt:history:feature#350:1",
-          "ordinal": 1,
-          "outputs": [],
-          "regeneration_parent": "sldprt:model:feature#350:0",
-          "source_content": [],
-          "source_properties": {},
-          "source_tag": "EquationDrivenCurve",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "12.5mm",
-          "id": "sldprt:model:parameter#350:0:0",
-          "name": "Depth",
-          "ordinal": 0,
-          "owner": "sldprt:model:feature#350:0",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 12.5
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -539,24 +358,15 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -685,23 +495,10 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#350:0",
-        "sldprt_native_configuration_sha256": "4a5837abcd6e9eadd7b2bb76b7ee5ca47a53b8edf90e311f0a431e1669a258c9",
-        "sldprt_native_history_sha256": "0f750c58d81b71d049d720e29b704fd495d3ee5d16f891fef06dd6ae9f00624f",
-        "sldprt_native_parameter_sha256": "c72a3bac0a380aa6aa518792f2750ccb929a89236eac484c15767dc82c36005b",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -774,8 +571,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -848,7 +644,7 @@
       "exactness": {
         "sldprt:brep:surf#10": {
           "fields": {
-            "geometry.u_axis": "derived"
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }
@@ -986,6 +782,21 @@
         }
       }
     },
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "4a5837abcd6e9eadd7b2bb76b7ee5ca47a53b8edf90e311f0a431e1669a258c9",
+      "sldprt_native_history_sha256": "0f750c58d81b71d049d720e29b704fd495d3ee5d16f891fef06dd6ae9f00624f",
+      "sldprt_native_parameter_sha256": "c72a3bac0a380aa6aa518792f2750ccb929a89236eac484c15767dc82c36005b",
+      "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ea50d4e5a33a569e51d9bbcc1beb98781827cf40681fb8f9a09cacb659b74436",
     "file_digests": {},
     "retained_records": {

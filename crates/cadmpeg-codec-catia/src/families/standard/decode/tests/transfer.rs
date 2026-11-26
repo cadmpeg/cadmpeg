@@ -58,6 +58,7 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let scoped = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
@@ -429,7 +430,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .geometry
         .faces
         .iter()
-        .all(|face| face.loops.len() == 1));
+        .all(|face| face.loops.stated().count() == 1));
     assert!(decoded
         .ir()
         .geometry
@@ -1092,6 +1093,7 @@ fn population_scope_prefixes_rewritten_body_ids() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let admitted = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {

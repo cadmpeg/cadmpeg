@@ -32,7 +32,7 @@ use crate::design::selection::{OrderedSelection, PrincipalEntity, SetSelection};
 use crate::features::geometry::FinitePoint3;
 use crate::features::FeatureId;
 use crate::geometry::pcurve::PcurveNurbs;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
@@ -175,7 +175,7 @@ pub enum SolveState {
 
 /// The id, point, direction, and curve types of a sketch space. Each carries
 /// the wire traits, so every record generic over a space derives them.
-pub trait SketchSpace {
+pub trait SketchSpace: PartialEq {
     /// The id of a sketch of the space.
     type Sketch: Debug + Clone + PartialEq + Serialize + DeserializeOwned;
     /// The id of an entity of the space.
@@ -550,7 +550,7 @@ pub enum SpatialCurve {
 #[serde(deny_unknown_fields)]
 pub struct BoundedCurve {
     /// The carrier.
-    pub carrier: SolvedCurveGeometry,
+    pub carrier: InlineCurve,
     /// The interval of the carrier's parameter. `None` is the carrier's whole
     /// domain; a piece the source bounds inside that domain, an arc
     /// included, states it.

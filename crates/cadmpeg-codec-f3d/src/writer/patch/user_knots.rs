@@ -55,7 +55,7 @@ pub(super) fn edits(
         let source = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::F3d)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("f3d"))
             .ok_or_else(|| {
                 CodecError::NotImplemented(
                     "T-spline user-knot edits require a source TSM member".into(),

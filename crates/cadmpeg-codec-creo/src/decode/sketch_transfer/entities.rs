@@ -85,14 +85,10 @@ fn placed_source_object(
     let object_id = format!("{object_id}");
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Creo,
+        format: cadmpeg_ir::codec_id!("creo"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -178,7 +174,7 @@ pub(super) fn transfer_section_entities(
         };
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             match (geometry.definition(), segment.kind) {
@@ -254,7 +250,7 @@ pub(super) fn transfer_section_entities(
         };
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_segment",
@@ -311,7 +307,7 @@ pub(super) fn transfer_section_entities(
         );
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
@@ -365,7 +361,7 @@ pub(super) fn transfer_section_entities(
         );
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
@@ -417,7 +413,7 @@ pub(super) fn transfer_section_entities(
             matches!(geometry.definition(), SketchGeometryDefinition::Line { .. });
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
@@ -473,7 +469,7 @@ pub(super) fn transfer_section_entities(
         );
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
@@ -525,7 +521,7 @@ pub(super) fn transfer_section_entities(
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_bounded_curve",
@@ -566,7 +562,7 @@ pub(super) fn transfer_section_entities(
         };
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_conic",
@@ -626,7 +622,7 @@ pub(super) fn transfer_section_entities(
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             "opaque_section_segment",
@@ -695,7 +691,7 @@ pub(super) fn transfer_section_entities(
         };
         annotate(
             annotations,
-            entity_id.as_str(),
+            &entity_id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(offset),
             "saved_section_entity",
@@ -797,7 +793,7 @@ pub(super) fn transfer_section_entities(
         }
         annotate(
             annotations,
-            entity_id.as_str(),
+            &entity_id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(spline.offset),
             "saved_interpolation_spline",
@@ -830,7 +826,7 @@ pub(super) fn transfer_section_entities(
         }
         annotate(
             annotations,
-            entity.id().as_str(),
+            entity.id(),
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(offset),
             "unresolved_saved_section_entity",

@@ -204,7 +204,7 @@ fn native_validation_rejects_an_altered_attachment_pick() {
         &mut Vec::new(),
     )
     .expect("projection");
-    let namespace = ir.native.namespace_mut("inventor");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     namespace
         .set_arena(&ctx, "pm_dc_features", &inventory.features)
         .expect("native features");

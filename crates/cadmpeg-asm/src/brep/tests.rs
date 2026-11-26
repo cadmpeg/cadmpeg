@@ -24,7 +24,6 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
@@ -1075,13 +1074,13 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         }],
-        regions: vec![Region {
-            id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
-            body: body_id.clone(),
-            shells: Vec::new(),
-            native_ref: None,
-        }],
+        regions: vec![Region::new(
+            RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
+            body_id.clone(),
+            Vec::new(),
+        )],
         ..AsmBrep::default()
     };
 
@@ -1353,7 +1352,7 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         assert_eq!(
             brep.edges[0]
                 .tolerance
-                .map(cadmpeg_ir::scalar::PositiveReal::get),
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             expected_tolerance
         );
         assert_eq!(brep.tolerant_edge_tails.len(), expected_tails);
@@ -1400,17 +1399,17 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
 #[test]
 fn a_restated_join_map_names_no_wire_key() {
     let brep = AsmBrep::default();
-    let value = serde_value::to_value(&brep).expect("AsmBrep serializes");
-    AsmBrep::deserialize(value.clone()).expect("the key records alone read");
+    let value = cadmpeg_core::serde_erase::to_json_value(&brep).expect("AsmBrep serializes");
+    cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(&value)
+        .expect("the key records alone read");
     for restated in ["face_keys", "body_keys"] {
-        let serde_value::Value::Map(mut fields) = value.clone() else {
+        let serde_json::Value::Object(mut fields) = value.clone() else {
             panic!("AsmBrep serializes as a map");
         };
-        fields.insert(
-            serde_value::Value::String(restated.to_string()),
-            serde_value::Value::Map(std::collections::BTreeMap::new()),
-        );
-        let Err(error) = AsmBrep::deserialize(serde_value::Value::Map(fields)) else {
+        fields.insert(restated.to_string(), cadmpeg_core::json!({}));
+        let Err(error) = cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(
+            &serde_json::Value::Object(fields),
+        ) else {
             panic!("a restated join map is an unknown field");
         };
         let error = error.to_string();
@@ -1610,13 +1609,13 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         }],
-        regions: vec![Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        }],
+        regions: vec![Region::new(
+            region_id.clone(),
+            body_id,
+            vec![shell_id.clone()],
+        )],
         shells: vec![Shell::new(shell_id.clone(), region_id)],
         faces: vec![Face {
             id: face_id.clone(),

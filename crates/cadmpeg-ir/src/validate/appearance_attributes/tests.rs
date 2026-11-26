@@ -3,19 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{ContentScope, ResourceLimits};
-use serde_json::json;
+use cadmpeg_core::decode::ContentScope;
 
-use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use crate::attributes::{AttributeExpression, AttributeTarget, AttributeValue, SourceAttribute};
-use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::expr::{
-    parse, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure,
-    MeasureKind, MeasureTarget, Neutral, Node,
-};
-use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::selection::OrderedSelection;
-use crate::design::units::{Quantity, ValueKind};
+use crate::appearance::{Appearance, AppearanceBinding, AppearancePrecedence, AppearanceTarget};
+use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use crate::examples::unit_cube;
 use crate::features::ParameterId;
 use crate::ids::{AppearanceId, AttributeId};
@@ -58,6 +49,7 @@ fn binding(target: AppearanceTarget) -> AppearanceBinding {
         id: BINDING.try_into().unwrap(),
         target: target.into(),
         appearance: appearance().id,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -234,6 +226,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
     ir.model.appearance_bindings[0] = binding(AppearanceTarget::Occurrence(
         "test:model:occurrence#1".try_into().unwrap(),
     ));
+    ir.model.appearance_bindings[0].precedence = Some(AppearancePrecedence::Outer);
     assert_eq!(
         design_findings(&ir, BINDING),
         ["references missing occurrence `test:model:occurrence#1`"]
@@ -241,9 +234,42 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
 }
 
 #[test]
+fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
+    let findings = |edit: &dyn Fn(&mut AppearanceBinding)| {
+        let mut ir = unit_cube().unwrap();
+        ir.model.appearances.push(appearance());
+        let mut assigned = binding(AppearanceTarget::Unresolved);
+        assigned.source_entity_id = Some("#7".into());
+        edit(&mut assigned);
+        ir.model.appearance_bindings.push(assigned);
+        design_findings(&ir, BINDING)
+    };
+    assert!(findings(&|_| {}).is_empty());
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = None),
+        ["an unresolved target states neither source_entity_id nor native_ref"]
+    );
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = Some(" ".into())),
+        ["source_entity_id is blank"]
+    );
+    assert_eq!(
+        findings(&|binding| {
+            binding.target.state = Some(crate::design::refs::StateRef {
+                configuration: None,
+                of: crate::design::refs::Evaluated::Tool(
+                    crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
+                ),
+            });
+        }),
+        ["an unresolved target states a path or a state"]
+    );
+}
+
+#[test]
 fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     let mut ir = unit_cube().unwrap();
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let mut asset = appearance();
     asset.native_ref = Some("native:missing#1".into());
     let mut assigned = binding(AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()));
@@ -265,239 +291,22 @@ fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     }
 }
 
-fn parameter(id: &ParameterId) -> crate::features::parameters::DesignParameter {
-    crate::features::parameters::DesignParameter {
-        product_definition: None,
-        id: id.clone(),
-        owner: None,
-        ordinal: 0,
-        name: "Mass".into(),
-        expression: "1".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::selections::DistinctMembers::default(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    }
-}
-
-fn reference(id: &ParameterId) -> ParameterRef {
-    ParameterRef {
-        target: RefTarget::Parameter(id.clone()),
-        through: None,
-    }
-}
-
-fn expression_value(expression: Expression) -> Vec<Option<AttributeValue>> {
-    vec![Some(AttributeValue::Expression(AttributeExpression {
-        path: "Length".into(),
-        expression,
-        comment: None,
-    }))]
-}
-
-fn binary(op: BinaryOp, left: Node<ParameterRef>, right: Node<ParameterRef>) -> Node<ParameterRef> {
-    Node::Binary {
-        op,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
-}
-
-fn measure(anchor: &serde_json::Value) -> Node<ParameterRef> {
-    let selection = json!({
-        "at": anchor,
-        "picks": {"kind": "named", "value": [{"target": {"kind": "entity", "value": {
-            "kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#1"}
-        }}}]}
-    });
-    let selection: OrderedSelection =
-        crate::design::read::from_str(&selection.to_string(), &ResourceLimits::desktop()).unwrap();
-    Node::Measure(Box::new(Measure {
-        kind: MeasureKind::Area,
-        of: MeasureTarget::Selection(selection),
-        cached: None,
-    }))
-}
-
-#[test]
-fn an_attribute_expression_meets_the_expression_rules() {
-    let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
-    let neutral = |node| expression_value(Expression::Neutral(Neutral(node)));
-    let findings = |values| {
-        let mut ir = unit_cube().unwrap();
-        ir.model.parameters.push(parameter(&mass));
-        ir.model
-            .attributes
-            .push(attribute(AttributeTarget::Document, values));
-        design_findings(&ir, ATTRIBUTE)
-    };
-    let text = || Node::Text("a".into());
-    let none = Vec::<String>::new();
-
-    assert_eq!(findings(neutral(Node::Reference(reference(&mass)))), none);
-    let absent = ParameterId::mint("test:design:parameter#absent").unwrap();
-    assert_eq!(
-        findings(neutral(Node::Reference(reference(&absent)))),
-        ["references missing parameter `test:design:parameter#absent`"]
-    );
-    assert_eq!(
-        findings(neutral(Node::Reference(ParameterRef {
-            target: RefTarget::External {
-                definition: "test:model:definition#external".try_into().unwrap(),
-                name: cadmpeg_core::text::NonBlankString::new("D1").unwrap(),
-            },
-            through: None,
-        }))),
-        ["references missing product definition `test:model:definition#external`"]
-    );
-    assert_eq!(findings(neutral(text())), none);
-    assert_eq!(
-        findings(neutral(binary(BinaryOp::Equal, text(), text()))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(Node::If(Box::new([
-            Node::Boolean(true),
-            text(),
-            text()
-        ])))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(binary(
-            BinaryOp::Add,
-            text(),
-            Node::Constant(Constant::Pi)
-        ))),
-        ["expression text is not a comparison's operand, a branch, or the root"]
-    );
-    assert_eq!(
-        findings(neutral(Node::LawParameter)),
-        ["expression holds the law parameter outside a law"]
-    );
-    assert_eq!(
-        findings(neutral(measure(&json!({"kind": "current"})))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(measure(&json!({"kind": "input"})))),
-        ["expression measure is not anchored `pinned` or `current`"]
-    );
-    assert_eq!(
-        findings(expression_value(Expression::Source {
-            dialect: ExpressionDialect::FreeCad,
-            tokens: vec![ExpressionToken::Reference(reference(&mass))],
-        })),
-        ["expression source text holds no text token"]
-    );
-    assert_eq!(
-        findings(expression_value(Expression::Source {
-            dialect: ExpressionDialect::FreeCad,
-            tokens: vec![
-                ExpressionToken::Text("2 * ".into()),
-                ExpressionToken::Reference(reference(&absent)),
-            ],
-        })),
-        ["references missing parameter `test:design:parameter#absent`"]
-    );
-}
-
-fn design_parameter(key: &str, kind: ValueKind) -> DesignParameter {
-    DesignParameter {
-        id: ParameterId::mint(format!("test:design:parameter#{key}")).unwrap(),
-        scope: "test:model:product-definition#part".try_into().unwrap(),
-        owner: None,
-        name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
-        kind,
-        unit: None,
-        definition: ParameterDefinition::Driven,
-        value: None,
-        display: None,
-        tolerance: None,
-        decimals: None,
-        comment: None,
-        native_options: BTreeMap::new(),
-        source_settings: BTreeMap::new(),
-        native_ref: None,
-    }
-}
-
-#[test]
-fn an_attribute_expression_type_checks() {
-    let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
-    let length = design_parameter("length", ValueKind::Quantity(Quantity::LENGTH));
-    let flag = design_parameter("flag", ValueKind::Boolean);
-    let refs = [reference(&mass), reference(&length.id), reference(&flag.id)];
-    let findings = |text: &str| {
-        let mut ir = unit_cube().unwrap();
-        ir.model.parameters.push(parameter(&mass));
-        ir.design.parameters.extend([length.clone(), flag.clone()]);
-        let node = parse(text, &refs, &[]).unwrap();
-        ir.model.attributes.push(attribute(
-            AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(node))),
-        ));
-        design_findings(&ir, ATTRIBUTE)
-    };
-    let refused = |reason: &str| [format!("expression does not type-check: {reason}")];
-
-    for admitted in [
-        "atan2(1[mm], 2[mm])",
-        "min(1[mm], $1, 3[mm])",
-        "if($2, 1[mm], $1)",
-        "if(1[mm] < 2[mm], \"a\", \"b\")",
-        "$0 + 1[deg]",
-        "$1 * $1 + 1[mm]^2",
-        "sin(30[deg]) == 0.5",
-        "not $2 and true",
-    ] {
-        assert_eq!(findings(admitted), Vec::<String>::new(), "{admitted}");
-    }
-    assert_eq!(findings("atan2(pi)"), refused("atan2 takes two arguments"));
-    assert_eq!(
-        findings("sin(1[deg], 2[deg])"),
-        refused("sin takes one argument")
-    );
-    assert_eq!(
-        findings("min(1[mm])"),
-        refused("min takes at least two arguments")
-    );
-    assert_eq!(
-        findings("if(true, 1[mm], 1[deg])"),
-        refused("if takes operands of one quantity")
-    );
-    assert_eq!(
-        findings("if(false, 1[mm], $1 * $1)"),
-        refused("if takes operands of one quantity")
-    );
-    assert_eq!(findings("true + 1"), refused("+ and - takes a number"));
-    assert_eq!(findings("$2 + 1"), refused("+ and - takes a number"));
-    assert_eq!(
-        findings("$1 + 1[deg]"),
-        refused("+ and - takes operands of one quantity")
-    );
-    assert_eq!(
-        findings("1[mm]^(1 + 1)"),
-        refused("a dimensioned base takes a literal exponent")
-    );
-    assert_eq!(findings("if(1, 2, 3)"), refused("if takes a Boolean"));
-}
-
 #[test]
 fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class() {
     let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
     let scoped = |target, values| {
         let mut ir = CadIr::empty();
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(attribute(target, values));
-        ir.check_scope().map_err(|violation| violation.to_string())
+        ir.scope_violations()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
-    let violation = Err(
+    let violation = vec![
         "the document's scope excludes design but model arena `attributes` holds a reference into it"
             .to_owned(),
-    );
+    ];
     for target in [
         AttributeTarget::Feature(
             crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
@@ -510,18 +319,166 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     assert_eq!(
         scoped(
             AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(Node::Reference(reference(
-                &mass
-            )))))
+            vec![Some(AttributeValue::Parameter(mass))]
         ),
         violation
     );
-    assert_eq!(
-        scoped(
-            AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(Node::Constant(Constant::Pi))))
-        ),
-        Ok(())
+    assert!(scoped(AttributeTarget::Document, vec![None]).is_empty());
+}
+
+/// The unit cube with an assembly that places a part, and the appearance.
+fn assembly() -> CadIr {
+    use crate::products::{ProductDefinition, Storage};
+    let mut ir = unit_cube().unwrap();
+    ir.model.appearances.push(appearance());
+    let mut assembly = ProductDefinition::new(
+        "test:model:product#assembly".try_into().unwrap(),
+        Storage::Embedded,
     );
-    assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
+    assembly
+        .occurrences
+        .push("test:model:occurrence#part".try_into().unwrap());
+    let part = ProductDefinition::new(
+        "test:model:product#part".try_into().unwrap(),
+        Storage::Embedded,
+    );
+    ir.model.product_definitions.extend([assembly, part]);
+    ir
+}
+
+/// The design findings on a binding of `target`, at `path`, that states
+/// `precedence`, that concern the precedence or the definition.
+fn precedence_findings(
+    target: AppearanceTarget,
+    path: bool,
+    precedence: Option<AppearancePrecedence>,
+) -> Vec<String> {
+    let mut ir = assembly();
+    let mut stated = binding(target);
+    if path {
+        stated.target.path = Some(crate::design::selection::OccurrencePath(vec![
+            crate::design::selection::PathStep {
+                occurrence: crate::design::selection::StepRef::Occurrence(
+                    "test:model:occurrence#part".try_into().unwrap(),
+                ),
+                configuration: None,
+            },
+        ]));
+    }
+    stated.precedence = precedence;
+    ir.model.appearance_bindings.push(stated);
+    design_findings(&ir, BINDING)
+        .into_iter()
+        .filter(|message| message.contains("precedence") || message.contains("definition"))
+        .collect()
+}
+
+#[test]
+fn a_binding_states_precedence_where_a_placed_definition_can_state_a_nearer_target() {
+    let body = || AppearanceTarget::Body(unit_cube().unwrap().geometry.bodies[0].id.clone());
+    let assembly =
+        || AppearanceTarget::Definition("test:model:product#assembly".try_into().unwrap());
+    let part = || AppearanceTarget::Definition("test:model:product#part".try_into().unwrap());
+    let none: Vec<String> = Vec::new();
+    let unstated =
+        ["states no precedence on a target a placed definition can state a nearer target under"];
+    let stated =
+        ["states a precedence on a target no placed definition states a nearer target under"];
+
+    assert_eq!(precedence_findings(body(), false, None), none);
+    assert_eq!(
+        precedence_findings(body(), false, Some(AppearancePrecedence::Outer)),
+        stated
+    );
+    assert_eq!(precedence_findings(body(), true, None), unstated);
+    assert_eq!(
+        precedence_findings(body(), true, Some(AppearancePrecedence::Nearest)),
+        none
+    );
+    assert_eq!(precedence_findings(assembly(), false, None), unstated);
+    assert_eq!(
+        precedence_findings(assembly(), false, Some(AppearancePrecedence::Outer)),
+        none
+    );
+    assert_eq!(precedence_findings(part(), false, None), none);
+    assert_eq!(
+        precedence_findings(part(), true, None),
+        ["a definition target states a path"]
+    );
+}
+
+#[test]
+fn a_definition_target_names_a_product_definition() {
+    let mut ir = assembly();
+    ir.model
+        .appearance_bindings
+        .push(binding(AppearanceTarget::Definition(
+            "test:model:product#missing".try_into().unwrap(),
+        )));
+    assert_eq!(
+        design_findings(&ir, BINDING),
+        ["references missing product definition `test:model:product#missing`"]
+    );
+}
+
+#[test]
+fn a_record_target_names_no_arena_another_arm_names() {
+    let mut ir = assembly();
+    let body = ir.geometry.bodies[0].id.to_string();
+    ir.model
+        .appearance_bindings
+        .push(binding(AppearanceTarget::Record {
+            arena: cadmpeg_core::nonblank_const!("bodies"),
+            id: body,
+        }));
+    assert_eq!(
+        design_findings(&ir, BINDING),
+        ["record target names `bodies`, whose records another target arm names"]
+    );
+}
+
+#[test]
+fn two_bindings_of_one_target_with_different_appearances_are_a_warning() {
+    let mut ir = assembly();
+    let mut other = appearance();
+    other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+    ir.model.appearances.push(other.clone());
+    let target = AppearanceTarget::Face(ir.geometry.faces[0].id.clone());
+    let first = binding(target.clone());
+    let mut second = binding(target);
+    second.id = "test:model:appearance-binding#2".try_into().unwrap();
+    second.appearance = other.id;
+    ir.model.appearance_bindings.extend([first, second]);
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    let warned: Vec<_> = findings
+        .iter()
+        .filter(|finding| {
+            finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("same target, path, and state")
+        })
+        .map(|finding| finding.entity.as_deref())
+        .collect();
+    assert_eq!(warned, [Some("test:model:appearance-binding#2")]);
+}
+
+#[test]
+fn two_unresolved_bindings_with_different_appearances_name_no_one_target() {
+    let mut ir = assembly();
+    let mut other = appearance();
+    other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+    ir.model.appearances.push(other.clone());
+    let mut first = binding(AppearanceTarget::Unresolved);
+    first.source_entity_id = Some("#10".into());
+    let mut second = binding(AppearanceTarget::Unresolved);
+    second.id = "test:model:appearance-binding#2".try_into().unwrap();
+    second.source_entity_id = Some("#20".into());
+    second.appearance = other.id;
+    ir.model.appearance_bindings.extend([first, second]);
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.message.contains("same target, path, and state")),
+        "{findings:?}"
+    );
 }

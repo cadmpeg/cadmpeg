@@ -76,17 +76,17 @@ pub(super) fn project(
     losses: &mut Vec<LossNote>,
 ) -> Vec<DesignParameter> {
     let document_parameters = crate::ids::document_parameter_scope_id();
-    let referenced_document_parameters = document_parameters
+    let document_parameters_local = document_parameters
         .as_str()
-        .strip_prefix("f3d:")
-        .map(|local| format!("/{local}"));
+        .strip_prefix(crate::ids::SCHEME_PREFIX);
     let is_document_parameters = |owner: &FeatureId| {
         owner == &document_parameters
-            || owner
-                .as_str()
-                .strip_prefix("f3d:xref/")
-                .zip(referenced_document_parameters.as_deref())
-                .is_some_and(|(path, local)| path.ends_with(local))
+            || crate::ids::member_key(owner.as_str()).is_some_and(|key| {
+                owner
+                    .as_str()
+                    .get(crate::ids::SCHEME_PREFIX.len() + key.len() + 1..)
+                    == document_parameters_local
+            })
     };
     let mut outside = Vec::new();
     let mut unresolved = Vec::new();
@@ -197,7 +197,7 @@ fn record(
     let (definition, value) = if property(DRIVEN) == Some("true") {
         if let Some(literal) = NonBlankString::new(parameter.expression.clone()) {
             source_settings.insert(
-                cadmpeg_core::nonblank_literal!("f3d:literal"),
+                cadmpeg_ir::codec_name!("f3d:literal"),
                 NativeOption::Text(Dimension::Literal(literal)),
             );
         }
@@ -217,7 +217,7 @@ fn record(
     };
     if let Some(role) = property(ROLE).and_then(|role| NonBlankString::new(role.to_owned())) {
         source_settings.insert(
-            cadmpeg_core::nonblank_literal!("f3d:role"),
+            cadmpeg_ir::codec_name!("f3d:role"),
             NativeOption::Text(Dimension::Literal(role)),
         );
     }

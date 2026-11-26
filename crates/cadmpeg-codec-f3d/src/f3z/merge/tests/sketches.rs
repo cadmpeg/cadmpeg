@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::CadIr;
@@ -7,7 +8,7 @@ use cadmpeg_ir::CadIr;
 use super::super::define_member;
 
 fn sketch(name: &str) -> Sketch {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("test:model:sketch#{name}"),
         "placement": {"kind": "unresolved"},
         "profiles": []
@@ -16,15 +17,15 @@ fn sketch(name: &str) -> Sketch {
 }
 
 fn component(sketch: &Sketch) -> ProductDefinition {
-    serde_json::from_value(serde_json::json!({
+    let mut definition: ProductDefinition = json::from_value(cadmpeg_core::json!({
         "id": "test:model:product#component",
         "kind": "part",
         "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [],
-        "bodies": [],
-        "sketches": [sketch.id],
-        "tessellations": []
+        "bodies": []
     }))
-    .unwrap()
+    .unwrap();
+    definition.sketches = vec![sketch.id.clone()];
+    definition
 }
 
 #[test]
@@ -33,6 +34,7 @@ fn member_definition_owns_root_sketches_and_preserves_component_owners() {
     let local = sketch("local");
     let definition = component(&local);
     let mut ir = CadIr::empty();
+    ir.source = Some(super::member_source());
     ir.model.sketches = vec![root.clone(), local];
     ir.model.product_definitions = vec![definition.clone()];
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -50,6 +52,7 @@ fn member_definition_extends_existing_root_sketches_once() {
     let root = sketch("root");
     let later = sketch("later");
     let mut ir = CadIr::empty();
+    ir.source = Some(super::member_source());
     ir.model.sketches = vec![root.clone()];
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();

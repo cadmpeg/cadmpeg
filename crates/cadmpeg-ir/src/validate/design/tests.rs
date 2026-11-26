@@ -2,11 +2,13 @@
 //! Tests of the design rules: a document that meets every rule, and one
 //! breach per rule, each reported with its check and severity.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::design::container::Container;
 use crate::design::evaluation::{CurrentState, EvaluationStatus};
@@ -17,7 +19,7 @@ use crate::design::names::{
 use crate::design::refs::EntityRef;
 use crate::design::scope::DesignScope;
 use crate::design::selection::{Anchor, PickTarget, Picked, Witness};
-use crate::document::CadIr;
+use crate::document::{CadIr, Topology};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -36,7 +38,7 @@ fn key(kind: &str, key: &str) -> String {
 }
 
 fn from<T: DeserializeOwned>(value: Value) -> T {
-    serde_json::from_value(value).unwrap()
+    json::from_value(value).unwrap()
 }
 
 fn feature(name: &str, operation: Value) -> Feature {
@@ -46,6 +48,7 @@ fn feature(name: &str, operation: Value) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: from(operation),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -324,8 +327,6 @@ fn rule_terms_are_checked() {
     let explicit = json!({"rule": {"kind": "explicit"}, "seeds": [datum_pick("a")]});
     let seeded_all =
         json!({"rule": {"kind": "all", "value": {"kind": "face"}}, "seeds": [datum_pick("a")]});
-    let native =
-        json!({"rule": {"kind": "native", "value": "nocodec"}, "seeds": [datum_pick("a")]});
     for (terms, check, text) in [
         (vec![explicit.clone()], Check::Design, "is Named"),
         (
@@ -334,11 +335,6 @@ fn rule_terms_are_checked() {
             "equal propagation",
         ),
         (vec![seeded_all], Check::Design, "All rule term has seeds"),
-        (
-            vec![native.clone(), native],
-            Check::Design,
-            "not written codec:name",
-        ),
     ] {
         let mut features = planes();
         features[1] = feature(
@@ -403,6 +399,40 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
     let ir = timeline(features);
     assert_finding(&ir, Check::Design, Severity::Error, "literal false");
     assert_finding(&ir, Check::Design, Severity::Error, "solution is 0");
+}
+
+#[test]
+fn a_built_centroid_reference_is_admitted() {
+    let point = |inputs: Vec<Value>| {
+        json!({"kind": "datum", "value": {
+            "element": {"kind": "points", "value": [construction(inputs)]},
+            "native_options": {},
+            "source_settings": {}
+        }})
+    };
+    let built = json!({
+        "role": {"subject": "whole", "relation": {"kind": "centroid"}},
+        "reference": {"kind": "built", "value": {
+            "kind": "point",
+            "inputs": [input(
+                "coincident",
+                Some(named(input_anchor(), vec![principal("origin")])),
+                None,
+            )],
+            "after": [],
+            "resolved_in": {}
+        }}
+    });
+    let mut features = planes();
+    features[1] = feature("b", point(vec![built]));
+    let ir = timeline(features);
+    let findings = findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("nested construction")),
+        "{findings:#?}"
+    );
 }
 
 #[test]
@@ -493,6 +523,7 @@ fn bracket_plane_on_the_timeline_origin() -> CadIr {
         part,
     ];
     ir.model.occurrences.push(occurrence);
+    crate::examples::add_document_root(&mut ir);
     ir
 }
 
@@ -557,6 +588,99 @@ fn a_pinned_position_that_does_not_resolve_is_an_error() {
         Check::Design,
         Severity::Error,
         "does not resolve",
+    );
+}
+
+/// Datum `a` on the XY plane and datum `b` offset from it, members of one
+/// unordered group, `b`'s input anchored at `anchor`.
+fn grouped(anchor: Value) -> CadIr {
+    let features = vec![
+        feature(
+            "a",
+            plane_datum(construction(vec![input(
+                "coincident",
+                Some(named(
+                    json!({"kind": "current"}),
+                    vec![principal("xy_plane")],
+                )),
+                None,
+            )])),
+        ),
+        feature(
+            "b",
+            plane_datum(construction(vec![input(
+                "offset",
+                Some(named(anchor, vec![datum_pick("a")])),
+                Some(length(10.0)),
+            )])),
+        ),
+    ];
+    let mut ir = timeline(features);
+    ir.design.containers[0] = from(json!({
+        "kind": "unordered",
+        "value": {
+            "id": key("container", "timeline"),
+            "kind": "group",
+            "members": [
+                {"kind": "feature", "value": key("feature", "a")},
+                {"kind": "feature", "value": key("feature", "b")}
+            ]
+        }
+    }));
+    ir
+}
+
+fn pinned_after(member: &str, key: &str) -> Value {
+    json!({"kind": "pinned", "value": {"kind": "after", "value": {"kind": member, "value": key}}})
+}
+
+#[test]
+fn a_group_member_is_pinned_only_after_a_member_with_a_result_of_its_own() {
+    assert_clean(&grouped(json!({"kind": "current"})));
+    // A datum is stateless, so it has no result of its own (§5.3, §5.4).
+    assert_finding(
+        &grouped(pinned_after("feature", &key("feature", "a"))),
+        Check::Design,
+        Severity::Error,
+        "with no result of its own in any configuration",
+    );
+    let mut ir = grouped(pinned_after("feature", &key("feature", "a")));
+    ir.design.features[0].definition.operation = FeatureOperation::Unresolved {
+        family: crate::design::feature::OperationFamily::Extrude,
+    };
+    assert_clean(&ir);
+}
+
+#[test]
+fn a_group_member_is_not_pinned_after_a_container() {
+    let mut ir = grouped(pinned_after("container", &key("container", "body")));
+    ir.design.containers.push(from(json!({
+        "kind": "ordered",
+        "value": {
+            "id": key("container", "body"),
+            "kind": "body",
+            "members": [],
+            "folders": [],
+            "rollback": {"kind": "end"}
+        }
+    })));
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.insert(from(
+        json!({"kind": "container", "value": key("container", "body")}),
+    ));
+    assert_finding(
+        &ir,
+        Check::Design,
+        Severity::Error,
+        "is pinned to a state other than another member's result",
+    );
+    assert_finding(
+        &grouped(pinned_after("container", &key("container", "timeline"))),
+        Check::Design,
+        Severity::Error,
+        "pinned to a position that does not resolve",
     );
 }
 
@@ -637,6 +761,7 @@ fn named_cube() -> CadIr {
             native: None,
         },
     )]));
+    crate::examples::add_document_root(&mut ir);
     ir
 }
 
@@ -790,15 +915,7 @@ fn a_witness_body_is_closed_over_its_own_references() {
     let mut body = ir.geometry.clone();
     body.shells.clear();
     let mut pick = current_pick(PickTarget::Native { within: None });
-    pick.witness = Some(Witness {
-        point: None,
-        direction: None,
-        endpoints: None,
-        frame: None,
-        curves: Vec::new(),
-        surface: None,
-        body: Some(Box::new(body)),
-    });
+    pick.witness = Some(witness_body(body));
     publish(&mut ir, pick);
     let findings = findings(&ir);
     assert!(
@@ -810,7 +927,58 @@ fn a_witness_body_is_closed_over_its_own_references() {
     );
 }
 
-/// A construction nested to the desktop construction ceiling, its innermost
+fn witness_body(body: Topology) -> Witness {
+    Witness {
+        point: None,
+        direction: None,
+        endpoints: None,
+        frame: None,
+        curves: Vec::new(),
+        surface: None,
+        body: Some(Box::new(body)),
+    }
+}
+
+#[test]
+fn a_witness_body_meets_the_rules_of_one_topology() {
+    let witness_findings = |body: Topology| {
+        let mut ir = named_cube();
+        let mut pick = current_pick(PickTarget::Native { within: None });
+        pick.witness = Some(witness_body(body));
+        publish(&mut ir, pick);
+        findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.message.starts_with("witness body:"))
+            .collect::<Vec<_>>()
+    };
+    let ir = named_cube();
+    let found = witness_findings(ir.geometry.clone());
+    assert!(found.is_empty(), "{found:#?}");
+
+    let mut body = ir.geometry.clone();
+    let first = body.coedges[0].clone();
+    body.coedges[0].radial_next = body
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != first.edge)
+        .unwrap()
+        .id
+        .clone();
+    let found = witness_findings(body);
+    assert!(
+        found
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.message
+                    == format!(
+                        "witness body: record {}: radial ring crosses edges",
+                        first.id.as_str()
+                    )),
+        "{found:#?}"
+    );
+}
+
+/// A construction nested `depth` levels, its innermost
 /// reference a pick.
 fn nested_plane(depth: usize) -> Value {
     let mut inner = construction(vec![input(
@@ -829,17 +997,20 @@ fn nested_plane(depth: usize) -> Value {
 }
 
 #[test]
-fn the_walk_at_the_construction_ceiling_runs_on_a_small_stack() {
-    let ceiling =
-        usize::try_from(cadmpeg_core::decode::ResourceLimits::desktop().max_construction_depth)
-            .unwrap();
-    let ir = timeline(vec![feature("a", plane_datum(nested_plane(ceiling)))]);
-    let findings = std::thread::Builder::new()
-        .stack_size(256 * 1024)
-        .spawn(move || findings(&ir))
-        .unwrap()
-        .join()
+fn the_walk_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
+    // A nested construction is four levels of JSON: inputs, input, reference
+    // and construction. The deepest nesting a document holds is the last
+    // whose document is within the document bound.
+    let (depth, ir) = (1..)
+        .map(|depth| timeline(vec![feature("a", plane_datum(nested_plane(depth)))]))
+        .map_while(|ir| {
+            let depth = crate::bounds::text_depth(&json::to_string(&ir).unwrap());
+            (depth <= crate::bounds::MAX_DOCUMENT_DEPTH).then_some((depth, ir))
+        })
+        .last()
         .unwrap();
+    assert!(depth > crate::bounds::MAX_DOCUMENT_DEPTH - 4, "{depth}");
+    let findings = super::fixture::on_the_smallest_default_stack(move || findings(&ir));
     assert!(
         !findings
             .iter()

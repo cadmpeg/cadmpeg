@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design history transfer unit tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::edit;
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
@@ -637,12 +638,12 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
-    let mut corrupted = serde_json::to_value(sheet).expect("serialize sheet");
+    let mut corrupted = json::to_value(sheet).expect("serialize sheet");
     corrupted["merged_ranges"]
         .as_array_mut()
         .expect("merged ranges")
-        .push(serde_json::json!({"start": "A1", "end": "A2"}));
-    let error = serde_json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
+        .push(cadmpeg_core::json!({"start": "A1", "end": "A2"}));
+    let error = json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
         .expect_err("overlapping merge ranges");
     assert!(error.to_string().contains("merged ranges overlap"));
 }
@@ -1029,7 +1030,7 @@ fn encodes_feature_names_into_neutral_identity_keys() {
 
 #[test]
 fn only_a_body_and_free_features_display_their_shapes() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+    let template = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
  <Object type="PartDesign::Body" name="Body" id="1"/>
  <Object type="Sketcher::SketchObject" name="Sketch" id="2"/>
@@ -1053,59 +1054,67 @@ fn only_a_body_and_free_features_display_their_shapes() {
   <Property name="Shape" type="Part::PropertyPartShape"><Part file="Free.Shape.brp"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
-Locations 0
-Curve2ds 0
-Curves 0
-Polygon3D 0
-PolygonOnTriangulations 0
-Surfaces 0
-Triangulations 0
-TShapes 1
-Ve 0.001 0 0 0 0 0 1001000 *
-+1 0 *";
-    let names = [
-        "Body.Shape.brp",
-        "Sketch.Shape.brp",
-        "Pad.Shape.brp",
-        "Pad.AddSubShape.brp",
-        "Free.Shape.brp",
-    ];
-    let mut entries = vec![("Document.xml", document.as_bytes())];
-    entries.extend(names.iter().map(|name| (*name, &brep[..])));
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(crate::test_support::test_archive::archive_entries(&entries)),
-            &DecodeOptions::default(),
-        )
-        .expect("body shapes");
-    let visible = |name: &str| {
-        result
-            .ir()
-            .geometry
+    // A document names the tool shape `AddSubShape`, or by the feature's
+    // effect, `AddShape` or `SubShape`.
+    for property in ["AddSubShape", "AddShape", "SubShape"] {
+        let document = template.replace(r#"name="AddSubShape""#, &format!(r#"name="{property}""#));
+        let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+    Locations 0
+    Curve2ds 0
+    Curves 0
+    Polygon3D 0
+    PolygonOnTriangulations 0
+    Surfaces 0
+    Triangulations 0
+    TShapes 1
+    Ve 0.001 0 0 0 0 0 1001000 *
+    +1 0 *";
+        let names = [
+            "Body.Shape.brp",
+            "Sketch.Shape.brp",
+            "Pad.Shape.brp",
+            "Pad.AddSubShape.brp",
+            "Free.Shape.brp",
+        ];
+        let mut entries = vec![("Document.xml", document.as_bytes())];
+        entries.extend(names.iter().map(|name| (*name, &brep[..])));
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_archive::archive_entries(&entries)),
+                &DecodeOptions::default(),
+            )
+            .expect("body shapes");
+        let body = |name: &str| {
+            result
+                .ir()
+                .geometry
+                .bodies
+                .iter()
+                .find(|body| body.id.as_str().contains(&format!(":{name}:")))
+        };
+        assert_eq!(body("Body.Shape.brp").map(|body| body.visible), Some(None));
+        assert_eq!(body("Free.Shape.brp").map(|body| body.visible), Some(None));
+        // The sketch's shape and the `Tip`'s repeat of the Body's state are no
+        // geometry; the pad's tool body is a state of its own (§5.4).
+        for state in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
+            assert!(body(state).is_none(), "{state}");
+        }
+        let [tool] = result.ir().design.evaluations.as_slice() else {
+            panic!("{:?}", result.ir().design.evaluations);
+        };
+        assert_eq!(
+            tool.of,
+            cadmpeg_ir::design::refs::Evaluated::Tool(
+                cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Pad").unwrap()
+            )
+        );
+        let records = &tool.content.as_ref().unwrap().delta.records;
+        assert!(records
             .bodies
             .iter()
-            .find(|body| body.id.as_str().contains(&format!(":{name}:")))
-            .unwrap_or_else(|| panic!("{name} body"))
-            .visible
-    };
-    assert_eq!(visible("Body.Shape.brp"), None);
-    assert_eq!(visible("Free.Shape.brp"), None);
-    for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
-        assert_eq!(visible(hidden), Some(false), "{hidden}");
+            .all(|body| body.id.as_str().contains(":Pad.AddSubShape.brp:")));
+        assert_valid_document(result.ir());
     }
-    let pad = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Pad"))
-        .unwrap();
-    let [output] = pad.evaluation.outputs().as_slice() else {
-        panic!("pad must have one result body");
-    };
-    assert!(output.as_str().contains(":Pad.Shape.brp:"));
-    assert_valid_document(result.ir());
 }
 
 #[test]

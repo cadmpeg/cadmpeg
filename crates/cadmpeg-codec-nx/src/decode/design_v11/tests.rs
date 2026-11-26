@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -50,6 +51,7 @@ fn body(key: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 
@@ -181,8 +183,8 @@ fn a_part_with_no_history_states_no_design_records() {
     ir.model.configurations = vec![configuration(0, "Default", true)];
     let minted = project_ir(&mut ir);
     assert_eq!(
-        serde_json::to_value(&ir.design).unwrap(),
-        serde_json::to_value(&CadIr::empty().design).unwrap()
+        json::to_value(&ir.design).unwrap(),
+        json::to_value(&CadIr::empty().design).unwrap()
     );
     assert!(minted);
     assert_eq!(
@@ -293,7 +295,7 @@ fn operations_keep_their_family_or_their_nx_kind() {
     assert_eq!(
         operation(&native).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:TUBE").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:TUBE"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }
@@ -354,7 +356,7 @@ fn operations_keep_their_family_or_their_nx_kind() {
     assert_eq!(
         operation(&snapshot).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:MASTER SNAPSHOT BODY").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:MASTER SNAPSHOT BODY"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }
@@ -396,7 +398,7 @@ fn a_wave_face_link_is_a_linked_stored_copy() {
     };
     assert_eq!(bodies, &[body("1").id]);
     assert!(tessellations.is_empty());
-    assert_eq!(serde_json::to_value(link).unwrap(), serde_json::json!({}));
+    assert_eq!(json::to_value(link).unwrap(), cadmpeg_core::json!({}));
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
@@ -405,7 +407,7 @@ fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
     assert_eq!(
         operation(&wave_face_link(Vec::new())).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:LINKED_FACE").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:LINKED_FACE"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }

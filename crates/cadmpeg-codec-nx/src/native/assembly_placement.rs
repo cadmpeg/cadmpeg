@@ -58,11 +58,7 @@ impl TryFrom<AssemblyPlacementWire> for AssemblyPlacement {
         let frame = parse_frame(View::over_retained(wire.raw_frame.as_ref()))
             .ok_or("assembly placement raw_frame is incomplete or invalid")?;
         if frame.length != wire.raw_frame.len()
-            || frame
-                .matrix
-                .iter()
-                .zip(wire.matrix)
-                .any(|(a, b)| a.to_bits() != b.to_bits())
+            || frame.matrix.iter().zip(wire.matrix).any(|(a, b)| *a != b)
             || frame.label != wire.label
             || frame.uuid.as_str() != wire.uuid.as_str()
         {

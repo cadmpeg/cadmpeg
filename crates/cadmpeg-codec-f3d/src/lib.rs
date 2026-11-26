@@ -53,7 +53,7 @@
 //! F3dCodec
 //!     .plan(
 //!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
+//!         TargetRequest::Unnamed,
 //!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())
@@ -131,7 +131,6 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
@@ -152,20 +151,16 @@ enum PreservedWritePath {
 }
 
 impl F3dCodec {
-    /// Replay retained source bytes when the document baseline still matches;
-    /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
+    /// Replay retained source bytes when the document is the one the decode
+    /// returned (§3.1, Rule B); otherwise patch. Returns which branch ran.
     fn write_preserved_bytes(
         ir: &CadIr,
+        fidelity: &cadmpeg_ir::SourceFidelity,
         data: &[u8],
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        let expected = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
-            .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
-        if decode::document_local_sha256(ir)? != *expected {
+        if fidelity.edited(ir)? {
             writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
@@ -246,13 +241,13 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "F3D";
     /// Patches the retained source, so it plans from the history and design
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0))
-        .with_replay_rows(dialect::REPLAY_ROWS)
-        .synthesizing_preserved_as_default();
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
@@ -260,6 +255,16 @@ impl EncoderBackend for F3dCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        writer::saved::restore(input, target, notes, losses)
     }
 }
 

@@ -12,6 +12,7 @@ use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, TrimmedPcurve};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -2029,13 +2030,15 @@ fn fit_ring(
     let surface = SurfaceGeometry::Solved(solved.clone());
     let forward = member.forward != carrier.reversed();
     let flip = (area > 0.0) != forward;
+    let model = ModelIndex::new_model_only(ir);
     let mut sides = Vec::new();
     for (index, trim) in trims.iter().enumerate() {
         let evaluate = |t| {
             let [u, v] = chart(trim.uv(t)?)?;
-            let p = eval::model_surface_point(EvaluationAdmission::Standard, ir, &surface, u, v)
-                .ok()?
-                .get();
+            let p =
+                eval::model_surface_point(EvaluationAdmission::Standard, &model, &surface, u, v)
+                    .ok()?
+                    .get();
             Some([p.x, p.y, p.z])
         };
         let curve = fit_edge_with_error(trim.range, evaluate, GAP_MM / 4.0)

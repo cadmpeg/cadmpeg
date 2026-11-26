@@ -30,13 +30,13 @@ fn semantic_writer_keeps_stored_partial_or_controlled_axes_and_names_the_edit() 
                 1 => draft.origin = None,
                 2 => {
                     draft.native_options.insert(
-                        cadmpeg_core::nonblank_literal!("sldprt:unknown"),
+                        cadmpeg_ir::codec_name!("sldprt:unknown"),
                         NativeOption::Bool(Dimension::Literal(false)),
                     );
                 }
                 3 => {
                     draft.source_settings.insert(
-                        cadmpeg_core::nonblank_literal!("sldprt:setting"),
+                        cadmpeg_ir::codec_name!("sldprt:setting"),
                         NativeOption::Bool(Dimension::Literal(false)),
                     );
                 }
@@ -55,7 +55,7 @@ fn semantic_writer_keeps_stored_partial_or_controlled_axes_and_names_the_edit() 
                     draft.into_operation().unwrap(),
                 ));
         }
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
             unwritten.iter().any(|message| message

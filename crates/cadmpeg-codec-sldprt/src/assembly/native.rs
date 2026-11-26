@@ -5,18 +5,32 @@
 //! order. [`NativeAssembly::into_projection`] is the single mapping to
 //! [`AssemblyProjection`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::loss::SldprtLossCode;
 
 use super::AssemblyProjection;
+
+/// The kind of a component tree section the decode gives up.
+const TREE_PART: &str = "component-tree";
+
+/// A component tree section an assembly reads: its stream and its bytes as
+/// the file stores them.
+#[derive(Debug, Clone)]
+pub(crate) struct TreeSection<'a> {
+    pub(crate) stream: cadmpeg_ir::StreamName,
+    pub(crate) stored: &'a [u8],
+}
 
 /// Definitions and placements in native order, before neutral product
 /// structure is projected.
@@ -25,16 +39,44 @@ pub(super) struct NativeAssembly {
     definitions: Vec<NativeDefinition>,
     placements: Vec<NativePlacement>,
     losses: Vec<LossNote>,
+    given_up: Vec<GivenUpPart>,
 }
 
 impl NativeAssembly {
-    /// An assembly that transferred no structure, with its blocking loss.
+    /// An assembly that transferred no structure because the document holds
+    /// no component tree section, with its blocking loss.
     pub(super) fn structure_lost(message: String) -> Self {
         let mut assembly = Self::default();
         assembly
             .losses
             .push(SldprtLossCode::AssemblyStructureNotTransferred.note(message));
         assembly
+    }
+
+    /// An assembly that transferred no structure from its component tree
+    /// sections `trees`, with its blocking loss. Each stream of the sections
+    /// is given up once. The section records retain the bytes.
+    pub(super) fn structure_given_up(
+        ctx: &DecodeContext<'_>,
+        trees: &[TreeSection<'_>],
+        message: String,
+    ) -> Result<Self, CodecError> {
+        let why = SldprtLossCode::AssemblyStructureNotTransferred.note(message);
+        let mut assembly = Self::default();
+        let mut streams = BTreeSet::new();
+        for tree in trees {
+            if !streams.insert(tree.stream.as_str()) {
+                continue;
+            }
+            let part = Part::at("sldprt", TREE_PART, 0, tree.stored, [ArenaClass::Model])
+                .named(tree.stream.as_str())
+                .in_stream(tree.stream.clone())
+                .digest_only();
+            let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
+            assembly.given_up.push(ctx.give_up_part(part, error)?);
+        }
+        assembly.losses.push(why);
+        Ok(assembly)
     }
 
     pub(super) fn push_definition(&mut self, definition: NativeDefinition) {
@@ -124,6 +166,7 @@ impl NativeAssembly {
             definitions,
             occurrences,
             losses: self.losses,
+            given_up: self.given_up,
             carries_parasolid: false,
             virtual_sites,
         }

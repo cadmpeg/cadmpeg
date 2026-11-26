@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
@@ -28,10 +28,11 @@ use super::allocation::AllocationTopology;
 use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-const MODEL_POINT_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
-    Some(tolerance) => tolerance,
-    None => panic!("zero-entity point tolerance must be positive and finite"),
-};
+const MODEL_POINT_TOLERANCE: cadmpeg_ir::scalar::PositiveLength =
+    match cadmpeg_ir::scalar::PositiveLength::new(2e-3) {
+        Some(tolerance) => tolerance,
+        None => panic!("zero-entity point tolerance must be positive and finite"),
+    };
 
 /// Minimum allowance for validating source-bound endpoint contributors.
 const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
@@ -657,7 +658,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Derived
             ));
             admitted!(annotations
-                .derived(&edge_id, "curve")
+                .derived(&edge_id, "carrier.curve")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
@@ -670,7 +671,7 @@ pub(super) fn transfer_closed_face_topology(
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
                 admitted!(annotations
-                    .derived(&edge_id, "param_range")
+                    .derived(&edge_id, "carrier.param_range")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
             }
@@ -805,11 +806,11 @@ pub(super) fn transfer_closed_face_topology(
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "coedges")
+                    .derived(loop_id, "boundary.coedges")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "vertex_uses")
+                    .derived(loop_id, "boundary.vertex_uses")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 let ring =
@@ -921,10 +922,6 @@ pub(super) fn transfer_closed_face_topology(
                             .derived(&coedge_id, "use_curve")
                             .map(|_| ())
                             .map_err(cadmpeg_core::CodecError::from));
-                        admitted!(annotations
-                            .derived(&coedge_id, "use_curve_parameter_range")
-                            .map(|_| ())
-                            .map_err(cadmpeg_core::CodecError::from));
                     }
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
@@ -984,7 +981,7 @@ pub(super) fn transfer_closed_face_topology(
             name: None,
             color: None,
             visible: None,
-            native_ref: None,
+            native_ref: None, unstated: None,
         };
         ir.geometry.bodies.push(body);
         admitted!(annotate(
@@ -1007,12 +1004,7 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let shells = vec![copied_id!(shell_id, ShellId)];
-        let region = Region {
-            id: copied_id!(region_id, RegionId),
-            body: body_id,
-            shells,
-            native_ref: None,
-        };
+        let region = Region::new(copied_id!(region_id, RegionId), body_id, shells);
         ir.geometry.regions.push(region);
         admitted!(annotate(
             annotations,
@@ -1500,7 +1492,9 @@ mod tests {
         assert_eq!(counts.coedges, 6);
         assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
         assert_eq!(
-            ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+            ir.geometry
+                .stated_shell_faces(&ir.geometry.shells[0].id)
+                .count(),
             2
         );
         assert!(ir.geometry.coedges.iter().all(|coedge| {

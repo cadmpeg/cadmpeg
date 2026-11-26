@@ -111,7 +111,7 @@ fn full_pass(ir: &CadIr, selection: &Selection) -> Result<MeasureReport, Measure
     };
     let options = MeasureOptions {
         work: WorkProfile::Service,
-        density: None,
+        ..MeasureOptions::default()
     };
     let report = Measurer::new(input, options).measure(&ctx, selection)?;
     ctx.finish_session()?;

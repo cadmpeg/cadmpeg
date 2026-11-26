@@ -69,9 +69,9 @@ use super::variable_blends::{
 };
 use super::{
     CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve, CurveGeometry,
-    LegacyExtensionFlags, OffsetExtension, PlacedCurve, PlacedSurface, ProceduralCurve,
-    ProceduralSurface, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    InlineCurve, InlineSurface, LegacyExtensionFlags, OffsetExtension, PlacedCurve, PlacedSurface,
+    ProceduralCurve, ProceduralSurface, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 
 rewrite_enum!(BlendCrossSection, []; {
@@ -164,6 +164,26 @@ rewrite_scalar!(HelixLineProfile);
 rewrite_scalar!(HelixPathConstruction);
 rewrite_scalar!(HelixSurfaceConstruction);
 rewrite_scalar!(HelixSurfaceProfile);
+rewrite_enum!(InlineCurve, []; {
+    Line(field0),
+    Circle(field0),
+    Ellipse(field0),
+    Parabola(field0),
+    Hyperbola(field0),
+    Nurbs(field0),
+    Polyline(field0),
+    Transformed {basis, transform},
+});
+rewrite_enum!(InlineSurface, []; {
+    Plane(field0),
+    Cylinder(field0),
+    Cone(field0),
+    Sphere(field0),
+    Torus(field0),
+    Nurbs(field0),
+    Polygonal(field0),
+    Transformed {basis, transform},
+});
 rewrite_record!(InlineTSplineSubtransform, []; {program, separator, values});
 rewrite_record!(IntcurveSupportContext, []; {sides, parameter_range, discontinuities});
 rewrite_record!(IntcurveSupportSide, []; {surface, pcurve});
@@ -490,10 +510,10 @@ impl<
     ) -> Result<(), cadmpeg_core::CodecError> {
         self.0.visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         self.0.rewrite_identities(ctx, map).map(Self)
     }

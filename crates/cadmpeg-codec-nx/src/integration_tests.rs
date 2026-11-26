@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::bytes::put_u16;
@@ -63,6 +64,7 @@ mod assembly_placement;
 mod blend_history;
 mod body_write;
 
+mod annotation_paths;
 mod assembly_occurrences;
 mod attachment_containment;
 mod current_bodies;
@@ -354,7 +356,7 @@ fn loopless_sphere_face_is_bounded_by_a_vertex_loop_at_each_pole() {
     let result = decode(prt_with_partition(&whole_sphere_partition_stream()));
     let geometry = &result.ir().geometry;
     assert_eq!(geometry.faces.len(), 1);
-    assert_eq!(geometry.faces[0].loops.iter().count(), 2);
+    assert_eq!(geometry.faces[0].loops.stated().count(), 2);
     let mut heights = geometry
         .loops
         .iter()
@@ -471,8 +473,8 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+            json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
         assert_eq!(result.ir().geometry.bodies.len(), 1);

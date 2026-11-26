@@ -39,8 +39,7 @@ use crate::features::sheet_metal_forms::{
     SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm,
 };
 use crate::features::surface_inputs::{
-    FilledSurfaceContinuity, FilledSurfaceContinuityState, RuledSurfaceMode, SurfaceBoundary,
-    TrimCellSelection, TrimRegion,
+    FilledSurfaceContinuity, RuledSurfaceMode, SurfaceBoundary, TrimCellSelection, TrimRegion,
 };
 use crate::features::sweeps::{
     CoilConstruction, CoilPlacement, FaceMaker, GeneratedSweepSection, HelicalSweepConstruction,
@@ -100,6 +99,7 @@ rewrite_enum!(BodySelection, []; {
     Historical { state, bodies, native },
     HistoricalSet { state, members },
     Generated { bodies, native },
+    GeneratedSet { members },
     Local { bodies, native },
     Native(field0),
     NativeSet(field0),
@@ -350,8 +350,6 @@ Thicken { faces, thickness, side, result, tangent_chain },
 rewrite_record!(FeaturePolyline, []; { points, closed });
 
 rewrite_record!(FilledSurfaceContinuity, []; { conditions });
-
-rewrite_record!(FilledSurfaceContinuityState, []; (field0));
 
 rewrite_record!(GeneratedBodyRef, []; { feature, local_id });
 
@@ -618,7 +616,8 @@ rewrite_enum!(SweepOrientation, []; {
 });
 
 rewrite_enum!(SweepSection<G>, [G]; {
-    Unresolved(field0),
+    Unresolved,
+    Native(field0),
     Profile(field0),
     Generated(field0),
 });

@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::disallowed_methods)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -10,6 +11,40 @@ use crate::diff;
 use crate::examples::unit_cube;
 use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
+
+#[test]
+fn a_native_namespace_is_named_by_a_codec_id() {
+    let read = |key: &str| {
+        json::from_value::<crate::Native>(cadmpeg_core::json!({ key: {"records": []} }))
+    };
+    let native = read("fcstd").unwrap();
+    assert!(native.namespace("fcstd").is_some());
+    for key in ["", "FCStd", "my-codec", "f3d:design"] {
+        assert!(read(key).is_err(), "{key:?}");
+    }
+}
+
+#[test]
+fn a_native_arena_is_named_by_a_non_blank_string() {
+    let read =
+        serde_json::from_str::<crate::native::NativeNamespace>(r#"{"records": []}"#).unwrap();
+    assert_eq!(read.arenas()["records"].len(), 0);
+    for blank in ["", " ", "\u{3000}"] {
+        let text = cadmpeg_core::json!({ blank: [] }).to_string();
+        assert!(serde_json::from_str::<crate::native::NativeNamespace>(&text).is_err());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut namespace = crate::native::NativeNamespace::default();
+        assert!(matches!(
+            namespace.set_arena::<NativeRecord>(&ctx, blank, &[]),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(matches!(
+            namespace.set_arena_records(blank, Vec::new()),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(namespace.arenas().is_empty());
+    }
+}
 
 #[test]
 fn native_record_text_refuses_the_retained_limit() {
@@ -61,15 +96,15 @@ fn native_record_text_refuses_the_retained_limit() {
     )
     .unwrap();
     assert_eq!(calls.get(), 2);
-    assert_eq!(serde_json::to_vec(&records[0]).unwrap(), json);
+    assert_eq!(json::to_vec(&records[0]).unwrap(), json);
 }
 
 /// Two equal identities and one identity that sorts before them.
 fn sort_fixture() -> Vec<serde_json::Value> {
     vec![
-        serde_json::json!({"id":"test:native:record#same","ordinal":1}),
-        serde_json::json!({"id":"test:native:record#same","ordinal":2}),
-        serde_json::json!({"id":"test:native:record#first","ordinal":3}),
+        cadmpeg_core::json!({"id":"test:native:record#same","ordinal":1}),
+        cadmpeg_core::json!({"id":"test:native:record#same","ordinal":2}),
+        cadmpeg_core::json!({"id":"test:native:record#first","ordinal":3}),
     ]
 }
 
@@ -77,11 +112,11 @@ fn sort_fixture() -> Vec<serde_json::Value> {
 fn native_arena_refuses_the_retained_limit_on_record_text() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let record = serde_json::json!({
+    let record = cadmpeg_core::json!({
         "id": "test:native:record#first",
         "payload": "a retained string"
     });
-    let needed = cadmpeg_core::decode::u64_from_index(serde_json::to_vec(&record).unwrap().len());
+    let needed = cadmpeg_core::decode::u64_from_index(json::to_vec(&record).unwrap().len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
@@ -111,7 +146,7 @@ fn native_arena_refuses_the_retained_limit_on_record_text() {
 
 #[test]
 fn native_arena_typed_load_reads_each_record() {
-    let record = serde_json::json!({
+    let record = cadmpeg_core::json!({
         "id": "test:native:record#first",
         "payload": {"labels": ["one", "two"]}
     });
@@ -154,18 +189,17 @@ fn typed_native_read_errors_identify_the_arena_and_stored_record() {
     let mut document = crate::CadIr::empty();
     document
         .native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .set_arena(
             &crate::native::test_ctx(),
             "records",
             &[
-                serde_json::json!({"id": first, "value": 7}),
-                serde_json::json!({"id": refused, "value": "not an integer"}),
+                cadmpeg_core::json!({"id": first, "value": 7}),
+                cadmpeg_core::json!({"id": refused, "value": "not an integer"}),
             ],
         )
         .unwrap();
-    let document: crate::CadIr =
-        serde_json::from_value(serde_json::to_value(document).unwrap()).unwrap();
+    let document: crate::CadIr = json::from_value(json::to_value(document).unwrap()).unwrap();
     let namespace = document.native.namespace("future").unwrap();
     // The iterator borrows the stored arena key, so a temporary lookup name
     // does not have to survive the iterator.
@@ -193,7 +227,7 @@ fn typed_native_read_errors_identify_the_arena_and_stored_record() {
 #[test]
 fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena() {
     use crate::native::{NativeConvertError, NativeNamespace};
-    let good = serde_json::json!({"id": "test:native:record#first", "value": 7});
+    let good = cadmpeg_core::json!({"id": "test:native:record#first", "value": 7});
     let mut namespace = NativeNamespace::default();
     namespace
         .set_arena(
@@ -207,7 +241,7 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
         .set_arena(
             &crate::native::test_ctx(),
             "records",
-            &[good, serde_json::json!({"value": 8})],
+            &[good, cadmpeg_core::json!({"value": 8})],
         )
         .unwrap_err();
     assert!(error.to_string().contains("records"));
@@ -237,42 +271,45 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
 fn native_loss_counts_carry_a_nonempty_arena_population() {
     let mut native = crate::native::Native::default();
     native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("empty".into(), Vec::new());
-    native.namespace_mut("future").arenas_mut().insert(
-        "records".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .unwrap()],
-    );
+        .insert(cadmpeg_core::nonblank_literal!("empty"), Vec::new());
+    native
+        .namespace_mut(crate::codec_id!("future"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
+        );
     let counts = native.loss_counts();
     assert_eq!(counts.len(), 1);
     assert_eq!(counts[0].format, "future");
     assert_eq!(counts[0].kind, "records");
     assert_eq!(counts[0].count.get(), 1);
-    let wire = serde_json::to_value(&counts[0]).unwrap();
+    let wire = json::to_value(&counts[0]).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::native::LossCount>(wire.clone()).unwrap(),
+        json::from_value::<crate::native::LossCount>(wire.clone()).unwrap(),
         counts[0]
     );
     let mut empty = wire;
-    empty["count"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<crate::native::LossCount>(empty).is_err());
+    empty["count"] = cadmpeg_core::json!(0);
+    assert!(json::from_value::<crate::native::LossCount>(empty).is_err());
 }
 
 #[test]
 fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
-    let empty = serde_json::to_string(&crate::CadIr::empty()).unwrap();
+    let empty = json::to_string(&crate::CadIr::empty()).unwrap();
     assert_eq!(empty.matches("\"native\":{}").count(), 1);
     let document = |native: &str| empty.replace("\"native\":{}", &format!("\"native\":{native}"));
-    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"another_future":{"different_records":[]}}"#;
+    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"anotherfuture":{"different_records":[]}}"#;
     let wire = document(control);
     let admitted = crate::CadIr::from_json(&wire).unwrap();
     assert_eq!(
-        serde_json::to_value(&admitted).unwrap(),
+        json::to_value(&admitted).unwrap(),
         serde_json::from_str::<serde_json::Value>(&wire).unwrap(),
     );
     for (native, duplicate) in [
@@ -323,7 +360,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
-    let mut nested = serde_json::json!({"value": "retained", "absent": null});
+    let mut nested = cadmpeg_core::json!({"value": "retained", "absent": null});
     for _ in 0..140 {
         nested = serde_json::Value::Array(vec![nested]);
     }
@@ -344,11 +381,14 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let mut document = crate::CadIr::empty();
     document
         .native
-        .namespace_mut("future")
+        .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("records".into(), vec![constructed]);
-    let wire = serde_json::to_value(&document).unwrap();
-    let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![constructed],
+        );
+    let wire = json::to_value(&document).unwrap();
+    let admitted = json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
     assert_eq!(record.fields().unwrap(), fields);
     assert_eq!(record.field("nested"), Some(nested));
@@ -356,8 +396,8 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     assert_eq!(record.field("id"), None);
     assert_eq!(record.to_typed::<Record>(&ctx).unwrap(), typed);
     assert_eq!(
-        serde_json::to_string(&admitted).unwrap(),
-        serde_json::to_string(&document).unwrap()
+        json::to_string(&admitted).unwrap(),
+        json::to_string(&document).unwrap()
     );
 }
 
@@ -383,7 +423,7 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
 
     let id = "test:native:record#bound";
     let chain = |containers: usize| {
-        let mut nested = serde_json::json!(7);
+        let mut nested = cadmpeg_core::json!(7);
         for _ in 0..containers {
             nested = serde_json::Value::Array(vec![nested]);
         }
@@ -425,8 +465,8 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
 
     // The wire reader builds through the same constructor, so a document
     // handed in as a value tree cannot state a deeper field either.
-    let wire = serde_json::json!({"id": id, "nested": refused});
-    let error = serde_json::from_value::<NativeRecord>(wire).unwrap_err();
+    let wire = cadmpeg_core::json!({"id": id, "nested": refused});
+    let error = json::from_value::<NativeRecord>(wire).unwrap_err();
     assert!(
         error
             .to_string()
@@ -440,7 +480,7 @@ fn stored_text_reads_back_a_field_nested_to_the_native_bound() {
     use crate::native::MAX_NATIVE_NESTING_DEPTH;
 
     let id = "test:native:record#deep";
-    let mut nested = serde_json::json!(7);
+    let mut nested = cadmpeg_core::json!(7);
     for _ in 0..MAX_NATIVE_NESTING_DEPTH {
         nested = serde_json::Value::Array(vec![nested]);
     }
@@ -452,8 +492,8 @@ fn stored_text_reads_back_a_field_nested_to_the_native_bound() {
     assert_eq!(record.field("nested"), Some(nested.clone()));
     assert_eq!(record.fields().unwrap()["nested"], nested);
     assert_eq!(
-        serde_json::to_value(&record).unwrap(),
-        serde_json::json!({"id": id, "nested": nested})
+        json::to_value(&record).unwrap(),
+        cadmpeg_core::json!({"id": id, "nested": nested})
     );
 }
 
@@ -479,7 +519,7 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
             NativeRecord::from_typed(&Record { id }),
             Err(crate::native::NativeConvertError::InvalidIdentity(_))
         ));
-        assert!(serde_json::from_value::<NativeRecord>(serde_json::json!({ "id": id })).is_err());
+        assert!(json::from_value::<NativeRecord>(cadmpeg_core::json!({ "id": id })).is_err());
     }
 
     let id = "f3d:test:record#1";
@@ -492,8 +532,7 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
     )
     .unwrap();
     let typed = NativeRecord::from_typed(&Record { id }).unwrap();
-    let decoded =
-        serde_json::from_value::<NativeRecord>(serde_json::to_value(&record).unwrap()).unwrap();
+    let decoded = json::from_value::<NativeRecord>(json::to_value(&record).unwrap()).unwrap();
     let admitted = NativeRecord::from_identity(crate::ids::UnknownId::mint(id).unwrap(), []);
     assert_eq!(record, admitted);
     assert_eq!(record, typed);
@@ -521,10 +560,10 @@ fn flat_fields_build_a_record_no_reader_has_to_measure() {
     );
     assert_eq!(record.id(), id);
     assert_eq!(record.field("id"), None);
-    assert_eq!(record.field("source_id"), Some(serde_json::json!("#42")));
+    assert_eq!(record.field("source_id"), Some(cadmpeg_core::json!("#42")));
     assert_eq!(
         record.field("links"),
-        Some(serde_json::json!(["step:test:target#0"]))
+        Some(cadmpeg_core::json!(["step:test:target#0"]))
     );
     assert_eq!(
         NativeRecord::new(
@@ -569,22 +608,30 @@ fn rejected_typed_identity_does_not_replace_an_existing_arena() {
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube().expect("valid unit cube fixture");
     let mut right = left.clone();
-    right.native.namespace_mut("f3d").arenas_mut().insert(
-        "act_guids".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .expect("valid native identity")],
-    );
-    right.native.namespace_mut("sldprt").arenas_mut().insert(
-        "configurations".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .expect("valid native identity")],
-    );
+    right
+        .native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("act_guids"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
+        );
+    right
+        .native
+        .namespace_mut(crate::codec_id!("sldprt"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("configurations"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
+        );
     right.native.finalize();
 
     let result = diff(&left, &right);
@@ -606,6 +653,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
+    crate::examples::add_document_root(&mut right);
     let report = validate_neutral(&right, Vec::new()).expect("validate the neutral model");
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
@@ -613,7 +661,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
 
     right
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(crate::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("configurations")
         .unwrap()[0] = NativeRecord::new(
@@ -689,13 +737,14 @@ fn from_typed_matches_value_tree_canonical_text() {
 
     // The oracle is the replaced route itself: a `Value` tree flattened
     // behind a leading string `id`.
-    let serde_json::Value::Object(mut fields) = serde_json::to_value(&record).unwrap() else {
+    let serde_json::Value::Object(mut fields) = json::to_value(&record).unwrap() else {
         panic!("record serializes as an object");
     };
     let serde_json::Value::String(id) = fields.remove("id").unwrap() else {
         panic!("id serializes as a string");
     };
-    let expected = serde_json::to_string(&Shape {
+    fields.insert("zulu".to_owned(), cadmpeg_core::json!(0.0));
+    let expected = json::to_string(&Shape {
         id: &id,
         fields: &fields,
     })
@@ -703,7 +752,7 @@ fn from_typed_matches_value_tree_canonical_text() {
 
     let native = NativeRecord::from_typed(&record).unwrap();
     assert_eq!(native.id(), id);
-    assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+    assert_eq!(json::to_string(&native).unwrap(), expected);
 }
 
 /// The refusal message a typed record holding a non-finite number converts to.
@@ -794,9 +843,9 @@ fn native_arena_charged_load_preserves_values_and_error_context() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let records = [
-        serde_json::json!({"id": "test:native:record#first", "value": 7,
+        cadmpeg_core::json!({"id": "test:native:record#first", "value": 7,
             "payload": [null, true, false, 1.25, "line\nquoted\"", {"nested": [1, 2]}]}),
-        serde_json::json!({"id": "test:native:record#refused", "value": "invalid"}),
+        cadmpeg_core::json!({"id": "test:native:record#refused", "value": "invalid"}),
     ];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -841,7 +890,7 @@ fn native_arena_index_sort_preserves_cycles_and_identity_ties() {
         ["a", "a", "a", "a", "a"],
     ] {
         let records = suffixes.into_iter().enumerate().map(|(ordinal, suffix)| {
-            Ok::<_, crate::native::NativeConvertError>(serde_json::json!({
+            Ok::<_, crate::native::NativeConvertError>(cadmpeg_core::json!({
                 "id": format!("test:native:record#{suffix}"), "ordinal": ordinal,
             }))
         });
@@ -850,7 +899,7 @@ fn native_arena_index_sort_preserves_cycles_and_identity_ties() {
         expected.sort_by_key(|(_, suffix)| *suffix);
         for (record, (ordinal, suffix)) in sorted.iter().zip(expected) {
             assert_eq!(record.id(), format!("test:native:record#{suffix}"));
-            assert_eq!(record.field("ordinal"), Some(serde_json::json!(ordinal)));
+            assert_eq!(record.field("ordinal"), Some(cadmpeg_core::json!(ordinal)));
         }
     }
 }
@@ -859,23 +908,23 @@ fn native_arena_index_sort_preserves_cycles_and_identity_ties() {
 fn native_finalization_sorts_changed_arenas_and_preserves_identity_ties() {
     let records = [("b", 1), ("a", 2), ("a", 3)]
         .map(|(suffix, ordinal)| {
-            NativeRecord::from_typed(&serde_json::json!({
+            NativeRecord::from_typed(&cadmpeg_core::json!({
                 "id": format!("test:native:record#{suffix}"), "ordinal": ordinal,
             }))
             .unwrap()
         })
         .to_vec();
     let mut native = super::Native(BTreeMap::from([(
-        "test".into(),
+        crate::codec_id!("test"),
         super::NativeNamespace {
-            arenas: BTreeMap::from([("records".into(), records)]),
+            arenas: BTreeMap::from([(cadmpeg_core::nonblank_literal!("records"), records)]),
         },
     )]));
     native.finalize();
     let sorted = &native.0["test"].arenas["records"];
-    assert_eq!(sorted[0].field("ordinal"), Some(serde_json::json!(2)));
-    assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(3)));
-    assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(1)));
+    assert_eq!(sorted[0].field("ordinal"), Some(cadmpeg_core::json!(2)));
+    assert_eq!(sorted[1].field("ordinal"), Some(cadmpeg_core::json!(3)));
+    assert_eq!(sorted[2].field("ordinal"), Some(cadmpeg_core::json!(1)));
 }
 
 #[test]
@@ -893,8 +942,8 @@ fn native_arena_sort_is_stable_by_identity() {
     )
     .unwrap();
     assert_eq!(sorted[0].id(), "test:native:record#first");
-    assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(1)));
-    assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(2)));
+    assert_eq!(sorted[1].field("ordinal"), Some(cadmpeg_core::json!(1)));
+    assert_eq!(sorted[2].field("ordinal"), Some(cadmpeg_core::json!(2)));
 }
 
 #[test]
@@ -914,10 +963,10 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
 
     struct FieldOwner;
     impl RewriteIdentities for FieldOwner {
-        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_native_value(
             ctx: &DecodeContext<'_>,
             value: &mut serde_json::Value,
-            map: &mut IdentityMap<'_, F>,
+            map: &mut IdentityMap<'_>,
         ) -> Result<(), CodecError> {
             Face::rewrite_native_value(ctx, value, map)
         }
@@ -928,17 +977,17 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         ) -> Result<(), CodecError> {
             Ok(())
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+        fn rewrite_identities(
             self,
             _ctx: &DecodeContext<'_>,
-            _map: &mut IdentityMap<'_, F>,
+            _map: &mut IdentityMap<'_>,
         ) -> Result<Self, CodecError> {
             Ok(self)
         }
     }
     let record = NativeRecord::new(
         crate::ids::Identity::new("test:model:face#one").unwrap(),
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "sense": "forward",
             "shell": "test:model:shell#one",
             "name": "test:model:shell#one"
@@ -957,9 +1006,9 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         .unwrap();
     assert_eq!(
         fields["shell"],
-        serde_json::json!("test:occurrence:shell#one")
+        cadmpeg_core::json!("test:occurrence:shell#one")
     );
-    assert_eq!(fields["name"], serde_json::json!("test:model:shell#one"));
+    assert_eq!(fields["name"], cadmpeg_core::json!("test:model:shell#one"));
     assert!(!fields.contains_key("id"));
     ctx.finish_session().unwrap();
 }
@@ -972,11 +1021,11 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
     for kind in [
         "body", "face", "shell", "loop", "coedge", "edge", "vertex", "document",
     ] {
-        let mut value = serde_json::json!({"kind": kind});
+        let mut value = cadmpeg_core::json!({"kind": kind});
         if kind != "document" {
-            value["value"] = serde_json::json!(format!("test:model:{kind}#one"));
+            value["value"] = cadmpeg_core::json!(format!("test:model:{kind}#one"));
         }
-        let expected: AttributeTarget = serde_json::from_value(value.clone()).unwrap();
+        let expected: AttributeTarget = json::from_value(value.clone()).unwrap();
         let remap = |id: &str| {
             Ok(format!(
                 "test:occurrence:{}",
@@ -987,16 +1036,16 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
         AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut map).unwrap();
         map.finish().unwrap();
         let expected = crate::schema::rewrite::identities(&ctx, expected, remap).unwrap();
-        assert_eq!(value, serde_json::to_value(expected).unwrap());
+        assert_eq!(value, json::to_value(expected).unwrap());
     }
     ctx.finish_session().unwrap();
 }
 
 #[test]
-fn native_field_copy_preserves_bits() {
+fn native_field_copy_preserves_bits_and_holds_one_zero() {
     let record = NativeRecord::new(
         crate::ids::Identity::new("test:native:record#fields").unwrap(),
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "text": "retained text",
             "unsigned": u64::MAX,
             "negative_zero": -0.0,
@@ -1009,10 +1058,7 @@ fn native_field_copy_preserves_bits() {
     let copied = record.copy_fields(&ctx).unwrap();
     assert_eq!(copied, record.fields().unwrap());
     assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
-    assert_eq!(
-        copied["negative_zero"].as_f64().unwrap().to_bits(),
-        (-0.0_f64).to_bits()
-    );
+    assert_eq!(copied["negative_zero"].as_f64().unwrap().to_bits(), 0);
     ctx.finish_session().unwrap();
 }
 
@@ -1024,10 +1070,11 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
     use cadmpeg_core::CodecError;
     let fields = NativeRecord::new(
         crate::ids::Identity::new("test:native:record#fields").unwrap(),
-        serde_json::from_value(serde_json::json!({"nested": [{"text": "retained"}]})).unwrap(),
+        json::from_value(cadmpeg_core::json!({"nested": [{"text": "retained"}]})).unwrap(),
     )
     .unwrap();
     let body = NativeRecord::from_typed(&Body {
+        unstated: None,
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
         transform: None,
@@ -1064,7 +1111,10 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
             ))
         })
         .unwrap();
-    assert_eq!(rewritten["name"], serde_json::json!("test:model:body#one"));
+    assert_eq!(
+        rewritten["name"],
+        cadmpeg_core::json!("test:model:body#one")
+    );
     assert!(!rewritten.contains_key("id"));
 }
 
@@ -1077,7 +1127,7 @@ fn typed_read_parses_the_stored_text_and_states_the_message_without_position() {
         value: u32,
     }
     let ctx = super::test_ctx();
-    let read = NativeRecord::from_typed(&serde_json::json!({
+    let read = NativeRecord::from_typed(&cadmpeg_core::json!({
         "id": "test:native:record#typed", "value": 7,
     }))
     .unwrap()
@@ -1087,7 +1137,7 @@ fn typed_read_parses_the_stored_text_and_states_the_message_without_position() {
         (read.id.as_str(), read.value),
         ("test:native:record#typed", 7)
     );
-    let refused = serde_json::json!({"id": "test:native:record#typed", "value": "seven"});
+    let refused = cadmpeg_core::json!({"id": "test:native:record#typed", "value": "seven"});
     let error = NativeRecord::from_typed(&refused)
         .unwrap()
         .to_typed::<Record>(&ctx)
@@ -1098,9 +1148,7 @@ fn typed_read_parses_the_stored_text_and_states_the_message_without_position() {
     assert_eq!(id.as_str(), "test:native:record#typed");
     assert_eq!(
         source.to_string(),
-        serde_json::from_value::<Record>(refused)
-            .unwrap_err()
-            .to_string()
+        json::from_value::<Record>(refused).unwrap_err().to_string()
     );
     assert!(source.is_data());
 }
@@ -1108,7 +1156,7 @@ fn typed_read_parses_the_stored_text_and_states_the_message_without_position() {
 #[test]
 fn typed_read_holds_one_depth_frame_per_stored_container_level() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let record = NativeRecord::from_typed(&serde_json::json!({
+    let record = NativeRecord::from_typed(&cadmpeg_core::json!({
         "id": "test:native:record#nested", "value": [["]"], {"[": 1}],
     }))
     .unwrap();
@@ -1119,7 +1167,7 @@ fn typed_read_holds_one_depth_frame_per_stored_container_level() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = record.to_typed::<serde_json::Value>(&ctx);
         if admitted {
-            assert_eq!(result.unwrap()["value"][1]["["], serde_json::json!(1));
+            assert_eq!(result.unwrap()["value"][1]["["], cadmpeg_core::json!(1));
         } else {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 cadmpeg_core::CodecError::from(result.unwrap_err())
@@ -1183,7 +1231,7 @@ fn map_constructor_renders_the_same_canonical_json_as_serde() {
         fields: &'a serde_json::Map<String, serde_json::Value>,
     }
 
-    let fields = serde_json::json!({
+    let fields = cadmpeg_core::json!({
         "a\"key": [null, true, false, u64::MAX, i64::MIN, -0.0, 1.25e100],
         "nested": {"z": ["line\nbreak", "quote\"", "back\\slash"], "a": {}},
         "text": "\u{0}\t\r é 🦀",
@@ -1191,17 +1239,16 @@ fn map_constructor_renders_the_same_canonical_json_as_serde() {
     });
     let fields = fields.as_object().unwrap().clone();
     let id = "test:native:record#escaped-\"é🦀";
-    let expected = serde_json::to_string(&Record {
+    let mut zeroed = fields.clone();
+    zeroed["a\"key"][5] = cadmpeg_core::json!(0.0);
+    let expected = json::to_string(&Record {
         id,
-        fields: &fields,
+        fields: &zeroed,
     })
     .unwrap();
     let record = NativeRecord::new(crate::ids::Identity::new(id).unwrap(), fields.clone()).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), expected);
+    assert_eq!(json::to_string(&record).unwrap(), expected);
     let copied = record.fields().unwrap();
     assert_eq!(copied, fields);
-    assert_eq!(
-        copied["a\"key"][5].as_f64().unwrap().to_bits(),
-        (-0.0_f64).to_bits()
-    );
+    assert_eq!(copied["a\"key"][5].as_f64().unwrap().to_bits(), 0);
 }

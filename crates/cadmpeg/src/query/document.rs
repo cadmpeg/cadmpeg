@@ -5,6 +5,7 @@
 //! each neutral home and `native.<codec>`. Identity lookup is exact string
 //! match against each record's top-level `id`.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -128,7 +129,7 @@ impl CadirDocument {
     }
 
     pub(super) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
-        let root: Value = serde_json::from_slice(bytes)
+        let root: Value = json::from_slice(bytes)
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
         Ok(Self::from_value(root))
     }
@@ -339,7 +340,7 @@ pub(super) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<
 mod tests {
     use super::super::item::ArenaTarget;
     use super::{CadirDocument, RecordSelection, RequestedIds};
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     #[test]
     fn indexes_neutral_and_native_arenas_and_skips_non_arrays() {

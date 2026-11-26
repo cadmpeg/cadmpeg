@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::expr::{MulOp, Node};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
@@ -518,11 +518,11 @@ fn a_referenced_parameter_stays_a_user_parameter() {
     ir.design.parameters.push(parameter(
         "twice",
         "Twice",
-        neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(reference("gap")),
-            right: Box::new(number(2.0, None)),
-        }),
+        neutral(Node::mul(
+            reference("gap"),
+            MulOp::Multiply,
+            number(2.0, None),
+        )),
         Some(40.0),
     ));
     let operand = |name: &str| {
@@ -974,7 +974,7 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
     drive(&mut ir, "gap");
     parameter_mut(&mut ir, "gap")
         .source_settings
-        .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
+        .insert(cadmpeg_ir::codec_name!("f3d:literal"), literal());
     let (_, decoded, bytes) = write_bytes(&ir);
     let gap = decoded
         .model
@@ -1117,4 +1117,41 @@ fn a_driven_parameter_names_its_owner_and_its_display_with_its_dimension() {
         format!("{} (Radius)", parameter_id("gap")),
     );
     assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
+}
+
+#[test]
+fn a_failure_in_one_dimension_drops_that_dimension_alone() {
+    let gap = constraint_id(SKETCH, "gap");
+    let _failing = super::fail_records([gap.as_str()]);
+    let (report, decoded) = write(&on_xy());
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let bound = bound_kinds(&decoded);
+    for (_, name) in DIMENSIONS {
+        assert_eq!(
+            bound.contains_key(name),
+            name != "Gap",
+            "{name}: {bound:#?}"
+        );
+    }
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "without {gap}: the writer cannot write its records (not implemented yet: a test failure of the records of {gap})"
+        )),
+        "{omitted}"
+    );
+    for (constraint, _) in DIMENSIONS
+        .iter()
+        .filter(|(constraint, _)| *constraint != "gap")
+    {
+        assert!(
+            !omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Gap" && parameter.owner.is_none()));
 }

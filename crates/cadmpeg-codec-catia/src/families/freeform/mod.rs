@@ -875,6 +875,7 @@ pub(super) fn try_decode_freeform_surfaces(
             }
         };
         let mut losses = Vec::new();
+        let mut given_up = Vec::new();
         if !wire_topology_transferred {
             if topology_transferred {
                 losses.push((CatiaLossCode::TopologyB5GaugeSubstituted).note(format!(
@@ -884,13 +885,21 @@ pub(super) fn try_decode_freeform_surfaces(
                 identity_statement(&b5_face_object_ids)
             )));
             } else if object_stream_selection_exhausted {
-                losses.push(
-                    (CatiaLossCode::TopologyObjectStreamWorkSliceExhausted).note(format!(
-            "The object-stream graph exceeds the bounded frame-index and record-materialization \
-             work slice; its topology remains native. The {object_stream_run_count} object runs \
-             stay inside retained record {payload_id}."
-        )),
-                );
+                let why = CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+                    "The object-stream graph exceeds the bounded frame-index and \
+                     record-materialization work slice; its topology remains native. The \
+                     {object_stream_run_count} object runs stay inside retained record \
+                     {payload_id}."
+                ));
+                if ir.geometry.faces.is_empty() {
+                    given_up.push(admitted!(give_up_object_stream(
+                        ctx,
+                        scan,
+                        &payload_id,
+                        &why
+                    )));
+                }
+                losses.push(why);
             } else {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
@@ -899,6 +908,25 @@ pub(super) fn try_decode_freeform_surfaces(
                     census_face_object_ids.len(),
                     identity_statement(&census_face_object_ids)
                 )));
+                // Owned-patch faces are keyed by roster position, not by b5
+                // face record, so the b5 face records are given up only where
+                // the route states no face.
+                if ir.geometry.faces.is_empty() {
+                    let face_records = census_face_object_ids
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>();
+                    let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
+                    losses.extend(face_records.into_iter().map(|object_id| {
+                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::compose(
+                                &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                                object_id,
+                            ),
+                            format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
+                        )
+                        .loss()
+                    }));
+                }
             }
         }
         losses.extend(owned_patch_loss);
@@ -1124,11 +1152,46 @@ pub(super) fn try_decode_freeform_surfaces(
             },
             annotations,
             unknowns,
+            given_up,
             admitted_model_entities: admission.admitted(),
         }))
     })()
     .transpose()
 }
+
+/// Gives up the object stream whose graph passed its work slice, for the
+/// codec loss `why`. The object runs lie in the payload that the retained
+/// record `payload` keeps whole, so the part keeps only the digest of the
+/// payload bytes and links to that record.
+fn give_up_object_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    payload: &UnknownId,
+    why: &cadmpeg_ir::report::loss::LossNote,
+) -> Result<cadmpeg_ir::unknown::part::GivenUpPart, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+    let (bytes, stream) = match scan.brep.as_ref() {
+        Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
+        None => (scan.data.as_ref(), "CATPart"),
+    };
+    let part = Part::at(
+        "catia",
+        OBJECT_STREAM_PART,
+        0,
+        bytes,
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .in_stream(cadmpeg_ir::stream_name!("catia:").with_suffix(stream))
+    .contained_in(cadmpeg_ir::ids::Identity::from(payload.clone()))
+    .digest_only();
+    ctx.give_up_part(
+        part,
+        cadmpeg_core::CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+    )
+}
+
+/// The part an object stream is (`catia.md`, Partial decode).
+const OBJECT_STREAM_PART: &str = "object-stream";
 
 fn attach_standalone_wires(
     ir: &mut CadIr,
@@ -1190,14 +1253,14 @@ fn attach_standalone_wires(
         return Ok(false);
     }
     let shell = Shell::with_members(shell_id, shell_region_id, edge_ids, Vec::new());
-    for id in [
-        body_id.as_str(),
-        region_id.as_str(),
-        shell_owner_id.as_str(),
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_owner_id),
     ] {
         annotate(
             annotations,
-            id,
+            &key,
             "consolidated_curve_wire",
             0,
             "standalone_wire_owner",
@@ -1222,16 +1285,16 @@ fn attach_standalone_wires(
             index,
             EdgeId::mint,
         )?;
-        for id in [
-            point_ids[0].as_str(),
-            point_ids[1].as_str(),
-            vertex_ids[0].as_str(),
-            vertex_ids[1].as_str(),
-            edge_id.as_str(),
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[0]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[1]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[0]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[1]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&edge_id),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "consolidated_curve_wire",
                 u64_from_index(pos),
                 "curve_domain_endpoint",
@@ -1288,15 +1351,13 @@ fn attach_standalone_wires(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
     let region_shells = vec![shell_owner_id];
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: region_body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, region_body_id, region_shells));
     admission.charge()?;
     ir.geometry.shells.push(shell);
     Ok(true)
@@ -1391,7 +1452,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::codec_format!(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_id!(crate::dialect::FORMAT) {
             continue;
         }
         let Some(tag) = source
@@ -2002,16 +2063,16 @@ fn attach_closed_two_edge_face(
             native_ref: None,
         });
     }
-    for id in [
-        body_id.as_str(),
-        region_id.as_str(),
-        shell_id.as_str(),
-        face_id.as_str(),
-        loop_id.as_str(),
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&face_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&loop_id),
     ] {
         annotate(
             annotations,
-            id,
+            &key,
             annotation_source,
             u64_from_index(carrier_pos),
             "closed_two_edge_patch",
@@ -2020,10 +2081,13 @@ fn attach_closed_two_edge_face(
     }
     annotations.field_exactness(&face_id, "sense", Exactness::Inferred)?;
     for (index, position) in [first_point, second_point].into_iter().enumerate() {
-        for id in [point_ids[index].as_str(), vertex_ids[index].as_str()] {
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[index]),
+        ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 annotation_source,
                 u64_from_index(carrier_pos),
                 "shared_boundary_endpoint",
@@ -2048,14 +2112,14 @@ fn attach_closed_two_edge_face(
         } else {
             [vertex_ids[1].clone(), vertex_ids[0].clone()]
         };
-        for id in [
-            edge_ids[index].as_str(),
-            coedge_ids[index].as_str(),
-            pcurve_ids[index].as_str(),
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&edge_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&coedge_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&pcurve_ids[index]),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 annotation_source,
                 u64_from_index(closed.edges[index].pos),
                 "closed_boundary",
@@ -2128,12 +2192,11 @@ fn attach_closed_two_edge_face(
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     admission.charge()?;
     ir.geometry.bodies.push(Body {
         id: body_id,
@@ -2143,6 +2206,7 @@ fn attach_closed_two_edge_face(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
     if fitted_surface {
@@ -2373,8 +2437,6 @@ enum ConsolidatedCarrierChart<'a> {
 #[derive(Clone, Copy, Default)]
 pub(in crate::families) struct ConsolidatedCurveBindingCounts {
     pub(super) standard_edges: usize,
-    pub(in crate::families) widened_vertices: usize,
-    pub(in crate::families) max_vertex_widening: f64,
     pub(super) partner_supports: usize,
     pub(super) partner_face_pcurve_pairs: usize,
     pub(super) standard_face_surfaces: usize,
@@ -3199,7 +3261,7 @@ fn append_resolved_consolidated_surface_curves(
                         ]
                         .into_iter()
                         .flatten()
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                         let mut coedges = Vec::new();
                         for (side, surface) in standard_surfaces.iter().enumerate() {
@@ -3405,7 +3467,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve_bound_to_standard_edge",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural.id, "curve")?;
             annotations.derived(&procedural.id, "definition")?;
         } else {
             let curve_id = crate::resource::compose_index_id(
@@ -3443,7 +3504,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural_id, "curve")?;
             annotations.derived(&procedural_id, "definition")?;
             admission.charge()?;
             let _attached = ir
@@ -4274,6 +4334,7 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -4355,6 +4416,7 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -5532,5 +5594,62 @@ mod tests {
             service[0].curve.id.as_str(),
             "catia:consolidated:line-profile-curve#0"
         );
+    }
+
+    /// A work-bounded object stream is a given-up part: its stub, not a
+    /// token that no record carries, is the record the charge names, and the
+    /// part keeps only the digest of the payload that the retained payload
+    /// record keeps whole.
+    #[test]
+    fn an_exhausted_object_stream_is_given_up_as_a_part_of_the_retained_payload() {
+        let bytes = crate::test_support::test_container::standard_catpart();
+        crate::test_support::with_service_context(|ctx| {
+            let scan =
+                crate::container::scan_bytes(ctx, bytes.clone()).expect("complete container");
+            let payload =
+                cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#freeform".to_owned())
+                    .expect("payload identity");
+            let why = crate::loss::CatiaLossCode::TopologyObjectStreamWorkSliceExhausted
+                .note("the object-stream graph exceeds its work slice".to_owned());
+            let part = super::give_up_object_stream(ctx, &scan, &payload, &why)
+                .expect("the part is given up");
+            let stub = part.id().as_str().to_owned();
+            assert!(stub.starts_with("catia:source:part#"), "{stub}");
+            let mut ir = CadIr::empty();
+            let mut fidelity = cadmpeg_ir::SourceFidelity::new(
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
+            );
+            let loss = part
+                .commit(ctx, &mut ir, &mut fidelity)
+                .expect("the part commits");
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_unreadable_kind()
+            );
+            assert!(
+                loss.message.contains(&format!(" record={stub}: ")),
+                "{}",
+                loss.message
+            );
+            assert!(
+                !loss.message.contains("catia:b5:object-stream"),
+                "{}",
+                loss.message
+            );
+            let stubs = ir.native_unknowns("catia").expect("native unknowns");
+            let [stub_record] = stubs.as_slice() else {
+                panic!("one stub: {stubs:?}");
+            };
+            assert_eq!(stub_record.id.as_str(), stub);
+            assert_eq!(
+                stub_record.links,
+                [cadmpeg_ir::ids::Identity::from(payload)]
+            );
+            let retained = fidelity
+                .retained_record(&stub)
+                .expect("the part is retained");
+            assert!(retained.data().is_none(), "the part keeps only a digest");
+            assert!(retained.byte_len() > 0);
+        });
     }
 }
