@@ -230,7 +230,7 @@ fn root_product_has_the_root_identity() {
 #[test]
 fn kernel_annotation_is_admitted() {
     let record = cadmpeg_asm::brep::annotations::AnnotationRecord {
-        id: "inventor:body#one".into(),
+        id: "inventor:asm:body#one".into(),
         stream: "carrier".into(),
         offset: 7,
         tag: cadmpeg_asm::brep::annotations::AnnotationTag::ProceduralSurface,

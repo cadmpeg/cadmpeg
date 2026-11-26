@@ -654,7 +654,7 @@ pub(crate) fn annotations(
         {
             crate::annotations::note(
                 annotations,
-                annotation.id.as_str(),
+                &annotation.id,
                 &stream,
                 u64_from_index(entity.offset),
                 "swift_gdt_analysis",

@@ -1350,6 +1350,14 @@ macro_rules! id_type {
             fn from(value: $name) -> Self { value.0 }
         }
 
+        impl From<$name> for $crate::annotations::AnnotationKey {
+            fn from(value: $name) -> Self { Self::from(value.0) }
+        }
+
+        impl From<&$name> for $crate::annotations::AnnotationKey {
+            fn from(value: &$name) -> Self { Self::from(&value.0) }
+        }
+
         impl From<$crate::ids::Identity> for $name {
             fn from(value: $crate::ids::Identity) -> Self { Self(value) }
         }

@@ -107,7 +107,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
             serde_json::json!({
                 "ir": result.ir(),
                 "report": result.report(),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),

@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, CadirRead, DecodeSidecar, ReadFailure, ReadOptions};
+use cadmpeg_ir::{CadIr, DecodeSidecar, ReadFailure, ReadOptions};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
@@ -171,25 +171,11 @@ fn load(
             }
             SidecarLoad::Matching(sidecar) => {
                 let DecodeSidecar {
-                    report,
-                    mut fidelity,
-                    ..
+                    report, fidelity, ..
                 } = *sidecar;
-                read.remove_given_up_annotations(&mut fidelity);
-                let CadirRead {
-                    document,
-                    report: read_report,
-                    fidelity: read,
-                    ..
-                } = read;
-                let (_, retained) = read.into_parts();
-                for (id, record) in retained {
-                    if fidelity.retained_record(id.as_str()).is_none() {
-                        fidelity
-                            .insert_retained_record(id, record)
-                            .map_err(|error| anyhow!("{}: {error}", path.display()))?;
-                    }
-                }
+                let (document, read_report, fidelity) = read
+                    .with_sidecar(fidelity)
+                    .map_err(|error| anyhow!("{}: {error}", path.display()))?;
                 LoadedDocument::restored(document, report, fidelity, input_bytes)
                     .with_read_report(read_report)
             }
@@ -324,8 +310,18 @@ mod tests {
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        annotations.note(given_up, &stream, 0, None);
-        annotations.note(kept, &stream, 0, None);
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(given_up).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(kept).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
         let mut fidelity =
             SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
         fidelity.annotations = annotations.build();

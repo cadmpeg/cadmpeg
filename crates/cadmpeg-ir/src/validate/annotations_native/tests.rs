@@ -585,7 +585,7 @@ fn keys_of_design_and_process_records_resolve() {
     let absent = "test:design:feature#absent";
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
-    for key in named.iter().chain([&absent]) {
+    for key in named.into_iter().chain([absent]) {
         annotations.note(key, &stream, 0, None);
         annotations.exactness(key, crate::provenance::Exactness::Inferred);
     }

@@ -577,17 +577,30 @@ pub const NATIVE_ELISION_KEY: &str = "__elided";
 pub const NATIVE_ELISION_MARKER: &str =
     "native arena values are omitted; the records are pinned by a digest over their canonical JSON";
 
-/// Serializes decode-time source fidelity for a snapshot, with
-/// [`ELIDED_DIGEST`] in place of the content digest and of each codec digest
-/// whose key ends in `_local_sha256`: they digest decoded content, so they
-/// differ across platforms. Digests over source bytes stay pinned.
+/// Serializes the source fidelity of a CADIR write of `ir` for a snapshot:
+/// `fidelity` with the annotations of the written document (§3.2, §3.4), and
+/// with [`ELIDED_DIGEST`] in place of the content digest and of each codec
+/// digest whose key ends in `_local_sha256`: they digest decoded content, so
+/// they differ across platforms. Digests over source bytes stay pinned.
 ///
 /// # Panics
 ///
-/// The fidelity does not serialize.
+/// The CADIR writer refuses `ir`, or the fidelity does not serialize.
 #[must_use]
-pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
+pub fn fidelity_snapshot(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> serde_json::Value {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
+        .expect("the CADIR writer drops what it cannot write and does not refuse");
     let mut value = json::to_value(fidelity).expect("serialize source_fidelity");
+    value["annotations"] = json::to_value(
+        plan.annotations()
+            .expect("a CADIR write with a fidelity states its annotations"),
+    )
+    .expect("serialize annotations");
     if let Some(digest) = value.get_mut("content_digest") {
         *digest = ELIDED_DIGEST.into();
     }
