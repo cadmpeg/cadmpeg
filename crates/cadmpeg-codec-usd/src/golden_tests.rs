@@ -74,7 +74,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// target, and its report.
 fn encode_snapshot(bytes: &[u8]) -> String {
     let value = match UsdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
-        Ok(result) => match try_encode(result.ir(), TargetRequest::Inherit) {
+        Ok(result) => match try_encode(result.ir(), TargetRequest::Unnamed) {
             Ok((text, report)) => serde_json::json!({
                 "report": report,
                 "usda": text.lines().collect::<Vec<_>>(),

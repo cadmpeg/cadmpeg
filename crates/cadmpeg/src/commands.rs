@@ -381,7 +381,7 @@ pub(crate) fn dump(
         let plan = encoder
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(
