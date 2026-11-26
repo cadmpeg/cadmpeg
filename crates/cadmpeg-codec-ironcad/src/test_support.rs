@@ -77,3 +77,154 @@ pub(crate) fn corpus(name: &str) -> Vec<u8> {
         .join(name);
     std::fs::read(path).unwrap()
 }
+
+/// One item of an interned ACIS binary stream.
+#[derive(Clone, Copy)]
+pub(crate) enum Sab {
+    /// A record name token that defines the next name id.
+    Name(&'static str),
+    /// A sub-identifier name token that defines the next name id.
+    SubName(&'static str),
+    Ref(i32),
+    Long(i32),
+    Position([f64; 3]),
+    Vector([f64; 3]),
+    True,
+    False,
+    End,
+}
+
+/// An ACIS 32.0 binary save stream with interned names.
+pub(crate) fn acis_stream(items: &[Sab]) -> Vec<u8> {
+    let mut bytes = b"ACIS BinaryFile".to_vec();
+    for word in [3200_u32, 0, 1, 0] {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    for text in ["IronCAD - 32.0", "ACIS 32.0 NT", "date"] {
+        bytes.push(0x07);
+        bytes.push(u8::try_from(text.len()).unwrap());
+        bytes.extend_from_slice(text.as_bytes());
+    }
+    for value in [10.0_f64, 1.0e-6, 0.0] {
+        bytes.push(0x06);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0x0a, 0x07, 3]);
+    bytes.extend_from_slice(b"key");
+    let mut defined = 0_u32;
+    let name = |bytes: &mut Vec<u8>, tag: u8, text: &str, id: u32| {
+        bytes.push(tag);
+        bytes.push(u8::try_from(text.len() + 5).unwrap());
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.push(b'%');
+        bytes.extend_from_slice(&id.to_le_bytes());
+    };
+    for item in items {
+        match item {
+            Sab::Name(text) | Sab::SubName(text) => {
+                defined += 1;
+                let tag = if matches!(item, Sab::Name(_)) {
+                    0x0d
+                } else {
+                    0x0e
+                };
+                name(&mut bytes, tag, text, defined);
+            }
+            Sab::Ref(value) => {
+                bytes.push(0x0c);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            Sab::Long(value) => {
+                bytes.push(0x04);
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            Sab::Position(value) | Sab::Vector(value) => {
+                bytes.push(if matches!(item, Sab::Position(_)) {
+                    0x13
+                } else {
+                    0x14
+                });
+                for component in value {
+                    bytes.extend_from_slice(&component.to_le_bytes());
+                }
+            }
+            Sab::True => bytes.push(0x0a),
+            Sab::False => bytes.push(0x0b),
+            Sab::End => bytes.push(0x11),
+        }
+    }
+    bytes.extend_from_slice(&[0x0d, 16]);
+    bytes.extend_from_slice(b"End-of-ACIS-data");
+    bytes
+}
+
+/// A solid made of one unbounded plane face, in interned ACIS 32.0 form.
+pub(crate) fn plane_face_body() -> Vec<u8> {
+    face_body("plane")
+}
+
+/// A solid made of one face on a surface record of class `surface`, in
+/// interned ACIS 32.0 form.
+pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
+    use Sab::{End, False, Long, Name, Position, Ref, SubName, True, Vector};
+    let low = Position([0.0, 0.0, 0.0]);
+    let high = Position([1.0, 1.0, 0.0]);
+    let prefix = [Ref(-1), Long(-1), Long(-1), Ref(-1)];
+    let mut items = vec![Name("body")];
+    items.extend(prefix);
+    items.extend([
+        Long(0),
+        Ref(1),
+        Ref(-1),
+        Ref(-1),
+        True,
+        low,
+        high,
+        End,
+        Name("lump"),
+    ]);
+    items.extend(prefix);
+    items.extend([Ref(-1), Ref(2), Ref(0), True, low, high, End, Name("shell")]);
+    items.extend(prefix);
+    items.extend([
+        Ref(-1),
+        Ref(-1),
+        Ref(3),
+        Ref(-1),
+        Ref(1),
+        True,
+        low,
+        high,
+        End,
+        Name("face"),
+    ]);
+    items.extend(prefix);
+    items.extend([
+        Ref(-1),
+        Ref(-1),
+        Ref(2),
+        Ref(-1),
+        Ref(4),
+        False,
+        False,
+        True,
+        low,
+        high,
+        False,
+        End,
+    ]);
+    items.extend([SubName(surface), Name("surface")]);
+    items.extend(prefix);
+    items.extend([
+        Position([0.0, 0.0, 0.0]),
+        Vector([0.0, 0.0, 1.0]),
+        Vector([1.0, 0.0, 0.0]),
+        False,
+        False,
+        False,
+        False,
+        False,
+        End,
+    ]);
+    acis_stream(&items)
+}
