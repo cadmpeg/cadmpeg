@@ -4809,11 +4809,10 @@ fn project_design(
         retired = projection.retired;
         Ok(())
     })?;
-    retired_states::annotate_state_records(ir, annotations);
+    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     if retired.is_empty() {
         return Ok(());
     }
-    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     stamp_feature_baseline(ctx, ir)
 }
 

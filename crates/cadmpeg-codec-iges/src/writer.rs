@@ -189,6 +189,7 @@ fn body(
         losses,
         notes: vec![note.into()],
         written_row: None,
+        annotations: None,
     }
 }
 

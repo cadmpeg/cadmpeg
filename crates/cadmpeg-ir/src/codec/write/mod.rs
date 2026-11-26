@@ -185,6 +185,7 @@ impl<E: EncoderBackend> Encoder for E {
             losses: body_losses,
             mut notes,
             written_row,
+            annotations,
         } = body;
         let namespace = const {
             match LossNamespace::new(E::FORMAT.as_str()) {
@@ -240,6 +241,7 @@ impl<E: EncoderBackend> Encoder for E {
             bytes,
             format: E::FORMAT,
             coverage,
+            annotations,
         };
         if let Some(validation) = input.validation {
             plan.charge_carried_errors(input.ir, validation);
@@ -514,6 +516,10 @@ pub struct ExportBody {
     /// The catalog row the payload is, where the writer wrote another row
     /// than the resolution names; `None` for the resolved row.
     pub written_row: Option<target::WrittenRow>,
+    /// The annotations of the input's fidelity less those of each record the
+    /// payload leaves out, where it leaves out a record they name; `None`
+    /// where they describe the payload as given.
+    pub annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportBody {
@@ -533,6 +539,7 @@ impl ExportBody {
             losses: Vec::new(),
             notes: Vec::new(),
             written_row: None,
+            annotations: None,
         }
     }
 }
@@ -547,12 +554,20 @@ pub struct ExportPlan {
     coverage: ArenaCoverage,
     report: ExportReport,
     bytes: Vec<u8>,
+    annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportPlan {
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report
+    }
+
+    /// The annotations that describe the payload, where the write left out a
+    /// record the input's annotations name ([`ExportBody::annotations`]).
+    #[must_use]
+    pub fn annotations(&self) -> Option<&crate::annotations::Annotations> {
+        self.annotations.as_ref()
     }
 
     /// The error findings of `report` that name something this payload may carry.
@@ -760,6 +775,14 @@ impl EncoderBackend for CadirEncoder {
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
         );
         body.losses = losses;
+        body.annotations = input
+            .fidelity
+            .filter(|_| !std::ptr::eq(ir, input.ir))
+            .and_then(|fidelity| {
+                let named = fidelity.annotations.named_in(input.ir);
+                let mut annotations = fidelity.annotations.clone();
+                annotations.remove_left(&named, ir).then_some(annotations)
+            });
         Ok(body)
     }
 }

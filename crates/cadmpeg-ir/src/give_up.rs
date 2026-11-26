@@ -351,7 +351,8 @@ pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
 /// Gives up each seed, in order, as a part (§3.3): removes it as
 /// [`drop_records`] does, and adds its `unknowns` stub to `codec`'s
 /// namespace and its canonical JSON to `fidelity` as an `untyped` retained
-/// record. `loss` states the loss of each seed from what its give-up did.
+/// record. The annotations of each record the give-ups remove go with it.
+/// `loss` states the loss of each seed from what its give-up did.
 ///
 /// # Errors
 ///
@@ -365,6 +366,7 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let named = fidelity.annotations.named_in(ir);
     let mut cascade = Cascade::new(ctx, ir)?;
     let mut losses = Vec::new();
     for seed in seeds {
@@ -396,6 +398,7 @@ pub(crate) fn give_up(
         )?;
         losses.push(part.commit(ctx, ir, fidelity)?);
     }
+    fidelity.annotations.remove_left(&named, ir);
     Ok(losses)
 }
 

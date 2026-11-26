@@ -73,6 +73,7 @@ impl<'ir> Deltas<'ir> {
         if !keys.any(|key| matches!(key.target(), AnnotationTarget::Delta { .. })) {
             return Ok(deltas);
         }
+        deltas.ids = crate::annotations::delta_records(ir);
         let wanted = annotations
             .exactness()
             .iter()
@@ -83,20 +84,7 @@ impl<'ir> Deltas<'ir> {
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
-        let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
-            Some((
-                evaluation.id.as_str(),
-                &evaluation.content.as_ref()?.delta.records,
-            ))
-        });
-        let states =
-            ir.process.states.iter().filter_map(|state| {
-                Some((state.id.as_str(), &state.content.as_ref()?.delta.records))
-            });
-        for (qualifier, records) in evaluations.chain(states) {
-            for record in records.identities() {
-                deltas.ids.insert((qualifier, record));
-            }
+        for (qualifier, records) in crate::annotations::deltas(ir) {
             for (record, value) in
                 records.project_records(ctx, |record| wanted.contains(&(qualifier, record)))
             {
