@@ -21,7 +21,7 @@ struct TextFontDefinition {
     supersedes: Option<u32>,
 }
 
-fn standard_color(number: i64) -> Option<Color> {
+pub(crate) fn standard_color(number: i64) -> Option<Color> {
     let (r, g, b) = match number {
         1 => (0.0, 0.0, 0.0),
         2 => (1.0, 0.0, 0.0),

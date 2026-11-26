@@ -64,8 +64,8 @@ impl AnnotationKey {
     /// The key of `record` in the delta of `qualifier`, an evaluation or a
     /// process state.
     #[must_use]
-    pub fn in_delta(qualifier: &impl Qualifier, record: &str) -> Self {
-        Self::qualified(qualifier.as_qualifier(), record)
+    pub fn in_delta(qualifier: &impl Qualifier, record: &impl AsRef<Identity>) -> Self {
+        Self::qualified(qualifier.as_qualifier(), record.as_ref().as_str())
     }
 
     fn qualified(qualifier: &str, record: &str) -> Self {

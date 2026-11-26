@@ -118,21 +118,30 @@ impl GlobalRestatement {
                 {
                     Statement::Source(gradations.to_string())
                 }
-                (17, value) => match (real(value), length_factor_mm) {
-                    (Some(width), _)
-                        if width == 0.0
-                            && table == GlobalTable::V5_0
-                            && resolved.as_ref().is_some_and(|resolved| {
-                                resolved.global_table() == GlobalTable::V5_0
-                            }) =>
-                    {
-                        Statement::Source("0".to_owned())
+                (17, value) => {
+                    let width = match value {
+                        SourceField::Real(value) => Some(value.get()),
+                        SourceField::Integer(value) => i32::try_from(*value).ok().map(f64::from),
+                        SourceField::Omitted | SourceField::Text(_) | SourceField::Unreadable => {
+                            None
+                        }
+                    };
+                    match (width, length_factor_mm) {
+                        (Some(width), _)
+                            if width == 0.0
+                                && table == GlobalTable::V5_0
+                                && resolved.as_ref().is_some_and(|resolved| {
+                                    resolved.global_table() == GlobalTable::V5_0
+                                }) =>
+                        {
+                            Statement::Source("0".to_owned())
+                        }
+                        (Some(width), Some(factor)) if width > 0.0 => Statement::source(
+                            cadmpeg_ir::scalar::FiniteReal::new(width * factor).map(super::number),
+                        ),
+                        _ => Statement::Unrestated,
                     }
-                    (Some(width), Some(factor)) if width > 0.0 => Statement::source(
-                        cadmpeg_ir::scalar::FiniteReal::new(width * factor).map(super::number),
-                    ),
-                    _ => Statement::Unrestated,
-                },
+                }
                 (24, SourceField::Integer(standard)) if (0..=7).contains(standard) => {
                     Statement::Source(standard.to_string())
                 }
@@ -251,10 +260,31 @@ fn source_text(value: &SourceField) -> String {
     }
 }
 
-fn real(value: &SourceField) -> Option<f64> {
-    match value {
-        SourceField::Real(value) => Some(value.get()),
-        SourceField::Integer(value) => i32::try_from(*value).ok().map(f64::from),
-        SourceField::Omitted | SourceField::Text(_) | SourceField::Unreadable => None,
+/// What the source Global field 19 states, when the source has Global cards
+/// and the field resolves to no positive length in millimetres.
+pub(super) fn unresolved_minimum_resolution(ir: &CadIr) -> Option<String> {
+    let bytes = source_global_bytes(ir)?;
+    let value = crate::global::source_fields(&bytes).map_or(SourceField::Unreadable, |fields| {
+        fields.get(18).cloned().unwrap_or(SourceField::Omitted)
+    });
+    let stated = match &value {
+        SourceField::Omitted => "no value: the source omits field 19".to_owned(),
+        SourceField::Unreadable => "an unreadable value".to_owned(),
+        value => format!("the invalid value {}", source_text(value)),
+    };
+    match crate::global::resolved(&bytes)
+        .as_ref()
+        .and_then(crate::global::ResolvedGlobal::length_context)
+    {
+        None => Some(match value {
+            SourceField::Omitted | SourceField::Unreadable => stated,
+            value => format!(
+                "{} in a length unit the decoder does not resolve",
+                source_text(&value)
+            ),
+        }),
+        Some(context) => cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm())
+            .is_none()
+            .then_some(stated),
     }
 }
