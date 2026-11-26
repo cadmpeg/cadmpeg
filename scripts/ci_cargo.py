@@ -87,7 +87,7 @@ def main() -> int:
                 env['RUSTC_WRAPPER'] = str(low_ram_rustc_wrapper())
                 env['CI_RUSTC_LOCK_DIR'] = lock_dir
             argv = low_ram_test_command(arguments, platform=sys.platform)
-        elif ram_gib <= BROAD_BUILD_CAP_RAM_GIB:
+        elif ram_gib <= BROAD_BUILD_CAP_RAM_GIB and sys.platform != 'linux':
             current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
             env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
     try:

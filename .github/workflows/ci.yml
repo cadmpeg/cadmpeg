@@ -300,7 +300,7 @@ jobs:
         run: |
           codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
           if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+            echo "CARGO_BUILD_JOBS=4" >> "$GITHUB_ENV"
           fi
 
       - name: Install cargo-nextest
@@ -314,7 +314,7 @@ jobs:
         # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          (while sleep 30; do free -m | awk 'NR==2 {m=$3} NR==3 {print "memory used " m " MiB, swap used " $3 " MiB"}'; done) &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast --timings
 
       - name: Upload build timings
@@ -522,6 +522,7 @@ jobs:
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld.exe
     runs-on: ${{ matrix.os }}
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
     # 3-core runner the test build takes about 50 minutes when it stays in
@@ -564,6 +565,12 @@ jobs:
 
       # Each step's timeout ends it before the job's, so the job fails rather
       # than being cancelled, and the report and cache steps run.
+      - name: Defender status
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled, AntivirusEnabled, IsTamperProtected | Format-List; Get-MpPreference | Select-Object ExclusionPath | Format-List
+
       - name: Build tests
         timeout-minutes: 75
         run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests --timings
