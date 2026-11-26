@@ -48,33 +48,22 @@ def low_ram_rustc_wrapper() -> Path:
     """Return the path to the flock-based `RUSTC_WRAPPER` script."""
     return Path(__file__).resolve().parent / 'ci_rustc_lock.py'
 
-# Tests that run for most of the test step. A binary with any of them starts
-# first, so they run beside the short tests instead of after them.
-SLOW_TESTS = (
-    'corpus_manifest::corpus_specimens_pass_check',
-    'corpus_manifest::corpus_manifest_dialects_are_pinned_from_classification',
-    'integration_tests::cc0_controller::',
-    'integration_tests::measured_geometry::',
-    'integration_tests::unreadable_shapes::',
-    'golden_tests::golden_snapshots_hold',
-    'integration_tests::csg_solids::a_sphere_and_a_torus_',
-    'every_read_optional_field_refuses_a_null_spelling',
-    'writer::tests::leaf_sweep::every_leaf_edit_of_',
-    'writer::tests::edit_refusals::',
-)
-# A binary still running after this many seconds is killed as hung.
-DEADLINE_SECONDS = 900
+
+# `run-tests` runs each test binary as one process with all its tests, so a
+# `LazyLock` fixture is decoded once per binary, not once per test, and runs
+# as many binaries at a time as the runner has cores. A binary still running
+# after this many seconds is killed as hung.
+DEADLINE_SECONDS = 1200
 RESULT = re.compile(r'^test (\S+) \.\.\. (ok|FAILED|ignored)')
 STILL_RUNNING = re.compile(r'^test (\S+) has been running for over 60 seconds$')
 
 
 @dataclass
-class Unit:
+class Binary:
     name: str
     argv: list[str]
     cwd: str
     tests: int
-    slow: bool
     log: Path = Path()
     process: subprocess.Popen | None = None
     started: float = 0.0
@@ -93,7 +82,7 @@ def package_name(package_id: str) -> str:
 
 def test_binaries(messages: str) -> list[tuple[str, str, str]]:
     """Return (name, executable, package directory) for each built test binary."""
-    binaries = []
+    found = []
     for line in messages.splitlines():
         if not line.startswith('{'):
             continue
@@ -106,93 +95,85 @@ def test_binaries(messages: str) -> list[tuple[str, str, str]]:
         kind = target['kind'][0]
         name = (f"{package}::bin/{target['name']}" if kind == 'bin'
                 else f"{package}::{target['name']}" if kind == 'test' else package)
-        binaries.append((name, message['executable'], str(Path(message['manifest_path']).parent)))
+        found.append((name, message['executable'], str(Path(message['manifest_path']).parent)))
+    return found
+
+
+def count_tests(executable: str, cwd: str) -> int:
+    listed = subprocess.run([executable, '--list', '--format', 'terse'], cwd=cwd,
+                            capture_output=True, text=True, check=True).stdout
+    return sum(1 for line in listed.splitlines() if line.endswith(': test'))
+
+
+def plan(built: list[tuple[str, str, str]], threads: int) -> list[Binary]:
+    """Return a process per binary with tests, the binaries with the most tests first."""
+    binaries = []
+    for name, executable, cwd in built:
+        if tests := count_tests(executable, cwd):
+            binaries.append(Binary(name, [executable, f'--test-threads={threads}'], cwd, tests))
+    binaries.sort(key=lambda binary: -binary.tests)
     return binaries
 
 
-def list_tests(executable: str, cwd: str) -> list[str]:
-    listed = subprocess.run([executable, '--list', '--format', 'terse'], cwd=cwd,
-                            capture_output=True, text=True, check=True).stdout
-    return [line.removesuffix(': test') for line in listed.splitlines() if line.endswith(': test')]
-
-
-def plan(binaries: list[tuple[str, str, str]], threads: int, split: bool) -> list[Unit]:
-    """Return the processes to run, those holding a slow test first."""
-    units = []
-    for name, executable, cwd in binaries:
-        tests = list_tests(executable, cwd)
-        slow = sum(1 for test in tests if any(filter_ in test for filter_ in SLOW_TESTS))
-        base = [executable, f'--test-threads={threads}']
-        if split and slow:
-            units.append(Unit(f'{name} (slow)', [*base, *SLOW_TESTS], cwd, slow, True))
-            skips = [argument for filter_ in SLOW_TESTS for argument in ('--skip', filter_)]
-            if len(tests) > slow:
-                units.append(Unit(name, [*base, *skips], cwd, len(tests) - slow, False))
-        elif tests:
-            units.append(Unit(name, base, cwd, len(tests), slow > 0))
-    units.sort(key=lambda unit: (not unit.slow, -unit.tests))
-    return units
-
-
-def finish(unit: Unit, now: float, timed_out: bool) -> None:
-    unit.seconds = now - unit.started
-    unit.lines = unit.log.read_text(errors='replace').splitlines()
+def finish(binary: Binary, now: float, timed_out: bool) -> None:
+    binary.seconds = now - binary.started
+    binary.lines = binary.log.read_text(errors='replace').splitlines()
     if timed_out:
-        unit.outcome = 'TIMEOUT'
+        binary.outcome = 'TIMEOUT'
     else:
-        unit.outcome = 'PASS' if unit.process.returncode == 0 else 'FAIL'
-    status = f'{unit.outcome:>7} [{unit.seconds:7.1f}s] {unit.name} ({unit.tests} tests)'
+        binary.outcome = 'PASS' if binary.process.returncode == 0 else 'FAIL'
+    status = f'{binary.outcome:>7} [{binary.seconds:7.1f}s] {binary.name} ({binary.tests} tests)'
     print(status, flush=True)
-    if unit.outcome == 'PASS':
+    if binary.outcome == 'PASS':
         return
-    finished = {match.group(1) for line in unit.lines if (match := RESULT.match(line))}
-    for line in unit.lines:
+    for line in binary.lines:
         if not RESULT.match(line) or ' ... FAILED' in line:
             print(f'    {line}')
     if timed_out:
-        hung = [match.group(1) for line in unit.lines
+        finished = {match.group(1) for line in binary.lines if (match := RESULT.match(line))}
+        hung = [match.group(1) for line in binary.lines
                 if (match := STILL_RUNNING.match(line)) and match.group(1) not in finished]
         print(f'    killed after {DEADLINE_SECONDS}s; still running: {", ".join(hung) or "unknown"}')
 
 
-def run(units: list[Unit], jobs: int) -> int:
-    """Run the units with at most `jobs` at a time; return the exit status."""
-    pending = list(units)
-    running: list[Unit] = []
+def run(binaries: list[Binary], jobs: int) -> int:
+    """Run the binaries with at most `jobs` at a time; return the exit status."""
+    pending = list(binaries)
+    running: list[Binary] = []
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='cadmpeg-tests-') as logs:
         while pending or running:
             while pending and len(running) < jobs:
-                unit = pending.pop(0)
-                unit.log = Path(logs) / f'{len(pending)}.log'
-                with unit.log.open('w') as log:
-                    unit.process = subprocess.Popen(unit.argv, cwd=unit.cwd, stdout=log,
+                binary = pending.pop(0)
+                binary.log = Path(logs) / f'{len(pending)}.log'
+                with binary.log.open('w') as log:
+                    binary.process = subprocess.Popen(binary.argv, cwd=binary.cwd, stdout=log,
                                                     stderr=subprocess.STDOUT)
-                unit.started = time.monotonic()
-                running.append(unit)
+                binary.started = time.monotonic()
+                running.append(binary)
             time.sleep(0.1)
             now = time.monotonic()
-            for unit in list(running):
-                timed_out = now - unit.started > DEADLINE_SECONDS
+            for binary in list(running):
+                timed_out = now - binary.started > DEADLINE_SECONDS
                 if timed_out:
-                    unit.process.kill()
-                    unit.process.wait()
-                elif unit.process.poll() is None:
+                    binary.process.kill()
+                    binary.process.wait()
+                elif binary.process.poll() is None:
                     continue
-                running.remove(unit)
-                finish(unit, now, timed_out)
+                running.remove(binary)
+                finish(binary, now, timed_out)
     wall = time.monotonic() - start
-    failed = [unit for unit in units if unit.outcome != 'PASS']
-    print(f'\n{sum(unit.tests for unit in units)} tests in {len(units)} processes, '
-          f'{wall:.1f}s wall; slowest processes:')
-    for unit in sorted(units, key=lambda unit: -unit.seconds)[:5]:
-        print(f'  [{unit.seconds:7.1f}s] {unit.name}')
-    slow = [f'{match.group(1)} ({unit.name})' for unit in units for line in unit.lines
+    failed = [binary for binary in binaries if binary.outcome != 'PASS']
+    print(f'\n{sum(binary.tests for binary in binaries)} tests in {len(binaries)} binaries, '
+          f'{wall:.1f}s wall; slowest binaries:')
+    for binary in sorted(binaries, key=lambda binary: -binary.seconds)[:5]:
+        print(f'  [{binary.seconds:7.1f}s] {binary.name}')
+    slow = [f'{match.group(1)} ({binary.name})' for binary in binaries for line in binary.lines
             if (match := STILL_RUNNING.match(line))]
     if slow:
         print('tests running past 60 seconds:\n  ' + '\n  '.join(slow))
-    for unit in failed:
-        print(f'{unit.outcome}: {unit.name}')
+    for binary in failed:
+        print(f'{binary.outcome}: {binary.name}')
     return 1 if failed else 0
 
 
@@ -210,13 +191,10 @@ def run_tests(build: list[str], env: dict[str, str] | None) -> int:
                             text=True, check=True).stdout.strip()
     os.environ[variable] = os.pathsep.join(filter(None, [libdir, os.environ.get(variable)]))
     cores = os.cpu_count() or 1
-    jobs = int(os.environ.get('CI_TEST_JOBS', cores))
-    threads = int(os.environ.get('CI_TEST_THREADS', cores))
-    split = os.environ.get('CI_TEST_SPLIT', '1') == '1'
-    units = plan(test_binaries(built.stdout), threads, split)
-    print(f'running {len(units)} test processes, {jobs} at a time, {threads} threads each',
+    binaries = plan(test_binaries(built.stdout), cores)
+    print(f'running {len(binaries)} test binaries, {cores} at a time, {cores} threads each',
           flush=True)
-    return run(units, jobs)
+    return run(binaries, cores)
 
 
 def main() -> int:

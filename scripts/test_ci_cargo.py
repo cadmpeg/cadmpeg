@@ -125,20 +125,20 @@ class RunTests(unittest.TestCase):
     def plan_and_run(self, binaries: dict[str, list[str]]) -> tuple[int, str, list]:
         executables = [(name, fake_binary(self.directory / name, tests), str(self.directory))
                        for name, tests in binaries.items()]
-        units = plan(executables, threads=2, split=True)
+        planned = plan(executables, threads=2)
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            status = run(units, jobs=2)
-        return status, output.getvalue(), units
+            status = run(planned, jobs=2)
+        return status, output.getvalue(), planned
 
-    def test_slow_tests_start_first_in_their_own_process(self):
-        status, _, units = self.plan_and_run({
+    def test_binaries_with_the_most_tests_start_first(self):
+        status, _, planned = self.plan_and_run({
             'small': ['a::one'],
-            'big': ['a::one', 'a::two', 'writer::tests::leaf_sweep::every_leaf_edit_of_x'],
+            'empty': [],
+            'big': ['a::one', 'a::two', 'b::three'],
         })
         self.assertEqual(status, 0)
-        self.assertEqual([(unit.name, unit.tests) for unit in units],
-                         [('big (slow)', 1), ('big', 2), ('small', 1)])
+        self.assertEqual([(binary.name, binary.tests) for binary in planned], [('big', 3), ('small', 1)])
 
     def test_a_failing_test_is_named_and_fails_the_run(self):
         status, output, _ = self.plan_and_run({'crate': ['a::passes', 'a::fails']})

@@ -265,7 +265,7 @@ jobs:
       CI_FULL: ${{ needs.changes.outputs.full }}
       CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -303,11 +303,6 @@ jobs:
             echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
           fi
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.5
-        with:
-          tool: cargo-nextest
-
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation. The
@@ -316,19 +311,6 @@ jobs:
         run: |
           (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
           python3 scripts/ci_cargo.py run-tests
-
-      - name: TEMP topology measurement
-        if: always()
-        shell: bash
-        run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
-          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > /tmp/m.log 2>&1; rc=$?; e=$(date +%s); tail -12 /tmp/m.log; echo "=== rc $rc wall $((e - s))s"; }
-          m "jobs2" env CI_TEST_JOBS=2 python3 scripts/ci_cargo.py run-tests
-          m "nosplit" env CI_TEST_SPLIT=0 python3 scripts/ci_cargo.py run-tests
-          m "all-at-once" env CI_TEST_JOBS=64 python3 scripts/ci_cargo.py run-tests
-          m "jobs4-again" python3 scripts/ci_cargo.py run-tests
-          m "cargo-test-serial" python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
-          m "nextest" cargo nextest run --workspace --bins --tests --no-fail-fast --cargo-quiet --status-level fail --final-status-level slow
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -529,7 +511,7 @@ jobs:
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
     # 3-core runner the test build takes about 50 minutes when it stays in
     # memory, and the tests about 20; on the 5-core runner, 13 and 9.
-    timeout-minutes: 200
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -560,11 +542,6 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.5
-        with:
-          tool: cargo-nextest
-
       # Each step's timeout ends it before the job's, so the job fails rather
       # than being cancelled, and the report and cache steps run.
       - name: Build tests
@@ -574,16 +551,6 @@ jobs:
       - name: Unit and integration tests
         timeout-minutes: 40
         run: python3 scripts/ci_cargo.py run-tests
-
-      - name: TEMP topology measurement
-        if: always()
-        timeout-minutes: 70
-        shell: bash
-        run: |
-          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > m.log 2>&1; rc=$?; e=$(date +%s); tail -12 m.log; echo "=== rc $rc wall $((e - s))s"; }
-          m "jobs2" env CI_TEST_JOBS=2 python3 scripts/ci_cargo.py run-tests
-          m "nosplit" env CI_TEST_SPLIT=0 python3 scripts/ci_cargo.py run-tests
-          m "cargo-test-serial" python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
       # A step timeout stops only the step's shell: cargo, rustc and the test
       # binaries keep running. Name them, then stop them before the cache step.
@@ -604,7 +571,7 @@ jobs:
               sub(/^ *[^ ]+ +[^ ]+ +/, "", args)
               printf "still running %s after %s, %d MiB\n", substr(args, 1, 300), $1, $2 / 1024
             }'
-          pkill -x cargo-nextest || true
+          pkill -f ci_cargo.py || true
           pkill -x cargo || true
           pkill -x rustc || true
           pkill -f '/target/debug/deps/' || true
