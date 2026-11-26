@@ -507,7 +507,9 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
             !bodies.is_empty()
         }
         BodySelection::Historical { bodies, .. } => !bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => true,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
@@ -1783,6 +1785,7 @@ fn design_projection_gaps(
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -3396,14 +3399,9 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let geometry_materials =
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
-        let (mut ir, source_attributes, mut native, mut asm_remainder) =
+        let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
-        geometry_admission::admit(
-            ctx,
-            &mut ir,
-            &mut report.losses,
-            &mut asm_remainder.annotation_records,
-        )?;
+        geometry_admission::admit(ctx, &mut ir, &mut report.losses)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         let mut admitted_entities = u64_from_index(ir.entity_count());
@@ -3411,9 +3409,31 @@ impl<'a> F3dDecodeSession<'a> {
             unknowns,
             stats: _,
             annotation_records,
+            unbounded_faces: _,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
-        ir.geometry.subds = subds;
+        // No v11 form states a `cage` yet (its forms are unresolved), so each
+        // cage lies outside every form's `cage` and belongs to a body of its
+        // own (§5.6). Interim: the source states no display name, colour, or
+        // visibility for that body.
+        for surface in subds {
+            let key = surface.id.key();
+            ir.geometry.push_cage_object(
+                surface,
+                cadmpeg_ir::ids::BodyId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "body"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::RegionId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "region"),
+                    key.clone(),
+                ),
+                cadmpeg_ir::ids::ShellId::compose(
+                    &cadmpeg_ir::identity_namespace!("f3d", "tspline", "shell"),
+                    key,
+                ),
+            );
+        }
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
@@ -4135,7 +4155,11 @@ impl<'a> F3dDecodeSession<'a> {
                         model_body_maps_explicitly_empty: inputs.model_body_maps_explicitly_empty,
                         text_brep_streams: container::text_brep_names(scan).count(),
                         declared_bodies: self.native.design_body_bindings.len()
-                            + self.native.design_body_members.len(),
+                            + if inputs.model_body_maps_explicitly_empty {
+                                0
+                            } else {
+                                self.native.design_body_members.len()
+                            },
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
@@ -5271,6 +5295,10 @@ pub(crate) struct DesignCarriers {
     /// Every selected modern model-body map has zero pairs and no basename.
     pub(crate) model_body_maps_explicitly_empty: bool,
     pub(crate) text_brep_streams: usize,
+    /// The bodies of the current model: the body-map pairs, and the
+    /// bodies-root members where a model-body map can pair them. A member of
+    /// a design whose maps are explicitly empty is the body of a rolled-back
+    /// item (f3d.md §3.1, "Records of a rolled-back Extrude").
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,
@@ -5586,7 +5614,8 @@ fn file_definition(
     let local = |occurrence: &'_ cadmpeg_ir::products::Occurrence| -> Option<&ProductDefinitionId> {
         held.get(&occurrence.prototype).copied()
     };
-    let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
+    let own =
+        |definition: &&ProductDefinitionId| !crate::ids::is_member_identity(definition.as_str());
     let root_prototypes = |stored_frame: bool| {
         model
             .occurrences
@@ -6183,6 +6212,16 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             format_args!(
                 "{} sketch-region body record(s) of a keyless BREP blob are not model bodies and stay in the BREP stream.",
                 decoded.sketch_region_bodies_omitted
+            ),
+        );
+    }
+    for face in &decoded.asm.unbounded_faces {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::TopologyFaceBoundaryUnstated,
+            format_args!(
+                "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
+                face.record_index, face.surface_kind, face.face.as_str()
             ),
         );
     }

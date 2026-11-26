@@ -8,6 +8,7 @@
 //! rejects, so one over a clean tree leaves the tree clean. Fixture
 //! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -345,7 +346,7 @@ fn golden_configuration_document() -> Vec<u8> {
     use crate::test_support::configuration_table::{
         bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
     };
-    serde_json::to_vec(&table_document(
+    json::to_vec(&table_document(
         "1",
         &[
             ("P", property_target("Part Number")),
@@ -435,8 +436,8 @@ fn decode_snapshot(bytes: &[u8]) -> String {
                 .ir()
                 .to_canonical_json()
                 .expect("serialize canonical ir");
-            let report = serde_json::to_string_pretty(result.report()).expect("serialize report");
-            let fidelity = serde_json::to_string_pretty(
+            let report = json::to_string_pretty(result.report()).expect("serialize report");
+            let fidelity = json::to_string_pretty(
                 &cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             )
             .expect("serialize source_fidelity");
@@ -452,7 +453,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         }
         Err(error) => {
             let value = serde_json::json!({ "decode_error": error.to_string() });
-            let mut text = serde_json::to_string_pretty(&value).expect("serialize decode error");
+            let mut text = json::to_string_pretty(&value).expect("serialize decode error");
             text.push('\n');
             text
         }
@@ -462,10 +463,10 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match F3dCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
     {
-        Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+        Ok(summary) => json::to_value(&summary).expect("serialize inspect"),
         Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
     };
-    let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
+    let mut text = json::to_string_pretty(&value).expect("serialize inspect snapshot");
     text.push('\n');
     text
 }
@@ -476,7 +477,7 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
@@ -652,7 +653,7 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
         Ok(result) => result.into_parts().0,
         Err(error) => {
             let value = serde_json::json!({ "decode_error": error.to_string() });
-            return serde_json::to_string_pretty(&value).expect("serialize decode error");
+            return json::to_string_pretty(&value).expect("serialize decode error");
         }
     };
     if let Some(source) = ir.source.as_mut() {
@@ -922,11 +923,74 @@ const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 /// declarations.
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
-        "geometry": serde_json::to_value(&ir.geometry).expect("serialize geometry"),
-        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "geometry": json::to_value(&ir.geometry).expect("serialize geometry"),
+        "model": json::to_value(&ir.model).expect("serialize model"),
         "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": json::to_value(ir.tolerances).expect("serialize tolerances"),
     }))
+}
+
+/// `edited` with the vertex tolerances the decode of `round_trip` widened
+/// (CADIR §2.3), and the number it widened. Moving the first point by
+/// [`MUTATION_MM`] opens a gap of that length at each vertex on the point:
+/// only such a vertex changes its tolerance, which the decode marks derived
+/// and sets to the gap within the allowance the vertex stated before.
+fn with_widened_tolerances(
+    name: &str,
+    edited: &CadIr,
+    round_trip: &DecodeResult,
+) -> (CadIr, usize) {
+    let moved = &edited.geometry.points[0].id;
+    let derived = |id: &str| {
+        round_trip
+            .source_fidelity()
+            .annotations
+            .exactness()
+            .get(id)
+            .and_then(|note| {
+                note.fields()
+                    .iter()
+                    .find(|(field, _)| field.as_str() == "tolerance")
+            })
+            .is_some_and(|(_, exactness)| *exactness == cadmpeg_ir::Exactness::Derived)
+    };
+    let mut expected = edited.clone();
+    let mut widened = 0;
+    for vertex in &mut expected.geometry.vertices {
+        let Some(decoded) = round_trip
+            .ir()
+            .geometry
+            .vertices
+            .iter()
+            .find(|decoded| decoded.id == vertex.id)
+        else {
+            continue;
+        };
+        if decoded.tolerance == vertex.tolerance {
+            continue;
+        }
+        let id = vertex.id.as_str();
+        assert_eq!(
+            &vertex.point, moved,
+            "fixture `{name}`: vertex {id} off the moved point changed its tolerance"
+        );
+        assert!(
+            derived(id),
+            "fixture `{name}`: vertex {id}'s widened tolerance is not derived"
+        );
+        let allowance = vertex.tolerance.unwrap_or(edited.tolerances.linear).get();
+        let tolerance = decoded
+            .tolerance
+            .expect("a widened tolerance is stated")
+            .get();
+        assert!(
+            (tolerance - MUTATION_MM).abs() <= allowance,
+            "fixture `{name}`: vertex {id} widened to {tolerance}, away from the {MUTATION_MM} mm gap"
+        );
+        vertex.tolerance = decoded.tolerance;
+        widened += 1;
+    }
+    (expected, widened)
 }
 
 /// An edit to a decoded document survives the patch writer.
@@ -934,6 +998,7 @@ fn neutral_document(ir: &CadIr) -> String {
 fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
     let mut measured_count = 0usize;
+    let mut widened_count = 0usize;
     let mut skipped: Vec<&str> = Vec::new();
     for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
@@ -967,8 +1032,10 @@ fn an_edit_survives_the_patch_writer() {
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );
+                    let (expected, widened) = with_widened_tolerances(name, edited, &round_trip);
+                    widened_count += widened;
                     if let Err(mismatch) = snapshots_agree(
-                        &neutral_document(edited),
+                        &neutral_document(&expected),
                         &neutral_document(round_trip.ir()),
                     ) {
                         panic!(
@@ -1007,6 +1074,10 @@ fn an_edit_survives_the_patch_writer() {
     assert!(
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the patch writer"
+    );
+    assert!(
+        widened_count > 0,
+        "no moved point opened a gap at a vertex the decode widened"
     );
 }
 
@@ -1050,8 +1121,8 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
             &DecodeOptions::default(),
         )
         .expect("skin construction fixture");
-    let document = serde_json::to_value(decoded.ir()).expect("skin document JSON");
-    serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
+    let document = json::to_value(decoded.ir()).expect("skin document JSON");
+    json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut with_inner_count = document;
     let mut touched = 0usize;
@@ -1067,7 +1138,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         }
     }
     assert!(touched > 0, "the skin golden carries a layout");
-    let error = serde_json::from_value::<CadIr>(with_inner_count)
+    let error = json::from_value::<CadIr>(with_inner_count)
         .expect_err("inner_count lives only on the compact layout that owns it")
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
@@ -1084,8 +1155,8 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "solid": true,
         "start": {"kind": "profile_plane"},
     }});
-    assert!(serde_json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
-    let error = serde_json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
+    assert!(json::from_value::<FeatureDefinition>(face_maker_object.clone()).is_err());
+    let error = json::from_value::<cadmpeg_ir::features::FeatureOperation>(face_maker_object)
         .expect_err("the face maker is its class")
         .to_string();
     assert!(error.contains("invalid type: map"), "{error}");
@@ -1095,7 +1166,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "first": {"variable_type": 4, "key": 1},
         "second": 2,
     });
-    let error = serde_json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
+    let error = json::from_value::<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>(
         solver_scalar_object,
     )
     .expect_err("a solver scalar slot is its key")
@@ -1107,7 +1178,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "offset": 9,
         "labels": ["source", "offset"],
     });
-    let error = serde_json::from_value::<VectorOffsetRoles>(labelled)
+    let error = json::from_value::<VectorOffsetRoles>(labelled)
         .expect_err("the two roles are the two named keys")
         .to_string();
     assert!(error.contains("labels"), "{error}");
@@ -1126,8 +1197,8 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
             &DecodeOptions::default(),
         )
         .expect("rolling-ball construction fixture");
-    let document = serde_json::to_value(decoded.ir()).expect("rolling-ball document JSON");
-    serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
+    let document = json::to_value(decoded.ir()).expect("rolling-ball document JSON");
+    json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut restated = document;
     let mut touched = 0usize;
@@ -1143,7 +1214,7 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
         }
     }
     assert!(touched > 0, "the golden carries a solved revision cache");
-    let error = serde_json::from_value::<CadIr>(restated)
+    let error = json::from_value::<CadIr>(restated)
         .expect_err("the cache form owns the tolerance")
         .to_string();
     assert!(error.contains("cache_fit_tolerance"), "{error}");

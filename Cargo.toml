@@ -18,6 +18,7 @@ members = [
   "crates/cadmpeg-codec-f3d",
   "crates/cadmpeg-codec-inventor",
   "crates/cadmpeg-codec-solidedge",
+  "crates/cadmpeg-codec-ironcad",
   "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
@@ -60,6 +61,7 @@ cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
 cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.12" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.12" }
 cadmpeg-codec-solidedge = { path = "crates/cadmpeg-codec-solidedge", version = "0.6.12" }
+cadmpeg-codec-ironcad = { path = "crates/cadmpeg-codec-ironcad", version = "0.6.12" }
 cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.12" }
 cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.12" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.12" }
@@ -150,31 +152,55 @@ split-debuginfo = "unpacked"
 [profile.dev.package.sha2]
 opt-level = 3
 
-# Golden, sweep, and source-scan tests spend their time in serde_json and
-# proc-macro2. Dependencies rebuild only when the lockfile changes.
+# Hot JSON, compression, byte-search, and checksum dependencies stay at
+# opt-level 2; remaining third-party dependencies (syn, serde_derive, hdf5,
+# proptest, clap, regex, etc.) compile at opt-level 1 to cut cold build time.
 [profile.dev.package."*"]
+opt-level = 1
+
+[profile.dev.package.serde_json]
+opt-level = 2
+
+[profile.dev.package.flate2]
+opt-level = 2
+
+[profile.dev.package.ruzstd]
+opt-level = 2
+
+[profile.dev.package.memchr]
+opt-level = 2
+
+[profile.dev.package.crc32fast]
+opt-level = 2
+
+[profile.dev.package.twox-hash]
 opt-level = 2
 
 # Evaluation charges `WorkBudget` once per step. At opt-level 0 the budget
 # debit and its ancestor walk take about a quarter of the self time of
-# measured-geometry tests.
+# measured-geometry tests. Compiling `cadmpeg-core` and `cadmpeg-container`
+# at opt-level 1 keeps byte-level container scanning, erased serde adapters,
+# and JSON formatting fast while avoiding -O2 LLVM compile overhead.
 [profile.dev.package.cadmpeg-core]
 opt-level = 1
 
-# Measurement tests spend most of their time in this crate's quadrature.
+[profile.dev.package.cadmpeg-container]
+opt-level = 1
+
+# Parasolid framing and record scans run across SLDPRT, NX, and Solid Edge
+# decoders; opt-level 1 keeps scans fast while halving compile cost.
+[profile.dev.package.cadmpeg-parasolid]
+opt-level = 1
+
+# Measurement tests spend most of their time in this crate's quadrature;
+# opt-level 1 keeps quadrature fast while avoiding -O2 LLVM compile overhead.
 [profile.dev.package.cadmpeg-measure]
-opt-level = 2
+opt-level = 1
 
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable
 # and type DWARF. This drops the rest.
 debug = "line-tables-only"
-
-# The SLDPRT writer tests decode, write and decode again one part per edit.
-# At opt-level 0 and 1 the crate calls the generic byte scans and hashing that
-# unoptimized crates instantiate; at 2 it instantiates and inlines its own.
-[profile.test.package.cadmpeg-codec-sldprt]
-opt-level = 2
 
 [profile.release]
 lto = "thin"

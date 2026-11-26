@@ -1,6 +1,7 @@
 use super::{derive, CatiaConsolidatedFourReferenceEdge};
 use crate::native::CatiaAllocationReferenceEncoding as Encoding;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth};
+use cadmpeg_core::serde_erase::json;
 
 fn framed(width: u8, flag: u8, header: u32, payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![
@@ -111,10 +112,9 @@ fn invalid_operands_terminals_and_other_reference_counts_withhold() {
 #[test]
 fn wire_self_consistency_checks_all_derived_fields() {
     let row = decode(&framed(1, 131, 5, &[9, 15, 7, 11, 0x21])).remove(0);
-    let wire = serde_json::to_value(&row).expect("wire");
+    let wire = json::to_value(&row).expect("wire");
     assert_eq!(
-        serde_json::from_value::<CatiaConsolidatedFourReferenceEdge>(wire.clone())
-            .expect("checked wire"),
+        json::from_value::<CatiaConsolidatedFourReferenceEdge>(wire.clone()).expect("checked wire"),
         row
     );
     for slot in 0..4 {
@@ -125,7 +125,7 @@ fn wire_self_consistency_checks_all_derived_fields() {
             } else {
                 serde_json::json!("selector2")
             };
-            assert!(serde_json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());
+            assert!(json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());
         }
     }
     for field in [
@@ -144,7 +144,7 @@ fn wire_self_consistency_checks_all_derived_fields() {
             "header_token" => invalid["frame"][field] = serde_json::json!(256),
             _ => unreachable!(),
         }
-        assert!(serde_json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());
+        assert!(json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());
     }
 }
 

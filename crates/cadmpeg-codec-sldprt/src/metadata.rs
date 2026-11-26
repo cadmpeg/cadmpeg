@@ -95,10 +95,7 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    for (offset, bytes) in section.payload().windows(TOKEN.len()).enumerate() {
-        if bytes != TOKEN {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(section.payload(), TOKEN) {
         let Some(values) = transformed_enclosure(section.payload(), offset) else {
             continue;
         };
@@ -156,11 +153,7 @@ fn scan_length_user_units(
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let payload = section.payload();
-    for offset in payload
-        .windows(TOKEN.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
-    {
+    for offset in memchr::memmem::find_iter(payload, TOKEN) {
         let search = offset + TOKEN.len();
         let Some(marker_end) = search.checked_add(STRING_MARKER.len()) else {
             continue;
@@ -271,11 +264,11 @@ fn scan_vectors(
         all_lengths,
     } = *scan;
     let payload = section.payload();
-    for offset in payload
-        .windows(token.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == token).then_some(at))
-    {
+    let finder = memchr::memmem::Finder::new(token);
+    let mut cursor = 0;
+    while let Some(rel) = finder.find(&payload[cursor..]) {
+        let offset = cursor + rel;
+        cursor = offset + 1;
         let start = offset + token.len() + skip;
         let Some(values) = (0..count)
             .map(|index| View::f64_le_at(payload, start + index * 8))
@@ -355,7 +348,7 @@ fn attribute(
 ) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
-            &cadmpeg_ir::identity_component!("sldprt"),
+            cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT),
             &cadmpeg_ir::identity_component!("metadata"),
             name,
         ),

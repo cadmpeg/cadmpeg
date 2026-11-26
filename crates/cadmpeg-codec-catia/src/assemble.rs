@@ -372,6 +372,59 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     losses.insert(0, note);
 }
 
+/// A face's unclassified loops on `surface`: a face with no loop on a plane,
+/// cylinder, or cone has no extent to state, so it is stated partial.
+pub(crate) fn unspecified_loops_on(
+    ir: &CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    loops: Vec<cadmpeg_ir::ids::LoopId>,
+) -> cadmpeg_ir::topology::FaceLoops {
+    let geometry = if loops.is_empty() {
+        ir.geometry
+            .surfaces
+            .iter()
+            .find(|candidate| &candidate.id == surface)
+            .map(|candidate| &candidate.geometry)
+    } else {
+        None
+    };
+    cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, geometry).0
+}
+
+/// Charges `topology.face-boundary-unstated` for each face of the decoded
+/// model that states no loop on a plane, cylinder, or cone, and states such a
+/// face partial where a family has not already. Runs once, on the model a
+/// route returns, so every family's faces are covered and no face a family
+/// discards is charged.
+pub(crate) fn state_loopless_faces(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let unbounded: HashMap<_, _> = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), Some(&surface.geometry))
+                .1
+                .map(|kind| (surface.id.clone(), kind))
+        })
+        .collect();
+    for face in &mut ir.geometry.faces {
+        let loopless = matches!(
+            &face.loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops }
+                | cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+                if loops.is_empty()
+        );
+        let Some(kind) = loopless.then(|| unbounded.get(&face.surface)).flatten() else {
+            continue;
+        };
+        face.loops = cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() };
+        losses.push(CatiaLossCode::TopologyFaceBoundaryUnstated.note(format!(
+            "face {} states no loop on a {kind}, which no face covers whole, and is stated partial",
+            face.id.as_str()
+        )));
+    }
+}
+
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
     if range[0] <= range[1] {
         range

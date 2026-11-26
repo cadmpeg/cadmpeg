@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic machine-readable evidence from the public `FCStd` corpus.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -202,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_report = env::var_os("CADMPEG_FCSTD_NATIVE_REPORT")
         .map(fs::read)
         .transpose()?
-        .map(|bytes| serde_json::from_slice::<Value>(&bytes))
+        .map(|bytes| json::from_slice::<Value>(&bytes))
         .transpose()?;
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
@@ -224,11 +225,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
@@ -247,7 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         let mut edited_bytes = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(&edited_ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&edited_ir, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut edited_bytes))?;
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
@@ -1087,7 +1088,7 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
         )?;
         let mut bytes = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)?
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Unnamed)?
             .write_to(&mut bytes)?;
         let decoded = FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())?;
         if property_value_attribute(decoded.ir(), owner, name, 0, "value") == Some(new)
@@ -1198,11 +1199,11 @@ fn source_less_profile(
     let ir = builder.build()?;
     let mut first = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut first))?;
     let mut second = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
@@ -1646,14 +1647,14 @@ mod tests {
         serialize_gates, Observed,
     };
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
     #[test]
     fn appearance_gate_checks_owner_and_override_precedence() {
-        let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd");
+        let bytes = include_bytes!("../../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode appearance fixture");
@@ -1662,7 +1663,7 @@ mod tests {
         let uniform = FcstdCodec
             .decode(
                 &mut Cursor::new(include_bytes!(
-                    "../../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd"
+                    "../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd"
                 )),
                 &DecodeOptions::default(),
             )
@@ -1687,8 +1688,7 @@ mod tests {
 
     #[test]
     fn design_gate_checks_census_and_a_real_operation_parameter_edit() {
-        let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
+        let bytes = include_bytes!("../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode design fixture");
@@ -1697,7 +1697,7 @@ mod tests {
         let mut native_only = decoded.ir().clone();
         for feature in &mut native_only.model.features {
             feature.evaluation.set_definition(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(serde_json::json!({
                     "kind": "operation",
                     "value": {"kind": "native", "value": {"kind": "retained_operation", "parameters": {}}}
                 }))
@@ -1716,7 +1716,7 @@ mod tests {
         let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(include_bytes!(
-                    "../../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+                    "../../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
                 )),
                 &DecodeOptions::default(),
             )
@@ -1801,14 +1801,14 @@ mod tests {
     #[test]
     fn semantic_fingerprint_ignores_repacking_but_retains_property_edits() {
         let bytes =
-            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");
+            include_bytes!("../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd");
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
         let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
         let mut written = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut written))
             .expect("write fixture");
         let restored = FcstdCodec

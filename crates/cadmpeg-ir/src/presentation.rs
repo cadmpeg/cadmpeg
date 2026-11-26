@@ -457,11 +457,13 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn a_named_optional_key_states_a_value_or_is_left_out() {
         use super::ViewPresentation;
 
-        let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+        let refusal = json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {},
@@ -474,7 +476,7 @@ mod tests {
                 && text.contains("this key states a value or is left out; it does not state null"),
             "{text}"
         );
-        let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+        let absent = json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {}
@@ -504,7 +506,7 @@ mod tests {
         ];
         let mut states = Vec::new();
         for (order, kind) in kinds.into_iter().enumerate() {
-            let json = serde_json::to_string(&kind).unwrap();
+            let json = json::to_string(&kind).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationStateKind>(&json).unwrap(),
                 kind
@@ -515,7 +517,7 @@ mod tests {
                 attributes: BTreeMap::new(),
                 assets: Vec::new(),
             };
-            let json = serde_json::to_string(&state).unwrap();
+            let json = json::to_string(&state).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationState>(&json).unwrap(),
                 state
@@ -526,7 +528,7 @@ mod tests {
             PresentationId::mint("synthetic:test:presentation#presentation").unwrap(),
         );
         document.set_states(states).expect("distinct orders");
-        let json = serde_json::to_string(&document).unwrap();
+        let json = json::to_string(&document).unwrap();
         assert_eq!(
             serde_json::from_str::<PresentationDocument>(&json).unwrap(),
             document
@@ -718,10 +720,9 @@ mod tests {
     #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
         let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
-        let value: PresentationItem =
-            serde_json::from_value(wire.clone()).expect("nonempty source_id");
-        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
-        let error = serde_json::from_value::<PresentationItem>(
+        let value: PresentationItem = json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(json::to_value(value).expect("serialize"), wire);
+        let error = json::from_value::<PresentationItem>(
             serde_json::json!({"kind": "source", "source_id": ""}),
         )
         .expect_err("empty source_id");
@@ -740,7 +741,7 @@ mod tests {
                         .expect("valid identity"),
                 ));
             ir.model.view_presentations.push(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(serde_json::json!({
                     "id": format!("test:presentation:view#{key}"),
                     "order": 1,
                     "properties": {}
@@ -771,17 +772,16 @@ mod tests {
             .set_states(states.clone())
             .expect("distinct orders");
         assert_eq!(document.states(), states);
-        let wire = serde_json::to_value(&document).expect("serialize");
+        let wire = json::to_value(&document).expect("serialize");
         assert_eq!(
-            serde_json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
+            json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
             document
         );
         assert!(document.set_states(vec![state(2), state(2)]).is_err());
         assert_eq!(document.states(), states);
         let mut repeated = wire;
-        repeated["states"] =
-            serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
-        let read = serde_json::from_value::<PresentationDocument>(repeated)
+        repeated["states"] = json::to_value(vec![state(2), state(2)]).expect("serialize states");
+        let read = json::from_value::<PresentationDocument>(repeated)
             .expect("reading admits a repeated state order (§2.8)");
         assert_eq!(read.states(), [state(2), state(2)]);
         document.set_states(Vec::new()).expect("empty states");

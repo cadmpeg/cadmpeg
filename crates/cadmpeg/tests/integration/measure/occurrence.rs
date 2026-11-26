@@ -21,6 +21,7 @@
 //! ROOT is the root definition: it owns `#140` and `#150` and no occurrence
 //! places it.
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -159,10 +160,10 @@ fn edited(dir: &Path, edit: impl Fn(&mut Value)) -> PathBuf {
         .arg("--force")
         .assert()
         .success();
-    let mut document: Value = serde_json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
+    let mut document: Value = json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
     edit(&mut document);
     let out = dir.join("edited.cadir.json");
-    fs::write(&out, serde_json::to_vec(&document).unwrap()).unwrap();
+    fs::write(&out, json::to_vec(&document).unwrap()).unwrap();
     out
 }
 
@@ -174,9 +175,9 @@ fn edit_occurrence(document: &mut Value, id: &str, edit: impl FnOnce(&mut Occurr
         .iter_mut()
         .find(|occurrence| occurrence["id"] == id)
         .unwrap();
-    let mut occurrence: Occurrence = serde_json::from_value(entry.clone()).unwrap();
+    let mut occurrence: Occurrence = json::from_value(entry.clone()).unwrap();
     edit(&mut occurrence);
-    *entry = serde_json::to_value(occurrence).unwrap();
+    *entry = json::to_value(occurrence).unwrap();
 }
 
 /// Points the occurrence `id` at a new definition stored in `document`,
@@ -187,7 +188,7 @@ fn place_externally(cadir: &mut Value, id: &str, document: ExternalDocument) {
         .as_array_mut()
         .unwrap()
         .push(
-            serde_json::to_value(ProductDefinition::new(
+            json::to_value(ProductDefinition::new(
                 external.clone(),
                 Storage::External(document),
             ))

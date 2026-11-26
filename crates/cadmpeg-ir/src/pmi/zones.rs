@@ -94,25 +94,26 @@ impl ToleranceProjection {
 #[cfg(test)]
 mod tests {
     use super::{ToleranceZone, ToleranceZoneForm};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a_zone_form_states_its_kind_alone_or_its_source_name() {
         let zone = serde_json::json!({"form": {"kind": "spherical"}, "projections": []});
-        let read = serde_json::from_value::<ToleranceZone>(zone.clone()).expect("a typed form");
+        let read = json::from_value::<ToleranceZone>(zone.clone()).expect("a typed form");
         assert_eq!(read.form, ToleranceZoneForm::Spherical);
-        assert_eq!(serde_json::to_value(&read).expect("serialize"), zone);
+        assert_eq!(json::to_value(&read).expect("serialize"), zone);
         for value in [serde_json::Value::Null, serde_json::json!({})] {
-            assert!(serde_json::from_value::<ToleranceZoneForm>(
+            assert!(json::from_value::<ToleranceZoneForm>(
                 serde_json::json!({"kind": "spherical", "value": value})
             )
             .is_err());
         }
         let other = serde_json::json!({"kind": "other", "value": "square"});
         assert_eq!(
-            serde_json::from_value::<ToleranceZoneForm>(other).expect("another form"),
+            json::from_value::<ToleranceZoneForm>(other).expect("another form"),
             ToleranceZoneForm::Other("square".into())
         );
-        assert!(serde_json::from_value::<ToleranceZone>(
+        assert!(json::from_value::<ToleranceZone>(
             serde_json::json!({"form": "cylindrical or circular", "projections": []})
         )
         .is_err());

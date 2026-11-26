@@ -513,10 +513,7 @@ pub(crate) struct ClassInterval {
 
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let mut declarations = Vec::new();
-    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
-        if marker != CLASS_MARKER {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(payload, CLASS_MARKER) {
         let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
             continue;
         };
@@ -538,6 +535,7 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
         let name = name_text.to_owned();
         declarations.push((offset, name));
     }
+    let scene_finder = memchr::memmem::Finder::new(SCENE_SOURCE_MARKER);
     let mut declarations = declarations.into_iter().peekable();
     let mut intervals = Vec::new();
     while let Some((offset, name)) = declarations.next() {
@@ -550,12 +548,15 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
             continue;
         };
         let mut source_ids = Vec::new();
-        for window in records.windows(scene_src::LEN) {
-            let Some(source) = window
-                .starts_with(SCENE_SOURCE_MARKER)
-                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                .flatten()
-                .filter(|source| *source != 0)
+        let mut cursor = 0;
+        while let Some(rel) = scene_finder.find(&records[cursor..]) {
+            let at = cursor + rel;
+            cursor = at + 1;
+            let Some(window) = records.get(at..at + scene_src::LEN) else {
+                break;
+            };
+            let Some(source) =
+                View::u32_le_at(window, scene_src::SOURCE_ID).filter(|source| *source != 0)
             else {
                 continue;
             };
@@ -858,11 +859,7 @@ pub(crate) fn section_display_faces(
     #[cfg(test)]
     DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let mut markers = payload
-        .windows(FACE_TESSELLATION_CLASS.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .peekable();
+    let mut markers = memchr::memmem::find_iter(payload, FACE_TESSELLATION_CLASS).peekable();
     let mut faces = Vec::new();
     while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
@@ -3282,13 +3279,17 @@ fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 /// [`polygon_boundary_within`] over the edges of `polygon` that start at
-/// `edges`.
+/// `edges`. No distance is within a negative or NaN tolerance, so no edge is
+/// measured for one.
 fn edges_within(
     polygon: &[Point2],
     edges: impl IntoIterator<Item = usize>,
     point: Point2,
     tolerance: f64,
 ) -> bool {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return false;
+    }
     edges.into_iter().any(|index| {
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];

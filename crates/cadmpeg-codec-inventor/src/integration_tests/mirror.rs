@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::loss::InventorLossCode;
@@ -170,9 +171,9 @@ fn mirror_body_copy_reaches_history_with_the_generated_result_and_no_loss() {
 #[test]
 fn mirror_unproved_generated_flags_emit_the_pinned_instance_map_loss() {
     let (mut fixture, source) = crate::test_support::mirror::new_body_form();
-    let mut node = serde_json::to_value(&fixture.generated_features[0]).expect("node");
+    let mut node = json::to_value(&fixture.generated_features[0]).expect("node");
     node["header"]["flags"] = serde_json::json!(0x86200);
-    fixture.generated_features[0] = serde_json::from_value(node).expect("unproved node");
+    fixture.generated_features[0] = json::from_value(node).expect("unproved node");
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");

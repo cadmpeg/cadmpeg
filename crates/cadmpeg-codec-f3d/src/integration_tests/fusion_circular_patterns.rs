@@ -2,6 +2,7 @@
 //! CC0 Fusion saves of circular patterns: each Compute option, and
 //! suppressed instances.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -19,7 +20,7 @@ fn decoded(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
     assert!(validation.is_ok(), "{validation:#?}");
     let mut codes = Vec::new();
     loss_codes(
-        &serde_json::to_value(&result.report().losses).expect("serialize the losses"),
+        &json::to_value(&result.report().losses).expect("serialize the losses"),
         &mut codes,
     );
     assert!(!codes.is_empty(), "the report names loss codes");

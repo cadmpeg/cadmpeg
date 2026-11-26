@@ -45,18 +45,28 @@ thread_local! {
 /// ceiling, and [`CodecError::Malformed`] for text that is not the value's
 /// wire form, including text deeper than a CADIR document's bound.
 pub fn from_str<T: DeserializeOwned>(text: &str, limits: &ResourceLimits) -> Result<T, CodecError> {
+    let (read, refusal) = with_limits(limits, || crate::bounds::read_json::<T>(text));
+    read.map_err(|error| match refusal {
+        Some(limit) => CodecError::ResourceLimit(limit),
+        None => CodecError::malformed(error),
+    })
+}
+
+/// Runs `read` under the state-chain ceiling of `limits` and returns its
+/// result with the refusal of a chain past it.
+pub(crate) fn with_limits<R>(
+    limits: &ResourceLimits,
+    read: impl FnOnce() -> R,
+) -> (R, Option<ResourceLimit>) {
     let outer = SESSION.replace(Session {
         state_chain_limit: Some(limits.max_state_chain_depth),
         refusal: None,
     });
     let restore = Restore(outer);
-    let read = crate::bounds::read_json::<T>(text);
+    let result = read();
     let refusal = SESSION.get().refusal;
     drop(restore);
-    read.map_err(|error| match refusal {
-        Some(limit) => CodecError::ResourceLimit(limit),
-        None => CodecError::malformed(error),
-    })
+    (result, refusal)
 }
 
 struct Restore(Session);

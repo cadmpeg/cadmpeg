@@ -1,4 +1,5 @@
 use crate::test_support::test_bytes::shifted_f64_bytes;
+use cadmpeg_core::serde_erase::json;
 
 use crate::native::features::feature_sketch_fixed_points;
 use crate::native::features::feature_sketch_named_point_block_uses;
@@ -295,14 +296,12 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     )
     .unwrap()
     .is_empty());
-    let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();
+    let mut bad_terminal = json::to_value(&references[1]).unwrap();
     bad_terminal["terminal"] = serde_json::json!(false);
-    assert!(
-        serde_json::from_value::<FeatureSketchReference>(bad_terminal)
-            .unwrap_err()
-            .to_string()
-            .contains("terminal")
-    );
+    assert!(json::from_value::<FeatureSketchReference>(bad_terminal)
+        .unwrap_err()
+        .to_string()
+        .contains("terminal"));
 }
 
 #[test]

@@ -292,6 +292,7 @@ mod tests {
         FeatureSketchPayloadMixedPairWire,
     };
     use crate::om::scalar_pair::SketchPairForm;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn datum_fixed_pair_borrowed_wire_matches_owned_bytes_and_retained_limit() {
@@ -308,12 +309,12 @@ mod tests {
             value_source_offsets: [1035, 1044],
         };
         assert_eq!(
-            serde_json::to_vec(&pair).unwrap(),
-            serde_json::to_vec(&FeatureDatumCsysPayloadFixedPairWire::from(pair.clone())).unwrap()
+            json::to_vec(&pair).unwrap(),
+            json::to_vec(&FeatureDatumCsysPayloadFixedPairWire::from(pair.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &pair,
-            serde_json::to_value(&pair).unwrap(),
+            json::to_value(&pair).unwrap(),
         );
     }
 
@@ -330,12 +331,12 @@ mod tests {
             value_source_offsets: [1028, 1037],
         };
         assert_eq!(
-            serde_json::to_vec(&pair).unwrap(),
-            serde_json::to_vec(&FeatureSketchPayloadFixedPairWire::from(pair.clone())).unwrap()
+            json::to_vec(&pair).unwrap(),
+            json::to_vec(&FeatureSketchPayloadFixedPairWire::from(pair.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &pair,
-            serde_json::to_value(&pair).unwrap(),
+            json::to_value(&pair).unwrap(),
         );
     }
 
@@ -357,12 +358,12 @@ mod tests {
             value_source_offsets: [1028, 1037],
         };
         assert_eq!(
-            serde_json::to_vec(&pair).unwrap(),
-            serde_json::to_vec(&FeatureSketchPayloadMixedPairWire::from(pair.clone())).unwrap()
+            json::to_vec(&pair).unwrap(),
+            json::to_vec(&FeatureSketchPayloadMixedPairWire::from(pair.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &pair,
-            serde_json::to_value(&pair).unwrap(),
+            json::to_value(&pair).unwrap(),
         );
     }
 
@@ -378,9 +379,9 @@ mod tests {
             source_offset: 1020,
             value_source_offsets: [1028, 2037],
         };
-        let wire = serde_json::to_value(&pair).unwrap();
+        let wire = json::to_value(&pair).unwrap();
         assert_eq!(
-            serde_json::from_value::<FeatureSketchPayloadFixedPair>(wire.clone()).unwrap(),
+            json::from_value::<FeatureSketchPayloadFixedPair>(wire.clone()).unwrap(),
             pair
         );
         for (field, invalid) in [
@@ -391,7 +392,7 @@ mod tests {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid;
             let error =
-                serde_json::from_value::<FeatureSketchPayloadFixedPair>(invalid_wire).unwrap_err();
+                json::from_value::<FeatureSketchPayloadFixedPair>(invalid_wire).unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
     }

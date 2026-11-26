@@ -23,9 +23,9 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod carriers_parameterization;
+pub(crate) mod carriers_parameterization;
 mod cycles;
-mod design;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -36,7 +36,7 @@ mod physics;
 mod pmi;
 mod point_clouds;
 mod presentation;
-mod process;
+pub(crate) mod process;
 mod products;
 mod referential_integrity;
 mod semantic_annotations;
@@ -62,13 +62,18 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
+    check_partial_topology, check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
+use topology::nested::NestRules;
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
+
+/// Every topology rule, with procedural curves compared with their solved
+/// carriers: the rules validation runs on a history body's nest.
+const ALL_NEST_RULES: NestRules = NestRules::All { caches: true };
 
 fn record_finding(
     findings: &mut Vec<Finding>,
@@ -132,14 +137,16 @@ fn state_chain_refusal(limit: u64, depth: u64) -> Option<CodecError> {
     ))
 }
 
-/// Validate `ir` and copy `losses` into the returned report unchanged.
+/// Validate `ir`, running `nests` on each history body's nest, and copy
+/// `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    validate_model_with_index(ctx, ir, losses, &index)
+    validate_model_with_index(ctx, ir, losses, &index, nests)
 }
 
 fn validate_model_with_index<'ir>(
@@ -147,6 +154,7 @@ fn validate_model_with_index<'ir>(
     ir: &'ir CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'ir>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
 
@@ -154,7 +162,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_procedural_owners(ir, &mut findings);
@@ -162,7 +170,7 @@ fn validate_model_with_index<'ir>(
     check_pmi(ir, &mut findings);
     check_topology_rules(ctx, ids, ids.native_view(), true, &mut findings)?;
     check_native_links(ids.native_view(), ids, &mut findings);
-    check_tessellations(ir, &mut findings);
+    check_tessellations(ids, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
@@ -173,9 +181,8 @@ fn validate_model_with_index<'ir>(
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
-    history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
-    design::check_design(ctx, ir, ids, &mut findings)?;
-    process::check_process(ctx, ir, ids, &mut findings)?;
+    history_bodies::check_history_bodies(ctx, ir, ids, nests, &mut findings)?;
+    process::check_design_and_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -203,8 +210,9 @@ fn check_topology_rules(
     check_coedge_pairing(ir, findings)?;
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
-    check_shell_connectivity(ir, findings);
-    check_solid_edge_uses(ir, findings);
+    check_shell_connectivity(index, findings);
+    check_loopless_faces(index, findings);
+    check_solid_edge_uses(index, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {
@@ -214,7 +222,7 @@ fn check_topology_rules(
         check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
     }
     check_parameter_domains(ctx, ir, findings)?;
-    check_edge_endpoint_consistency(ctx, ir, findings)?;
+    check_edge_endpoint_consistency(ctx, index, findings)?;
     let evaluations = crate::eval::admission::ModelEvaluationPass::new();
     check_pcurve_surface_consistency(ctx, index, &evaluations, findings)?;
     if caches {
@@ -224,31 +232,6 @@ fn check_topology_rules(
     check_topology_tolerances(ir, findings);
     check_subdivision_schemes(&ir.geometry, findings);
     Ok(())
-}
-
-/// The findings of the rules of one `Topology` that `document` holds outside
-/// its current geometry (a resolved state, a witness body): the topology is
-/// checked as the geometry of a document of its own, at `document`'s
-/// tolerances (part 10, Coincidence). With `references`, every reference of
-/// its records names a record of it.
-fn nested_topology_findings(
-    ctx: &DecodeContext<'_>,
-    document: crate::native::view::NativeView<'_>,
-    topology: crate::document::Topology,
-    references: bool,
-    caches: bool,
-) -> Result<Vec<Finding>, CodecError> {
-    let mut alone = CadIr::empty();
-    alone.fragment = document.ir.fragment;
-    alone.tolerances = document.ir.tolerances;
-    alone.geometry = topology;
-    let index = crate::index::ModelIndex::build(&alone);
-    let mut findings = Vec::new();
-    if references {
-        check_references(ctx, &alone, &index, &mut findings)?;
-    }
-    check_topology_rules(ctx, &index, document, caches, &mut findings)?;
-    Ok(findings)
 }
 
 /// `finding` on a record of a topology that the record `holder` holds, as a
@@ -309,9 +292,10 @@ fn validate_model_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
+    nests: NestRules,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, nests)?;
     validate_annotations(
         ctx,
         &index,
@@ -330,7 +314,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
         let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-        validate_model_with_index(ctx, ir, losses, &index)
+        validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)
     })
 }
 
@@ -345,7 +329,7 @@ pub fn validate_neutral_for_decode(
     ir: &CadIr,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    validate_model(ctx, ir, losses)
+    validate_model(ctx, ir, losses, ALL_NEST_RULES)
 }
 
 /// Validate an application-owned model together with borrowed annotations.
@@ -354,7 +338,9 @@ pub fn validate_neutral_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    standalone_validation(|ctx| validate_model_with_annotations(ctx, ir, annotations, losses))
+    standalone_validation(|ctx| {
+        validate_model_with_annotations(ctx, ir, annotations, losses, ALL_NEST_RULES)
+    })
 }
 
 /// Validate an application-owned model together with its decode-time source sidecar.
@@ -376,7 +362,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index, ALL_NEST_RULES)?;
     validate_annotations(
         ctx,
         &index,
@@ -403,6 +389,7 @@ mod tests {
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     #[test]
@@ -579,7 +566,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                serde_json::from_slice(bytes).unwrap();
+                json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -809,13 +796,10 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = serde_json::to_value(&tool).expect("serialize tool");
-            assert_eq!(
-                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
-                tool
-            );
+            let wire = json::to_value(&tool).expect("serialize tool");
+            assert_eq!(json::from_value::<SplitBodyTool>(wire).expect("tool"), tool);
         }
-        assert!(serde_json::from_value::<SplitBodyTool>(
+        assert!(json::from_value::<SplitBodyTool>(
             serde_json::json!({"kind": "planes", "value": []})
         )
         .is_err());

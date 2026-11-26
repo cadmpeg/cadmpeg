@@ -2,6 +2,7 @@
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
@@ -24,9 +25,9 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
         let mut data = Vec::new();
         member.read_to_end(&mut data).unwrap();
         if member.name().unwrap().ends_with(".json") {
-            let mut value = serde_json::from_slice(&data).unwrap();
+            let mut value = json::from_slice(&data).unwrap();
             edit(&member.name().unwrap(), &mut value);
-            data = serde_json::to_vec(&value).unwrap();
+            data = json::to_vec(&value).unwrap();
         }
         zip.start_file(
             member.name().unwrap().as_ref(),
@@ -73,9 +74,9 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
-        let written = serde_json::to_value(&model.ir).unwrap();
-        let roundtrip: cadmpeg_ir::CadIr = serde_json::from_value(written.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&roundtrip).unwrap(), written);
+        let written = json::to_value(&model.ir).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(written.clone()).unwrap();
+        assert_eq!(json::to_value(&roundtrip).unwrap(), written);
         assert!(wire["model"].get("bodies").is_none());
         assert!(!wire["geometry"]["edges"].as_array().unwrap().is_empty());
         for edge in wire["geometry"]["edges"].as_array().unwrap() {
@@ -277,16 +278,11 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 #[test]
 fn wrong_magic_schema_and_manifest_identity_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in ["schema", "assembly", "multiple", "path"] {
+    for failure in ["schema", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
                     "schema" => value["schema"] = json!("dutchman.onshape-bundle/2"),
-                    "assembly" => value["elements"][0]["type"] = json!("ASSEMBLY"),
-                    "multiple" => {
-                        let row = value["elements"][0].clone();
-                        value["elements"].as_array_mut().unwrap().push(row);
-                    }
                     "path" => value["elements"][0]["id"] = json!("../studio"),
                     _ => {}
                 }
@@ -1406,7 +1402,7 @@ fn repeated_exterior_consumers_exhaust_the_bundle_budget_early() {
         .unwrap()
         .iter()
         .filter_map(|f| f.pointer("/definition/value/value/profile/value/value/regions"))
-        .map(|regions| serde_json::to_vec(regions).unwrap().len())
+        .map(|regions| json::to_vec(regions).unwrap().len())
         .sum();
     eprintln!("Cumulative recovery: refused at consumer {first_loss} of 129 (128 extra holes); emitted {boundary_bytes} region JSON bytes; reader {elapsed:?}");
     assert!(

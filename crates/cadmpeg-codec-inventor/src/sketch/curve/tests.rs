@@ -3,6 +3,7 @@
 use super::*;
 use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList};
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 fn list(indices: &[u32]) -> PmDcReferenceList {
@@ -31,19 +32,18 @@ fn ellipse(ends: &[u32], state: u8) -> PmDcSketchEntityKind {
 }
 
 fn entity(kind: PmDcSketchEntityKind) -> PmDcSketchEntity {
-    let mut payload: super::super::PmDcSketchEntityPayload =
-        serde_json::from_value(serde_json::json!({
-            "save_version_major": 22,
-            "header": {
-                "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
-                "flags": 0, "context": PmDcReference::from_packed(0), "source_index": 0
-            },
-            "entity_flags": 0, "sketch": PmDcReference::from_packed(3),
-            "kind": {"form": "point", "position": [0.0, 0.0],
-                "endpoint_of": list(&[]), "center_of": list(&[]),
-                "state": null, "associations": null}
-        }))
-        .expect("synthetic entity");
+    let mut payload: super::super::PmDcSketchEntityPayload = json::from_value(serde_json::json!({
+        "save_version_major": 22,
+        "header": {
+            "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
+            "flags": 0, "context": PmDcReference::from_packed(0), "source_index": 0
+        },
+        "entity_flags": 0, "sketch": PmDcReference::from_packed(3),
+        "kind": {"form": "point", "position": [0.0, 0.0],
+            "endpoint_of": list(&[]), "center_of": list(&[]),
+            "state": null, "associations": null}
+    }))
+    .expect("synthetic entity");
     let record_type = RecordTypeId::from_bytes(kind.record_type_id());
     payload.kind = kind;
     Located::new(
@@ -218,12 +218,12 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
         (0, Some(1), false),
         (0, None, false),
     ] {
-        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())
+        let mut wire = json::to_value(crate::test_support::sketch_curves::spline_midpoint())
             .expect("constraint wire");
         wire["header"]["parameter"] = serde_json::json!(PmDcReference::from_packed(parameter));
         wire["kind"]["value"] = serde_json::json!(value);
         let constraint: super::super::PmDcSketchConstraint =
-            serde_json::from_value(wire).expect("synthetic constraint");
+            json::from_value(wire).expect("synthetic constraint");
         assert_eq!(midpoint_supported(&constraint, &curve.geometry), admitted);
         let definition = midpoint_definition(
             &constraint,

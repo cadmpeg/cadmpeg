@@ -10,9 +10,33 @@ use cadmpeg_ir::design::selection::{
 use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
-use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::sketches::{Sketch, SketchEntity};
 
 use super::Projected;
+
+pub(super) mod trimmed;
+
+/// The planar sketches of the feature layer and their entities, and the
+/// arrangements built from them so far. Without a cache, each use builds its
+/// own.
+#[derive(Clone, Copy, Default)]
+pub(super) struct SketchData<'a> {
+    pub(super) sketches: &'a [Sketch],
+    pub(super) entities: &'a [SketchEntity],
+    pub(super) arrangements: Option<&'a trimmed::Arrangements>,
+}
+
+impl SketchData<'_> {
+    fn arrangement(
+        self,
+        sketch: &cadmpeg_ir::sketches::SketchId,
+    ) -> Projected<std::rc::Rc<trimmed::Arrangement>> {
+        match self.arrangements {
+            Some(cache) => cache.get(self.entities, sketch),
+            None => trimmed::Arrangement::new(self.entities, sketch).map(std::rc::Rc::new),
+        }
+    }
+}
 
 pub(super) fn picked(target: PickTarget) -> Picked {
     Picked {
@@ -288,7 +312,7 @@ pub(super) fn path(value: &cadmpeg_ir::features::profiles::PathRef) -> Projected
 
 pub(super) fn profile(
     value: &cadmpeg_ir::features::profiles::ProfileRef,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
 ) -> Projected<OrderedSelection> {
     match value {
         cadmpeg_ir::features::profiles::ProfileRef::Planar(value) => planar(value, sketches),
@@ -296,47 +320,91 @@ pub(super) fn profile(
     }
 }
 
-pub(super) fn planar(value: &PlanarProfileRef, sketches: &[Sketch]) -> Projected<OrderedSelection> {
-    let loop_region = |sketch: &cadmpeg_ir::sketches::SketchId, outer, holes: &[u32]| {
-        let source = sketches
-            .iter()
-            .find(|item| &item.id == sketch)
-            .ok_or("the profile sketch is absent")?;
-        let ring = |index: u32| -> Projected<Vec<BoundaryUse>> {
-            Ok(source
-                .profiles
-                .get(usize::try_from(index).map_err(|_| "profile index overflow")?)
-                .ok_or("profile index is outside its sketch")?
+pub(super) fn planar(
+    value: &PlanarProfileRef,
+    data: SketchData<'_>,
+) -> Projected<OrderedSelection> {
+    let sketches = data.sketches;
+    let loop_region =
+        |sketch: &cadmpeg_ir::sketches::SketchId, outer, holes: &[u32]| -> Projected<Picked> {
+            let source = sketches
                 .iter()
-                .map(|usage| BoundaryUse {
-                    entity: usage.entity.clone(),
-                    fragment: None,
-                })
-                .collect())
-        };
-        Ok(picked(PickTarget::SketchRegion {
-            sketch: sketch.clone(),
-            region: SketchRegion {
-                outer: ring(outer)?,
-                holes: holes
+                .find(|item| &item.id == sketch)
+                .ok_or("the profile sketch is absent")?;
+            let ring = |index: u32| -> Projected<Vec<BoundaryUse>> {
+                Ok(source
+                    .profiles
+                    .get(usize::try_from(index).map_err(|_| "profile index overflow")?)
+                    .ok_or("profile index is outside its sketch")?
                     .iter()
-                    .map(|index| ring(*index))
-                    .collect::<Projected<_>>()?,
-            },
-        }))
-    };
+                    .map(|usage| BoundaryUse {
+                        entity: usage.entity.clone(),
+                        fragment: None,
+                    })
+                    .collect())
+            };
+            Ok(picked(PickTarget::SketchRegion {
+                sketch: sketch.clone(),
+                region: SketchRegion {
+                    outer: ring(outer)?,
+                    holes: holes
+                        .iter()
+                        .map(|index| ring(*index))
+                        .collect::<Projected<_>>()?,
+                },
+            }))
+        };
     match value {
         PlanarProfileRef::Native(text) => native(text),
         PlanarProfileRef::Sketch(id) => selection(vec![picked(PickTarget::Sketch(id.clone()))]),
-        PlanarProfileRef::SketchProfiles { .. } => Err("the selected loops have no explicit region nesting"),
-        PlanarProfileRef::SketchRegions { sketch, regions } => selection(regions.iter().map(|region| match region {
-            cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } => loop_region(sketch, loops.outer(), loops.holes()),
-            cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { .. } => Err("a trimmed profile stores parameter intervals outside the v11 boundary contract"),
-        }).collect::<Projected<_>>()?),
-        PlanarProfileRef::SketchEntities { entities, .. } => selection(entities.iter().map(|id| picked(PickTarget::SketchEntity(id.clone()))).collect()),
-        PlanarProfileRef::SketchSelection { sketch, selections } => selection(selections.iter().map(|text| named(text, Some(NativeOwner::Sketch(sketch.clone())))).collect::<Projected<_>>()?),
-        PlanarProfileRef::HistoricalFaces { native: names, .. } => Ok(Selection { at: Anchor::Input, picks: Picks::Unread, native: Some(names.clone()) }),
-        PlanarProfileRef::Feature(id) => selection(vec![picked(PickTarget::FeatureResult(id.clone()))]),
+        PlanarProfileRef::SketchProfiles { .. } => {
+            Err("the selected loops have no explicit region nesting")
+        }
+        PlanarProfileRef::SketchRegions { sketch, regions } => {
+            let mut arrangement: Option<std::rc::Rc<trimmed::Arrangement>> = None;
+            let mut picks = Vec::new();
+            for region in regions.iter() {
+                picks.push(match region {
+                    cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } => {
+                        loop_region(sketch, loops.outer(), loops.holes())?
+                    }
+                    cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
+                        outer_boundary,
+                        hole_boundaries,
+                    } => {
+                        let arrangement = match &arrangement {
+                            Some(built) => built,
+                            None => arrangement.insert(data.arrangement(sketch)?),
+                        };
+                        picked(PickTarget::SketchRegion {
+                            sketch: sketch.clone(),
+                            region: arrangement.region(outer_boundary, hole_boundaries)?,
+                        })
+                    }
+                });
+            }
+            selection(picks)
+        }
+        PlanarProfileRef::SketchEntities { entities, .. } => selection(
+            entities
+                .iter()
+                .map(|id| picked(PickTarget::SketchEntity(id.clone())))
+                .collect(),
+        ),
+        PlanarProfileRef::SketchSelection { sketch, selections } => selection(
+            selections
+                .iter()
+                .map(|text| named(text, Some(NativeOwner::Sketch(sketch.clone()))))
+                .collect::<Projected<_>>()?,
+        ),
+        PlanarProfileRef::HistoricalFaces { native: names, .. } => Ok(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: Some(names.clone()),
+        }),
+        PlanarProfileRef::Feature(id) => {
+            selection(vec![picked(PickTarget::FeatureResult(id.clone()))])
+        }
         PlanarProfileRef::Generated { native: text, .. } => native(text.as_str()),
         _ => Err("the profile selection has unresolved members"),
     }

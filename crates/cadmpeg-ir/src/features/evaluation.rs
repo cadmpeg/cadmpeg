@@ -113,6 +113,12 @@ pub struct FeatureInputTopology {
     /// one entry per face. A face with no entry has an owner this state does
     /// not state.
     pub face_owners: Vec<HistoricalFaceOwner>,
+    /// Carrier surfaces of faces present in this state, at most one entry per
+    /// face.
+    pub face_geometry: Vec<HistoricalFaceGeometry>,
+    /// The feature that last writes each of some of the bodies of this state,
+    /// at most one entry per body.
+    pub body_writers: Vec<HistoricalBodyWriter>,
     /// Full-fidelity source state reference.
     #[serde(
         default,
@@ -120,6 +126,18 @@ pub struct FeatureInputTopology {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// The feature whose result last inserts or updates one body of a feature's
+/// input state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalBodyWriter {
+    /// Body of the owning input state.
+    pub body: HistoricalBodyId,
+    /// Feature whose result last inserts or updates the body before the state.
+    pub writer: FeatureId,
 }
 
 /// The body of a feature's input state that holds one face of that state.
@@ -216,7 +234,7 @@ pub struct HistoricalEdgeCarrier {
 }
 
 /// Shape of a historical edge's carrier curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -267,6 +285,74 @@ impl HistoricalEdgeCurve {
             Self::Parabola(curve) => Solved::Parabola(*curve),
             Self::Hyperbola(curve) => Solved::Hyperbola(*curve),
             Self::Nurbs(curve) => Solved::Nurbs(curve.clone()),
+        }
+    }
+}
+
+/// Carrier surface of one historical face in a feature's input state.
+///
+/// The surface is in millimetres in the frame of the body that the feature
+/// evaluates, before the feature applies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalFaceGeometry {
+    /// Face of the owning input state.
+    pub face: HistoricalFaceId,
+    /// Carrier surface of the face.
+    pub surface: HistoricalFaceSurface,
+    /// The face normal is opposite to the natural normal of `surface`.
+    pub reversed: bool,
+}
+
+/// Shape of a historical face's carrier surface.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum HistoricalFaceSurface {
+    /// Infinite plane.
+    Plane(crate::geometry::analytic::PlaneSurface),
+    /// Right circular cylinder.
+    Cylinder(crate::geometry::analytic::CylinderSurface),
+    /// Right elliptical cone.
+    Cone(crate::geometry::analytic::ConeSurface),
+    /// Sphere.
+    Sphere(crate::geometry::analytic::SphereSurface),
+    /// Torus.
+    Torus(crate::geometry::analytic::TorusSurface),
+    /// Free-form NURBS surface.
+    Nurbs(crate::geometry::nurbs::NurbsSurface),
+}
+
+impl HistoricalFaceSurface {
+    /// The carrier of `geometry`, absent for a carrier that refers to other
+    /// surfaces or holds no closed-form shape.
+    #[must_use]
+    pub fn from_solved(geometry: &crate::geometry::SolvedSurfaceGeometry) -> Option<Self> {
+        use crate::geometry::SolvedSurfaceGeometry as Solved;
+        match geometry {
+            Solved::Plane(surface) => Some(Self::Plane(*surface)),
+            Solved::Cylinder(surface) => Some(Self::Cylinder(*surface)),
+            Solved::Cone(surface) => Some(Self::Cone(*surface)),
+            Solved::Sphere(surface) => Some(Self::Sphere(*surface)),
+            Solved::Torus(surface) => Some(Self::Torus(*surface)),
+            Solved::Nurbs(surface) => Some(Self::Nurbs(surface.clone())),
+            Solved::Polygonal(_) | Solved::Transformed(_) | Solved::Unknown { .. } => None,
+        }
+    }
+
+    /// The carrier as solved surface geometry, for evaluation.
+    #[must_use]
+    pub fn to_solved(&self) -> crate::geometry::SolvedSurfaceGeometry {
+        use crate::geometry::SolvedSurfaceGeometry as Solved;
+        match self {
+            Self::Plane(surface) => Solved::Plane(*surface),
+            Self::Cylinder(surface) => Solved::Cylinder(*surface),
+            Self::Cone(surface) => Solved::Cone(*surface),
+            Self::Sphere(surface) => Solved::Sphere(*surface),
+            Self::Torus(surface) => Solved::Torus(*surface),
+            Self::Nurbs(surface) => Solved::Nurbs(surface.clone()),
         }
     }
 }

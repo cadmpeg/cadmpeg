@@ -71,6 +71,11 @@ impl From<anyhow::Error> for ApplicationError {
         {
             return cadmpeg_core::CodecError::ResourceLimit(*limit).into();
         }
+        if let Some(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) =
+            error.downcast_ref::<cadmpeg_ir::codec::write::EncodeError>()
+        {
+            return cadmpeg_core::CodecError::ResourceLimit(*limit).into();
+        }
         Self::Operational(error)
     }
 }
@@ -101,6 +106,21 @@ impl From<cadmpeg_core::CodecError> for ApplicationError {
                 stage: RefusalStage::Decode,
             }
             .into(),
+            error => Self::Operational(error.into()),
+        }
+    }
+}
+
+impl From<cadmpeg_ir::codec::write::EncodeError> for ApplicationError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        match error {
+            cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) => {
+                ConversionRefusal::ResourceLimit {
+                    limit,
+                    stage: RefusalStage::Plan,
+                }
+                .into()
+            }
             error => Self::Operational(error.into()),
         }
     }
@@ -310,6 +330,14 @@ pub(crate) enum ConversionRefusal {
         /// Completed decode report bound to the loss that caused refusal.
         rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
+    /// A CADIR read completed, but the caller's decode strictness refused an
+    /// entry of its report.
+    StrictReadRejected {
+        /// The completed read report.
+        report: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The index of the entry that refused the read.
+        entry: usize,
+    },
     /// `cadmpeg check` found errors.
     CheckFailed {
         /// Decode report available for an optional `--report`.
@@ -503,6 +531,19 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Dialects(dialects)),
                 reports: RefusalReports::default(),
             },
+            Self::StrictReadRejected { report, entry } => {
+                let loss = &report[*entry];
+                RefusalEvidence {
+                    code: RefusalCode::StrictDecodeRejected,
+                    message: Cow::Owned(format!(
+                        "the read's strictness refuses {}: {}",
+                        code_name(&loss.code),
+                        loss.message
+                    )),
+                    detail: None,
+                    reports: RefusalReports::default(),
+                }
+            }
             Self::StrictDecodeRejected { rejection } => {
                 let loss = rejection.loss();
                 RefusalEvidence {
@@ -680,6 +721,7 @@ impl std::error::Error for ConversionRefusal {}
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -700,7 +742,7 @@ mod tests {
     const IGES_CATALOG: TargetCatalog = TargetCatalog::new(IGES_TARGETS, Some(0));
 
     fn report_value(refusal: &ConversionRefusal) -> serde_json::Value {
-        serde_json::to_value(refusal.report()).expect("serialize refusal report")
+        json::to_value(refusal.report()).expect("serialize refusal report")
     }
 
     fn classify(failure: DecodeFailure) -> ApplicationError {
@@ -914,10 +956,7 @@ mod tests {
             refusal.code(),
             crate::application::refusal::RefusalCode::UnsupportedOutputFormat
         );
-        assert_eq!(
-            serde_json::to_value(refusal.report()).unwrap()["stage"],
-            "plan"
-        );
+        assert_eq!(json::to_value(refusal.report()).unwrap()["stage"], "plan");
         assert_eq!(refusal.exit_code(), 1);
     }
 

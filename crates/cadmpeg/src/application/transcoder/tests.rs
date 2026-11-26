@@ -213,10 +213,13 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         .export
         .expect("the refusal retains the completed export plan report");
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss.message.ends_with(
+                    "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                         f3d:test:asm-history#0"
+                )
+        ),
         "{:?}",
         report.losses
     );
@@ -240,7 +243,13 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+            .any(
+                |loss| loss.code.to_string() == "export/native.records-omitted"
+                    && loss.message.ends_with(
+                        "of `f3d` arena `asm_histories` which the STEP writer does not \
+                             write: f3d:test:asm-history#0"
+                    )
+            ),
         "{:?}",
         planned.plan.report().losses
     );
@@ -316,6 +325,7 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("notimplementedtest");
+    const NAME: &'static str = "test";
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
@@ -386,17 +396,18 @@ fn a_failed_plan_returns_its_own_refusal_under_reject_errors() {
     }
 }
 
-/// Flag absence is always `Inherit`; the encoder decides what that means.
+/// Flag absence is a request that names no target; the encoder decides what
+/// that means.
 ///
 /// The selection is an owned-string adapter and nothing else. The
 /// cross-format catalog default is owned by write resolution, so the command
 /// line does not decide it a second time.
 #[cfg(feature = "iges")]
 #[test]
-fn flag_absence_is_always_an_inherit_request() {
+fn flag_absence_is_a_request_that_names_no_target() {
     assert_eq!(
         TargetSelection::new(Format::Iges, None).request(),
-        TargetRequest::Inherit
+        TargetRequest::Unnamed
     );
     let named = TargetSelection::new(Format::Iges, Some("iges:5.1-fixed-ascii".to_owned()));
     assert_eq!(
@@ -410,7 +421,7 @@ fn flag_absence_is_always_an_inherit_request() {
 fn target_selection_owns_format_and_dialect_grammar() {
     let format_only = TargetSelection::resolve(Some("iges"), None).expect("format resolves");
     assert_eq!(format_only.format, Format::Iges);
-    assert_eq!(format_only.request(), TargetRequest::Inherit);
+    assert_eq!(format_only.request(), TargetRequest::Unnamed);
 
     let qualified = TargetSelection::resolve(Some("iges:5.1"), None).expect("alias resolves");
     assert_eq!(qualified.format, Format::Iges);
@@ -428,7 +439,7 @@ fn a_format_alias_does_not_become_a_dialect_request() {
     let selection = TargetSelection::resolve(Some("stp"), Some(Path::new("part.stp")))
         .expect("the identity registry owns the STEP alias");
     assert_eq!(selection.format, Format::Step);
-    assert_eq!(selection.request(), TargetRequest::Inherit);
+    assert_eq!(selection.request(), TargetRequest::Unnamed);
 }
 
 #[test]
@@ -449,7 +460,7 @@ fn rejecting_export_losses_does_not_name_a_target() {
     let target = export_target(TargetSelection::new(Format::Step, None));
 
     assert!(target.selection.request.is_none(), "{:?}", target.selection);
-    assert_eq!(target.selection.request(), TargetRequest::Inherit);
+    assert_eq!(target.selection.request(), TargetRequest::Unnamed);
 
     let named = export_target(TargetSelection::new(
         Format::Step,
@@ -631,7 +642,7 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd");
     let options = cadmpeg_ir::codec::DecodeOptions::default();
-    let document = crate::loader::load_artifact(&inputs, &path, options, None)
+    let document = crate::loader::load_artifact(&inputs, &path, &options, None)
         .expect("load the FreeCAD design-history fixture");
     let validation = crate::application::validators::validate_loaded(
         &inputs,
@@ -651,7 +662,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
     use cadmpeg_registry::InputCatalog;
 
     CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("plan the mutated CADIR document")
         .write_to(&mut std::fs::File::create(path).expect("create CADIR input"))
         .expect("write the mutated CADIR document");
@@ -962,7 +973,7 @@ fn an_output_extension_that_names_a_dialect_selects_it() {
     assert_eq!(explicit.request(), TargetRequest::Explicit("usda-1.0"));
     let layer = TargetSelection::resolve(None, Some(Path::new("assembly.usda")))
         .expect("format from the extension");
-    assert_eq!(layer.request(), TargetRequest::Inherit);
+    assert_eq!(layer.request(), TargetRequest::Unnamed);
     let binary = TargetSelection::resolve(None, Some(Path::new("assembly.usdc")))
         .expect("format from the extension");
     assert_eq!(binary.request(), TargetRequest::Explicit("usdc"));

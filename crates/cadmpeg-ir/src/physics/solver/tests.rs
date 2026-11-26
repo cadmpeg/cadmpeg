@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use super::{SolverSettings, SolverTarget, SolverValue};
@@ -53,7 +54,7 @@ fn settings() -> SolverSettings {
 #[test]
 fn solver_settings_round_trip_through_json() {
     let record = settings();
-    let json = serde_json::to_value(&record).unwrap();
+    let json = json::to_value(&record).unwrap();
     assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
@@ -63,10 +64,7 @@ fn solver_settings_round_trip_through_json() {
         json["values"]["physxJoint:jointFriction"]["dimension"],
         serde_json::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
     );
-    assert_eq!(
-        serde_json::from_value::<SolverSettings>(json).unwrap(),
-        record
-    );
+    assert_eq!(json::from_value::<SolverSettings>(json).unwrap(), record);
 }
 
 #[test]

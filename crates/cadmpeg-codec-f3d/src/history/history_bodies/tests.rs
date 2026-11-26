@@ -2,6 +2,7 @@
 use super::*;
 use cadmpeg_ir::document::Model;
 
+mod final_bodies;
 mod historical_split;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
@@ -303,7 +304,7 @@ fn run_roles(
     fill_history(
         &ctx,
         bytes,
-        &history,
+        (&history, None),
         &wants,
         &mut bodies,
         &WorkBudget::new(work),
@@ -549,6 +550,7 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
             id: HistoryBodyId::mint("test:history-body:nest#shared-vertex").unwrap(),
             produced_by: Some(feature("base").id),
             consumed_by: None,
+            state_of: None,
             state: HistoryStateRef {
                 ordinal: 0,
                 identifier: 12,
@@ -632,7 +634,7 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
             fill_history(
                 &ctx,
                 &bytes,
-                &history,
+                (&history, None),
                 &[Want {
                     origin: &cut,
                     producer: None,
@@ -1001,7 +1003,7 @@ fn a_captured_derived_result_preserves_the_current_body() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             origin: &feature,
             producer: Some(&feature),
@@ -1158,6 +1160,7 @@ fn cube_candidate() -> HistoryBody {
         id: HistoryBodyId::mint("test:history-body:nest#cube").expect("identity"),
         produced_by: Some(feature("base").id),
         consumed_by: None,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: 0,
             identifier: 1,
@@ -1630,7 +1633,7 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             input: None,
             bindings: RefCell::default(),
@@ -1660,6 +1663,7 @@ fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i
     HistoryBody {
         produced_by: produced_by.map(|native| feature(native).id),
         consumed_by: consumed_by.map(|native| feature(native).id),
+        state_of: None,
         state: HistoryStateRef {
             ordinal: u32::try_from(state).expect("small"),
             identifier: state,

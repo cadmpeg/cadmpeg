@@ -135,6 +135,7 @@ fn check_reference_anchors(
 mod tests {
     use super::check_semantic_annotations;
     use crate::document::CadIr;
+    use cadmpeg_core::serde_erase::json;
 
     fn fixture() -> CadIr {
         let mut ir = CadIr::empty();
@@ -143,7 +144,7 @@ mod tests {
             "test:model:semantic-annotation#second",
         ] {
             ir.model.semantic_annotations.push(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(serde_json::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "text",
                     "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
                     "text": [], "references": {}, "reference_anchors": [], "text_style": {},

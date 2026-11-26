@@ -11,6 +11,7 @@ use crate::{
         topology::face::DesignFaceSourceGroup,
     },
 };
+use cadmpeg_core::serde_erase::json;
 
 fn registration(version: u32) -> SegmentType {
     SegmentType::try_new(
@@ -33,7 +34,7 @@ fn registration(version: u32) -> SegmentType {
 }
 
 fn settings() -> DesignSheetMetalSettings {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "f3d:test/Design1/BulkStream.dat:design-sheet-metal-settings#300",
         "record_index": 13, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
         "inputs": { "version": "v2", "slots": [null, null, null, null, null, null, null] },
@@ -51,7 +52,7 @@ fn base_face_projects_a_registered_source_and_owned_rule() {
         10,
     );
     name_scope_references(&mut scope, [12, 13]);
-    let group: DesignFaceSourceGroup = serde_json::from_value(serde_json::json!({
+    let group: DesignFaceSourceGroup = json::from_value(serde_json::json!({
         "id": "f3d:test/Design1/BulkStream.dat:design-face-source-group#100",
         "scope_record_index": 10, "carrier_reference_ordinal": 0,
         "carrier_record_index": 12, "carrier_byte_offset": 100, "carrier_class_tag": "257",

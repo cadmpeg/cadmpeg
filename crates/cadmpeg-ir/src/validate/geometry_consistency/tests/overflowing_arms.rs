@@ -357,7 +357,7 @@ fn an_edge_curve_whose_end_overflows_misses_its_vertices_by_nan() {
     let mut findings = Vec::new();
     super::super::check_edge_endpoint_consistency(
         &cadmpeg_core::decode::test_support::service_decode_context(),
-        &ir,
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("check edge endpoint consistency");
@@ -388,7 +388,7 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
     let mut findings = Vec::new();
     super::super::check_edge_endpoint_consistency(
         &cadmpeg_core::decode::test_support::service_decode_context(),
-        &ir,
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("check edge endpoint consistency");

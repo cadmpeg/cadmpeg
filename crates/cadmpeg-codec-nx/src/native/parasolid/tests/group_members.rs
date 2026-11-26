@@ -3,6 +3,7 @@
 use crate::native::parasolid::{group_member, ParasolidGroupMember};
 use crate::test_support::test_prt::many_face_partition_stream;
 use crate::topology::Graph;
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use super::{membership_record, stream};
@@ -100,7 +101,7 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     assert_eq!(members.len(), 2);
     assert_eq!(members[0].list_record_xmt, 30);
     assert_eq!(
-        serde_json::to_value(&members[0]).unwrap()["member_family"],
+        json::to_value(&members[0]).unwrap()["member_family"],
         "FACE"
     );
     assert!(matches!(
@@ -113,7 +114,7 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     ));
     assert_eq!(members[1].list_record_xmt, 20);
     assert_eq!(
-        serde_json::to_value(&members[1]).unwrap()["member_family"],
+        json::to_value(&members[1]).unwrap()["member_family"],
         "EDGE"
     );
     assert!(matches!(
@@ -318,7 +319,7 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
     assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
     assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(1));
     assert_eq!(u8::from(groups[0].selector), 4);
-    assert!(serde_json::to_value(&groups[0])
+    assert!(json::to_value(&groups[0])
         .unwrap()
         .get("linked_reference_status")
         .is_none());

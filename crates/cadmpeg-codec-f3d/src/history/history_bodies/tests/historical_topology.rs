@@ -22,6 +22,8 @@ fn input_edge_bindings_scope_repeated_slots_and_refuse_sample_identity() {
         );
         FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: owner.id.clone(),
             bodies: DistinctMembers::default(),
@@ -129,6 +131,8 @@ fn two_closed_carriers_with_equal_samples_require_the_native_edge_slot() {
     );
     let mut input = FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: owner.id.clone(),
         bodies: DistinctMembers::default(),
@@ -282,6 +286,8 @@ fn treatment_snapshot_requests_join_history_state_and_body_membership() {
     ));
     let mut input = FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: DistinctMembers::try_from(vec![crate::ids::history_input_body_id(&prefix, 1)])
@@ -403,6 +409,8 @@ fn failed_input_binding_preserves_samples_supports_and_operands_with_a_loss() {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: feature.id.clone(),
             bodies: DistinctMembers::default(),

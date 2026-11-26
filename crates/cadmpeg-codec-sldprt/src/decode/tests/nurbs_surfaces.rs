@@ -572,8 +572,8 @@ fn face_on_untyped_surface_keeps_topology() {
 }
 
 #[test]
-fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+fn a_pinned_decode_admits_topology_resting_on_an_untyped_surface() {
+    use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -603,19 +603,12 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .iter()
         .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
-    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
+    assert!(!strict_options().strictness.refuses(census, false));
 
-    let error = SldprtCodec
+    let pinned = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect_err("strict refuses the untyped-surface census");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
-        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
-    };
-    assert!(
-        rejection.loss().code.to_string().starts_with("sldprt/"),
-        "unexpected: {}",
-        rejection.loss().code
-    );
+        .expect("the untyped-surface census pins no strict floor");
+    assert_eq!(pinned.ir().geometry.faces.len(), 1);
 }
 
 #[test]

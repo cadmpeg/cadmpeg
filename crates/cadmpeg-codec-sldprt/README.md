@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(&mut output)?;
     Ok(())
@@ -135,10 +135,10 @@ that snapshot which the model does not state gets a
 `writer.configuration-snapshot-edit-unwritten` loss. An edit that the native
 records cannot carry keeps the stored record or value: an edit of a
 display-only relation parameter or a parameter value that the written
-expression does not state gets a `writer.parameter-edit-unwritten` loss, and
+expression does not state gets an `export:edit.dropped` loss of kind parameter, and
 an edited compact selection, a feature definition that the encoder cannot
 restate, or a construction edit that the written part, decoded again, does not
-read back as edited gets a `writer.feature-edit-unwritten` loss, and the
+read back as edited gets an `export:edit.dropped` loss of kind feature, and the
 feature is written with its stored definition record. A feature that keeps its
 stored definition record keeps its stored operands and source properties too,
 and its loss names each edit of its definition, dependencies and source
@@ -178,7 +178,7 @@ native reference (after its `#`) are offsets that a write moves.
 
 Each difference from that document is removed or named. A difference that a
 written edit causes is removed: that feature is written with its stored
-definition record, and its `writer.feature-edit-unwritten` loss names each
+definition record, and its `export:edit.dropped` loss names each
 differing record and the place in it. With several written edits, each one in
 turn is withheld alone, and the one whose withholding removes the difference
 is kept as stored; when no single edit removes it, every written edit is. An
@@ -201,29 +201,56 @@ record that a writer loss names as omitted or as holding its source state
 without the edit (`export:edit.dropped`), and an arena that an `arena.omitted`
 loss names, are named there. A difference that remains with every edit kept
 as stored, or that a parameter, rename or tree-order edit causes, is named in
-a `writer.feature-edit-unwritten` loss, and no stale-solid loss calls a tree
+an `export:edit.dropped` loss, and no stale-solid loss calls a tree
 place or an output body written that reads back otherwise. A written part that
 does not decode again or does not serialize holds every written edit back; with
 none left, a `writer.read-back-unread` loss (severity error) names it.
 
 An edited compound-file part is written into a native envelope, and
 `export:native.records-omitted` names each compound-file stream that the write
-neither generates nor replaces. Where that write refuses, or its envelope lands
-on another dialect than the source's, the output is the stored part, and a `writer.compound-file-edit-unwritten` loss (severity error)
-states that no edit is written. `cadmpeg convert
---reject-lossy=export` refuses such a write; `--reject-errors` refuses
-`export:record.invalid` only.
+neither generates nor replaces. Each parameter is an entry of its owner
+feature's record. In a part with a feature history, an `export:edit.dropped`
+loss names the edit of a global parameter, which has no owner feature, and the
+written part keeps the stored state. A part with no feature history, such as a compound-file part or a
+document from another format, holds no record for a parameter, and the write
+leaves out each parameter it cannot place. Where the codec digests state no
+history baseline, a `writer.features-omitted` loss names it; otherwise an
+`export:edit.dropped` loss names it.
+
+An edited part that the patch path cannot write, or that it writes on another
+dialect than the source's, is synthesized without its SolidWorks history:
+`export:native.records-omitted` names each native record that the synthesis
+does not write, outside the `unknowns` arena, and the degraded reason of the
+synthesized write path states why the patch declined. Where the synthesis also refuses the part, or lands on another
+dialect than the source's, the output is the stored part. One
+`export:edit.dropped` loss (severity error) per arena names each record that
+the document adds, removes or edits against the decoded source; where no
+record differs, one such loss names the file.
+`cadmpeg convert --reject-lossy=export` refuses such a write;
+`--reject-errors` does not, because it judges the written file's check
+findings, not export losses.
+
+The writer regenerates no state. When it writes an edit that shapes the stored
+solid, it marks the configuration of that solid, the active one for a model
+edit, `swConfigurationNeedsUpdate="YES"` in the retained `swSolidWorks`
+document or in the configuration row the synthesis generates, and an
+`export:evaluation.stale` loss names the written edits. An edit that shapes no
+solid, such as a dimension display, takes no mark. A configuration whose evaluation the document states
+`Stale` or `Failed` takes the same mark; where no written row takes it, an
+`export:evaluation.stale` loss names the evaluation. The native envelope
+stores at most 65535 members and 32-bit offsets: a section past these limits,
+or with a name the envelope cannot encode, is not written, and an
+`export:value.unwritable` loss names it.
 
 A part read from CADIR JSON holds none of the feature, sketch, parameter, and
 configuration arenas the writer applies native history edits from. Given its
 decode sidecar, the writer restores them from the decode of the retained source
 part and writes into them each edit of a parameter definition or value, or of a
 feature suppression or name, that the `design` records state. It leaves out an
-edit those arenas cannot state, such as a parameter comment, and a
-`writer.parameter-edit-unwritten`, `writer.feature-edit-unwritten`, or
-`writer.design-edit-unwritten` loss names it by its path. Where the retained
-source does not decode, the output is the stored part, and an
-`export:edit.dropped` loss names it.
+edit those arenas cannot state, such as a parameter comment, and an
+`export:edit.dropped` loss names it by its path. Where the retained source does
+not decode, the output is the stored part, and an `export:edit.dropped` loss
+names it.
 
 Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It

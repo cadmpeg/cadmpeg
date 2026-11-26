@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 import struct
+import subprocess
 import unittest
 import zlib
 
@@ -395,6 +396,11 @@ class EvidenceTest(unittest.TestCase):
         cadmpeg = Path("target/debug/cadmpeg")
         if not cadmpeg.is_file():
             self.skipTest("the cadmpeg binary is not built")
+        formats = subprocess.run(
+            [str(cadmpeg), "formats"], capture_output=True, text=True, check=True
+        ).stdout.split("\n")
+        if not any(line.startswith("sat ") for line in formats):
+            self.skipTest("the cadmpeg binary is built without the sat codec")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "synthetic.ipt"
             path.write_bytes(synthetic_primary())
@@ -419,20 +425,17 @@ class EvidenceTest(unittest.TestCase):
             document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
             result = evidence.cli_sweep(path, document.ordinal, cadmpeg, 30)
         self.assertEqual(len(result["runs"]), 4)
+        # inventor.md states no strict floor (CADIR §3.2), so --no-salvage
+        # admits the synthetic file's losses as salvage does.
         self.assertTrue(
             all(
                 run["inspect"]["status"] == 0
-                and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 1)
-                    for item in run["decode"]
-                )
-                and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 1)
-                    for item in run["validate"]
-                )
+                and all(item["status"] == 0 for item in run["decode"])
+                and all(item["status"] == 0 for item in run["validate"])
                 for run in result["runs"]
             )
         )
+        self.assertEqual({run["mode"] for run in result["runs"]}, {"salvage", "strict"})
         self.assertTrue(all(run["decode_deterministic"] for run in result["runs"]))
         self.assertTrue(all(run["validate_deterministic"] for run in result["runs"]))
 

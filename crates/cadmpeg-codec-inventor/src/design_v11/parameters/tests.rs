@@ -2,6 +2,7 @@
 use super::*;
 use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::scalar::Length;
@@ -170,7 +171,7 @@ fn declared_unit_joins_native_parameter_and_unit_records() {
     raw.edit(|payload| payload.unit = PmDcReference::from_packed(2));
     legacy.expression = "1 in".into();
     let make_unit = |ordinal, kind| {
-        let payload: PmDcUnitPayload = serde_json::from_value(serde_json::json!({
+        let payload: PmDcUnitPayload = json::from_value(serde_json::json!({
             "save_version_major":29, "header_value":0, "header_id":0, "kind":kind
         }))
         .expect("unit payload");

@@ -55,6 +55,8 @@ fn fixture() -> CadIr {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:input:state#previous").unwrap(),
             input_of: body.consumed_by.clone().unwrap(),
             bodies: DistinctMembers::default(),

@@ -5,6 +5,7 @@ use crate::features::selections::DistinctMembers;
 use crate::features::FeatureContent;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json as json_wire;
 
 #[test]
 fn complete_face_motion_preserves_its_literal_affine_wire() {
@@ -23,12 +24,12 @@ fn complete_face_motion_preserves_its_literal_affine_wire() {
             [0.0, 0.0, 1.0, 1.25]
         ]
     });
-    assert_eq!(serde_json::to_value(&motion).unwrap(), expected);
+    assert_eq!(json_wire::to_value(&motion).unwrap(), expected);
     assert_eq!(
-        serde_json::from_value::<FaceMotion>(expected).unwrap(),
+        json_wire::from_value::<FaceMotion>(expected).unwrap(),
         motion
     );
-    let wire = serde_json::to_string(&motion).unwrap();
+    let wire = json_wire::to_string(&motion).unwrap();
     assert_eq!(serde_json::from_str::<FaceMotion>(&wire).unwrap(), motion);
 }
 
@@ -98,14 +99,14 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
         ),
         native_ref: None,
     };
-    let mut wire = serde_json::to_value(&feature).unwrap();
+    let mut wire = json_wire::to_value(&feature).unwrap();
     assert_eq!(
-        serde_json::from_value::<Feature>(wire.clone()).unwrap(),
+        json_wire::from_value::<Feature>(wire.clone()).unwrap(),
         feature
     );
 
     wire["regeneration_parent"] = serde_json::json!("test:model:feature#parent");
-    let error = serde_json::from_value::<Feature>(wire)
+    let error = json_wire::from_value::<Feature>(wire)
         .expect_err("a parent edge belongs to the model that owns it")
         .to_string();
     assert!(
@@ -125,7 +126,7 @@ fn a_datum_plane_reference_states_which_support_it_names() {
             .expect("identity grammar"),
     };
     assert_eq!(
-        serde_json::to_value(&feature).unwrap(),
+        json_wire::to_value(&feature).unwrap(),
         serde_json::json!({
             "kind": "feature",
             "feature": "test:model:feature#feature"
@@ -138,7 +139,7 @@ fn a_datum_plane_reference_states_which_support_it_names() {
         ]),
     };
     assert_eq!(
-        serde_json::to_value(&face).unwrap(),
+        json_wire::to_value(&face).unwrap(),
         serde_json::json!({
             "kind": "face",
             "face": {"kind": "faces", "value": ["test:model:face#face"]}
@@ -154,7 +155,7 @@ fn a_datum_plane_reference_states_which_support_it_names() {
         .unwrap(),
     };
     assert_eq!(
-        serde_json::to_value(&resolved).unwrap(),
+        json_wire::to_value(&resolved).unwrap(),
         serde_json::json!({
             "kind": "resolved_plane",
             "frame": {
@@ -166,28 +167,28 @@ fn a_datum_plane_reference_states_which_support_it_names() {
     );
 
     for reference in [&feature, &face, &resolved] {
-        let wire = serde_json::to_value(reference).unwrap();
+        let wire = json_wire::to_value(reference).unwrap();
         assert_eq!(
-            &serde_json::from_value::<DatumPlaneReference>(wire).unwrap(),
+            &json_wire::from_value::<DatumPlaneReference>(wire).unwrap(),
             reference
         );
     }
 
-    let mut legacy = serde_json::to_value(&resolved).unwrap();
+    let mut legacy = json_wire::to_value(&resolved).unwrap();
     legacy["face"] = serde_json::json!({"kind": "unresolved"});
-    let error = serde_json::from_value::<DatumPlaneReference>(legacy)
+    let error = json_wire::from_value::<DatumPlaneReference>(legacy)
         .unwrap_err()
         .to_string();
     assert!(error.contains("face"), "{error}");
 
-    let mut stray = serde_json::to_value(&face).unwrap();
+    let mut stray = json_wire::to_value(&face).unwrap();
     stray["origin"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
-    let error = serde_json::from_value::<DatumPlaneReference>(stray)
+    let error = json_wire::from_value::<DatumPlaneReference>(stray)
         .unwrap_err()
         .to_string();
     assert!(error.contains("origin"), "{error}");
 
-    let error = serde_json::from_value::<DatumPlaneReference>(serde_json::json!(
+    let error = json_wire::from_value::<DatumPlaneReference>(serde_json::json!(
         "test:model:feature#feature"
     ))
     .unwrap_err()
@@ -246,7 +247,7 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
-    let json = serde_json::to_string(&extents).unwrap();
+    let json = json_wire::to_string(&extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),
         extents
@@ -272,7 +273,7 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
-    let json = serde_json::to_string(&revolve_extents).unwrap();
+    let json = json_wire::to_string(&revolve_extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<RevolveExtent>>(&json).unwrap(),
         revolve_extents
@@ -284,26 +285,26 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     use crate::features::extents::{AngularTermination, LinearTermination};
 
     let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
-    let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
+    let blind: LinearTermination = json_wire::from_value(blind_wire.clone()).unwrap();
     assert_eq!(
         blind,
         LinearTermination::Blind {
             length: crate::scalar::NonZeroLength::new(12.5).unwrap()
         }
     );
-    assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
-    assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
+    assert_eq!(json_wire::to_value(blind).unwrap(), blind_wire);
+    assert!(json_wire::from_value::<AngularTermination>(blind_wire).is_err());
 
     let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
-    let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
+    let angle: AngularTermination = json_wire::from_value(angle_wire.clone()).unwrap();
     assert_eq!(
         angle,
         AngularTermination::Angle {
             angle: crate::scalar::PositiveAngle::new(1.25).unwrap()
         }
     );
-    assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
-    assert!(serde_json::from_value::<LinearTermination>(angle_wire).is_err());
+    assert_eq!(json_wire::to_value(angle).unwrap(), angle_wire);
+    assert!(json_wire::from_value::<LinearTermination>(angle_wire).is_err());
 }
 
 #[test]
@@ -319,7 +320,7 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
         },
         "native": "native:plane"
     });
-    let termination: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
+    let termination: LinearTermination = json_wire::from_value(wire.clone()).unwrap();
     let LinearTermination::ToPlane { plane, native, .. } = &termination else {
         panic!("not a to-plane termination: {termination:?}");
     };
@@ -328,10 +329,10 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
         crate::math::Vector3::new(0.0, 0.0, 2.0)
     );
     assert_eq!(native.as_str(), "native:plane");
-    assert_eq!(serde_json::to_value(&termination).unwrap(), wire);
-    let angular: AngularTermination = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&termination).unwrap(), wire);
+    let angular: AngularTermination = json_wire::from_value(wire.clone()).unwrap();
     assert!(matches!(angular, AngularTermination::ToPlane { .. }));
-    assert_eq!(serde_json::to_value(&angular).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&angular).unwrap(), wire);
 
     let mut blank = wire.clone();
     blank["native"] = serde_json::json!(" ");
@@ -342,8 +343,8 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
     let mut degenerate = wire;
     degenerate["plane"]["normal"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
     for refused in [blank, missing, oblique, degenerate] {
-        assert!(serde_json::from_value::<LinearTermination>(refused.clone()).is_err());
-        assert!(serde_json::from_value::<AngularTermination>(refused).is_err());
+        assert!(json_wire::from_value::<LinearTermination>(refused.clone()).is_err());
+        assert!(json_wire::from_value::<AngularTermination>(refused).is_err());
     }
 }
 
@@ -360,15 +361,15 @@ fn from_plane_start_keeps_its_frame_and_native_record() {
         },
         "native": "native:plane"
     });
-    let start: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
+    let start: ExtrudeStart = json_wire::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &start,
         ExtrudeStart::FromPlane { native, .. } if native.as_str() == "native:plane"
     ));
-    assert_eq!(serde_json::to_value(&start).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&start).unwrap(), wire);
     let mut with_offset = wire;
     with_offset["offset"] = serde_json::json!(1.0);
-    assert!(serde_json::from_value::<ExtrudeStart>(with_offset).is_err());
+    assert!(json_wire::from_value::<ExtrudeStart>(with_offset).is_err());
 }
 
 /// The plane-to-plane extrusion example of `docs/cad-ir.md`.
@@ -404,7 +405,7 @@ fn plane_to_plane_extrusion_example_round_trips() {
         },
         "op": "join"
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(wire.clone()).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = &definition
     else {
         panic!("not an extrusion: {definition:?}");
@@ -420,7 +421,7 @@ fn plane_to_plane_extrusion_example_round_trips() {
         panic!("not a to-plane termination: {:?}", side.termination);
     };
     assert_eq!(end.origin().get(), Point3::new(0.0, 0.0, 100.0));
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&definition).unwrap(), wire);
 }
 
 #[test]
@@ -438,7 +439,7 @@ fn loft_sections_preserve_profile_shape() {
         "ruled": false,
         "linearize": false
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(wire).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(wire).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -450,7 +451,7 @@ fn loft_sections_preserve_profile_shape() {
         }) if sections == &vec![LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native("native:section".into())))]
             && guides.is_empty()
     ));
-    let encoded = serde_json::to_value(definition).unwrap();
+    let encoded = json_wire::to_value(definition).unwrap();
     assert_eq!(
         encoded["value"]["value"]["sections"][0],
         serde_json::json!({"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:section"}}})
@@ -489,7 +490,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
         scale: None,
         allow_multi_profile_faces: None,
     });
-    let json = serde_json::to_string(&definition).unwrap();
+    let json = json_wire::to_string(&definition).unwrap();
     assert!(json.contains("\"kind\":\"generated\""));
     assert!(json.contains("\"kind\":\"circular_region\""));
     assert_eq!(
@@ -562,7 +563,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         ),
     });
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
+        json_wire::from_value::<FeatureDefinition>(json_wire::to_value(&definition).unwrap())
             .unwrap(),
         definition
     );
@@ -617,7 +618,7 @@ fn flex_modes_round_trip_and_validate() {
             distance: Length::new(12.0).unwrap(),
         },
     ];
-    let json = serde_json::to_string(&modes).unwrap();
+    let json = json_wire::to_string(&modes).unwrap();
     assert_eq!(serde_json::from_str::<Vec<FlexMode>>(&json).unwrap(), modes);
 }
 
@@ -630,24 +631,24 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
         "kind": "partial_counterbore",
         "dimension": {"kind": "diameter", "diameter": 10.0}
     });
-    let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
+    let kind: HoleKind = json_wire::from_value(counterbore.clone()).unwrap();
     assert_eq!(
         kind,
         HoleKind::PartialCounterbore(PartialPair::First(
             crate::scalar::PositiveLength::new(10.0).unwrap()
         ))
     );
-    assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
+    assert_eq!(json_wire::to_value(kind).unwrap(), counterbore);
 
     let flex = serde_json::json!({"kind": "unresolved", "form": "twisting"});
-    let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
+    let mode: FlexMode = json_wire::from_value(flex.clone()).unwrap();
     assert_eq!(
         mode,
         FlexMode::Unresolved {
             form: Some(crate::features::direct_edit::FlexForm::Twisting)
         }
     );
-    assert_eq!(serde_json::to_value(mode).unwrap(), flex);
+    assert_eq!(json_wire::to_value(mode).unwrap(), flex);
 }
 
 #[test]
@@ -655,28 +656,28 @@ fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
     use crate::features::holes::{HoleForm, HoleKind};
 
     let unresolved = serde_json::json!({"kind": "unresolved", "form": "counterbore"});
-    let kind: HoleKind = serde_json::from_value(unresolved.clone()).unwrap();
+    let kind: HoleKind = json_wire::from_value(unresolved.clone()).unwrap();
     assert_eq!(kind, HoleKind::Unresolved(Some(HoleForm::Counterbore)));
-    assert_eq!(serde_json::to_value(kind).unwrap(), unresolved);
+    assert_eq!(json_wire::to_value(kind).unwrap(), unresolved);
 
     let mut with_dimension = unresolved.clone();
     with_dimension["countersink_angle"] = serde_json::json!(0.5);
-    let error = serde_json::from_value::<HoleKind>(with_dimension)
+    let error = json_wire::from_value::<HoleKind>(with_dimension)
         .unwrap_err()
         .to_string();
     assert!(error.contains("countersink_angle"), "{error}");
 
     let formless = serde_json::json!({"kind": "unresolved"});
-    let kind: HoleKind = serde_json::from_value(formless.clone()).unwrap();
+    let kind: HoleKind = json_wire::from_value(formless.clone()).unwrap();
     assert_eq!(kind, HoleKind::Unresolved(None));
-    assert_eq!(serde_json::to_value(kind).unwrap(), formless);
+    assert_eq!(json_wire::to_value(kind).unwrap(), formless);
 }
 
 #[test]
 fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
     use crate::features::direct_edit::FlexMode;
 
-    assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
+    assert!(json_wire::from_value::<FlexMode>(serde_json::json!({
         "kind": "unresolved",
         "form": "twisting",
         "factor": 2.0
@@ -708,14 +709,14 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
             }}
         }
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(standard.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if matches!(shape.construction(),
             HoleConstruction::Form { kind: HoleKind::Simple, specification: Some(specification) }
             if matches!(specification.as_ref(), HoleSpecification::Clearance { .. }))
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), standard);
+    assert_eq!(json_wire::to_value(definition).unwrap(), standard);
 
     let native_thread = serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {
         "shape": {
@@ -728,12 +729,12 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
             "diameter": 6.0
         }
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(native_thread.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if matches!(shape.construction(), HoleConstruction::NativeThread { .. })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
+    assert_eq!(json_wire::to_value(definition).unwrap(), native_thread);
 }
 
 #[test]
@@ -744,14 +745,12 @@ fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
     where
         T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
     {
-        let admitted: T = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        let admitted: T = json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(admitted).unwrap(), wire);
 
         let mut unknown = wire;
         unknown["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<T>(unknown)
-            .unwrap_err()
-            .to_string();
+        let error = json_wire::from_value::<T>(unknown).unwrap_err().to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
@@ -772,21 +771,21 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
     let hole = serde_json::json!({"kind": "hole", "value": {
         "shape": {"construction": {"kind": "form", "value": {"kind": {"kind": "simple"}}}, "diameter": 3.0}
     }});
-    assert!(serde_json::from_value::<FeatureDefinition>(
+    assert!(json_wire::from_value::<FeatureDefinition>(
         serde_json::json!({"kind": "operation", "value": hole.clone()})
     )
     .is_ok());
 
     let mut beside_shape = hole.clone();
     beside_shape["value"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(beside_shape)
+    let error = json_wire::from_value::<FeatureOperation>(beside_shape)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 
     let mut inside_shape = hole;
     inside_shape["value"]["shape"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside_shape)
+    let error = json_wire::from_value::<FeatureOperation>(inside_shape)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -817,17 +816,17 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     ] {
         let mut wire = specification(kind);
         wire[orphan] = value;
-        let error = serde_json::from_value::<HoleSpecification>(wire)
+        let error = json_wire::from_value::<HoleSpecification>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown field"), "{kind}/{orphan}: {error}");
         assert!(error.contains(orphan), "{kind}/{orphan}: {error}");
     }
     assert!(
-        serde_json::from_value::<HoleSpecification>(specification("threaded")).is_ok(),
+        json_wire::from_value::<HoleSpecification>(specification("threaded")).is_ok(),
         "the threaded arm reads without the thread fields"
     );
-    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+    let error = json_wire::from_value::<HoleSpecification>(serde_json::json!({
         "standard": "ISO metric",
         "threaded": true,
         "modeled": false,
@@ -850,7 +849,7 @@ fn hole_wire_rejects_cross_form_thread_fields() {
         }
     }}});
     native_with_standard["value"]["value"]["shape"]["specification"] = specification("threaded");
-    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
+    assert!(json_wire::from_value::<FeatureDefinition>(native_with_standard).is_err());
 }
 
 #[test]
@@ -875,13 +874,13 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         interior_constraints: Vec::new(),
         reverse_normal: None,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(
         wire["value"]["value"]["continuity"],
         serde_json::json!([{ "kind": "contact" }, { "kind": "contact" }])
     );
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
     );
 
@@ -899,7 +898,7 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     mixed["value"]["value"]["continuity"] =
         serde_json::json!([{ "kind": "contact" }, { "kind": "curvature" }]);
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. }) =
-        serde_json::from_value::<FeatureDefinition>(mixed).unwrap()
+        json_wire::from_value::<FeatureDefinition>(mixed).unwrap()
     else {
         panic!("filled-surface fixture");
     };
@@ -923,10 +922,10 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
         interior_constraints: Vec::new(),
         reverse_normal: None,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert!(wire["value"]["value"].get("continuity").is_none(), "{wire}");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
     );
 }
@@ -937,12 +936,12 @@ fn empty_filled_surface_continuity_list_is_refused() {
 
     // Absence is the only spelling of unresolved: an empty list is refused by
     // the non-empty member mint, not read as a second spelling of it.
-    let error = serde_json::from_value::<FilledSurfaceContinuity>(serde_json::json!([]))
+    let error = json_wire::from_value::<FilledSurfaceContinuity>(serde_json::json!([]))
         .expect_err("an empty continuity list is refused");
     assert!(error.to_string().contains("empty"), "{error}");
 
     let resolved: FilledSurfaceContinuity =
-        serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
+        json_wire::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
     assert_eq!(
         resolved,
         FilledSurfaceContinuity::one(SurfaceContinuity::Tangent)
@@ -964,17 +963,17 @@ fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
         serde_json::json!({"kind":"tangent","weight":null}),
     ] {
         assert!(
-            serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire.clone()).is_err(),
+            json_wire::from_value::<FilledSurfaceBoundaryCondition>(wire.clone()).is_err(),
             "accepted {wire}"
         );
     }
     let condition = FilledSurfaceBoundaryCondition::Tangent {
         weight: PositiveReal::new(0.15),
     };
-    let wire = serde_json::to_value(condition).unwrap();
+    let wire = json_wire::to_value(condition).unwrap();
     assert_eq!(wire, serde_json::json!({"kind":"tangent","weight":0.15}));
     assert_eq!(
-        serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire).unwrap(),
+        json_wire::from_value::<FilledSurfaceBoundaryCondition>(wire).unwrap(),
         condition
     );
     let unequal = FilledSurfaceContinuity {
@@ -998,8 +997,8 @@ fn scale_factor_forms_name_themselves_on_the_wire() {
         serde_json::json!({"kind": "uniform", "factor": 2.0}),
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
     ] {
-        let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(factors).unwrap(), wire);
+        let factors: ScaleFactors = json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(factors).unwrap(), wire);
     }
 }
 
@@ -1017,7 +1016,7 @@ fn scale_factor_wire_rejects_mixed_and_partial_forms() {
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
         serde_json::json!({}),
     ] {
-        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
+        assert!(json_wire::from_value::<ScaleFactors>(wire).is_err());
     }
 }
 
@@ -1052,7 +1051,7 @@ fn edge_selections_round_trip_through_json() {
         .unwrap(),
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<EdgeSelection>>(&json).unwrap(),
         selections
@@ -1073,7 +1072,7 @@ fn historical_edge_paths_round_trip_through_json() {
         "native:path#0".into(),
     )
     .unwrap();
-    let json = serde_json::to_string(&path).unwrap();
+    let json = json_wire::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 }
 
@@ -1108,7 +1107,7 @@ fn face_selections_round_trip_through_json() {
         .unwrap(),
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<FaceSelection>>(&json).unwrap(),
         selections
@@ -1125,7 +1124,7 @@ fn historical_face_profiles_round_trip_through_json() {
         vec!["native:profile-group#0".into()],
     )
     .unwrap();
-    let json = serde_json::to_string(&ProfileRef::Planar(profile.clone())).unwrap();
+    let json = json_wire::to_string(&ProfileRef::Planar(profile.clone())).unwrap();
     assert_eq!(
         serde_json::from_str::<ProfileRef>(&json).unwrap(),
         ProfileRef::Planar(profile)
@@ -1198,7 +1197,7 @@ fn body_selections_round_trip_through_json() {
         BodySelection::Native("body:17,body:18".into()),
         BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()].try_into().unwrap()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
@@ -1214,7 +1213,7 @@ fn body_selection_members_reject_blank_native_rows() {
     assert!(cadmpeg_core::text::NonBlankString::new(" \t").is_none());
     assert!(cadmpeg_core::text::NonBlankString::new("\n").is_none());
     assert!(
-        serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
+        json_wire::from_value::<BodyMembers<BodyId>>(serde_json::json!([
             {"body": body, "native": " "}
         ]))
         .is_err()
@@ -1227,12 +1226,12 @@ fn loft_guidance_rejects_mixed_wire_members() {
     use crate::features::LoftGuidance;
 
     let guidance = LoftGuidance::Centerline(PathRef::Native("test:centerline".into()));
-    let wire = serde_json::to_value(&guidance).unwrap();
+    let wire = json_wire::to_value(&guidance).unwrap();
     assert_eq!(
-        serde_json::from_value::<LoftGuidance>(wire).unwrap(),
+        json_wire::from_value::<LoftGuidance>(wire).unwrap(),
         guidance
     );
-    assert!(serde_json::from_value::<LoftGuidance>(serde_json::json!({
+    assert!(json_wire::from_value::<LoftGuidance>(serde_json::json!({
         "kind": "guides",
         "path": [],
         "centerline": {"kind": "native", "value": "test:centerline"}
@@ -1262,7 +1261,7 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
         )
     })
     .unwrap();
-    let json = serde_json::to_string(&state).unwrap();
+    let json = json_wire::to_string(&state).unwrap();
     assert_eq!(
         serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
         state
@@ -1287,7 +1286,7 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
 
         destination: crate::features::operation_settings::CombineDestination::default(),
     });
-    let json = serde_json::to_value(definition).unwrap();
+    let json = json_wire::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
     assert_eq!(json.get("destination"), None);
 }
@@ -1308,13 +1307,13 @@ fn combine_new_component_destination_round_trips() {
         keep_tools: true,
         destination: CombineDestination::NewComponent,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(
         wire["value"]["value"]["destination"],
         serde_json::json!("new_component")
     );
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
     );
 }
@@ -1348,18 +1347,18 @@ fn sweep_mode_spells_new_body_once_and_refuses_a_key_beside_op() {
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
+            json_wire::from_value::<SweepMode>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
-    assert!(serde_json::from_value::<SweepMode>(
+    assert!(json_wire::from_value::<SweepMode>(
         serde_json::json!({"kind": "solid", "op": "unresolved"})
     )
     .is_err());
 
-    let error = serde_json::from_value::<SweepMode>(
+    let error = json_wire::from_value::<SweepMode>(
         serde_json::json!({"kind": "solid", "op": "join", "zz_bogus": 1}),
     )
     .unwrap_err()
@@ -1376,21 +1375,21 @@ fn an_unresolved_form_refuses_a_dimension_beside_it() {
         patterns::PatternKind,
     };
 
-    let error = serde_json::from_value::<RadiusSpec>(
+    let error = json_wire::from_value::<RadiusSpec>(
         serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `radius`"), "{error}");
 
-    let error = serde_json::from_value::<ChamferSpec>(
+    let error = json_wire::from_value::<ChamferSpec>(
         serde_json::json!({"kind": "unresolved", "form": "distance", "distance": 1}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `distance`"), "{error}");
 
-    let error = serde_json::from_value::<PatternKind>(
+    let error = json_wire::from_value::<PatternKind>(
         serde_json::json!({"kind": "unresolved", "form": "linear", "count": 2}),
     )
     .unwrap_err()
@@ -1424,10 +1423,10 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<RadiusSpec>(wire.clone()).unwrap(),
+            json_wire::from_value::<RadiusSpec>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
     for (wire, expected) in [
@@ -1449,10 +1448,10 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<ChamferSpec>(wire.clone()).unwrap(),
+            json_wire::from_value::<ChamferSpec>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
     for (wire, expected) in [
@@ -1470,10 +1469,10 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<PatternKind>(wire.clone()).unwrap(),
+            json_wire::from_value::<PatternKind>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 }
 
@@ -1481,7 +1480,7 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
 fn an_unknown_hole_wire_key_is_rejected_by_name() {
     use crate::features::holes::{HoleKind, HoleShape, HoleSpecification};
 
-    let error = serde_json::from_value::<HoleKind>(serde_json::json!({
+    let error = json_wire::from_value::<HoleKind>(serde_json::json!({
         "kind": "partial_counterbore",
         "diameter": 10.0,
         "counter_bore_depth": 4.0
@@ -1490,7 +1489,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("counter_bore_depth"), "{error}");
 
-    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+    let error = json_wire::from_value::<HoleShape>(serde_json::json!({
         "construction": {"kind": "form", "value": {
             "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": 10.0}}
         }},
@@ -1501,7 +1500,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("counter_bore_depth"), "{error}");
 
-    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+    let error = json_wire::from_value::<HoleShape>(serde_json::json!({
         "construction": {"kind": "native_thread", "value": {
             "major_diameter": 8.0,
             "thread_depth": 12.0,
@@ -1521,7 +1520,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("unknown field `specification`"), "{error}");
 
-    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+    let error = json_wire::from_value::<HoleSpecification>(serde_json::json!({
         "kind": "clearance",
         "standard": "iso",
         "modeled": false,
@@ -1574,8 +1573,8 @@ fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
         ),
     ];
     for (kind, wire) in cases {
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
-        assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
+        assert_eq!(json_wire::to_value(kind).unwrap(), wire);
+        assert_eq!(json_wire::from_value::<HoleKind>(wire).unwrap(), kind);
     }
 }
 
@@ -1599,7 +1598,7 @@ fn a_partial_hole_dimension_carries_exactly_one_measurement() {
             "angle",
         ),
     ] {
-        let error = serde_json::from_value::<HoleKind>(wire)
+        let error = json_wire::from_value::<HoleKind>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains(rejected), "{error}");
@@ -1609,7 +1608,7 @@ fn a_partial_hole_dimension_carries_exactly_one_measurement() {
         serde_json::json!({"kind": "partial_counterbore", "dimension": {}}),
         serde_json::json!({"kind": "partial_countersink", "dimension": {}}),
     ] {
-        assert!(serde_json::from_value::<HoleKind>(wire).is_err());
+        assert!(json_wire::from_value::<HoleKind>(wire).is_err());
     }
 }
 
@@ -1620,7 +1619,7 @@ fn assert_key_beside_the_nested_field_is_rejected(document: &serde_json::Value) 
     use crate::features::{FeatureDefinition, FeatureOperation};
 
     assert!(
-        serde_json::from_value::<FeatureDefinition>(
+        json_wire::from_value::<FeatureDefinition>(
             serde_json::json!({"kind": "operation", "value": document.clone()})
         )
         .is_ok(),
@@ -1628,7 +1627,7 @@ fn assert_key_beside_the_nested_field_is_rejected(document: &serde_json::Value) 
     );
     let mut beside = document.clone();
     beside["value"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(beside)
+    let error = json_wire::from_value::<FeatureOperation>(beside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1639,7 +1638,7 @@ fn assert_key_inside_the_nested_field_is_rejected(document: &serde_json::Value, 
 
     let mut inside = document.clone();
     inside["value"][field]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside)
+    let error = json_wire::from_value::<FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1671,7 +1670,7 @@ fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
 
     let mut inside = wrap;
     inside["value"]["mode"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::features::FeatureOperation>(inside)
+    let error = json_wire::from_value::<crate::features::FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1776,7 +1775,7 @@ fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
         "keep": {"kind": "cells", "removed": [1, 4], "total": 5}
     }});
     assert!(
-        serde_json::from_value::<FeatureDefinition>(
+        json_wire::from_value::<FeatureDefinition>(
             serde_json::json!({"kind": "operation", "value": trim.clone()})
         )
         .is_ok(),
@@ -1784,7 +1783,7 @@ fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
     );
     let mut inside = trim;
     inside["value"]["keep"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside)
+    let error = json_wire::from_value::<FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1799,12 +1798,12 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         serde_json::json!({"kind": "unresolved"}),
     ] {
         assert!(
-            serde_json::from_value::<ExtrudeStart>(wire.clone()).is_ok(),
+            json_wire::from_value::<ExtrudeStart>(wire.clone()).is_ok(),
             "{wire}"
         );
         let mut bogus = wire;
         bogus["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<ExtrudeStart>(bogus)
+        let error = json_wire::from_value::<ExtrudeStart>(bogus)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
@@ -1818,11 +1817,11 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         "to_last",
     ] {
         let bogus = serde_json::json!({"kind": kind, "zz_bogus": 1});
-        let error = serde_json::from_value::<LinearTermination>(bogus.clone())
+        let error = json_wire::from_value::<LinearTermination>(bogus.clone())
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "linear {kind}: {error}");
-        let error = serde_json::from_value::<AngularTermination>(bogus)
+        let error = json_wire::from_value::<AngularTermination>(bogus)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "angular {kind}: {error}");
@@ -1838,13 +1837,13 @@ fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
         (SheetMetalThicknessSide::Reverse, "reverse"),
         (SheetMetalThicknessSide::Symmetric, "symmetric"),
     ] {
-        assert_eq!(serde_json::to_value(side).unwrap(), wire);
+        assert_eq!(json_wire::to_value(side).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!(wire)).unwrap(),
+            json_wire::from_value::<SheetMetalThicknessSide>(serde_json::json!(wire)).unwrap(),
             side
         );
     }
-    assert!(serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
+    assert!(json_wire::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
 }
 
 #[test]
@@ -1860,7 +1859,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
         "modeled": false,
         "extent": {"kind": "through"}
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(full.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(full.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1868,10 +1867,10 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
             ..
         })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), full);
+    assert_eq!(json_wire::to_value(definition).unwrap(), full);
 
     let minimal = serde_json::json!({"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {"face": {"kind": "unresolved"}}}});
-    let definition: FeatureDefinition = serde_json::from_value(minimal.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(minimal.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1884,7 +1883,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
             ..
         })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), minimal);
+    assert_eq!(json_wire::to_value(definition).unwrap(), minimal);
 
     for (field, value) in [
         ("modeled", serde_json::json!(null)),
@@ -1895,7 +1894,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
         let mut wire = minimal.clone();
         wire["value"]["value"][field] = value;
         assert!(
-            serde_json::from_value::<FeatureDefinition>(wire).is_err(),
+            json_wire::from_value::<FeatureDefinition>(wire).is_err(),
             "{field} must be refused"
         );
     }
@@ -1919,18 +1918,18 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
             "native": "native:target", "source": source
         });
         if kind == "to_plane" {
-            let decoded: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            let decoded: LinearTermination = json_wire::from_value(wire.clone()).unwrap();
+            assert_eq!(json_wire::to_value(decoded).unwrap(), wire);
         } else {
-            let decoded: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            let decoded: ExtrudeStart = json_wire::from_value(wire.clone()).unwrap();
+            assert_eq!(json_wire::to_value(decoded).unwrap(), wire);
         }
         for invalid in [serde_json::Value::Null, serde_json::json!("unknown")] {
             wire["source"] = invalid;
             if kind == "to_plane" {
-                assert!(serde_json::from_value::<LinearTermination>(wire.clone()).is_err());
+                assert!(json_wire::from_value::<LinearTermination>(wire.clone()).is_err());
             } else {
-                assert!(serde_json::from_value::<ExtrudeStart>(wire.clone()).is_err());
+                assert!(json_wire::from_value::<ExtrudeStart>(wire.clone()).is_err());
             }
         }
     }
@@ -1950,13 +1949,13 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
         None,
         None,
     );
-    let wire = serde_json::to_value(&operation).unwrap();
+    let wire = json_wire::to_value(&operation).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"kind": "component_transfer", "value": {"mode": "reparent"}})
     );
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureOperation>(wire.clone()).unwrap(),
         operation
     );
     for key in [
@@ -1969,7 +1968,7 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
     ] {
         let mut stated = wire.clone();
         stated["value"][key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<FeatureOperation>(stated)
+        let error = json_wire::from_value::<FeatureOperation>(stated)
             .expect_err("an unresolved operand is spelled by omission")
             .to_string();
         assert!(error.contains(key), "{error}");
@@ -1984,13 +1983,13 @@ fn unstitch_faces_carries_its_face_selection_on_the_wire() {
     let definition = FeatureDefinition::Operation(FeatureOperation::UnstitchFaces {
         faces: FaceSelection::Native("native:face-group".into()),
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(wire["value"]["kind"], "unstitch_faces");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
     );
     let mut extended = wire;
     extended["heal"] = serde_json::json!(false);
-    assert!(serde_json::from_value::<FeatureDefinition>(extended).is_err());
+    assert!(json_wire::from_value::<FeatureDefinition>(extended).is_err());
 }

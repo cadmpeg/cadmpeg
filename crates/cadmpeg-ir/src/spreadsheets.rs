@@ -398,6 +398,8 @@ fn column_index(value: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn spreadsheet_wire_rejects_invalid_dimensions_without_dropping_them() {
         for (field, names) in [
@@ -407,19 +409,15 @@ mod tests {
             for name in names {
                 let mut value = serde_json::json!({"id": "synthetic:test:spreadsheet#sheet", "feature": "synthetic:test:feature#feature", "cells": [], "column_widths": [], "row_heights": [], "merged_ranges": []});
                 value[field] = serde_json::json!([{"name": name, "pixels": 10}]);
-                let error =
-                    serde_json::from_value::<Spreadsheet>(value).expect_err("invalid dimension");
+                let error = json::from_value::<Spreadsheet>(value).expect_err("invalid dimension");
                 assert!(error.to_string().contains(field));
             }
         }
         let value = serde_json::json!({"id": "synthetic:test:spreadsheet#sheet", "feature": "synthetic:test:feature#feature", "cells": [], "column_widths": [{"name": "AA", "pixels": 0}], "row_heights": [{"name": "4294967295", "pixels": 0}], "merged_ranges": []});
-        let sheet: Spreadsheet = serde_json::from_value(value.clone()).expect("valid dimensions");
+        let sheet: Spreadsheet = json::from_value(value.clone()).expect("valid dimensions");
         assert_eq!(sheet.column_widths[0].index.get(), 27);
         assert_eq!(sheet.row_heights[0].index.get(), u32::MAX);
-        assert_eq!(
-            serde_json::to_value(sheet).expect("serialize dimensions"),
-            value
-        );
+        assert_eq!(json::to_value(sheet).expect("serialize dimensions"), value);
     }
 
     use super::{CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetId};
@@ -440,7 +438,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let json = serde_json::to_string(&sheet).unwrap();
+        let json = json::to_string(&sheet).unwrap();
         let decoded: Spreadsheet = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, sheet);
     }
@@ -457,7 +455,7 @@ mod tests {
     }
 
     fn rejects(value: serde_json::Value, message: &str) {
-        let error = serde_json::from_value::<Spreadsheet>(value).expect_err(message);
+        let error = json::from_value::<Spreadsheet>(value).expect_err(message);
         assert!(error.to_string().contains(message), "{error}");
     }
 

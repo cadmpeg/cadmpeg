@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::wire;
 
@@ -129,9 +130,9 @@ fn load_tampered_object_record(
         .arenas_mut()
         .get_mut("object_graph_records")
         .expect("object-record arena");
-    let mut record = serde_json::to_value(&arena[0]).unwrap();
+    let mut record = json::to_value(&arena[0]).unwrap();
     tamper(&mut record);
-    arena[0] = serde_json::from_value(record).unwrap();
+    arena[0] = json::from_value(record).unwrap();
     match crate::native::CatiaNative::load(&namespace) {
         Ok(_) => panic!("tampered object record loaded"),
         Err(error) => error.to_string(),
@@ -217,13 +218,10 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         ]
     );
 
-    let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
+    let mut wire = json::to_value(&native.entity_records[0]).unwrap();
     wire["numeric_pair"]["slots"][0] =
-        serde_json::to_value(crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 8 })
-            .unwrap();
-    assert!(
-        serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err()
-    );
+        json::to_value(crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 8 }).unwrap();
+    assert!(json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err());
 }
 
 #[test]

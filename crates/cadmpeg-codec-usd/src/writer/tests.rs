@@ -289,6 +289,15 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
     );
 }
 
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
+
 fn written_empty(report: &cadmpeg_ir::report::export::ExportReport) -> bool {
     report
         .losses
@@ -311,4 +320,50 @@ fn a_document_with_a_body_is_not_empty() {
     let (text, report) = encode(&cadmpeg_ir::examples::unit_cube().unwrap());
     assert!(text.contains("def "), "{text}");
     assert!(!written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn native_records_are_charged_by_id_and_given_up_stubs_are_not() {
+    let mut ir = decode(&format!(
+        "#usda 1.0\ndef Mesh \"Arm\"\n{{\n    {MESH}\n}}\n"
+    ))
+    .into_parts()
+    .0;
+    let record = |id: &str| {
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")
+    };
+    let arenas = ir
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("sat"))
+        .arenas_mut();
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("entities"),
+        vec![record("sat:test:entity#1"), record("sat:test:entity#0")],
+    );
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("unknowns"),
+        vec![record("sat:test:unknown#0")],
+    );
+    ir.finalize();
+
+    let (_, report) = encode(&ir);
+    let omitted: Vec<&str> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        omitted,
+        [
+            "the USD write omits 2 native record(s) of `sat` arena `entities` which the USD \
+             writer does not write: sat:test:entity#0, sat:test:entity#1"
+        ],
+        "{:?}",
+        report.losses
+    );
 }

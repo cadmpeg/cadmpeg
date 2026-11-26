@@ -5,6 +5,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::references::DesignClassTag;
+use cadmpeg_core::serde_erase::json;
 
 pub(super) fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(
@@ -241,9 +242,9 @@ fn compact_wide_operand_flag_is_the_frame_sense() {
         let alignment = alignment(flag).expect("alignment");
         assert!(alignment.operand_frames().is_some());
         assert_eq!(alignment.frame_sense, Some(sense));
-        let wire = serde_json::to_value(&alignment).unwrap();
+        let wire = json::to_value(&alignment).unwrap();
         let back: crate::records::feature::assembly::DesignAssemblyAlignment =
-            serde_json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(back.frame_sense, Some(sense));
     }
     assert!(alignment(2)

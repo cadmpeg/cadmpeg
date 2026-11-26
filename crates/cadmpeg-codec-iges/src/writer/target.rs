@@ -3,52 +3,42 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses,
-    target::{ResolvedTarget, ResolvedWrite},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
+    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
+    ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
 
+/// Write the resolved version. A source of an off-catalog version is replayed
+/// when its retained image is intact and otherwise written as the catalog
+/// default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    match resolved.target() {
-        // Off-catalog same-format source: only a verbatim replay can honor it.
-        ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
-            Replay::Replayed { bytes } => Ok(replayed_body(input, bytes)),
-            Replay::Declined(reason) => Err(resolved.unavailable(match reason {
-                DeclineReason::Rejected(reason) => {
-                    format!("{reason}; the semantic writer cannot synthesize the inherited dialect")
-                }
-                DeclineReason::SourceImageUnavailable => {
-                    "its retained source image is unavailable for byte replay and the \
-                     semantic writer cannot synthesize it"
-                        .to_owned()
-                }
-            })),
-        },
-        ResolvedTarget::Explicit { index, .. }
-        | ResolvedTarget::Inherited { index, .. }
-        | ResolvedTarget::Default { index, .. } => {
-            let version = crate::IgesVersion::ALL[*index];
-            if resolved.preserves_source() {
-                replay_or_synthesize(input, version)
-            } else {
-                synthesized_body(
-                    input,
-                    version,
-                    SynthesisCause::from_resolution(input, resolved),
-                )
-            }
-        }
+    let version = resolved
+        .synthesized_row()
+        .and_then(|(index, _)| crate::IgesVersion::ALL.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the IGES catalog declares a default and is projected from IgesVersion::ALL"
+    );
+    let version = version.unwrap_or(crate::IgesVersion::V5_3);
+    if resolved.preserves_source() {
+        replay_or_synthesize(input, version)
+    } else {
+        synthesized_body(
+            input,
+            version,
+            SynthesisCause::from_resolution(input, resolved),
+        )
     }
 }
 
 /// A same-format source at the resolved target: replay its retained image when
-/// it is intact, otherwise regenerate and report why replay was declined.
+/// it is intact, otherwise regenerate `version` and report why replay was
+/// declined.
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
@@ -65,11 +55,14 @@ fn replay_or_synthesize(
 }
 
 fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
+    let mut native = NativeDispositions::dropped("which the IGES writer does not write");
+    native.namespace("iges", NativeDisposition::Written);
     super::body(
         bytes,
         WritePath::VerbatimReplay,
         // Replay runs only while the document digest matches its decode baseline.
         ArenaCoverage::Complete,
+        native,
         carried_source_losses(input.fidelity, &WritePath::VerbatimReplay),
         "preserved source container replayed verbatim",
         super::counts_for_ir(input.ir),
@@ -84,7 +77,7 @@ fn synthesized_body(
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    let synthesis = super::degrade::synthesize_dropping(&recovered.document, version)?;
+    let (synthesis, native) = synthesis_and_dispositions(&recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -102,25 +95,32 @@ fn synthesized_body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(super::SYNTHESIS_COVERAGE),
+        native,
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,
     ))
 }
 
+/// The file synthesized from `document`, and what it does with each native
+/// record of `document`.
+pub(super) fn synthesis_and_dispositions(
+    document: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<(super::Synthesis, NativeDispositions), CodecError> {
+    let synthesis = super::degrade::synthesize_dropping(document, version)?;
+    let native = super::dispositions::native_dispositions(document, &synthesis.entities);
+    Ok((synthesis, native))
+}
+
 enum SynthesisCause {
     Fresh,
-    Displaced(String),
     ReplayDeclined(DeclineReason),
 }
 
 impl SynthesisCause {
     fn from_resolution(input: EncodeInput<'_>, resolved: &ResolvedWrite<'_>) -> Self {
-        if let Some(message) = resolved.displacement_message() {
-            Self::Displaced(message)
-        } else if resolved.source_preservation_eligible()
-            && !source_record_available(input.fidelity)
-        {
+        if resolved.source_preservation_eligible() && !source_record_available(input.fidelity) {
             Self::ReplayDeclined(DeclineReason::SourceImageUnavailable)
         } else {
             Self::Fresh
@@ -130,10 +130,6 @@ impl SynthesisCause {
     fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
-            Self::Displaced(message) => (
-                Consumption::NotConsumed,
-                Some(IgesLossCode::SourceDialectDisplaced.note(message)),
-            ),
             Self::ReplayDeclined(DeclineReason::SourceImageUnavailable) => (
                 Consumption::Degraded {
                     reason: "preserved IGES source image is unavailable".into(),

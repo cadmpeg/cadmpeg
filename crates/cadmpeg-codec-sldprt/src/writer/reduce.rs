@@ -221,6 +221,9 @@ pub(super) fn unwritable_content(
     retained: bool,
     digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
+    // The SLDPRT form holds no cage, so a cage body is not written either
+    // (§5.6); `WriterSubdOmitted` below names the cage and its body.
+    let cage_bodies = cadmpeg_ir::codec::write::remove_cage_bodies(ir);
     let mut losses = Vec::new();
     let mut named = Vec::new();
     for face in &mut ir.geometry.faces {
@@ -276,14 +279,21 @@ pub(super) fn unwritable_content(
          record has no field for; each is written with its name and base colour",
         &named,
     ));
-    losses.extend(note(
-        SldprtLossCode::WriterSubdOmitted,
-        "subdivision surface(s) have no SLDPRT form and are not written",
-        &std::mem::take(&mut ir.geometry.subds)
-            .iter()
-            .map(|subd| subd.id.as_str().to_owned())
-            .collect::<Vec<_>>(),
-    ));
+    losses.extend(
+        note(
+            SldprtLossCode::WriterSubdOmitted,
+            "subdivision surface(s) have no SLDPRT form and are not written",
+            &std::mem::take(&mut ir.geometry.subds)
+                .iter()
+                .map(|subd| subd.id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .map(|mut loss| {
+            loss.message
+                .push_str(&cadmpeg_ir::codec::write::cage_bodies_clause(&cage_bodies));
+            loss
+        }),
+    );
     losses.extend(pmi(ir, retained, digests)?);
     losses.extend(active_configuration(ir));
     Ok(losses)

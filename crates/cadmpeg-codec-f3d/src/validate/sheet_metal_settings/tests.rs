@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 fn native() -> crate::native::F3dNative {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     let types = [
@@ -19,7 +21,7 @@ fn native() -> crate::native::F3dNative {
             id: format!("f3d:Design1/BulkStream.dat:design-record-header#{index}"), record_index: index,
             class_tag: "256".to_owned().try_into().unwrap(), byte_offset: if index == 50 {20} else {1000 + u64::from(index)},
         }).collect(),
-        design_sheet_metal_settings: vec![serde_json::from_value(serde_json::json!({
+        design_sheet_metal_settings: vec![json::from_value(serde_json::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
             "byte_offset": 20, "paired_byte_offset": 100, "mask": 4, "inputs": {"version": "v2", "slots": [null, 51, null, null, null, null, null]},
             "rule_record_index": 51, "presentation_record_index": 52, "owner_record_index": 53, "context_record_index": 54,

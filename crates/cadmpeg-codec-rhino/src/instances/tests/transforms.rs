@@ -2,6 +2,7 @@
 use crate::chunks::ArchiveVersion;
 use crate::loss::RhinoLossCode;
 use crate::test_support::test_dump as bytes;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -76,21 +77,18 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
             "exponent {exponent}: {:?}",
             decoded.report().losses
         );
-        let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+        let reread = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
             assert_eq!(ir.geometry.points.len(), 1, "exponent {exponent}");
             assert_eq!(
                 ir.geometry.points[0].position().get(),
                 Point3::new(scale, 2.0 * scale, 3.0 * scale)
             );
-            let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
+            let native = json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
             let occurrences = native["product_occurrences"].as_array().unwrap();
             assert_eq!(occurrences.len(), 1);
             assert_eq!(occurrences[0]["transform_units"], "millimeter");
-            assert_eq!(
-                occurrences[0]["transform"],
-                serde_json::to_value(rows).unwrap()
-            );
+            assert_eq!(occurrences[0]["transform"], json::to_value(rows).unwrap());
         }
     }
 }
@@ -136,13 +134,13 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
             .losses
             .iter()
             .any(|loss| loss.code == RhinoLossCode::IntegrityFailure.kind()));
-        let ir = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+        let ir = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
         assert_eq!(ir.geometry.points.len(), 1);
         assert_eq!(
             ir.geometry.points[0].position().get(),
             Point3::new(1.0, 2.0, 3.0)
         );
-        let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
+        let native = json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
         assert_eq!(native["product_occurrences"].as_array().unwrap().len(), 1);
         assert_eq!(
             native["product_occurrences"][0]["source_uuid"],
@@ -184,7 +182,7 @@ fn source_instance_world_placement_is_applied_once() {
             RhinoLossCode::ProductOccurrenceDropped.kind()
         ]
         .contains(&loss.code)));
-        let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+        let reread = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
             assert_eq!(ir.geometry.bodies.len(), 1);
             assert_eq!(ir.geometry.points.len(), 1);

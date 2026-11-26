@@ -162,6 +162,7 @@ impl TryFrom<String> for TopologyPacketRole {
 #[cfg(test)]
 mod tests {
     use super::{TopologyPacketRole, ROLE_INTO_STRING_COUNT};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn packet_role_wire_preserves_indexed_and_fixed_labels() {
@@ -182,10 +183,10 @@ mod tests {
         ] {
             let json = format!("\"{label}\"");
             let role: TopologyPacketRole = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&role).unwrap(), json);
+            assert_eq!(json::to_string(&role).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&role).unwrap(),
-                serde_json::to_vec(&String::from(role)).unwrap()
+                json::to_vec(&role).unwrap(),
+                json::to_vec(&String::from(role)).unwrap()
             );
         }
     }
@@ -199,8 +200,7 @@ mod tests {
         }
 
         for label in ["vertex_flags", "high_degree_face_attribute_masks_12"] {
-            let role: TopologyPacketRole =
-                serde_json::from_value(serde_json::json!(label)).unwrap();
+            let role: TopologyPacketRole = json::from_value(serde_json::json!(label)).unwrap();
             let record = Record {
                 id: "nx:jt:packet-role#1",
                 role: &role,
@@ -225,9 +225,7 @@ mod tests {
             "high_degree_face_attribute_masks_",
             "face_attribute_masks_7_next_31",
         ] {
-            assert!(
-                serde_json::from_value::<TopologyPacketRole>(serde_json::json!(label)).is_err()
-            );
+            assert!(json::from_value::<TopologyPacketRole>(serde_json::json!(label)).is_err());
         }
     }
 }

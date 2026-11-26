@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -160,7 +161,7 @@ fn authored_constraint_families_keep_operands_and_values() {
                 .find(|c| c.id.as_str().ends_with(&suffix))
                 .unwrap();
             assert_eq!(
-                serde_json::to_value(constraint.definition.kind()).unwrap(),
+                json::to_value(constraint.definition.kind()).unwrap(),
                 *expected,
                 "{name} constraint {}",
                 index + 1

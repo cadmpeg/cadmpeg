@@ -124,7 +124,7 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap();
     let mut written = Vec::new();
@@ -161,7 +161,7 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut Vec::new())
@@ -195,7 +195,7 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut encoded = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -280,7 +280,7 @@ fn semantic_writer_emits_face_records_deterministically() {
         let mut encoded = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&ir, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
@@ -338,7 +338,7 @@ fn encoder_drops_a_source_less_extrusion_with_an_unresolved_profile() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -667,7 +667,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -948,7 +948,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -1088,7 +1088,7 @@ fn encoder_drops_a_source_less_sketch_constraint_it_cannot_write() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -1493,7 +1493,7 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap();
     let loss = plan
@@ -1616,6 +1616,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &fidelity.codec_digests,
             &records,
             &[],
+            &[],
             &mut written,
         )
         .unwrap();
@@ -1655,6 +1656,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
         &baseline,
         &fidelity.annotations,
         &fidelity.codec_digests,
+        &[],
         &[],
         &[],
         &mut Vec::new(),

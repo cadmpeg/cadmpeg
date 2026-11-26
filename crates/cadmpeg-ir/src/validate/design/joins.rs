@@ -13,7 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::design::feature::FeatureOperation;
 use crate::design::options::{BodyForm, Boolean, BooleanOp, SolidOutput};
 use crate::design::selection::Anchor;
-use crate::features::ConfigurationId;
 use crate::report::check::Finding;
 use crate::topology::BodyKind;
 
@@ -49,22 +48,9 @@ pub(super) fn check<'a>(
         };
         let mut messages = BTreeSet::new();
         for state in anchored_states(index, states, site) {
-            let configuration = match &state {
-                Stored::Extents(extents) => extents.first().and_then(|extent| {
-                    records
-                        .scopes
-                        .get(extent.scope)
-                        .and_then(|scope| scope.active_configuration.as_ref())
-                }),
-                Stored::Evaluation(evaluation) => ir
-                    .design
-                    .evaluations
-                    .iter()
-                    .find(|record| record.id.as_str() == *evaluation)
-                    .and_then(|record| record.configuration.as_ref()),
-            };
+            let configuration = state.configuration(records);
             let operation = &records
-                .definition_in(feature, configuration.map(ConfigurationId::as_str))
+                .definition_in(feature, configuration, None)
                 .operation;
             let joins = matches!(
                 boolean_field(operation),

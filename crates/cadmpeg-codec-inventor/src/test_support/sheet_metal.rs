@@ -8,6 +8,7 @@ use crate::feature::{
 };
 use crate::pmdc::{PmDcListMetadata, PmDcReference as Reference, PmDcReferenceList};
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{ids::IdentityKey, scalar::Length};
 
 pub(crate) fn reference(index: u32) -> Reference {
@@ -26,7 +27,7 @@ pub(crate) fn feature(ordinal: u32, slots: &[u32]) -> PmDcFeature {
         crate::pmdc::state_content_header(&mut crate::pmdc::Cursor::new(view), 29)
     })
     .expect("header");
-    let payload:PmDcFeaturePayload=serde_json::from_value(serde_json::json!({"save_version_major":29,"header":header,"state":-1,"outline_value":0,"properties":list(slots),"value":0})).expect("feature");
+    let payload:PmDcFeaturePayload=json::from_value(serde_json::json!({"save_version_major":29,"header":header,"state":-1,"outline_value":0,"properties":list(slots),"value":0})).expect("feature");
     Located::new(
         payload,
         RecordTypeId::try_from("914d8790d011f8d10008cabc0663dc09".to_owned()).expect("type"),
@@ -39,10 +40,9 @@ pub(crate) fn property(index: u32, kind: &Kind) -> PmDcFeatureProperty {
         crate::pmdc::content_header(&mut crate::pmdc::Cursor::new(view), 29)
     })
     .expect("header");
-    let payload: PmDcFeaturePropertyPayload = serde_json::from_value(
-        serde_json::json!({"save_version_major":29,"header":header,"kind":kind}),
-    )
-    .expect("property");
+    let payload: PmDcFeaturePropertyPayload =
+        json::from_value(serde_json::json!({"save_version_major":29,"header":header,"kind":kind}))
+            .expect("property");
     Located::new(
         payload,
         if matches!(kind, Kind::ProfileSelection { .. }) {

@@ -88,6 +88,8 @@ fn a_failed_binding_preserves_an_independent_admitted_binding() {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: owner,
             bodies: DistinctMembers::default(),

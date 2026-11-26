@@ -12,6 +12,7 @@ use crate::geometry::variable_blends::VariableBlendSupportKind;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Point3;
 use crate::scalar::PositiveI64;
+use cadmpeg_core::serde_erase::json;
 
 // One value per float field family the construction carries.
 struct Fields {
@@ -125,7 +126,7 @@ fn the_revision_g2_blend_admission_writes_every_scalar_it_admits() {
             RevisionG2BlendConstruction::admit(stored(&ADMITTED)).expect("every scalar is finite"),
         ),
     };
-    let value = serde_json::to_value(&definition).expect("serialize the definition");
+    let value = json::to_value(&definition).expect("serialize the definition");
     let stored = &value["construction"];
     assert_eq!(stored["leading_parameters"], serde_json::json!([1.0, 2.0]));
     assert_eq!(
@@ -152,8 +153,7 @@ fn the_revision_g2_blend_admission_writes_every_scalar_it_admits() {
     );
     assert_eq!(stored["discontinuities"][0], serde_json::json!([14.0]));
     assert_eq!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(value)
-            .expect("the definition round-trips"),
+        json::from_value::<ProceduralSurfaceDefinition>(value).expect("the definition round-trips"),
         definition
     );
     assert!(wire(&ADMITTED).is_ok());
@@ -167,13 +167,13 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
                 .expect("positive revision and finite scalars"),
         ),
     };
-    let value = serde_json::to_value(definition).expect("serialize the definition");
+    let value = json::to_value(definition).expect("serialize the definition");
 
     for revision in [0_i64, -1] {
         assert!(PositiveI64::new(revision).is_none());
         let mut invalid = value.clone();
         invalid["construction"]["revision"] = serde_json::json!(revision);
-        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
+        assert!(json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     }
 
     let mut maximum = stored(&ADMITTED);
@@ -187,7 +187,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
     );
     let mut maximum = value;
     maximum["construction"]["revision"] = serde_json::json!(i64::MAX);
-    let parsed = serde_json::from_value::<ProceduralSurfaceDefinition>(maximum)
+    let parsed = json::from_value::<ProceduralSurfaceDefinition>(maximum)
         .expect("maximum JSON revision is admitted");
     let ProceduralSurfaceDefinition::RevisionG2Blend { construction } = parsed else {
         panic!("expected revision G2 blend")
@@ -198,7 +198,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
 #[test]
 fn radius_selector_diagnostic_reports_the_rejected_integer() {
     for value in [0, -2, i64::MIN] {
-        let error = serde_json::from_value::<PositiveI64>(serde_json::json!(value))
+        let error = json::from_value::<PositiveI64>(serde_json::json!(value))
             .unwrap_err()
             .to_string();
         assert!(error.contains(&value.to_string()), "{error}");

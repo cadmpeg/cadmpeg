@@ -12,9 +12,12 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+mod cages;
 mod computed_values;
 mod coverage;
+mod edge_forms;
 mod encoding;
+mod exact_forms;
 mod free_geometry;
 mod model;
 mod nurbs;

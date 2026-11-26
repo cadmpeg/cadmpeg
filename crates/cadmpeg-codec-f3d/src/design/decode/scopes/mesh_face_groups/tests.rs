@@ -4,6 +4,7 @@ use crate::design::test_support::design_type;
 use crate::records::entity_header::SegmentType;
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16, with_decode_context};
+use cadmpeg_core::serde_erase::json;
 
 const GENERATE: &str = "CA2AE956-FD81-4EBD-A601-F93A0F335722";
 const COMBINE: &str = "8136D47E-3955-4682-8BD7-B353B7B45624";
@@ -144,7 +145,7 @@ fn registered_prefixes_preserve_methods_nullable_owners_and_ordered_groups() {
                 _ => panic!("face-group scope"),
             }
             let restored: DesignParameterScope =
-                serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+                json::from_value(json::to_value(&scope).unwrap()).unwrap();
             assert_eq!(restored, scope);
         }
     }

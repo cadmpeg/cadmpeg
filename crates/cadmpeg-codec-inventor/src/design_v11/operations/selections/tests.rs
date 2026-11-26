@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::FeatureId;
@@ -32,7 +33,7 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
     let state =
         FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic").expect("id");
     let id = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
-    let point = |values| serde_json::from_value(serde_json::json!(values)).expect("point");
+    let point = |values| json::from_value(serde_json::json!(values)).expect("point");
     let sample = HistoricalEdgeGeometry {
         tangent: Some(UnitVector3::X_AXIS),
         start: Some(point([0., 2., 3.])),
@@ -50,6 +51,8 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
         edges: std::iter::once(id.clone()).collect(),
         vertices: DistinctMembers::default(),
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         edge_geometry: vec![sample.clone()],
         native_ref: None,
     };

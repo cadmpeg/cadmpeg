@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde_json::json;
 
@@ -9,7 +10,7 @@ use super::test_fixtures::{
 };
 
 fn guid(value: &str) -> [u8; 16] {
-    serde_json::from_value::<NativeBytes<[u8; 16]>>(json!(value))
+    json::from_value::<NativeBytes<[u8; 16]>>(json!(value))
         .expect("synthetic GUID")
         .into_inner()
 }

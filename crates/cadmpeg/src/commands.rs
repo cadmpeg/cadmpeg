@@ -376,12 +376,12 @@ pub(crate) fn dump(
                 )?;
             }
         }
-        let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
+        let loaded = loader::load_artifact(inputs, path, &args.options(), forced)?;
         let encoder = build_encoder(Format::Cadir);
         let plan = encoder
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(
@@ -424,7 +424,7 @@ pub(crate) fn check_cmd(
     report_path: Option<&FileDestination>,
 ) -> CommandResult<()> {
     let result = (|| {
-        let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
+        let loaded = loader::load_artifact(inputs, path, &args.options(), forced)?;
         let mut stdout = io::stdout();
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -494,7 +494,10 @@ pub(crate) fn convert(
         let source = SourceRequest {
             path,
             forced: conversion.forced_input,
-            options: args.options_at(depth),
+            options: cadmpeg_ir::DecodeOptions {
+                strictness: conversion.strictness.decode(),
+                ..args.options_at(depth)
+            },
             work: args.policy.limits.work_profile(),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
@@ -567,8 +570,8 @@ pub(crate) fn diff(
             report_path.check(a.path)?;
             report_path.check(b.path)?;
         }
-        let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
-        let right = loader::load_artifact(inputs, b.path, args.options(), b.forced)?;
+        let left = loader::load_artifact(inputs, a.path, &args.options(), a.forced)?;
+        let right = loader::load_artifact(inputs, b.path, &args.options(), b.forced)?;
         let result = cadmpeg_ir::diff(&left.ir, &right.ir);
         let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
         let measured = match &geometry {
@@ -610,6 +613,13 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some((before, after)) = result.scope_change {
+            println!(
+                "  scope: {} → {}",
+                reporting::render_scope(before),
+                reporting::render_scope(after)
+            );
         }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {
