@@ -2,30 +2,39 @@
 //! Evaluated mate connector projection.
 
 use super::{key, Structure};
+use super::{split_rows, Rows};
+use crate::archive::source_record;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use crate::reader::{id, optional_rows, rows, text, Mapping};
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::products::JointId;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointOperand, PairedJointKind, PlaneSense,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::dropped_with;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 const MATE_AXIS_DOT_TOLERANCE: f64 = 1e-12;
 
+/// Projects the mates of the assembly `assembly`, the source record at
+/// `source`, at the occurrence path `path`.
 pub(super) fn project(
     structure: &mut Structure<'_, '_>,
     assembly: &Value,
     path: &[String],
     suppressed: bool,
+    source: &str,
 ) -> Result<(), Error> {
     let mut notes = 0;
     if structure.mate_exhausted {
         return Ok(());
     }
-    let features = match optional_rows(assembly, "features") {
-        Ok(features) => features,
-        Err(reason) => {
+    let features = match split_rows(assembly, "features") {
+        Rows::Read(features) => features,
+        Rows::Bounded(reason) => {
             structure.mate_loss(
                 &mut notes,
                 &key(path),
@@ -34,8 +43,18 @@ pub(super) fn project(
             )?;
             return Ok(());
         }
+        Rows::Malformed(reason) => {
+            structure.report.give_up_as(
+                &format!("{source}/features"),
+                &key(path),
+                OnshapeLossCode::MateUnsupported,
+                reason,
+            );
+            return Ok(());
+        }
     };
-    for feature in features {
+    let mut kept = BTreeMap::<JointId, &Value>::new();
+    for (position, feature) in features.iter().enumerate() {
         if !structure.admit_mate_work()? {
             break;
         }
@@ -56,17 +75,34 @@ pub(super) fn project(
             )?;
             continue;
         }
+        if let Some((joint, needs)) = dropped_joint(structure, feature, path) {
+            structure
+                .report
+                .notes
+                .push(dropped_with(joint, source_record(&needs)));
+            continue;
+        }
         match mate(structure, feature, path, suppressed) {
             Ok(mapped) => {
                 if !structure.joint_ids.insert(mapped.joint.id.clone()) {
-                    structure.mate_loss(
-                        &mut notes,
-                        native,
-                        OnshapeLossCode::MateUnsupported,
-                        "mate identity repeats; retained the first joint",
-                    )?;
+                    if kept.get(&mapped.joint.id) == Some(&feature) {
+                        structure.mate_loss(
+                            &mut notes,
+                            native,
+                            OnshapeLossCode::MateUnsupported,
+                            "mate identity repeats with the same content; retained the first joint",
+                        )?;
+                    } else {
+                        structure.report.give_up_as(
+                            &format!("{source}/features/{position}"),
+                            native,
+                            OnshapeLossCode::AssemblyRecordRepeated,
+                            "mate identity repeats with different content; retained the first joint",
+                        );
+                    }
                     continue;
                 }
+                kept.insert(mapped.joint.id.clone(), feature);
                 structure.model.ir.model.assembly_joints.push(mapped.joint);
                 if mapped.nested {
                     structure.mate_loss(
@@ -94,6 +130,45 @@ pub(super) fn project(
         }
     }
     Ok(())
+}
+
+/// The mate types that map to a paired joint.
+const PAIRED_MATE_TYPES: [&str; 6] = [
+    "FASTENED",
+    "REVOLUTE",
+    "SLIDER",
+    "CYLINDRICAL",
+    "PLANAR",
+    "BALL",
+];
+
+/// The joint that the mate `feature` at the occurrence path `path` maps to,
+/// and the source address of the given-up instance that one of its
+/// connectors names, where one does.
+fn dropped_joint(
+    structure: &Structure<'_, '_>,
+    feature: &Value,
+    path: &[String],
+) -> Option<(Identity, String)> {
+    let data = feature.get("featureData")?;
+    if !text(data, "mateType").is_ok_and(|kind| PAIRED_MATE_TYPES.contains(&kind)) {
+        return None;
+    }
+    let native = text(feature, "id").ok()?;
+    let entities = data.get("matedEntities").and_then(Value::as_array)?;
+    let needs = entities.iter().take(2).find_map(|entity| {
+        let components = entity.get("matedOccurrence").and_then(Value::as_array)?;
+        let mut occurrence = path.to_vec();
+        for component in components.iter().take(super::ASSEMBLY_DEPTH) {
+            occurrence.push(component.as_str()?.to_owned());
+            if let Some(record) = structure.given_up.get(&occurrence) {
+                return Some(record.clone());
+            }
+        }
+        None
+    })?;
+    let joint = Identity::try_from(id("joint", &format!("{}:{native}", key(path)))).ok()?;
+    Some((joint, needs))
 }
 
 struct MappedMate {
