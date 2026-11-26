@@ -187,6 +187,14 @@ loss_codes! {
     /// An expression stores a blank name, and a design parameter requires a
     /// name.
     ParameterUnnamed => ("expression.parameter-unnamed", Warning, ParametricRecordOmitted),
+    /// A BODY stores a `res_linear` that states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
+    /// A BODY's `res_linear` is in a node the primary records do not read.
+    BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
+    /// The feature recognisers compare evaluated geometry at a floor coarser
+    /// than the document tolerances.
+    FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {
@@ -286,6 +294,9 @@ mod tests {
                 "sketch.design-unprojected",
                 "configuration.arrangement-unnamed",
                 "expression.parameter-unnamed",
+                "body.resolution-invalid",
+                "body.resolution-unread",
+                "feature.recognition-tolerance-floor",
             ]
         );
     }

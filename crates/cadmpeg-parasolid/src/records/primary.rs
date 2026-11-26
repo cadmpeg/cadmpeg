@@ -50,10 +50,14 @@ pub struct PrimaryRecord {
 pub struct PrimaryRecords<'a> {
     source: &'a [u8],
     version: BaseVersion,
+    header: Header,
+    /// The field list of each node type the sequence declares.
+    schemas: BTreeMap<u16, Rc<SchemaPlan>>,
     records: Vec<PrimaryRecord>,
     end: PrimaryEnd,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Header {
     version: BaseVersion,
     maximum: u16,
@@ -205,119 +209,132 @@ impl<'a> PrimaryRecords<'a> {
         let mut records = Vec::new();
         let end = loop {
             let start = view.position();
-            let Some(kind) = view.u16_be() else {
-                break PrimaryEnd::Stopped {
-                    offset: start,
-                    reason: StopReason::MissingTerminator,
-                };
-            };
-            if kind == 1 {
-                if positive(&mut view) != Some(0) {
-                    break PrimaryEnd::Stopped {
-                        offset: start,
-                        reason: StopReason::InvalidIdentity,
-                    };
-                }
-                break PrimaryEnd::Terminated {
-                    terminator: start..view.position(),
-                    suffix: view.position()..stream.len(),
-                };
-            }
-            if kind <= 1 || kind > header.maximum {
-                break PrimaryEnd::Stopped {
-                    offset: start,
-                    reason: StopReason::InvalidKind,
-                };
-            }
-            let definition = if let Some(definition) = schemas.get(&kind) {
-                Rc::clone(definition)
-            } else {
-                let definition = if header.embedded {
-                    let Some(count) = view.u8() else {
-                        break PrimaryEnd::Stopped {
-                            offset: start,
-                            reason: StopReason::InvalidDefinition,
-                        };
-                    };
-                    read_definition(&mut view, header.version, kind, count)?
-                } else {
-                    base::fields(header.version, kind)
-                        .map(|fields| own_definition(kind, fields))
-                        .transpose()?
-                };
-                let Some(definition) = definition else {
-                    break PrimaryEnd::Stopped {
-                        offset: start,
-                        reason: StopReason::InvalidDefinition,
-                    };
-                };
-                let definition = Rc::new(definition);
-                schemas.insert(kind, Rc::clone(&definition));
-                definition
-            };
-            let variable_length = if definition.fields.iter().any(|field| field.n_elements == 1) {
-                let Some(count) = view.u32_be() else {
-                    break PrimaryEnd::Stopped {
-                        offset: start,
-                        reason: StopReason::IncompleteField,
-                    };
-                };
-                Some(count)
-            } else {
-                None
-            };
-            let identity_at = view.position();
-            let Some(xmt) = positive(&mut view)
-                .and_then(|value| value.checked_add(1))
-                .and_then(|value| NonNullXmt::try_from(value).ok())
-            else {
-                break PrimaryEnd::Stopped {
-                    offset: start,
-                    reason: StopReason::InvalidIdentity,
-                };
-            };
-            let mut fields = Vec::new();
-            let mut failure = None;
-            for field in &definition.fields {
-                let field_start = view.position();
-                if field.transmit {
-                    let count = if field.n_elements == 1 {
-                        variable_length.unwrap_or(0)
-                    } else {
-                        field.n_elements.max(1)
-                    };
-                    match consume_field(&mut view, field.data_type, count) {
-                        Ok(()) => (),
-                        Err(reason) => {
-                            failure = Some(reason);
-                            break;
-                        }
+            match step(&mut view, header, &mut schemas)? {
+                Step::Record(record) => records.push(record),
+                Step::Terminator => {
+                    break PrimaryEnd::Terminated {
+                        terminator: start..view.position(),
+                        suffix: view.position()..stream.len(),
                     }
                 }
-                fields.push(field_start..view.position());
+                Step::Stop(reason) => {
+                    break PrimaryEnd::Stopped {
+                        offset: start,
+                        reason,
+                    }
+                }
             }
-            if let Some(reason) = failure {
-                break PrimaryEnd::Stopped {
-                    offset: start,
-                    reason,
-                };
-            }
-            records.push(PrimaryRecord {
-                definition,
-                xmt,
-                range: start..view.position(),
-                identity_at,
-                variable_length,
-                fields,
-            });
         };
         Ok(Some(Self {
             source: stream,
             version: header.version,
+            header,
+            schemas,
             records,
             end,
         }))
     }
+
+    /// The node that starts at `offset`, read with the field lists the
+    /// sequence declares before its end. `None` where no complete node of a
+    /// declared or declaring type starts there.
+    #[must_use]
+    pub fn read_at(&self, offset: usize) -> Option<PrimaryRecord> {
+        let mut view = View::over_retained(self.source);
+        view.take(offset)?;
+        let mut schemas = self.schemas.clone();
+        match step(&mut view, self.header, &mut schemas).ok()? {
+            Step::Record(record) => Some(record),
+            Step::Terminator | Step::Stop(_) => None,
+        }
+    }
+}
+
+/// What one read at a node start finds.
+enum Step {
+    Record(PrimaryRecord),
+    Terminator,
+    Stop(StopReason),
+}
+
+/// Read the node, or the terminator, that starts at the view's position.
+fn step(
+    view: &mut View<'_>,
+    header: Header,
+    schemas: &mut BTreeMap<u16, Rc<SchemaPlan>>,
+) -> Result<Step, CodecError> {
+    let start = view.position();
+    let Some(kind) = view.u16_be() else {
+        return Ok(Step::Stop(StopReason::MissingTerminator));
+    };
+    if kind == 1 {
+        return Ok(if positive(view) == Some(0) {
+            Step::Terminator
+        } else {
+            Step::Stop(StopReason::InvalidIdentity)
+        });
+    }
+    if kind <= 1 || kind > header.maximum {
+        return Ok(Step::Stop(StopReason::InvalidKind));
+    }
+    let definition = if let Some(definition) = schemas.get(&kind) {
+        Rc::clone(definition)
+    } else {
+        let definition = if header.embedded {
+            let Some(count) = view.u8() else {
+                return Ok(Step::Stop(StopReason::InvalidDefinition));
+            };
+            read_definition(view, header.version, kind, count)?
+        } else {
+            base::fields(header.version, kind)
+                .map(|fields| own_definition(kind, fields))
+                .transpose()?
+        };
+        let Some(definition) = definition else {
+            return Ok(Step::Stop(StopReason::InvalidDefinition));
+        };
+        let definition = Rc::new(definition);
+        schemas.insert(kind, Rc::clone(&definition));
+        definition
+    };
+    let variable_length = if definition.fields.iter().any(|field| field.n_elements == 1) {
+        let Some(count) = view.u32_be() else {
+            return Ok(Step::Stop(StopReason::IncompleteField));
+        };
+        Some(count)
+    } else {
+        None
+    };
+    let identity_at = view.position();
+    let Some(xmt) = positive(view)
+        .and_then(|value| value.checked_add(1))
+        .and_then(|value| NonNullXmt::try_from(value).ok())
+    else {
+        return Ok(Step::Stop(StopReason::InvalidIdentity));
+    };
+    let mut fields = Vec::new();
+    for field in &definition.fields {
+        let field_start = view.position();
+        if field.transmit {
+            let count = if field.n_elements == 1 {
+                variable_length.unwrap_or(0)
+            } else {
+                field.n_elements.max(1)
+            };
+            if let Err(reason) = consume_field(view, field.data_type, count) {
+                return Ok(Step::Stop(reason));
+            }
+        }
+        fields.push(field_start..view.position());
+    }
+    Ok(Step::Record(PrimaryRecord {
+        definition,
+        xmt,
+        range: start..view.position(),
+        identity_at,
+        variable_length,
+        fields,
+    }))
 }
 
 fn consume_field(view: &mut View<'_>, data_type: DataType, count: u32) -> Result<(), StopReason> {

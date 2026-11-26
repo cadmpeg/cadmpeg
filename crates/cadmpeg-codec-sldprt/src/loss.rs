@@ -370,6 +370,12 @@ pub(crate) enum SldprtLossCode {
     /// Imported-feature body streams of the active configuration that do not
     /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
+    /// A body's stored `res_linear` states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid,
+    /// A body whose BODY node does not read states no `res_linear`, and the
+    /// part tolerance does not count it (`parasolid.md` §4).
+    BodyResolutionUnread,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -797,6 +803,8 @@ impl SldprtLossCode {
         Self::GeometryParasolidNotTransferred,
         Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
+        Self::BodyResolutionInvalid,
+        Self::BodyResolutionUnread,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -1041,6 +1049,8 @@ impl SldprtLossCode {
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
+            Self::BodyResolutionInvalid => "body.resolution-invalid",
+            Self::BodyResolutionUnread => "body.resolution-unread",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -1173,6 +1183,7 @@ impl SldprtLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::BodyResolutionInvalid | Self::BodyResolutionUnread => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterNativeHistorySummary => Severity::Warning,
@@ -1413,6 +1424,8 @@ impl SldprtLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::BodyResolutionInvalid => LossTaxonomy::SourceTopologyInvalid,
+            Self::BodyResolutionUnread => LossTaxonomy::DecodeDiagnostic,
             Self::WriterNativeEnvelopeAuxiliaryOmitted
             | Self::WriterHistoryNameNotWritten
             | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
@@ -1977,6 +1990,8 @@ mod tests {
                 "geometry.parasolid-not-transferred",
                 "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
+                "body.resolution-invalid",
+                "body.resolution-unread",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",

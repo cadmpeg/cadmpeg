@@ -628,8 +628,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -887,6 +887,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "fd1820988138c1b65aece5688a24742971f3cc06c4f02e8b8f71753a184b0af6",
       "sldprt_native_history_sha256": "ebee8efde4e04f88ea862060dd9e941c483e61a595eb18cc2dff9f3d43d543e8",
       "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

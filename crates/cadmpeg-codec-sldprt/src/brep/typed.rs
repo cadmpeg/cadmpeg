@@ -25,13 +25,15 @@ const REGION_TAG: [u8; 2] = [0x00, 0x13];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const RESOLUTION_SIZE_MIN: f64 = 1.0;
 const RESOLUTION_SIZE_MAX: f64 = 1.0e6;
-const RESOLUTION_LINEAR_MIN: f64 = 1.0e-15;
-const RESOLUTION_LINEAR_MAX: f64 = 1.0e-2;
+/// The `res_linear` magnitudes (metres) that decide between header reference
+/// counts when more than one count reads a complete BODY.
+const RESOLUTION_LINEAR_PLAUSIBLE_MIN: f64 = 1.0e-15;
+const RESOLUTION_LINEAR_PLAUSIBLE_MAX: f64 = 1.0e-2;
 const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct BodyNode {
     /// Stream-local transmit index.
     pub(super) attr: u32,
@@ -45,6 +47,8 @@ pub(super) struct BodyNode {
     pub(super) ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
     pub(super) kind: BodyKind,
+    /// Stored `res_linear`, the body's linear precision in metres.
+    pub(super) linear_resolution: f64,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
     pub(super) offset: usize,
     /// First byte after the complete node.
@@ -58,6 +62,7 @@ struct BodyCandidate {
     ownership_refs: [u32; 7 + BODY_POST_TOPOLOGY_REF_MAX],
     ownership_len: usize,
     kind: BodyKind,
+    linear_resolution: f64,
     offset: usize,
     end: usize,
 }
@@ -70,6 +75,7 @@ impl BodyCandidate {
             topology_refs: self.topology_refs,
             ownership_refs: self.ownership_refs[..self.ownership_len].to_vec(),
             kind: self.kind,
+            linear_resolution: self.linear_resolution,
             offset: self.offset,
             end: self.end,
         }
@@ -160,7 +166,7 @@ pub(super) struct FaceNode {
 }
 
 /// All typed ownership nodes recovered from one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct Facts {
     pub(super) bodies: Vec<BodyNode>,
     pub(super) shells: Vec<ShellNode>,
@@ -691,7 +697,7 @@ fn region_chain_from_head(
 }
 
 /// One validated typed body hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::brep) struct Hierarchy {
     pub(super) body: BodyNode,
     pub(super) regions: Vec<RegionNode>,
@@ -784,7 +790,7 @@ fn valid_resolution(size: f64, linear: f64) -> bool {
     size.is_finite()
         && linear.is_finite()
         && (RESOLUTION_SIZE_MIN..=RESOLUTION_SIZE_MAX).contains(&size)
-        && (RESOLUTION_LINEAR_MIN..=RESOLUTION_LINEAR_MAX).contains(&linear.abs())
+        && linear != 0.0
 }
 
 fn parse_body_fields(
@@ -838,6 +844,7 @@ fn parse_body_fields(
         ownership_refs,
         ownership_len,
         kind,
+        linear_resolution: linear,
         offset,
         end: at,
     })
@@ -847,25 +854,31 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     // BODY is a fixed XT node.  Its fields begin immediately after the
     // attribute/node-id prefix; there is no additional length/index frame.
     // The embedded schema can add or remove leading reference fields, so the
-    // field count is selected only when exactly one complete interpretation
-    // passes the resolution, state, kind, and topology guards.
+    // field count is the one complete interpretation that passes the
+    // resolution, state, kind, and topology guards; among several, the one
+    // with a plausible `res_linear` (`sldprt.md` BODY).
     let (_, _, fields) = node_prefix(bytes, payload)?;
-    let mut candidate = None;
-    for header_ref_count in 0..=BODY_HEADER_REF_MAX {
-        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(body);
-        }
+    let mut candidates = (0..=BODY_HEADER_REF_MAX)
+        .filter_map(|count| parse_body_fields(bytes, offset, payload, fields, count))
+        .collect::<Vec<_>>();
+    if candidates.len() > 1 {
+        candidates.retain(plausible_resolution);
     }
-    candidate
+    let candidate = candidates.pop()?;
+    candidates.is_empty().then_some(candidate)
+}
+
+fn plausible_resolution(body: &BodyCandidate) -> bool {
+    (RESOLUTION_LINEAR_PLAUSIBLE_MIN..=RESOLUTION_LINEAR_PLAUSIBLE_MAX)
+        .contains(&body.linear_resolution.abs())
 }
 
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout)
-        .into_iter()
-        .min_by_key(|node| node.end)
+    tagged_candidates(bytes, offset, BODY_TAG, |bytes, offset, payload| {
+        parse_body_layout(bytes, offset, payload).filter(plausible_resolution)
+    })
+    .into_iter()
+    .min_by_key(|node| node.end)
 }
 
 fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
@@ -1040,6 +1053,10 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
+    // Tag-framed BODY readings whose `res_linear` is outside the plausible
+    // range, kept only where a SHELL or REGION names them and no plausible
+    // BODY holds their index (`sldprt.md` BODY).
+    let mut unnamed_tagged_bodies = HashSet::new();
     let mut schema_ranges = Vec::new();
     let mut offset = 0usize;
     while offset.checked_add(2).is_some_and(|end| end < bytes.len()) {
@@ -1133,15 +1150,25 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 continue;
             }
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
-                for body in tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout) {
-                    if !body_offsets.contains(&body.offset) {
-                        push_record(
-                            &mut body_offsets,
-                            &mut facts.bodies,
-                            body.offset,
-                            body.into_node(),
-                        );
+                // Each reading of one tag shares the tag offset. A plausible
+                // reading takes it before an implausible one, the 0xff-prefixed
+                // reading first among equals.
+                let mut readings = tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout);
+                readings.sort_by_key(|body| !plausible_resolution(body));
+                if let Some(body) = readings
+                    .into_iter()
+                    .next()
+                    .filter(|body| !body_offsets.contains(&body.offset))
+                {
+                    if !plausible_resolution(&body) {
+                        unnamed_tagged_bodies.insert(body.offset);
                     }
+                    push_record(
+                        &mut body_offsets,
+                        &mut facts.bodies,
+                        body.offset,
+                        body.into_node(),
+                    );
                 }
             }
             for shell in tagged_candidates(bytes, offset, SHELL_TAG, parse_shell_fields) {
@@ -1201,6 +1228,22 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     facts
         .faces
         .retain(|node| outside_payload(node.offset, node.end));
+    let named_bodies = facts
+        .shells
+        .iter()
+        .map(|node| node.refs[1])
+        .chain(facts.regions.iter().map(|node| node.refs[1]))
+        .collect::<HashSet<_>>();
+    let plausible_bodies = facts
+        .bodies
+        .iter()
+        .filter(|node| !unnamed_tagged_bodies.contains(&node.offset))
+        .map(|node| node.attr)
+        .collect::<HashSet<_>>();
+    facts.bodies.retain(|node| {
+        !unnamed_tagged_bodies.contains(&node.offset)
+            || (named_bodies.contains(&node.attr) && !plausible_bodies.contains(&node.attr))
+    });
     let referenced = facts
         .bodies
         .iter()
@@ -1279,7 +1322,13 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
 
         assert!(facts.has_valid_ownership(), "{facts:?}");
@@ -1308,7 +1357,13 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
         let scopes = super::super::topology::topology_scopes(&body, false);
         assert!(
@@ -1350,12 +1405,21 @@ mod tests {
     }
 
     fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {
+        body_fields_with_resolution(header, 1.0e-8, body_type, topology)
+    }
+
+    fn body_fields_with_resolution<const N: usize>(
+        header: [u32; N],
+        res_linear: f64,
+        body_type: u8,
+        topology: [u32; 7],
+    ) -> Vec<u8> {
         let mut bytes = Vec::new();
         for value in header {
             push_ref(&mut bytes, value);
         }
         bytes.extend_from_slice(&1000.0f64.to_be_bytes());
-        bytes.extend_from_slice(&1.0e-8f64.to_be_bytes());
+        bytes.extend_from_slice(&res_linear.to_be_bytes());
         for value in [1, 1, 1] {
             push_ref(&mut bytes, value);
         }
@@ -1583,6 +1647,108 @@ mod tests {
         assert!(!facts.shells.iter().any(|node| node.offset == payload));
         assert_eq!(facts.topology_class_masks().get(&3), Some(&1));
         assert!(facts.topology_owner_attrs().contains(&3));
+    }
+
+    /// A BODY of `header` and `res_linear` after a node prefix, and the offset
+    /// of its fields.
+    fn body_payload<const N: usize>(header: [u32; N], res_linear: f64) -> (Vec<u8>, usize) {
+        let mut bytes = Vec::new();
+        push_ref(&mut bytes, 3);
+        bytes.extend_from_slice(&1006u32.to_be_bytes());
+        let fields = bytes.len();
+        bytes.extend(body_fields_with_resolution(
+            header,
+            res_linear,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        (bytes, fields)
+    }
+
+    #[test]
+    fn a_body_that_also_reads_one_reference_short_keeps_its_stored_resolution() {
+        // A last header reference of 16400 has the bytes 0x4010, the high word
+        // of an f64 in `[1, 1e6]`, so the count one short also reads a BODY,
+        // with a subnormal `res_linear`.
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 16400], 1.0e-8);
+        let short = super::parse_body_fields(&bytes, 0, 0, fields, 5).expect("count 5 reads");
+        assert!(short.linear_resolution.abs() < f64::MIN_POSITIVE);
+        assert!(super::parse_body_fields(&bytes, 0, 0, fields, 6).is_some());
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
+        assert_eq!(body.kind, BodyKind::Solid);
+    }
+
+    #[test]
+    fn a_lone_reading_outside_the_plausible_resolution_is_admitted() {
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 1], 0.1);
+        let readings = (0..=super::BODY_HEADER_REF_MAX)
+            .filter(|count| super::parse_body_fields(&bytes, 0, 0, fields, *count).is_some())
+            .count();
+        assert_eq!(readings, 1);
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 0.1f64.to_bits());
+    }
+
+    #[test]
+    fn a_tagged_body_outside_the_plausible_resolution_claims_no_owner_class() {
+        let mut bytes = typed_shell_with_body(5, 814, 3, 39);
+        bytes.extend(typed_prefix(BODY_TAG, 5, 1006));
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 1],
+            0.5,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let facts = scan(&bytes);
+        assert!(facts.bodies.is_empty());
+        assert_eq!(facts.topology_class_masks().get(&5), Some(&2));
+    }
+
+    #[test]
+    fn an_unprefixed_tagged_body_keeps_its_reading_over_an_implausible_prefixed_one() {
+        // A two-word index pointer begins with 0xff, so the 0xff-prefixed
+        // reading of the tag also frames a BODY, one byte later, with a
+        // `res_linear` below the plausible range.
+        let mut bytes = BODY_TAG.to_vec();
+        push_ref(&mut bytes, 33_007);
+        assert_eq!(bytes[2], 0xff);
+        bytes.extend_from_slice(&784u32.to_be_bytes());
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 64],
+            1.0e-7,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let prefixed = super::parse_body_layout(&bytes, 0, 3).expect("prefixed reading");
+        assert!(!super::plausible_resolution(&prefixed));
+
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 33_007);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-7f64.to_bits());
+    }
+
+    #[test]
+    fn a_named_implausible_body_that_shares_a_plausible_body_index_is_dropped() {
+        let mut bytes = typed_shell_with_body(9, 814, 5, 39);
+        for (node_id, res_linear) in [(1006, 1.0e-8), (1007, 0.5)] {
+            bytes.extend(typed_prefix(BODY_TAG, 5, node_id));
+            bytes.extend(body_fields_with_resolution(
+                [5, 6, 1, 1, 1, 1],
+                res_linear,
+                1,
+                [7, 8, 9, 10, 1, 12, 11],
+            ));
+        }
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 5);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
     }
 
     #[test]
@@ -1859,6 +2025,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -1915,6 +2082,7 @@ mod tests {
                     topology_refs: [8, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![41],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 1,
                     end: 2,
                 },
@@ -1924,6 +2092,7 @@ mod tests {
                     topology_refs: [999, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![900],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 3,
                     end: 4,
                 },
@@ -1963,6 +2132,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2018,6 +2188,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2077,6 +2248,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2104,6 +2276,7 @@ mod tests {
             topology_refs: [7, 1, 1, 1, 10, 1, 1],
             ownership_refs: Vec::new(),
             kind: BodyKind::Solid,
+            linear_resolution: 1.0e-8,
             offset: 1,
             end: 2,
         };
@@ -2152,6 +2325,7 @@ mod tests {
                 topology_refs: [1, 1, 1, 1, 1, 1, 1],
                 ownership_refs: Vec::new(),
                 kind: BodyKind::Wire,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
