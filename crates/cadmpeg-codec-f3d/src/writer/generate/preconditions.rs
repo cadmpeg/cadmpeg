@@ -266,9 +266,13 @@ pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritabl
     )
 }
 
-/// The sketch-curve links the B-rep stream cannot hold as they stand, the
-/// first family that holds one.
-pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
+/// The sketch-curve links and body visibilities the B-rep and Design
+/// streams cannot hold as they stand, the first family that holds one.
+pub(super) fn unwritable_link_records(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
+) -> Result<Option<Unwritable>, CodecError> {
     let coedges = target
         .geometry
         .coedges
@@ -293,9 +297,9 @@ pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Opt
         "of sketch-curve links that name a coedge the document does not hold",
         unresolved,
     ) {
-        return Some(unwritable);
+        return Ok(Some(unwritable));
     }
-    Unwritable::of(
+    if let Some(unwritable) = Unwritable::of(
         "of sketch-curve links that share their coedge with another link (the B-rep stream holds one sketch-curve link on each coedge, and the records do not state which link it is)",
         by_coedge
             .into_values()
@@ -303,7 +307,54 @@ pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Opt
             .flatten()
             .map(str::to_owned)
             .collect(),
-    )
+    ) {
+        return Ok(Some(unwritable));
+    }
+    let bodies = target
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<HashMap<_, _>>();
+    let mut stale = BTreeSet::new();
+    let mut by_body = BTreeMap::<_, Vec<&str>>::new();
+    let mut by_suffix = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for visibility in &native.body_visibilities {
+        by_body
+            .entry(&visibility.body)
+            .or_default()
+            .push(visibility.id());
+        by_suffix
+            .entry(visibility.entity_suffix)
+            .or_default()
+            .insert(visibility.asm_body_key());
+        let Some(body) = bodies.get(&visibility.body) else {
+            stale.insert(visibility.id().to_owned());
+            continue;
+        };
+        let key = u64::try_from(source_less_body_key(attributes, body)?).ok();
+        if body.visible != Some(visibility.visible) || key != Some(visibility.asm_body_key()) {
+            stale.insert(visibility.id().to_owned());
+        }
+    }
+    stale.extend(
+        by_body
+            .into_values()
+            .filter(|rows| rows.len() > 1)
+            .flatten()
+            .map(str::to_owned),
+    );
+    stale.extend(
+        native
+            .body_visibilities
+            .iter()
+            .filter(|visibility| by_suffix[&visibility.entity_suffix].len() > 1)
+            .map(|visibility| visibility.id().to_owned()),
+    );
+    Ok(Unwritable::of(
+        "of body visibilities whose body, ASM body key, Design entity or visibility differs from the body the writer writes (the writer writes the visibility of each body from the body)",
+        stale,
+    ))
 }
 
 pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
@@ -784,7 +835,6 @@ pub(super) fn validate_source_less_history_graph(
 pub(super) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
     if let Some(sentinel) = native.mesh_surface_sentinels.first() {
         return Err(CodecError::NotImplemented(format!(
@@ -989,30 +1039,6 @@ pub(super) fn validate_source_less_design_links(
         }};
     }
     validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
-    validate_unique_targets!(
-        &native.body_visibilities,
-        body,
-        bodies,
-        "body-visibility",
-        [id()],
-        |visibility, (_, body)| {
-            if body.visible != Some(visibility.visible) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D body visibility {} conflicts with body {} visibility",
-                    visibility.id(),
-                    visibility.body
-                )));
-            }
-            let emitted_key = source_less_body_key(attributes, body)?;
-            if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D body visibility {} uses an ASM key different from body {}",
-                    visibility.id(),
-                    visibility.body
-                )));
-            }
-        }
-    );
     validate_unique_targets!(
         &native.transform_hints,
         body,
@@ -1362,7 +1388,6 @@ pub(super) fn validate_source_less_wire_ownership(
 #[cfg(test)]
 mod tests {
     use super::{validate_source_less_design_links, F3dNative};
-    use crate::writer::generate::attributes::AttributeIndex;
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
     use cadmpeg_core::CodecError;
@@ -1385,8 +1410,7 @@ mod tests {
             }],
             ..F3dNative::default()
         };
-        let attributes = AttributeIndex::new(&target, &native);
-        let error = validate_source_less_design_links(&target, &native, &attributes)
+        let error = validate_source_less_design_links(&target, &native)
             .expect_err("unset native evaluation must not coexist with a neutral tolerance");
         assert!(matches!(error, CodecError::InvalidInput(_)));
         assert!(error

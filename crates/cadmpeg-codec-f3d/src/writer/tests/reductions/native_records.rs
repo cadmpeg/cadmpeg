@@ -91,6 +91,33 @@ fn sketch_curve_links_that_share_a_coedge_are_dropped_alone() {
 }
 
 #[test]
+fn a_body_visibility_under_another_asm_key_is_dropped_and_the_body_keeps_its_visibility() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].visible = Some(false);
+    let body = ir.geometry.bodies[0].id.clone();
+    f3d_native_mut(&mut ir).body_visibilities =
+        vec![crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:generated:body-visibility#4242".into(),
+                body,
+                stream: "generated/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 4242,
+                entity_suffix: 985,
+                visible: false,
+            },
+        )
+        .expect("a body visibility")];
+
+    let report = assert_written_with_loss(&ir, None, OMITTED, "of body visibilities whose body");
+    assert_no_whole_drop(&report);
+    let decoded = write_and_decode(&ir);
+    assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
+    assert_eq!(f3d_native(&decoded).body_visibilities.len(), 1);
+}
+
+#[test]
 fn a_record_header_outside_the_sketch_graph_is_dropped_alone() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{

@@ -182,7 +182,7 @@ fn generated_source_less_drops_collapsed_visibility_body_bindings() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "F3D body visibility",
+        "of body visibilities whose body",
     );
 }
 

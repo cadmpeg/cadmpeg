@@ -204,10 +204,12 @@ fn attempt<W: Write + Seek>(
         attributes
     };
     if has_native {
-        if let Some(unwritable) = unwritable_link_records(target, &native) {
+        if let Some(unwritable) =
+            unwritable_link_records(target, &native, &attributes).map_err(Failure::design)?
+        {
             return Err(Failure::unwritable(Stage::Design, unwritable));
         }
-        validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
+        validate_source_less_design_links(target, &native).map_err(Failure::design)?;
     }
     let brep = if body_less {
         Ok(Vec::new())

@@ -544,7 +544,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             &invalid,
             None,
             "export/native.records-omitted",
-            "uses an ASM key different from body",
+            "of body visibilities whose body",
         );
     }
 
