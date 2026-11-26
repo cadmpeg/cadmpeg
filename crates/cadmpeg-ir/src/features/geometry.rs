@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name($raw);

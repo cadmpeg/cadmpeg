@@ -351,6 +351,156 @@ impl<'de> Deserialize<'de> for NonBlankString {
     }
 }
 
+/// A codec id (§2.2): one or more lower-case ASCII letters and digits. The
+/// set of codec ids is open. Build a compile-time id with
+/// [`crate::codec_id!`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
+pub struct CodecId(std::borrow::Cow<'static, str>);
+
+/// Whether `text` is a codec id.
+#[must_use]
+pub const fn is_codec_id(text: &[u8]) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    let mut index = 0;
+    while index < text.len() {
+        if !matches!(text[index], b'a'..=b'z' | b'0'..=b'9') {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// A static codec id whose grammar was admitted during const evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StaticCodecId(&'static str);
+
+impl StaticCodecId {
+    /// Admit a static codec id, returning `None` for text of another form.
+    #[must_use]
+    pub const fn new(id: &'static str) -> Option<Self> {
+        if is_codec_id(id.as_bytes()) {
+            Some(Self(id))
+        } else {
+            None
+        }
+    }
+
+    /// The codec id.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl CodecId {
+    /// Construct a codec id from a static proof.
+    #[must_use]
+    pub const fn from_static(id: StaticCodecId) -> Self {
+        Self(std::borrow::Cow::Borrowed(id.0))
+    }
+
+    /// The codec id `text` spells, or `None` for text of another form.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Option<Self> {
+        let text = text.into();
+        is_codec_id(text.as_bytes()).then_some(Self(std::borrow::Cow::Owned(text)))
+    }
+
+    /// The codec id of text its caller has admitted: a dialect id's
+    /// namespace has the grammar of a codec id.
+    pub(crate) fn admitted(text: &str) -> Self {
+        Self(std::borrow::Cow::Owned(text.to_owned()))
+    }
+
+    /// The codec id.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for CodecId {
+    type Error = &'static str;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        Self::new(text).ok_or("not a codec id: lower-case ASCII letters and digits")
+    }
+}
+
+impl Serialize for CodecId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl std::fmt::Display for CodecId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Lookup by the plain string the id spells. `Ord` and `Hash` are derived
+/// over the same text.
+impl std::borrow::Borrow<str> for CodecId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for CodecId {
+    fn eq(&self, other: &str) -> bool {
+        *self.0 == *other
+    }
+}
+
+impl PartialEq<&str> for CodecId {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq<CodecId> for str {
+    fn eq(&self, other: &CodecId) -> bool {
+        other == self
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for CodecId {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "CodecId".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A codec id: one or more lower-case ASCII letters and digits.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
+        })
+    }
+}
+
+/// Build a checked [`CodecId`] from a constant.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_core::codec_id!("Step");
+/// ```
+#[macro_export]
+macro_rules! codec_id {
+    ($id:expr) => {{
+        const STATIC_CODEC_ID: $crate::text::StaticCodecId =
+            match $crate::text::StaticCodecId::new($id) {
+                Some(id) => id,
+                None => panic!("a codec id is lower-case ASCII letters and digits"),
+            };
+        $crate::text::CodecId::from_static(STATIC_CODEC_ID)
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -394,7 +544,10 @@ mod tests {
         ] {
             let value = NonBlankString::prefixed(prefix, suffix);
             assert_eq!(value.as_str(), expected);
-            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
+            assert_eq!(
+                crate::serde_erase::json::to_value(&value).unwrap(),
+                expected
+            );
         }
         assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
@@ -434,16 +587,19 @@ mod tests {
     #[cfg(feature = "schema")]
     #[test]
     fn nonblank_schema_constrains_property_names_without_trimming_source_text() {
-        let schema = serde_json::to_value(schemars::schema_for!(NonBlankString)).unwrap();
+        let schema =
+            crate::serde_erase::json::to_value(schemars::schema_for!(NonBlankString)).unwrap();
         assert_eq!(schema["type"], "string");
         let pattern = schema["pattern"].as_str().unwrap();
-        let map =
-            serde_json::to_value(schemars::schema_for!(BTreeMap<NonBlankString, String>)).unwrap();
+        let map = crate::serde_erase::json::to_value(
+            schemars::schema_for!(BTreeMap<NonBlankString, String>),
+        )
+        .unwrap();
         assert_eq!(map["additionalProperties"], false);
         assert!(map["patternProperties"].get(pattern).is_some());
         for text in [" \tname\n", "\u{feff}", "\0"] {
             let value = NonBlankString::new(text).unwrap();
-            assert_eq!(serde_json::to_value(value).unwrap(), text);
+            assert_eq!(crate::serde_erase::json::to_value(value).unwrap(), text);
         }
     }
 

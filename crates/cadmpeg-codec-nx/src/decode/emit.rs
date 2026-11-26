@@ -84,6 +84,15 @@ pub(super) struct TopologyBudgets<'inputs> {
     pub(super) completion_geometry: &'inputs GeometryWorkBudget<'inputs>,
 }
 
+/// Where topology emission charges its losses. A loss that states a face
+/// partial is held with the face's id, so the caller reports it only for a
+/// face the document still holds once inactive bodies are pruned.
+pub(super) struct TopologyLosses<'losses> {
+    pub(super) losses: &'losses mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) partial_faces: &'losses mut Vec<(FaceId, cadmpeg_ir::report::loss::LossNote)>,
+    pub(super) given_up: &'losses mut Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
+}
+
 pub(super) fn emit_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -91,8 +100,13 @@ pub(super) fn emit_topology(
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    topology_losses: TopologyLosses<'_>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let TopologyLosses {
+        losses: topology_losses,
+        partial_faces: partial_face_losses,
+        given_up,
+    } = topology_losses;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
@@ -148,6 +162,9 @@ pub(super) fn emit_topology(
     }
     let vertex_point =
         |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
+    let mut partial_face_xmts: BTreeSet<u32> = BTreeSet::new();
+    // Each loss names its face, so it waits until the face is emitted.
+    let mut vertex_loop_losses = Vec::new();
     for (face_xmt, loops) in &mut face_boundaries {
         loops.retain(|(loop_xmt, face_loop)| {
             let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
@@ -157,9 +174,10 @@ pub(super) fn emit_topology(
             if vertex_xmt.and_then(vertex_point).is_some() {
                 return true;
             }
-            topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
-            ));
+            vertex_loop_losses.push((*face_xmt, crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted, and the face is stated partial: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+            )));
+            partial_face_xmts.insert(*face_xmt);
             false
         });
     }
@@ -242,19 +260,33 @@ pub(super) fn emit_topology(
     }
     let mut admitted_shells = Vec::new();
     let mut shape_bodies = BTreeSet::new();
+    let mut given_up_shells = BTreeMap::new();
     for shell in graph.body_shape_shells() {
-        shape_bodies.extend(
-            shell
-                .shell_fields()
-                .and_then(|fields| fields.body.map(u32::from)),
-        );
+        let body = shell
+            .shell_fields()
+            .and_then(|fields| fields.body.map(u32::from));
+        shape_bodies.extend(body);
         if admitted_shell_faces.contains_key(&shell.xmt()) {
             admitted_shells.push(shell);
         } else {
-            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
-                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is admitted",
+            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is \
+                 admitted",
                 shell.xmt()
-            )));
+            ));
+            let part = super::build::give_up_record(
+                ctx,
+                (stream_index, source_stream.name()),
+                shell,
+                &withheld,
+            )?;
+            if let Some(body) = body {
+                given_up_shells
+                    .entry(body)
+                    .or_insert_with(|| part.id().clone());
+            }
+            given_up.push(part);
+            topology_losses.push(withheld);
         }
     }
     let mut first_body_shells = BTreeMap::new();
@@ -271,15 +303,15 @@ pub(super) fn emit_topology(
         let id: BodyId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
-            annotate_node(annotations, id.as_str(), source_stream, node, "BODY");
+            annotate_node(annotations, &id, source_stream, node, "BODY");
         } else {
             annotations.note(
-                id.as_str(),
+                &id,
                 source_stream,
                 cadmpeg_core::decode::u64_from_index(shell.pos()),
                 Some("UNRESOLVED_BODY_REFERENCE"),
             );
-            annotations.exactness(id.as_str(), Exactness::Unknown);
+            annotations.exactness(&id, Exactness::Unknown);
         }
         bodies.insert(body_xmt, id.clone());
 
@@ -320,23 +352,17 @@ pub(super) fn emit_topology(
             let region: RegionId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("region"), region_xmt)?;
             if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
-                annotate_node(
-                    annotations,
-                    region.as_str(),
-                    source_stream,
-                    region_node,
-                    "REGION",
-                );
+                annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
                 annotations.note(
-                    region.as_str(),
+                    &region,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("UNRESOLVED_REGION_REFERENCE"),
                 );
-                annotations.exactness(region.as_str(), Exactness::Unknown);
+                annotations.exactness(&region, Exactness::Unknown);
             }
-            annotations.derived(region.as_str(), "body")?;
+            annotations.derived(&region, "body")?;
 
             ir.geometry
                 .regions
@@ -346,7 +372,7 @@ pub(super) fn emit_topology(
         };
         let shell_id: ShellId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("shell"), node.xmt())?;
-        annotate_node(annotations, shell_id.as_str(), source_stream, node, "SHELL");
+        annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
         let mut shell_faces = Vec::new();
         for face_xmt in admitted_shell_faces.get(&node.xmt()).into_iter().flatten() {
             shell_faces.push(
@@ -388,9 +414,26 @@ pub(super) fn emit_topology(
     for body_xmt in shape_bodies {
         let body = bodies.get(&body_xmt);
         if body.is_none_or(|body| !shell_owners.contains(body)) {
-            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
                 "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
-            )));
+            ));
+            if let Some(shell) = given_up_shells.get(&body_xmt) {
+                let body: BodyId = match body {
+                    Some(body) => body.clone(),
+                    None => {
+                        scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?
+                    }
+                };
+                topology_losses.push(cadmpeg_ir::unknown::part::dropped_with(body, shell));
+            } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
+                given_up.push(super::build::give_up_record(
+                    ctx,
+                    (stream_index, source_stream.name()),
+                    node,
+                    &withheld,
+                )?);
+            }
+            topology_losses.push(withheld);
             withheld_bodies.extend(body.cloned());
         }
     }
@@ -409,7 +452,7 @@ pub(super) fn emit_topology(
         let tolerance = decoded_tolerance(fields.tolerance());
         let vertex: VertexId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), node.xmt())?;
-        annotate_node(annotations, vertex.as_str(), source_stream, node, "VERTEX");
+        annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
             annotations
                 .derived(&vertex, "tolerance")
@@ -527,12 +570,12 @@ pub(super) fn emit_topology(
                     node.xmt(),
                 )?;
                 annotations.note(
-                    carrier.as_str(),
+                    &carrier,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("PARAMETRIC_SURFACE_CURVE"),
                 );
-                annotations.derived(carrier.as_str(), "geometry")?;
+                annotations.derived(&carrier, "geometry")?;
 
                 ir.geometry.curves.push(Curve {
                     parameter_range: None,
@@ -654,7 +697,7 @@ pub(super) fn emit_topology(
         let mut against_source = !curve_forward;
         let id: EdgeId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("edge"), node.xmt())?;
-        annotate_node(annotations, id.as_str(), source_stream, node, "EDGE");
+        annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
                 .derived(&id, "tolerance")
@@ -767,7 +810,7 @@ pub(super) fn emit_topology(
         };
         let id: FaceId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("face"), node.xmt())?;
-        annotate_node(annotations, id.as_str(), source_stream, node, "FACE");
+        annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance()).is_some() {
             annotations
                 .derived(&id, "tolerance")
@@ -797,6 +840,7 @@ pub(super) fn emit_topology(
     }
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
+    let mut partial_faces: BTreeSet<FaceId> = BTreeSet::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
@@ -825,12 +869,13 @@ pub(super) fn emit_topology(
             })
         });
         if !ring_resolves {
-            topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
-            ));
+            partial_face_losses.push((face_ref.clone(), crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted, and face {face_ref} is stated partial"),
+            )));
+            partial_faces.insert(face_ref.clone());
             continue;
         }
-        annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+        annotate_node(annotations, &id, source_stream, node, "LOOP");
         loop_specs.insert(node.xmt(), (id.clone(), face_ref.clone()));
         loops.insert(node.xmt(), id);
     }
@@ -1064,7 +1109,7 @@ pub(super) fn emit_topology(
         let loop_id: LoopId = loop_id_ref.clone();
         let edge: EdgeId = edge_ref.clone();
         let id: CoedgeId = id_ref.clone();
-        annotate_node(annotations, id.as_str(), source_stream, node, "FIN");
+        annotate_node(annotations, &id, source_stream, node, "FIN");
         let partner = fields
             .other
             .and_then(|target| fin_ids.get(&u32::from(target)))
@@ -1119,15 +1164,15 @@ pub(super) fn emit_topology(
                     fin_xmt,
                 )?;
                 annotations.note(
-                    pcurve_id.as_str(),
+                    &pcurve_id,
                     source_stream,
                     cadmpeg_core::decode::u64_from_index(node.pos()),
                     Some("INTERSECTION_PCURVE"),
                 );
-                annotations.derived(pcurve_id.as_str(), "geometry")?;
-                annotations.derived(pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(&pcurve_id, "geometry")?;
+                annotations.derived(&pcurve_id, "metadata.form.parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(&pcurve_id, "metadata.form.fit_tolerance")?;
                 }
 
                 ir.geometry.pcurves.push(Pcurve {
@@ -1193,7 +1238,7 @@ pub(super) fn emit_topology(
                     };
                     let id: LoopId = scope
                         .id_from_display(&cadmpeg_ir::identity_component!("loop"), *loop_xmt)?;
-                    annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+                    annotate_node(annotations, &id, source_stream, node, "LOOP");
                     ir.geometry.loops.push(Loop {
                         id: id.clone(),
                         face: face.clone(),
@@ -1226,9 +1271,10 @@ pub(super) fn emit_topology(
                 None
             };
             let Some(ring) = ring else {
-                topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
-                ));
+                partial_face_losses.push((face.clone(), crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted, and face {face} is stated partial"),
+                )));
+                partial_faces.insert(face.clone());
                 continue;
             };
 
@@ -1248,12 +1294,13 @@ pub(super) fn emit_topology(
             loops.push(id.clone());
         }
     }
+    let mut emitted_faces = BTreeMap::new();
     for pending in pending_faces {
         let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
-            topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
-                pending.xmt),
-            ));
+            partial_face_losses.push((pending.id.clone(), crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
+                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face {} is stated partial",
+                pending.xmt, pending.id),
+            )));
             true
         } else {
             false
@@ -1275,17 +1322,48 @@ pub(super) fn emit_topology(
             )?;
         }
 
+        let partial = boundary_failed
+            || partial_faces.contains(&pending.id)
+            || partial_face_xmts.contains(&pending.xmt);
+        let loops = if partial {
+            cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+        } else {
+            let surface = if loops.is_empty() {
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == pending.surface)
+                    .map(|surface| &surface.geometry)
+            } else {
+                None
+            };
+            let (loops, unbounded) =
+                cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, surface);
+            if let Some(kind) = unbounded {
+                partial_face_losses.push((pending.id.clone(), crate::loss::NxLossCode::TopologyFaceBoundaryUnstated.note(
+                    format!("parasolid#{stream_index} FACE {} states no loop on a {kind}, which no face covers whole: face {} is stated partial",
+                    pending.xmt, pending.id),
+                )));
+            }
+            loops
+        };
+        emitted_faces.insert(pending.xmt, pending.id.clone());
         ir.geometry.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
             sense: pending.sense,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops,
             name: None,
             color: None,
             tolerance: pending.tolerance,
             native_ref: None,
         });
+    }
+    for (face_xmt, note) in vertex_loop_losses {
+        if let Some(face) = emitted_faces.get(&face_xmt) {
+            partial_face_losses.push((face.clone(), note));
+        }
     }
     attach_tolerant_edge_intersections_with_budget(
         ir,
@@ -1401,12 +1479,12 @@ pub(super) fn retain_unresolved_topology_carriers(
             format_args!("unknown-{surface_xmt}"),
         )?;
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(face.pos()),
             Some("UNRESOLVED_SURFACE_REFERENCE"),
         );
-        annotations.exactness(id.as_str(), Exactness::Unknown);
+        annotations.exactness(&id, Exactness::Unknown);
 
         ir.geometry.surfaces.push(Surface {
             id: id.clone(),
@@ -1434,12 +1512,12 @@ pub(super) fn retain_unresolved_topology_carriers(
             format_args!("unknown-{curve_xmt}"),
         )?;
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(edge.pos()),
             Some("UNRESOLVED_CURVE_REFERENCE"),
         );
-        annotations.exactness(id.as_str(), Exactness::Unknown);
+        annotations.exactness(&id, Exactness::Unknown);
 
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1457,13 +1535,13 @@ pub(super) fn retain_unresolved_topology_carriers(
 
 pub(super) fn annotate_node(
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     stream: &cadmpeg_ir::annotations::StreamHandle,
     node: &Node,
     tag: &str,
 ) {
     annotations.note(
-        id,
+        key,
         stream,
         cadmpeg_core::decode::u64_from_index(node.pos()),
         Some(tag),
@@ -1561,19 +1639,19 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         format_args!("closed-edge-{}", edge.xmt()),
     )?;
     annotations.note(
-        point.as_str(),
+        &point,
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_POINT"),
     );
-    annotations.exactness(point.as_str(), Exactness::Inferred);
+    annotations.exactness(&point, Exactness::Inferred);
     annotations.note(
-        vertex.as_str(),
+        &vertex,
         source_stream,
         cadmpeg_core::decode::u64_from_index(edge.pos()),
         Some("CLOSED_EDGE_VERTEX"),
     );
-    annotations.exactness(vertex.as_str(), Exactness::Inferred);
+    annotations.exactness(&vertex, Exactness::Inferred);
 
     ir.geometry
         .points
@@ -1634,20 +1712,10 @@ fn whole_sphere_pole_loops(
             scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), &label)?;
         let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), &label)?;
         let offset = cadmpeg_core::decode::u64_from_index(node.pos());
-        annotations.note(
-            point.as_str(),
-            source_stream,
-            offset,
-            Some("SPHERE_POLE_POINT"),
-        );
-        annotations.exactness(point.as_str(), Exactness::Inferred);
-        annotations.note(
-            vertex.as_str(),
-            source_stream,
-            offset,
-            Some("SPHERE_POLE_VERTEX"),
-        );
-        annotations.exactness(vertex.as_str(), Exactness::Inferred);
+        annotations.note(&point, source_stream, offset, Some("SPHERE_POLE_POINT"));
+        annotations.exactness(&point, Exactness::Inferred);
+        annotations.note(&vertex, source_stream, offset, Some("SPHERE_POLE_VERTEX"));
+        annotations.exactness(&vertex, Exactness::Inferred);
         ir.geometry
             .points
             .push(Point::new(point.clone(), position, None));
@@ -2078,6 +2146,7 @@ mod tests {
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2155,7 +2224,7 @@ mod tests {
         assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
-        let wire = serde_json::to_value(&unknown).unwrap();
+        let wire = json::to_value(&unknown).unwrap();
         assert_eq!(
             wire["retention"]["sha256"],
             cadmpeg_ir::hash::sha256_hex(&stream.inflated)
@@ -2189,8 +2258,8 @@ mod tests {
         let actual = source_meta(&scan, &dialects, Some(&parsed))
             .expect("source metadata reads the existing census");
         assert_eq!(
-            serde_json::to_value(actual).expect("source metadata"),
-            serde_json::to_value(expected).expect("source metadata")
+            json::to_value(actual).expect("source metadata"),
+            json::to_value(expected).expect("source metadata")
         );
     }
 

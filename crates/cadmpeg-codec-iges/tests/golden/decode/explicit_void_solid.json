@@ -250,10 +250,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE0",
-            "object_id": "D21",
-            "visible": true
+            "object_id": "D21"
           }
         },
         {
@@ -282,10 +279,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE1",
-            "object_id": "D23",
-            "visible": true
+            "object_id": "D23"
           }
         },
         {
@@ -314,10 +308,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE2",
-            "object_id": "D25",
-            "visible": true
+            "object_id": "D25"
           }
         },
         {
@@ -346,10 +337,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE3",
-            "object_id": "D27",
-            "visible": true
+            "object_id": "D27"
           }
         },
         {
@@ -378,10 +366,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE4",
-            "object_id": "D29",
-            "visible": true
+            "object_id": "D29"
           }
         },
         {
@@ -410,10 +395,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTE5",
-            "object_id": "D31",
-            "visible": true
+            "object_id": "D31"
           }
         },
         {
@@ -442,10 +424,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE0",
-            "object_id": "D75",
-            "visible": true
+            "object_id": "D75"
           }
         },
         {
@@ -474,10 +453,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE1",
-            "object_id": "D77",
-            "visible": true
+            "object_id": "D77"
           }
         },
         {
@@ -506,10 +482,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE2",
-            "object_id": "D79",
-            "visible": true
+            "object_id": "D79"
           }
         },
         {
@@ -538,10 +511,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE3",
-            "object_id": "D81",
-            "visible": true
+            "object_id": "D81"
           }
         },
         {
@@ -570,10 +540,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE4",
-            "object_id": "D83",
-            "visible": true
+            "object_id": "D83"
           }
         },
         {
@@ -602,10 +569,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDE5",
-            "object_id": "D85",
-            "visible": true
+            "object_id": "D85"
           }
         }
       ],
@@ -1095,10 +1059,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTS0",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -1128,10 +1089,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTS1",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -1161,10 +1119,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTS2",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -1194,10 +1149,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTS3",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         },
         {
@@ -1227,10 +1179,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDS0",
-            "object_id": "D67",
-            "visible": true
+            "object_id": "D67"
           }
         },
         {
@@ -1260,10 +1209,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDS1",
-            "object_id": "D69",
-            "visible": true
+            "object_id": "D69"
           }
         },
         {
@@ -1293,10 +1239,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDS2",
-            "object_id": "D71",
-            "visible": true
+            "object_id": "D71"
           }
         },
         {
@@ -1326,10 +1269,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "VOIDS3",
-            "object_id": "D73",
-            "visible": true
+            "object_id": "D73"
           }
         }
       ],
@@ -1373,26 +1313,521 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D21",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D21"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE0"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D23",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D23"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D25",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D25"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D27",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D27"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D29",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D29"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D31",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D31"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTE5"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D75",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D75"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE0"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D77",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D77"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D79",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D79"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D81",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D81"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D83",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D83"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D85",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D85"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDE5"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTS0"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D15",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D15"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTS1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D17",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D17"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTS2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D19",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D19"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTS3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D67",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D67"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDS0"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D69",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D69"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDS1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D71",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D71"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDS2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D73",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D73"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "VOIDS3"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D109",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D53:D45",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D53:D47",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D53:D49",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D53:D51",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D107:D99",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D107:D101",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D107:D103",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D109:D107:D105",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D21",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D23",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D25",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D27",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D29",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D31",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D75",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D77",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D79",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D81",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D83",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D85",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D13"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D15"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D17"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D19"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D67"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D69"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D71"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D73"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
@@ -1403,24 +1838,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -9341,8 +9767,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -9379,7 +9803,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -9914,6 +10337,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "67ff765c6bba69a43531ad1187e4e5a33a2e079a2580ae8466344adb51bf6227",
     "file_digests": {},
     "retained_records": {

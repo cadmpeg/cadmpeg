@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::ContentScope;
 
-use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use crate::appearance::{Appearance, AppearanceBinding, AppearancePrecedence, AppearanceTarget};
 use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use crate::examples::unit_cube;
 use crate::features::ParameterId;
@@ -49,6 +49,7 @@ fn binding(target: AppearanceTarget) -> AppearanceBinding {
         id: BINDING.try_into().unwrap(),
         target: target.into(),
         appearance: appearance().id,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -225,6 +226,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
     ir.model.appearance_bindings[0] = binding(AppearanceTarget::Occurrence(
         "test:model:occurrence#1".try_into().unwrap(),
     ));
+    ir.model.appearance_bindings[0].precedence = Some(AppearancePrecedence::Outer);
     assert_eq!(
         design_findings(&ir, BINDING),
         ["references missing occurrence `test:model:occurrence#1`"]
@@ -267,7 +269,7 @@ fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
 #[test]
 fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     let mut ir = unit_cube().unwrap();
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let mut asset = appearance();
     asset.native_ref = Some("native:missing#1".into());
     let mut assigned = binding(AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()));
@@ -294,14 +296,17 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
     let scoped = |target, values| {
         let mut ir = CadIr::empty();
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(attribute(target, values));
-        ir.check_scope().map_err(|violation| violation.to_string())
+        ir.scope_violations()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
-    let violation = Err(
+    let violation = vec![
         "the document's scope excludes design but model arena `attributes` holds a reference into it"
             .to_owned(),
-    );
+    ];
     for target in [
         AttributeTarget::Feature(
             crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
@@ -318,5 +323,162 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
         ),
         violation
     );
-    assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
+    assert!(scoped(AttributeTarget::Document, vec![None]).is_empty());
+}
+
+/// The unit cube with an assembly that places a part, and the appearance.
+fn assembly() -> CadIr {
+    use crate::products::{ProductDefinition, Storage};
+    let mut ir = unit_cube().unwrap();
+    ir.model.appearances.push(appearance());
+    let mut assembly = ProductDefinition::new(
+        "test:model:product#assembly".try_into().unwrap(),
+        Storage::Embedded,
+    );
+    assembly
+        .occurrences
+        .push("test:model:occurrence#part".try_into().unwrap());
+    let part = ProductDefinition::new(
+        "test:model:product#part".try_into().unwrap(),
+        Storage::Embedded,
+    );
+    ir.model.product_definitions.extend([assembly, part]);
+    ir
+}
+
+/// The design findings on a binding of `target`, at `path`, that states
+/// `precedence`, that concern the precedence or the definition.
+fn precedence_findings(
+    target: AppearanceTarget,
+    path: bool,
+    precedence: Option<AppearancePrecedence>,
+) -> Vec<String> {
+    let mut ir = assembly();
+    let mut stated = binding(target);
+    if path {
+        stated.target.path = Some(crate::design::selection::OccurrencePath(vec![
+            crate::design::selection::PathStep {
+                occurrence: crate::design::selection::StepRef::Occurrence(
+                    "test:model:occurrence#part".try_into().unwrap(),
+                ),
+                configuration: None,
+            },
+        ]));
+    }
+    stated.precedence = precedence;
+    ir.model.appearance_bindings.push(stated);
+    design_findings(&ir, BINDING)
+        .into_iter()
+        .filter(|message| message.contains("precedence") || message.contains("definition"))
+        .collect()
+}
+
+#[test]
+fn a_binding_states_precedence_where_a_placed_definition_can_state_a_nearer_target() {
+    let body = || AppearanceTarget::Body(unit_cube().unwrap().geometry.bodies[0].id.clone());
+    let assembly =
+        || AppearanceTarget::Definition("test:model:product#assembly".try_into().unwrap());
+    let part = || AppearanceTarget::Definition("test:model:product#part".try_into().unwrap());
+    let none: Vec<String> = Vec::new();
+    let unstated =
+        ["states no precedence on a target a placed definition can state a nearer target under"];
+    let stated =
+        ["states a precedence on a target no placed definition states a nearer target under"];
+
+    assert_eq!(precedence_findings(body(), false, None), none);
+    assert_eq!(
+        precedence_findings(body(), false, Some(AppearancePrecedence::Outer)),
+        stated
+    );
+    assert_eq!(precedence_findings(body(), true, None), unstated);
+    assert_eq!(
+        precedence_findings(body(), true, Some(AppearancePrecedence::Nearest)),
+        none
+    );
+    assert_eq!(precedence_findings(assembly(), false, None), unstated);
+    assert_eq!(
+        precedence_findings(assembly(), false, Some(AppearancePrecedence::Outer)),
+        none
+    );
+    assert_eq!(precedence_findings(part(), false, None), none);
+    assert_eq!(
+        precedence_findings(part(), true, None),
+        ["a definition target states a path"]
+    );
+}
+
+#[test]
+fn a_definition_target_names_a_product_definition() {
+    let mut ir = assembly();
+    ir.model
+        .appearance_bindings
+        .push(binding(AppearanceTarget::Definition(
+            "test:model:product#missing".try_into().unwrap(),
+        )));
+    assert_eq!(
+        design_findings(&ir, BINDING),
+        ["references missing product definition `test:model:product#missing`"]
+    );
+}
+
+#[test]
+fn a_record_target_names_no_arena_another_arm_names() {
+    let mut ir = assembly();
+    let body = ir.geometry.bodies[0].id.to_string();
+    ir.model
+        .appearance_bindings
+        .push(binding(AppearanceTarget::Record {
+            arena: cadmpeg_core::nonblank_const!("bodies"),
+            id: body,
+        }));
+    assert_eq!(
+        design_findings(&ir, BINDING),
+        ["record target names `bodies`, whose records another target arm names"]
+    );
+}
+
+#[test]
+fn two_bindings_of_one_target_with_different_appearances_are_a_warning() {
+    let mut ir = assembly();
+    let mut other = appearance();
+    other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+    ir.model.appearances.push(other.clone());
+    let target = AppearanceTarget::Face(ir.geometry.faces[0].id.clone());
+    let first = binding(target.clone());
+    let mut second = binding(target);
+    second.id = "test:model:appearance-binding#2".try_into().unwrap();
+    second.appearance = other.id;
+    ir.model.appearance_bindings.extend([first, second]);
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    let warned: Vec<_> = findings
+        .iter()
+        .filter(|finding| {
+            finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("same target, path, and state")
+        })
+        .map(|finding| finding.entity.as_deref())
+        .collect();
+    assert_eq!(warned, [Some("test:model:appearance-binding#2")]);
+}
+
+#[test]
+fn two_unresolved_bindings_with_different_appearances_name_no_one_target() {
+    let mut ir = assembly();
+    let mut other = appearance();
+    other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+    ir.model.appearances.push(other.clone());
+    let mut first = binding(AppearanceTarget::Unresolved);
+    first.source_entity_id = Some("#10".into());
+    let mut second = binding(AppearanceTarget::Unresolved);
+    second.id = "test:model:appearance-binding#2".try_into().unwrap();
+    second.source_entity_id = Some("#20".into());
+    second.appearance = other.id;
+    ir.model.appearance_bindings.extend([first, second]);
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.message.contains("same target, path, and state")),
+        "{findings:?}"
+    );
 }

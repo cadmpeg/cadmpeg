@@ -6,7 +6,6 @@ use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
@@ -73,6 +72,7 @@ fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
 fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
     let target = |entity_type, use_flag| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 0,
@@ -436,7 +436,7 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
         },
     ]);
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)
@@ -1204,7 +1204,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(basic["property_kind"], "basic_dimension");
     assert_eq!(
         basic["corners"],
-        serde_json::json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
+        cadmpeg_core::json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
     );
     assert!(
         dimensions.report().losses.is_empty(),

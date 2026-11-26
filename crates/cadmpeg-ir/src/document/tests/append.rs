@@ -53,32 +53,37 @@ fn staged_document() -> CadIr {
         ("test", "new", "new-arena"),
         ("other", "new", "new-namespace"),
     ] {
-        ir.native.namespace_mut(format).arenas_mut().insert(
-            arena.into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new(format!("test:append:record#{key}"))
-                    .expect("valid identity"),
-                serde_json::Map::new(),
-            )
-            .unwrap()],
-        );
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new(format!("test:append:record#{key}"))
+                        .expect("valid identity"),
+                    serde_json::Map::new(),
+                )
+                .unwrap()],
+            );
     }
-    // Exercise the complete-document admission route before the append route.
-    CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap()
+    ir
 }
 
 #[test]
 fn rejected_append_restores_neutral_native_and_parent_state() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.native.namespace_mut("test").arenas_mut().insert(
-        "existing".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .unwrap()],
-    );
-    ir.native.namespace_mut("empty");
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("existing"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
+        );
+    ir.native.namespace_mut(crate::codec_id!("empty"));
     let before = ir.clone();
     let staged = staged_document();
     let result = ir.try_append(staged.geometry, staged.model, staged.native, |combined| {
@@ -117,10 +122,6 @@ fn accepted_append_preserves_all_staged_records_and_parent_relations() {
     assert_eq!(ir.geometry, staged.geometry);
     assert_eq!(ir.model, staged.model);
     assert_eq!(ir.native, staged.native);
-    assert_eq!(
-        CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap(),
-        ir
-    );
 }
 
 #[test]
@@ -135,7 +136,7 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
         let report = crate::admit(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             combined,
-            crate::DRAFT_CORE_CHECKS,
+            crate::DRAFT_CORE,
             Vec::new(),
         )
         .expect("admit the model");

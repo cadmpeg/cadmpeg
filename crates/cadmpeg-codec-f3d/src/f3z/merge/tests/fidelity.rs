@@ -17,8 +17,18 @@ fn archive_digest() -> Sha256Digest {
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
-    annotations.note(ID, &handle, 7, Some("retained"));
-    annotations.derived(ID, "geometry").unwrap();
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+        &handle,
+        7,
+        Some("retained"),
+    );
+    annotations
+        .derived(
+            cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+            "geometry",
+        )
+        .unwrap();
     let mut fidelity = SourceFidelity::with_annotations(annotations.build(), member_digest());
     fidelity
         .insert_retained_record(
@@ -41,13 +51,13 @@ fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
     let input = source("member");
     let original = input.retained_record(ID).unwrap().clone();
     let output = rescope_fidelity(input.clone(), "part/occurrence-0", archive_digest()).unwrap();
-    let id = "f3d:xref/part/occurrence-0/native:record#one";
+    let id = "f3d:part/occurrence-0@native:record#one";
     let retained = output.retained_record(id).unwrap();
     assert_eq!(retained.data(), original.data());
     assert_eq!(retained.offset(), 7);
     assert_eq!(retained.end_offset(), 10);
     assert_eq!(retained.sha256(), original.sha256());
-    assert_eq!(retained.stream(), "f3d:xref/part%2Foccurrence-0/member");
+    assert_eq!(retained.stream(), "f3d:part/occurrence-0@member");
     let provenance = &output.annotations.provenance[id];
     assert_eq!(provenance.stream(), retained.stream());
     assert_eq!(provenance.offset, 7);
@@ -72,16 +82,21 @@ fn occurrence_and_stream_boundaries_cannot_alias() {
             .stream()
             .to_owned()
     };
-    assert_eq!(owner(&first), "f3d:xref/a/b/c");
-    assert_eq!(owner(&second), "f3d:xref/a%2Fb/c");
-    assert_eq!(owner(&escaped), "f3d:xref/a%252Fb/c");
+    assert_eq!(owner(&first), "f3d:a@b/c");
+    assert_eq!(owner(&second), "f3d:a/b@c");
+    assert_eq!(owner(&escaped), "f3d:a%2Fb@c");
 }
 
 #[test]
 fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7, None);
+    builder.note(
+        cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+        &stream,
+        7,
+        None,
+    );
     let output = rescope_fidelity(
         SourceFidelity::with_annotations(builder.build(), member_digest()),
         "part",
@@ -89,7 +104,7 @@ fn source_rescoping_preserves_absent_provenance_tag() {
     )
     .unwrap();
     assert_eq!(
-        output.annotations.provenance["f3d:xref/part/native:record#one"].tag,
+        output.annotations.provenance["f3d:part@native:record#one"].tag,
         None
     );
 }

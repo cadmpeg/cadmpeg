@@ -90,7 +90,7 @@ fn owner_work_capped_loss(skipped: usize, work_limit: usize) -> LossNote {
 }
 
 fn needs_surface_owner(mesh: &cadmpeg_ir::tessellation::Tessellation) -> bool {
-    mesh.body.is_none() && mesh.faces.is_empty() && mesh.vertex_count() != 0
+    matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) && mesh.vertex_count() != 0
 }
 
 #[cfg(test)]
@@ -513,10 +513,7 @@ pub(crate) struct ClassInterval {
 
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let mut declarations = Vec::new();
-    for (offset, marker) in payload.windows(CLASS_MARKER.len()).enumerate() {
-        if marker != CLASS_MARKER {
-            continue;
-        }
+    for offset in memchr::memmem::find_iter(payload, CLASS_MARKER) {
         let Some(length) = View::u16_le_at(payload, offset + 4).map(usize::from) else {
             continue;
         };
@@ -538,6 +535,7 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
         let name = name_text.to_owned();
         declarations.push((offset, name));
     }
+    let scene_finder = memchr::memmem::Finder::new(SCENE_SOURCE_MARKER);
     let mut declarations = declarations.into_iter().peekable();
     let mut intervals = Vec::new();
     while let Some((offset, name)) = declarations.next() {
@@ -550,12 +548,15 @@ pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
             continue;
         };
         let mut source_ids = Vec::new();
-        for window in records.windows(scene_src::LEN) {
-            let Some(source) = window
-                .starts_with(SCENE_SOURCE_MARKER)
-                .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
-                .flatten()
-                .filter(|source| *source != 0)
+        let mut cursor = 0;
+        while let Some(rel) = scene_finder.find(&records[cursor..]) {
+            let at = cursor + rel;
+            cursor = at + 1;
+            let Some(window) = records.get(at..at + scene_src::LEN) else {
+                break;
+            };
+            let Some(source) =
+                View::u32_le_at(window, scene_src::SOURCE_ID).filter(|source| *source != 0)
             else {
                 continue;
             };
@@ -858,11 +859,7 @@ pub(crate) fn section_display_faces(
     #[cfg(test)]
     DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let mut markers = payload
-        .windows(FACE_TESSELLATION_CLASS.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .peekable();
+    let mut markers = memchr::memmem::find_iter(payload, FACE_TESSELLATION_CLASS).peekable();
     let mut faces = Vec::new();
     while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
@@ -1284,7 +1281,7 @@ pub(crate) fn assign_unique_surface_owners(
     ir: &mut CadIr,
     stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
     assign_unique_surface_owners_within(ctx, ir, stored, losses, work_limit)
 }
@@ -1295,7 +1292,7 @@ fn assign_unique_surface_owners_within(
     stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     for face in &ir.geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
@@ -1503,9 +1500,11 @@ fn assign_unique_surface_owners_within(
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
+        let assigned_id = mesh.id.clone();
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![face.clone()],
+        };
         if let Some(deflection) = chordal_deflection {
             mesh.set_chordal_deflection(Some(deflection))
                 .map_err(|error| {
@@ -1699,7 +1698,7 @@ pub(crate) fn assign_persistent_owners(
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
     stored: &HashSet<BodyId>,
-) -> Vec<String> {
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
     let face_bodies = face_bodies(&ir.geometry);
     let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
     for (target, identity) in face_identities
@@ -1736,7 +1735,7 @@ pub(crate) fn assign_persistent_owners(
 
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
@@ -1748,9 +1747,11 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(*face) else {
             continue;
         };
-        let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push((*face).clone());
-        mesh.body = Some(body.clone());
+        let assigned_id = mesh.id.clone();
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(assigned_id);
     }
     assigned
@@ -1766,7 +1767,7 @@ pub(crate) fn assign_face_key_owners(
     face_keys: &[(FaceId, u32)],
     bindings: &[FaceKeyBinding],
     stored: &HashSet<BodyId>,
-) -> Vec<String> {
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
     let face_bodies = face_bodies(&ir.geometry);
     let faces_by_key = unique_by_key(
         face_keys
@@ -1790,15 +1791,17 @@ pub(crate) fn assign_face_key_owners(
     }
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some((face, body)) = owners.get(mesh.id.as_str()) else {
             continue;
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
-        assigned.push(mesh.id.as_str().to_owned());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: (*body).clone(),
+            faces: vec![(*face).clone()],
+        };
+        assigned.push(mesh.id.clone());
     }
     assigned
 }
@@ -3276,13 +3279,17 @@ fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 /// [`polygon_boundary_within`] over the edges of `polygon` that start at
-/// `edges`.
+/// `edges`. No distance is within a negative or NaN tolerance, so no edge is
+/// measured for one.
 fn edges_within(
     polygon: &[Point2],
     edges: impl IntoIterator<Item = usize>,
     point: Point2,
     tolerance: f64,
 ) -> bool {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return false;
+    }
     edges.into_iter().any(|index| {
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];

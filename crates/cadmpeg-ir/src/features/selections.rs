@@ -216,7 +216,7 @@ pub enum FaceSelection {
 /// and slice methods. The mint refuses an empty list, `push` only grows, and
 /// `DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no
 /// reader has to ask whether a member is there.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 #[cfg_attr(feature = "schema", schemars(extend("minItems" = 1)))]
@@ -1020,6 +1020,12 @@ pub enum BodySelection {
         bodies: SelectionMembers<GeneratedBodyRef>,
         /// Format-native persistent selection reference.
         native: SelectionReference,
+    },
+    /// Bodies in intermediate regenerated feature results from independently
+    /// retained native selection members.
+    GeneratedSet {
+        /// Checked rows in native member order.
+        members: BodyMembers<GeneratedBodyRef>,
     },
     /// Persistent bodies in the consuming feature's regeneration input state.
     Local {

@@ -9,8 +9,8 @@
 //!
 //! Each type has the wire form of §2.5 of the CADIR v11 specification. Read a
 //! document that holds them through [`crate::design::read::from_str`], which
-//! enforces the nesting ceilings of
-//! [`cadmpeg_core::decode::ResourceLimits`].
+//! reads a document as deep as the bounds of §2.5 admit and walks each chain
+//! of state bases under [`cadmpeg_core::decode::ResourceLimits`].
 
 pub mod cycle;
 pub mod feature;
@@ -55,7 +55,10 @@ pub type ProcessDimension<T> = Dimension<T, ParamRef>;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>")
+    bound(
+        serialize = "T: Serialize",
+        deserialize = "T: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct Choice<T> {
     /// The variant the parameters map to.

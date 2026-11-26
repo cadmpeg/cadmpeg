@@ -625,9 +625,9 @@ accessors resolve inherited attributes against that representation.
 
 A complex instance whose partial records are not in ascending entity-name order
 does not conform to Part 21. CADIR salvage retains the observed partial order,
-resolves attributes by partial name, and reports `NoncanonicalSourceSyntax`
-with the containing record's byte offset. A full strict decode rejects the
-record.
+resolves attributes by partial name, and reports `step/parse.noncanonical-syntax`
+with the containing record's byte offset. That code has strict floor Warning
+(CADIR §3.2), so a full strict decode rejects the record.
 
 Part 21 simple-entity mapping supplies one parameter for each explicit
 attribute, in declaration order. Internal complex mapping supplies inherited
@@ -856,7 +856,7 @@ parameter is neither a string nor `$`. It inserts an empty string at parameter
 position zero. It does not shift complex records, non-carrier entities, or
 records whose first parameter is already a string or `$`. The reader reports
 this source repair as
-`NoncanonicalSourceSyntax` with the containing record's byte offset; salvage
+`step/parse.noncanonical-syntax` with the containing record's byte offset; salvage
 decode retains the recovered record and a full strict decode rejects the loss.
 
 REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
@@ -1127,21 +1127,43 @@ accessors.
 
 A DATA statement ends at a semicolon outside a quoted literal, resource token,
 or comment. DATA instance names are nonzero and unique across all DATA
-sections. A reference denotes a DATA instance or a REFERENCE binding. A
-duplicate name does not determine a unique reference target.
+sections. A reference denotes a DATA instance or a REFERENCE binding.
 An open literal or comment provides no continuation boundary.
 
 CADIR decision: the first statement of a repeated instance name, in file
 order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
-and not stated: its exact source is retained, and it is charged one
-`step/parse.record-omitted` loss that names the instance name and gives the
-copy's byte span. Where the first statement is unreadable, it is given up as
-its own part with the records that need it (CADIR §3.3), and no later
-statement of the name stands in its place: each later readable statement is
-charged as above. A later unreadable statement is given up as its own part,
-and the first statement stands. The repetition gives up neither the file nor
-the DATA section.
+and not stated. It is charged one `step/parse.record-omitted` loss that names
+the instance name and gives the copy's byte span. A copy that states the same
+entity names and parameters as a first statement that stands drops nothing,
+and its exact source is retained. Each other copy is given up as a
+`data_record` part over its exact source (CADIR §3.3).
+Where the first statement is unreadable, it is given up as its own part, and
+the records that need it drop with it. No later statement of the name stands
+in its place: each later readable statement is given up as its own part. A
+later unreadable statement is given up as its own part, and the first
+statement stands. The repetition gives up neither the file nor the DATA
+section.
+
+CADIR decision: a DATA statement with a reference that names no instance and
+no REFERENCE binding is given up as a `data_record` part over its exact
+source. An ANCHOR or DATA item whose expansion exceeds its bound is given up
+as an `anchor_record` or `data_record` part. An item that exceeds its bound
+only because it names an omitted anchor drops with the part of that anchor.
+An anchor or record that needs a given-up statement drops with that part, and
+its exact source is retained. A record that names a given-up statement only as an entry
+of an unordered aggregate loses that entry. A DATA instance that the reader
+cannot decode is given up as a `data_record` part over its statement. The
+part keeps the digest only where the document keeps the exact source of the
+instance as an opaque record. A record that the reader drops only because it
+needs a given-up or dropped instance drops with that instance.
+When the reader gives up a topology root, each shell of the root, each shell
+that the shell orients, and each face of the base shell drop with the root.
+The give-up names each shell by its instance (`#N`) and each face by its face
+id (`step:data:face#N`). A carrier that keeps the face instance as its source
+object stays in the document. When the reader gives up an
+`EDGE_BASED_WIREFRAME_MODEL` or a `SHELL_BASED_WIREFRAME_MODEL` because none
+of its members commits, each member drops with the model.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
@@ -1289,9 +1311,17 @@ CADIR export decision: a zero half-angle cone is the cylinder over its
 cross-section, which `WR2` keeps out of `CONICAL_SURFACE`. The writer emits a
 circular section as `CYLINDRICAL_SURFACE` and an elliptical section as a
 `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` on the cone's placement, swept by
-a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. A zero
-half-angle cone whose section has a zero semi-axis, and a cone whose half-angle
-magnitude is at least `pi/2`, are refused before any byte is written.
+a unit `VECTOR` along the axis. Both keep the cone's `(u, v)` chart. The
+section radius `radius + v tan(half_angle)` repeats with period `pi` in the
+half-angle, so a half-angle `θ` states the same surface as `θ - k pi` in
+`[-pi/2, pi/2]`, in the same chart. A half-angle in `(pi/2, pi)` is written as
+the `CONICAL_SURFACE` with semi-angle `pi - θ` over the reversed axis, at
+`(-u, -v)`; the faces keep their edges, and their pcurves are written in that
+chart. A reduced half-angle of `0` is the zero half-angle cone above. A zero
+half-angle cone whose section has a zero semi-axis, and a cone whose reduced
+half-angle magnitude is `pi/2`, have no STEP surface: each face on the cone is
+left out with `geometry.unknown-surface-face-omitted`, the cone with
+`geometry.carrier-not-written`, and the rest of the file is written.
 
 A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
@@ -1448,9 +1478,16 @@ carrier itself when the placed carrier keeps the parameterization of the
 replica: an analytic curve or surface under a proper rigid motion, and a NURBS
 carrier, a polyline or a point under any placement the writer admits. In
 parameter space, a line or NURBS pcurve is placed under any affine map and a
-conic pcurve under a proper rigid motion. Every other placement is written as
-a `CURVE_REPLICA` or `SURFACE_REPLICA` over the written basis. The half-turn
+conic pcurve under a proper rigid motion. Every other similarity is written
+as a `CURVE_REPLICA` or `SURFACE_REPLICA` over the written basis. The half-turn
 of a reversed cone chart is a proper rigid motion and follows the same rule.
+`CARTESIAN_TRANSFORMATION_OPERATOR_3D` states a similarity only. A procedural
+replica under another transform is written as its solved carrier, charged
+`geometry.procedural-reduced-to-carrier`, or as a sampled B-spline, charged
+`geometry.procedural-sampled-to-bspline`. A solved surface under another
+placement, and a replica surface with neither form, have no STEP record: each
+face on the surface is left out with `geometry.unknown-surface-face-omitted`,
+and the surface with `geometry.carrier-not-written`.
 
 ISO 10303-42 defines each surface as `σ(u,v)` with independent parameters. For
 `SURFACE_OF_LINEAR_EXTRUSION`, if the directrix is `λ(u)` and the extrusion axis
@@ -1591,7 +1628,9 @@ one distinct root exists, source edge and vertex identities remain shared
 within that root. When multiple distinct roots exist, every root scopes its
 shell, edge, and vertex identities by root instance; a root with multiple shell
 owners also scopes carriers by shell. Solid roots are `Solid` bodies and
-surface roots are `Sheet` bodies. This preserves independent roots without
+surface roots are `Sheet` bodies. A nonempty `REPRESENTATION_ITEM.name` of a
+root is the name of its body; the body of alias roots takes the first nonempty
+name in instance order. This preserves independent roots without
 claiming one global CADIR identity.
 
 Sheet and wire representations commit each independently resolvable shell or
@@ -1795,7 +1834,12 @@ representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
-shell of the one sheet region. Curve-only and point-only sets remain
+shell of the one sheet region. A member that is a plane, a cylinder, or a cone
+states no boundary on a surface whose domain is unbounded, so its face is
+partial with no loop, and the loss `topology.face-boundary-unstated` names it.
+A `CURVE_BOUNDED_SURFACE` member with a boundary that does not resolve to a
+closed loop is partial with no loop on any support, and the same loss names
+that boundary. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the

@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .losses
@@ -481,6 +481,8 @@ pub(super) fn push_foreign_feature(
             vertices: DistinctMembers::default(),
             edge_geometry: Vec::new(),
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             native_ref: None,
         });
     let ordinal = u64::try_from(ir.model.features.len()).unwrap();
@@ -1172,6 +1174,7 @@ fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_bod
         id: "other:model:appearance-binding#blue".try_into().unwrap(),
         target: AppearanceTarget::Face(face).into(),
         appearance: appearance.id.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

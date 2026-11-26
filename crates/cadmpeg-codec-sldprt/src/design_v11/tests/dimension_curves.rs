@@ -5,6 +5,7 @@
 //! out and its dimension names that curve; one no relation names is left
 //! out; another is construction unless a cylinder of the solid lies on it.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
@@ -13,7 +14,7 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::assert_no_design_findings;
-use super::sketch_and_extrude;
+use super::sketch_and_extrude_from;
 use super::state_zero::{entity, project, set_profiles};
 use crate::loss::SldprtLossCode;
 
@@ -25,9 +26,26 @@ const NATIVE_DISTANCE: &str = "sldprt:model:sketch-constraint#test:2";
 
 /// The fixture's rectangle and circle as the stored profile, and a circle
 /// `built` from a dimension record at `center` with `radius`, which the
-/// fixture's diameter dimension names.
+/// fixture's diameter dimension names and measures.
 fn with_dimension_circle(center: [f64; 2], radius: f64) -> CadIr {
-    let (mut ir, _) = sketch_and_extrude();
+    let keywords = format!(
+        r#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;{}</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        2.0 * radius
+    );
+    let (mut ir, _) = sketch_and_extrude_from(keywords.as_bytes());
     push_built(&mut ir, "built", 2, center, radius);
     let diameter = ir
         .model
@@ -35,9 +53,9 @@ fn with_dimension_circle(center: [f64; 2], radius: f64) -> CadIr {
         .iter_mut()
         .find(|constraint| constraint.id.as_str() == DIAMETER)
         .unwrap();
-    let mut value = serde_json::to_value(&*diameter).unwrap();
-    value["definition"]["entity"] = serde_json::json!(entity("built").as_str());
-    *diameter = serde_json::from_value(value).unwrap();
+    let mut value = json::to_value(&*diameter).unwrap();
+    value["definition"]["entity"] = cadmpeg_core::json!(entity("built").as_str());
+    *diameter = json::from_value(value).unwrap();
     set_profiles(
         &mut ir,
         &[
@@ -53,7 +71,7 @@ fn with_dimension_circle(center: [f64; 2], radius: f64) -> CadIr {
 fn push_built(ir: &mut CadIr, key: &str, relation: u32, center: [f64; 2], radius: f64) {
     push(
         ir,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": entity(key).as_str(), "construction": false,
             "geometry_ref": format!("sldprt:feature-input:relation-instance#test:{relation}"),
             "endpoint_refs": [],
@@ -64,10 +82,10 @@ fn push_built(ir: &mut CadIr, key: &str, relation: u32, center: [f64; 2], radius
 
 /// Adds the entity `value` to the fixture's sketch.
 fn push(ir: &mut CadIr, mut value: serde_json::Value) {
-    value["sketch"] = serde_json::json!(ir.model.sketches[0].id.as_str());
+    value["sketch"] = cadmpeg_core::json!(ir.model.sketches[0].id.as_str());
     ir.model
         .sketch_entities
-        .push(serde_json::from_value(value).unwrap());
+        .push(json::from_value(value).unwrap());
 }
 
 /// Makes the fixture's native relation `constraint` name `key`.
@@ -78,9 +96,9 @@ fn name_by_native(ir: &mut CadIr, constraint: &str, key: &str) {
         .iter_mut()
         .find(|candidate| candidate.id.as_str() == constraint)
         .unwrap();
-    let mut value = serde_json::to_value(&*native).unwrap();
-    value["definition"]["entities"] = serde_json::json!([entity(key).as_str()]);
-    *native = serde_json::from_value(value).unwrap();
+    let mut value = json::to_value(&*native).unwrap();
+    value["definition"]["entities"] = cadmpeg_core::json!([entity(key).as_str()]);
+    *native = json::from_value(value).unwrap();
 }
 
 fn construction(ir: &CadIr, key: &str) -> Option<bool> {
@@ -105,7 +123,7 @@ fn relation(ir: &CadIr, id: &str) -> serde_json::Value {
         .sketch_constraints
         .iter()
         .find(|constraint| constraint.id.as_str() == id)
-        .map(|constraint| serde_json::to_value(&constraint.relation).unwrap())
+        .map(|constraint| json::to_value(&constraint.relation).unwrap())
         .unwrap()
 }
 
@@ -216,7 +234,7 @@ fn a_dimension_circle_centered_on_a_stored_circle_is_left_out_for_it() {
 fn push_arc(ir: &mut CadIr) {
     push(
         ir,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": entity("arc").as_str(), "construction": true, "endpoint_refs": [],
             "geometry": {"kind": "arc", "center": {"u": 10.0, "v": 10.0}, "radius": 3.0,
                 "start_angle": 0.0, "end_angle": std::f64::consts::FRAC_PI_2}}),
@@ -260,7 +278,7 @@ fn a_dimension_circle_on_two_carriers_stays_construction() {
     let mut ir = with_dimension_circle([30.0, 15.0], 5.0);
     push(
         &mut ir,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": entity("ring").as_str(), "construction": true, "endpoint_refs": [],
             "geometry": {"kind": "circle", "center": {"u": 35.0, "v": 15.0}, "radius": 5.0}}),
     );
@@ -473,7 +491,7 @@ fn a_dimension_circle_repeating_two_arcs_names_the_first() {
     push_arc(&mut ir);
     push(
         &mut ir,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": entity("arc2").as_str(), "construction": true, "endpoint_refs": [],
             "geometry": {"kind": "arc", "center": {"u": 10.0, "v": 10.0}, "radius": 3.0,
                 "start_angle": std::f64::consts::PI,
@@ -523,7 +541,7 @@ fn a_construction_dimension_circle_is_not_reported() {
 fn a_dimension_circle_in_an_unplaced_sketch_is_construction() {
     let mut ir = with_dimension_circle([10.0, 10.0], 3.0);
     ir.model.sketches[0].placement =
-        serde_json::from_value(serde_json::json!({"kind": "unresolved"})).unwrap();
+        json::from_value(cadmpeg_core::json!({"kind": "unresolved"})).unwrap();
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "built"), Some(true));
     assert!(note(&typed).contains(&entry(
@@ -543,10 +561,10 @@ fn a_dimension_arc_stays_as_decoded() {
         .iter_mut()
         .find(|candidate| candidate.id() == &entity("built"))
         .unwrap();
-    let mut value = serde_json::to_value(&*built).unwrap();
-    value["geometry"] = serde_json::json!({"kind": "arc", "center": {"u": 10.0, "v": 10.0},
+    let mut value = json::to_value(&*built).unwrap();
+    value["geometry"] = cadmpeg_core::json!({"kind": "arc", "center": {"u": 10.0, "v": 10.0},
         "radius": 3.0, "start_angle": 0.0, "end_angle": std::f64::consts::PI});
-    *built = serde_json::from_value(value).unwrap();
+    *built = json::from_value(value).unwrap();
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "built"), None);
     assert!(
@@ -611,7 +629,7 @@ fn a_construction_dimension_circle_closes_no_state_zero_loop() {
     let mut ir = with_dimension_circle([10.0, 25.0], 3.0);
     push(
         &mut ir,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": entity("chord").as_str(), "construction": false, "endpoint_refs": [],
             "geometry": {"kind": "line", "start": {"u": 0.0, "v": 25.0},
                 "end": {"u": 50.0, "v": 25.0}}}),

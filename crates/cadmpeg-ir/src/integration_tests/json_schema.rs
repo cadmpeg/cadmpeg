@@ -1,54 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The committed JSON Schema files are the schemas that the `JsonSchema`
-//! derives generate. `UPDATE_GOLDEN=1` rewrites them from the derives.
+//! Checks over the committed JSON Schema files. `tests/committed_schema.rs`
+//! compares them with the derived schemas.
 
-use std::path::Path;
+use cadmpeg_core::serde_erase::json;
+use std::collections::BTreeSet;
 
-use schemars::transform::{RecursiveTransform, Transform};
-use schemars::Schema;
 use serde_json::{Map, Value};
 
-#[test]
-fn committed_json_schemas_equal_the_derived_schemas() {
-    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
-    for (file, committed, derived) in [
-        (
-            "cadir.schema.json",
-            crate::CADIR_JSON_SCHEMA,
-            crate::cadir_json_schema(),
-        ),
-        (
-            "decode-sidecar.schema.json",
-            crate::DECODE_SIDECAR_JSON_SCHEMA,
-            crate::decode_sidecar_json_schema(),
-        ),
-    ] {
-        let derived = serde_json::to_string_pretty(&derived).unwrap() + "\n";
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("schema")
-            .join(file);
-        if update {
-            std::fs::write(&path, &derived).unwrap();
-            continue;
-        }
-        let line = committed
-            .lines()
-            .zip(derived.lines())
-            .position(|(committed, derived)| committed != derived)
-            .unwrap_or_else(|| committed.lines().count().min(derived.lines().count()))
-            + 1;
-        assert!(
-            committed == derived,
-            "{} differs from the derived schema at line {line}. Run \
-             `UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib -- \
-             committed_json_schemas` and commit the file.",
-            path.display()
-        );
-    }
-}
-
 /// Whether `node` can admit `null`: false only where a keyword of the node,
-/// or of the definition it references, refuses it.
+/// or of the definition it references, refuses it. `not` refuses `null`
+/// where its schema admits it, so `{"not": {}}`, the schema of an enum with
+/// no variant, admits no value.
 fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
     let Value::Object(node) = node else {
         return node.as_bool().unwrap_or(false);
@@ -85,60 +47,236 @@ fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
         })
         || refuses("anyOf", &|branches| arms(branches, false))
         || refuses("oneOf", &|branches| arms(branches, false))
-        || refuses("allOf", &|branches| arms(branches, true)))
+        || refuses("allOf", &|branches| arms(branches, true))
+        || refuses("not", &|negated| admits_null(negated, defs, depth + 1)))
 }
 
-/// Every member that an object schema in `schema` declares and does not
-/// require, as `(location, member schema)`. A schema without `"type":
-/// "object"` refines members that another schema declares (`allOf`, `if`,
-/// `then`, `else`) and is left out.
-fn optional_members(schema: &Value) -> Vec<(String, Value)> {
-    let mut found = Vec::new();
-    let mut root: Schema = schema.clone().try_into().unwrap();
-    RecursiveTransform(|node: &mut Schema| {
+/// Every place in `schema` that admits `null` for a value that is not a list
+/// element, an array element, or a map value, as the path that reaches it.
+///
+/// Each such value is the root or a member that an object schema declares,
+/// required or not; `admits_null` follows the `$ref`, `anyOf`, `oneOf`, and
+/// `allOf` it states. An element or a map value may admit `null`, and the
+/// members of the objects it holds are checked in turn. A schema without
+/// `"type": "object"` refines members that another schema declares (`allOf`,
+/// `if`, `then`, `else`), so its members are left out.
+fn null_values(schema: &Value) -> BTreeSet<String> {
+    let defs = schema["$defs"].as_object().unwrap();
+    let mut walk = NullWalk {
+        defs,
+        visited: BTreeSet::new(),
+        found: BTreeSet::new(),
+    };
+    walk.value(schema, "$", false);
+    walk.found
+}
+
+struct NullWalk<'a> {
+    defs: &'a Map<String, Value>,
+    visited: BTreeSet<&'a str>,
+    found: BTreeSet<String>,
+}
+
+impl<'a> NullWalk<'a> {
+    /// A value at `at`: an element or a map value where `element` is true.
+    fn value(&mut self, node: &'a Value, at: &str, element: bool) {
+        if !element && admits_null(node, self.defs, 0) {
+            self.found.insert(at.to_owned());
+        }
+        self.members(node, at);
+    }
+
+    /// The values that `node`, or a schema it references or combines, holds.
+    fn members(&mut self, node: &'a Value, at: &str) {
+        let Value::Object(node) = node else {
+            return;
+        };
+        if let Some(name) = node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|reference| reference.strip_prefix("#/$defs/"))
+        {
+            if let Some((name, target)) = self.defs.get_key_value(name) {
+                if self.visited.insert(name) {
+                    self.members(target, &format!("{at} -> {name}"));
+                }
+            }
+        }
+        for keyword in ["anyOf", "oneOf", "allOf"] {
+            for arm in node
+                .get(keyword)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                self.members(arm, at);
+            }
+        }
         let object = match node.get("type") {
             Some(Value::Array(kinds)) => kinds.iter().any(|kind| kind == "object"),
             Some(kind) => kind == "object",
             None => false,
         };
-        if !object {
-            return;
-        }
-        let Some(members) = node.get("properties").and_then(Value::as_object) else {
-            return;
-        };
-        let required = node.get("required").and_then(Value::as_array);
-        for (name, member) in members {
-            if !required.is_some_and(|required| required.iter().any(|r| r == name.as_str())) {
-                let at = node
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                found.push((format!("{name} (in: {at})"), member.clone()));
+        if object {
+            for (name, member) in node
+                .get("properties")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
+                self.value(member, &format!("{at}.{name}"), false);
             }
         }
-    })
-    .transform(&mut root);
-    found
+        for (pattern, member) in node
+            .get("patternProperties")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            self.value(member, &format!("{at}{{{pattern}}}"), true);
+        }
+        if let Some(member) = node
+            .get("additionalProperties")
+            .filter(|member| member.is_object())
+        {
+            self.value(member, &format!("{at}{{}}"), true);
+        }
+        if let Some(member) = node.get("items") {
+            self.value(member, &format!("{at}[]"), true);
+        }
+        for (position, member) in node
+            .get("prefixItems")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            self.value(member, &format!("{at}[{position}]"), true);
+        }
+    }
 }
 
-/// §2.5: an `Option` member is omitted for `None` and is never written
-/// `null`, so neither committed schema admits `null` for a member its object
-/// does not require.
+/// Each member name and each string a schema node fixes (`const`, `enum`) in
+/// `node` and the schemas below it.
+fn wire_names<'a>(node: &'a Value, names: &mut BTreeSet<&'a str>) {
+    match node {
+        Value::Object(node) => {
+            for (keyword, value) in node {
+                match (keyword.as_str(), value) {
+                    ("properties" | "$defs" | "patternProperties", Value::Object(members)) => {
+                        for (name, member) in members {
+                            if keyword == "properties" {
+                                names.insert(name);
+                            }
+                            wire_names(member, names);
+                        }
+                    }
+                    ("const", Value::String(name)) => {
+                        names.insert(name);
+                    }
+                    ("enum", Value::Array(values)) => {
+                        names.extend(values.iter().filter_map(Value::as_str));
+                    }
+                    ("description" | "title" | "pattern" | "$ref" | "$schema", _) => {}
+                    (_, value) => wire_names(value, names),
+                }
+            }
+        }
+        Value::Array(values) => values.iter().for_each(|value| wire_names(value, names)),
+        _ => {}
+    }
+}
+
+/// §2.5: field and variant names are snake_case.
 #[test]
-fn an_optional_member_admits_no_null() {
+fn every_wire_name_is_snake_case() {
     for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
         let schema: Value = serde_json::from_str(committed).unwrap();
-        let defs = schema["$defs"].as_object().unwrap();
-        let members = optional_members(&schema);
-        assert!(!members.is_empty());
-        let nullable = members
-            .iter()
-            .filter(|(_, member)| admits_null(member, defs, 0))
-            .map(|(at, _)| at.as_str())
-            .collect::<Vec<_>>();
-        assert!(nullable.is_empty(), "{}", nullable.join("\n"));
+        let mut names = BTreeSet::new();
+        wire_names(&schema, &mut names);
+        let other: Vec<&str> = names
+            .into_iter()
+            .filter(|name| {
+                !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            })
+            .collect();
+        assert!(other.is_empty(), "{other:?}");
     }
+}
+
+/// §2.5: an `Option` field is omitted for `None` and is never written
+/// `null`, and no newtype variant wraps an `Option`; only a list element, an
+/// array element, or a map value writes `null`. So neither committed schema
+/// admits `null` anywhere else.
+#[test]
+fn null_is_admitted_only_as_an_element_or_a_map_value() {
+    for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
+        let schema: Value = serde_json::from_str(committed).unwrap();
+        let found = null_values(&schema);
+        assert!(
+            found.is_empty(),
+            "{}",
+            found.into_iter().collect::<Vec<_>>().join("\n")
+        );
+    }
+}
+
+/// The walk finds the two spellings of an `Option` outside an element: a
+/// newtype variant's `value`, required, and an optional member whose
+/// definition is a newtype struct over an `Option`. It passes `null` as a
+/// list element, a pair key, and a map value, and checks the members of the
+/// objects they hold. A member with no value, `{"not": {}}`, admits no `null`.
+#[test]
+fn the_null_walk_finds_an_option_outside_an_element() {
+    let schema = cadmpeg_core::json!({
+        "type": "object",
+        "properties": {
+            "section": {"$ref": "#/$defs/Section"},
+            "continuity": {"$ref": "#/$defs/State"},
+            "list": {"type": "array", "items": {"type": ["string", "null"]}},
+            "pairs": {
+                "type": "array",
+                "items": {
+                    "type": "array",
+                    "prefixItems": [{"type": ["string", "null"]}, {"$ref": "#/$defs/Entry"}]
+                }
+            },
+            "map": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+            "never": {"not": {}},
+            "named": {
+                "type": "object",
+                "patternProperties": {"^a": {"anyOf": [{"type": "string"}, {"type": "null"}]}}
+            }
+        },
+        "required": ["section", "list", "pairs", "map", "named", "never"],
+        "$defs": {
+            "Section": {
+                "oneOf": [{
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "const": "unresolved"},
+                        "value": {"type": ["string", "null"]}
+                    },
+                    "required": ["kind", "value"]
+                }]
+            },
+            "State": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "Entry": {
+                "type": "object",
+                "properties": {"tolerance": {"type": ["number", "null"]}}
+            }
+        }
+    });
+    assert_eq!(
+        null_values(&schema),
+        BTreeSet::from([
+            "$.continuity".to_owned(),
+            "$.pairs[][1] -> Entry.tolerance".to_owned(),
+            "$.section -> Section.value".to_owned(),
+        ])
+    );
 }
 
 /// A vertex `tolerance` stated `null` is refused by the reader and by the
@@ -146,10 +284,10 @@ fn an_optional_member_admits_no_null() {
 #[test]
 fn a_null_optional_member_fails_the_schema_and_the_reader() {
     let mut document =
-        serde_json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
+        json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
     let vertex = &mut document["geometry"]["vertices"][0];
     vertex["tolerance"] = Value::Null;
-    let refusal = serde_json::from_value::<crate::CadIr>(document).unwrap_err();
+    let refusal = json::from_value::<crate::CadIr>(document).unwrap_err();
     assert!(
         refusal.to_string().contains("it does not state null"),
         "{refusal}"
@@ -192,11 +330,11 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
         construction: ProceduralCurveId::mint("test:model:construction#curve").unwrap(),
         cache: Some(SolvedCurveGeometry::Unknown { record: None }),
     };
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let schema = json::to_value(crate::cadir_json_schema()).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     for (name, written) in [
-        ("SurfaceGeometry", serde_json::to_value(surface).unwrap()),
-        ("CurveGeometry", serde_json::to_value(curve).unwrap()),
+        ("SurfaceGeometry", json::to_value(surface).unwrap()),
+        ("CurveGeometry", json::to_value(curve).unwrap()),
     ] {
         assert_eq!(written["kind"], "procedural");
         let arm = defs[name]["oneOf"]
@@ -241,9 +379,9 @@ fn a_null_pair_key_is_written_read_and_admitted() {
             },
         )]),
     };
-    let written = serde_json::to_value(&context).unwrap();
+    let written = json::to_value(&context).unwrap();
     assert_eq!(written["participants"][0][0], Value::Null, "{written}");
-    let read: AssemblyContext = serde_json::from_value(written).unwrap();
+    let read: AssemblyContext = json::from_value(written).unwrap();
     assert_eq!(read, context);
 
     let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();

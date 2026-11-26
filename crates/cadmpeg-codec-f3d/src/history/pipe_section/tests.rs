@@ -13,6 +13,7 @@ use crate::records::topology::construction::{
     DesignConstructionOperandRole,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::profiles::PathRef;
 use cadmpeg_ir::features::sweeps::{GeneratedSweepSection, SweepSection, SweepShape};
@@ -67,7 +68,7 @@ fn projected_fixture(
             &inputs,
         )
         .unwrap();
-        let first = serde_json::to_value(&features).unwrap();
+        let first = json::to_value(&features).unwrap();
         assert!(super::projection::project(
             scan,
             &native.design_types,
@@ -77,7 +78,7 @@ fn projected_fixture(
         )
         .unwrap()
         .is_empty());
-        assert_eq!(serde_json::to_value(&features).unwrap(), first);
+        assert_eq!(json::to_value(&features).unwrap(), first);
         (
             features.remove(0),
             losses.into_iter().map(|loss| loss.code).collect(),
@@ -101,7 +102,7 @@ fn pipe_projection_retains_square_triangle_and_unknown_section_values() {
             shape:
                 SweepShape::Solid {
                     op,
-                    section: SweepSection::Unresolved(None),
+                    section: SweepSection::Unresolved,
                     ..
                 },
             path: Some(PathRef::Native(_)),
@@ -173,7 +174,7 @@ fn pipe_projection_preserves_inactive_thickness_and_out_of_range_fractions() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: SweepShape::Solid {
-                section: SweepSection::Unresolved(None),
+                section: SweepSection::Unresolved,
                 ..
             },
             path_extent: None,
@@ -234,7 +235,7 @@ fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
     );
     assert_eq!(
         source["observation"]["points"][0]["position"],
-        serde_json::json!([0.25, 0.5, 0.75])
+        cadmpeg_core::json!([0.25, 0.5, 0.75])
     );
     assert_eq!(
         source["observation"]["points"][0]["rule"]["reference_type"],
@@ -247,7 +248,7 @@ fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
     assert!(source["observation"]["prefix_references"]
         .as_array()
         .unwrap()
-        .contains(&serde_json::json!([500, 29])));
+        .contains(&cadmpeg_core::json!([500, 29])));
     assert_eq!(
         losses,
         [

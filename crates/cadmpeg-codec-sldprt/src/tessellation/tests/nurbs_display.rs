@@ -61,7 +61,7 @@ fn assign(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecErr
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(sticky)) if sticky == *first));
     }
-    result
+    result.map(|owned| owned.iter().map(|id| id.as_str().to_owned()).collect())
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn geometric_nurbs_surface_route_assigns_the_face() {
         vec!["synthetic:test:tessellation#admitted-nurbs"]
     );
     assert_eq!(
-        ir.model.tessellations[0].faces,
+        ir.model.tessellations[0].of.faces(),
         vec![ir.geometry.faces[0].id.clone()]
     );
 }

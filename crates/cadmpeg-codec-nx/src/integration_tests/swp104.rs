@@ -5,7 +5,7 @@ use cadmpeg_ir::codec::CodecBackend;
 
 #[test]
 fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id":"nx:feature-history:swp104-leading-branch#0", "operation_label":"operation",
         "parameter_class_index":33, "profile_class_index":35,
         "scalars":[0.04,0.04,0.04,0.04],
@@ -21,16 +21,16 @@ fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
         assert!(crate::NxCodec::validate_native(ctx, &ir, None)
             .unwrap()
             .is_empty());
-        wire["successor"]["object_index"] = serde_json::json!(257);
-        wire["successor"]["raw_object_index"] = serde_json::json!("f10101");
+        wire["successor"]["object_index"] = cadmpeg_core::json!(257);
+        wire["successor"]["raw_object_index"] = cadmpeg_core::json!("f10101");
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
         let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();

@@ -202,7 +202,7 @@ fn input(solid: bool, direct: bool, generated: bool) -> Input {
                     } else {
                         SweepMode::Surface {}
                     },
-                    SweepSection::Unresolved(None),
+                    SweepSection::Unresolved,
                     Vec::new(),
                 ),
                 path: None,
@@ -325,7 +325,7 @@ fn unsupported_solid_child_retains_identity_without_producer_binding() {
                         SweepMode::Solid {
                             op: SolidSweepOperation::Cut,
                         },
-                        SweepSection::Unresolved(None),
+                        SweepSection::Unresolved,
                         Vec::new(),
                     );
                 }

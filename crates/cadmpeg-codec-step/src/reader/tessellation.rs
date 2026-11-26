@@ -4,13 +4,14 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::transform::Transform;
 
 use crate::ids;
@@ -221,17 +222,21 @@ pub(super) fn decode(
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no COORDINATES_LIST reference")),
-            );
+            ));
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no resolved COORDINATES_LIST")),
-            );
+            ));
             continue;
         };
         let offset = entity.own_parameter_offset();
@@ -249,19 +254,23 @@ pub(super) fn decode(
             }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
-            );
+            ));
             continue;
         };
         let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    losses.push(
+                    losses.extend(give_up_instance(
+                        exchange,
+                        id,
                         StepLossCode::DecodeWarning
                             .note(format!("{kind} #{id} has an invalid pnindex")),
-                    );
+                    ));
                     continue;
                 };
                 indices
@@ -271,9 +280,13 @@ pub(super) fn decode(
             if triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
             }) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{kind} #{id} has an out-of-range one-based coordinate index"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} has an out-of-range one-based coordinate index"
+                    )),
+                ));
                 continue;
             }
             let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
@@ -305,9 +318,13 @@ pub(super) fn decode(
             }) || triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
             }) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{kind} #{id} has an out-of-range one-based tessellation index"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} has an out-of-range one-based tessellation index"
+                    )),
+                ));
                 continue;
             }
             (
@@ -408,7 +425,7 @@ pub(super) fn decode(
                 .find(|surface| surface.id.as_str() == surface_id.as_str())
             {
                 if surface.source_object.is_none() {
-                    surface.source_object = Some(super::step_source_association(id, None));
+                    surface.source_object = Some(super::step_source_association(id));
                 }
             }
         }
@@ -419,9 +436,11 @@ pub(super) fn decode(
         ) {
             Ok(rows) => rows,
             Err(error) => {
-                losses.push(
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
                     StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                );
+                ));
                 continue;
             }
         };
@@ -442,9 +461,11 @@ pub(super) fn decode(
         ) {
             Ok(mesh) => mesh,
             Err(error) => {
-                losses.push(
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
                     StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                );
+                ));
                 continue;
             }
         };
@@ -455,8 +476,6 @@ pub(super) fn decode(
             .filter(|bodies| bodies.len() == 1)
             .and_then(|bodies| bodies.iter().next())
             .cloned();
-        // A mesh that represents no body belongs to the one product
-        // definition whose shape lists it: a part stated as triangles.
         let owner = body
             .is_none()
             .then(|| item_owners.get(&id))
@@ -464,7 +483,31 @@ pub(super) fn decode(
             .filter(|owners| owners.len() == 1)
             .and_then(|owners| owners.iter().next())
             .cloned();
-        if !declared_items.contains(&id) && owner.is_none() {
+        // A mesh of one product that represents no one body displays the
+        // product's exact bodies where the product has some, and is the
+        // product's own geometry, a part stated as triangles, where it has none.
+        let of = match (body, owner) {
+            (Some(body), _) => Meshed::Body {
+                body,
+                faces: Vec::new(),
+            },
+            (None, Some(definition)) => {
+                let exact = ir
+                    .model
+                    .product_definitions
+                    .iter()
+                    .find(|row| row.id == definition)
+                    .is_some_and(|row| !row.bodies.is_empty())
+                    || item_bodies.get(&id).is_some_and(|bodies| bodies.len() > 1);
+                if exact {
+                    Meshed::Display { definition }
+                } else {
+                    Meshed::definition(definition)
+                }
+            }
+            (None, None) => Meshed::Unresolved,
+        };
+        if !declared_items.contains(&id) && matches!(of, Meshed::Body { .. } | Meshed::Unresolved) {
             losses.push(StepLossCode::TessellationItemUndeclared.note(format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
             )));
@@ -473,21 +516,14 @@ pub(super) fn decode(
             || item_bodies.get(&id).is_some_and(BTreeSet::is_empty)
             || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1)
         {
-            Some(super::step_source_association(id, None))
+            Some(super::step_source_association(id))
         } else {
             None
         };
 
-        let mesh = mesh.with_body(body).with_source_object(source_object);
-        if let Some(definition) = owner.and_then(|owner| {
-            ir.model
-                .product_definitions
-                .iter_mut()
-                .find(|definition| definition.id == owner)
-        }) {
-            definition.tessellations.push(mesh.id.clone());
-        }
-        ir.model.tessellations.push(mesh);
+        ir.model
+            .tessellations
+            .push(mesh.with_of(of).with_source_object(source_object));
         typed.insert(id);
         typed.insert(coordinate_id);
     }

@@ -33,14 +33,13 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
     let mut ir = crate::CadIr::empty();
     for (format, arena, ids) in [
         ("a", "z", ["test:native:record#2", "test:native:record#1"]),
-        ("a.b", "a", ["test:native:record#4", "test:native:record#3"]),
         ("a", "b.a", ["test:native:record#6", "test:native:record#5"]),
     ] {
         for id in ids {
             ir.native
-                .namespace_mut(format)
+                .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
                 .arenas_mut()
-                .entry(arena.into())
+                .entry(cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"))
                 .or_default()
                 .push(
                     crate::native::NativeRecord::new(
@@ -53,7 +52,12 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
     }
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
+    super::check_identity_and_order(
+        &crate::index::ModelIndex::build(&ir),
+        &crate::validate::products::decode_set::file_keys(&ir),
+        &mut findings,
+    )
+    .unwrap();
     assert_eq!(
         findings
             .iter()
@@ -96,9 +100,9 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
     }
     for id in ["test:validation:point#b", "test:validation:point#a"] {
         ir.native
-            .namespace_mut("test")
+            .namespace_mut(crate::codec_id!("test"))
             .arenas_mut()
-            .entry("records".into())
+            .entry(cadmpeg_core::nonblank_literal!("records"))
             .or_default()
             .push(
                 crate::native::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new())
@@ -107,7 +111,12 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
     }
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
+    super::check_identity_and_order(
+        &crate::index::ModelIndex::build(&ir),
+        &crate::validate::products::decode_set::file_keys(&ir),
+        &mut findings,
+    )
+    .unwrap();
     assert_eq!(
         findings
             .iter()

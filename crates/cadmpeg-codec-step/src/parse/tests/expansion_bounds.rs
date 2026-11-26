@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;
 
-use crate::parse::{Exchange, ParseDiagnostic, ParseDiagnosticKind};
+use crate::parse::{Exchange, ParseDiagnosticKind};
 
 const BOUND: &str = "anchor expansion exceeds 1000000 value nodes";
 
@@ -28,7 +28,6 @@ fn doubling_anchors(last: usize) -> String {
 struct Doubling {
     source: String,
     exchange: Exchange,
-    diagnostics: Vec<ParseDiagnostic>,
     /// Messages of the `ExpansionBounded` diagnostics.
     bounded: HashSet<String>,
 }
@@ -53,7 +52,6 @@ static DOUBLING: LazyLock<Doubling> = LazyLock::new(|| {
     Doubling {
         source,
         exchange,
-        diagnostics,
         bounded,
     }
 });
@@ -64,23 +62,32 @@ fn bounded(subject: &str) -> bool {
     ))
 }
 
-fn retains_source(text: &str) -> bool {
+/// The records dropped with the given-up statement `text`.
+fn given_up_with(text: &str) -> Vec<String> {
     let Doubling {
         source, exchange, ..
     } = &*DOUBLING;
     exchange
-        .omitted_spans()
+        .given_up()
         .iter()
-        .any(|span| &source[span.clone()] == text)
+        .find(|statement| &source[statement.span.clone()] == text)
+        .map(|statement| statement.dropped.clone())
+        .unwrap_or_default()
+}
+
+fn gives_up(kind: &str, text: &str) -> bool {
+    let Doubling {
+        source, exchange, ..
+    } = &*DOUBLING;
+    exchange
+        .given_up()
+        .iter()
+        .any(|statement| statement.kind == kind && &source[statement.span.clone()] == text)
 }
 
 #[test]
 fn exponential_anchor_expansion_omits_the_bounded_items() {
-    let Doubling {
-        exchange,
-        diagnostics,
-        ..
-    } = &*DOUBLING;
+    let Doubling { exchange, .. } = &*DOUBLING;
 
     let kept = exchange
         .anchors()
@@ -94,14 +101,16 @@ fn exponential_anchor_expansion_omits_the_bounded_items() {
     for index in 17..=23 {
         assert!(bounded(&format!("anchor <a{index}>")), "a{index}");
     }
-    assert!(retains_source("<a17>=(<#a16>,<#a16>);"));
-
     assert!(bounded("instance #1"));
-    assert!(retains_source("#1=ITEM(<#a23>);"));
+    // Each bounded anchor and instance is a part of its own.
+    for (kind, statement) in [
+        ("anchor_record", "<a17>=(<#a16>,<#a16>);"),
+        ("data_record", "#1=ITEM(<#a23>);"),
+    ] {
+        assert!(gives_up(kind, statement), "{statement}");
+    }
     assert!(!exchange.records().contains_key(&2));
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.kind == ParseDiagnosticKind::RecordOmitted && diagnostic.message.contains("#2")
-    }));
+    assert!(given_up_with("#1=ITEM(<#a23>);").contains(&String::from("#2")));
     assert!(exchange.records().contains_key(&3));
 }
 

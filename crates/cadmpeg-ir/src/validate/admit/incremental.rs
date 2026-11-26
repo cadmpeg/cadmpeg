@@ -14,7 +14,7 @@ use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface,
 use crate::native::{NativeConvertError, NativeRecord};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
-use crate::report::check::{Check, ValidationReport};
+use crate::report::check::ValidationReport;
 use crate::schema::EntitySchema;
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
@@ -87,7 +87,7 @@ impl AdmittedState {
         ir: &mut CadIr,
         (format, unknowns): (&str, &[UnknownRecord]),
         changes: &Annotations,
-        allowed: &[Check],
+        allowed: &super::Admission,
         (starts, scope): ([usize; crate::document::MODEL_ARENA_COUNT], CandidateScope),
     ) -> Result<Option<Result<ValidationReport, NativeConvertError>>, CodecError> {
         let mut selected = (|| {
@@ -143,11 +143,11 @@ impl AdmittedState {
             }
         }
         // Include changed annotation owners even when the candidate adds no geometry.
-        if allowed.contains(&Check::Annotations) {
+        if allowed.annotations() {
             for id in changes.provenance.keys().chain(changes.exactness().keys()) {
                 // Native placeholders omit source fields. Their annotations need
                 // the complete source record for field-path diagnostics.
-                if lookup(&selected, id) != Some(false) {
+                if lookup(&selected, id.as_str()) != Some(false) {
                     return Ok(None);
                 }
             }
@@ -164,8 +164,8 @@ impl AdmittedState {
                 }
             }
             if !dependencies.is_empty() {
-                let arena = "unknowns".to_owned();
-                let namespace = format.to_owned();
+                let arena = cadmpeg_core::nonblank_literal!("unknowns");
+                let namespace = crate::native::namespace_codec(format)?;
                 let mut arenas = crate::native::NativeNamespace::default();
                 arenas.arenas_mut().insert(arena, dependencies);
                 candidate.native.0.insert(namespace, arenas);
@@ -178,7 +178,7 @@ impl AdmittedState {
             )*};
         }
         crate::document::arena_registry!(take_appended);
-        let result = if allowed.contains(&Check::Annotations) {
+        let result = if allowed.annotations() {
             super::admit_with_annotations(ctx, &candidate, changes, allowed, Vec::new())
         } else {
             super::admit(ctx, &candidate, allowed, Vec::new())
@@ -232,7 +232,7 @@ impl AdmittedState {
             .keys()
             .chain(annotations.exactness().keys())
         {
-            if lookup(&self.identities, id).is_none() {
+            if lookup(&self.identities, id.as_str()).is_none() {
                 return false;
             }
         }

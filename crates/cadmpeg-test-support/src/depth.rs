@@ -12,29 +12,30 @@
 //! - every validation finding over the geometry document, neutral and
 //!   codec-native, is also a finding over the full one, so each of its
 //!   references, `native_ref` included, resolves wherever the full one's does;
-//! - the geometry decode's loss codes are a subset of the full decode's;
+//! - the geometry decode's loss codes are a subset of the full decode's, with
+//!   `decode/depth.not-delivered` added for the design the source holds
+//!   beyond the geometry depth (§2.1);
 //! - where the geometry decode keeps the whole file's bytes, each class it
 //!   cut is marked `untyped` in its sidecar.
 //!
 //! The comparison is exact. Both decodes run in one process over the same
 //! bytes, so a cut that leaves geometry untouched reproduces it bit for bit.
 //! Native namespaces are not compared: a cut may drop the native records that
-//! only design projection derives. Source attributes holding a local digest
-//! are not compared either: they fingerprint the whole document, design arenas
-//! included, as the replay baseline of the source format's own writer. A cut
-//! is sound because the cut marks the bytes it keeps undecoded, and that
-//! writer reports each file that carries them (`export:source.carried`).
+//! only design projection derives. The sidecars, whose content digests cover
+//! the whole document, are not compared either. A cut is sound because the
+//! cut marks the bytes it keeps undecoded, and the source format's own writer
+//! reports each file that carries them (`export:source.carried`).
 //!
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::compare::is_local_digest_attribute;
 use cadmpeg_ir::validate::validate_neutral;
 use cadmpeg_ir::{ArenaName, CadIr};
 use serde_json::Value;
@@ -138,8 +139,7 @@ pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
                 if result.ir().process.entity_count() != 0 {
                     failures.push(format!(
                         "a {depth} decode holds process records: {}",
-                        serde_json::to_string(&result.ir().process)
-                            .expect("serialize decoded process")
+                        json::to_string(&result.ir().process).expect("serialize decoded process")
                     ));
                 }
             }
@@ -204,6 +204,7 @@ fn compare(
     let full_codes = loss_codes(full);
     let extra = loss_codes(geometry)
         .difference(&full_codes)
+        .filter(|code| code.as_str() != DEPTH_NOT_DELIVERED)
         .cloned()
         .collect::<Vec<_>>();
     if !extra.is_empty() {
@@ -252,8 +253,8 @@ fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResu
         .collect()
 }
 
-/// The document as JSON without its scope, design and process arenas, native
-/// namespaces, and local-digest source attributes.
+/// The document as JSON without its scope, design and process arenas, and
+/// native namespaces.
 fn outside_design(ir: &CadIr) -> Value {
     let mut value =
         cadmpeg_ir::hash::finite_json::to_json_value(ir).expect("serialize decoded document");
@@ -269,12 +270,6 @@ fn outside_design(ir: &CadIr) -> Value {
                 home.remove(arena.as_str());
             }
         }
-    }
-    if let Some(Value::Object(attributes)) = document
-        .get_mut("source")
-        .and_then(|source| source.get_mut("attributes"))
-    {
-        attributes.retain(|key, _| !is_local_digest_attribute(key));
     }
     value
 }
@@ -294,6 +289,8 @@ fn findings(
         .map(|finding| format!("{:?}: {}", finding.check, finding.message))
         .collect())
 }
+
+const DEPTH_NOT_DELIVERED: &str = "decode/depth.not-delivered";
 
 fn loss_codes(result: &DecodeResult) -> BTreeSet<String> {
     result
@@ -451,6 +448,21 @@ mod tests {
             }
         }
         assert_geometry_agrees_with_full(&ScriptedCodec(changes_geometry), &inputs());
+    }
+
+    #[test]
+    fn a_cut_that_charges_the_design_it_leaves_out_agrees() {
+        fn charges_design(depth: DecodeDepth) -> Decoded {
+            let mut decoded = sound_cut(depth);
+            decoded
+                .body
+                .source_holds(cadmpeg_core::decode::ArenaClass::Design);
+            decoded
+        }
+        assert_eq!(
+            assert_geometry_agrees_with_full(&ScriptedCodec(charges_design), &inputs()).cut,
+            1
+        );
     }
 
     #[test]

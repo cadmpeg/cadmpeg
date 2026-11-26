@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-reference curve-data diagnostics and validation.
 
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const OWNER: &str = "synthetic:test:feature#profile";
 const EXTRUDE: &str = "synthetic:test:feature#extrude";
@@ -13,7 +15,7 @@ const SKETCH: &str = "synthetic:test:sketch#profile";
 
 fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.features = serde_json::from_value(json!([
+    ir.model.features = json::from_value(json!([
         {"id": OWNER, "ordinal": 0, "suppressed": false,
          "definition": {"kind": "operation", "value": {"kind": "sketch", "value": {"sketch": {"kind": "planar", "sketch": SKETCH}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []},
         {"id": EXTRUDE, "ordinal": 1, "suppressed": false,
@@ -23,13 +25,13 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
           "op": "join", "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}
     ])).expect("synthetic feature definitions");
     ir.model.sketches.push(
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "id": SKETCH, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .expect("synthetic sketch"),
     );
     ir.model.sketch_entities.push(
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "id": "synthetic:test:entity#curve", "sketch": SKETCH,
             "construction": construction, "geometry": geometry, "endpoint_refs": []
         }))
@@ -38,7 +40,7 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     crate::native::SldprtNative::default()
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .expect("synthetic native namespace");
     ir

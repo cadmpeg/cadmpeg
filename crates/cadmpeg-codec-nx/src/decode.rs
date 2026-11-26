@@ -19,6 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::cell::RefCell;
@@ -112,6 +113,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let decode_digest = Sha256Digest::digest(root.window());
     let scan = scan(ctx, root)?;
     let mut decoded = decode_scan(ctx, &scan, decode_digest)?;
+    give_up_bounded_om_entries(ctx, &scan, &mut decoded)?;
     // A record an attachment rolled back is not retained, and its note goes
     // with it.
     for (id, classes) in scan.untyped.take() {
@@ -152,7 +154,7 @@ fn decode_scan(
         );
     }
 
-    if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
+    if let Some((ir, body, annotations, unknowns, given_up)) = try_decode_geometry(
         ctx,
         scan,
         &dialects,
@@ -160,7 +162,7 @@ fn decode_scan(
         &notes,
         &mut admitted_entities,
     )? {
-        return decoded(
+        let mut decoded = decoded(
             ctx,
             decode_digest,
             ir,
@@ -168,7 +170,9 @@ fn decode_scan(
             annotations,
             unknowns,
             &mut admitted_entities,
-        );
+        )?;
+        commit_given_up(ctx, &mut decoded, given_up)?;
+        return Ok(decoded);
     }
 
     let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, scan, &dialects)?;
@@ -197,6 +201,7 @@ fn decoded(
 ) -> Result<Decoded, CodecError> {
     let annotations = if ctx.depth() >= DecodeDepth::Geometry {
         let (definition, minted) = design_v11::root_definition(&mut ir)?;
+        let mut builder = AnnotationBuilder::resume(annotations);
         if ctx.depth() >= DecodeDepth::Design {
             cadmpeg_ir::design::projection::project_layer(
                 ctx,
@@ -205,8 +210,12 @@ fn decoded(
                 &mut body.losses,
                 |ir, _| design_v11::project(ir, definition.clone()),
             )?;
+            cadmpeg_ir::design::projection::restate_exactness(
+                &ir,
+                &mut builder,
+                design_v11::RESTATEMENT,
+            )?;
         }
-        let mut builder = AnnotationBuilder::resume(annotations);
         if minted {
             builder.exactness(definition, Exactness::Derived);
         }
@@ -219,12 +228,15 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
-    ir.state_root_definition(
+    if let Some(root) = ir.state_root_definition(
         ctx,
         cadmpeg_ir::ids::ProductDefinitionId::mint(design_v11::PART_ROOT)
             .map_err(CodecError::malformed)?,
         cadmpeg_ir::products::ExternalDocument::default(),
-    )?;
+    )? {
+        let root = root.id.clone();
+        ir.display_unresolved_meshes(&root);
+    }
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
@@ -233,6 +245,72 @@ fn decoded(
         body,
         source_fidelity,
     })
+}
+
+/// Commits each given-up part once: a record that two refusals name is one
+/// part.
+fn commit_given_up(
+    ctx: &DecodeContext<'_>,
+    decoded: &mut Decoded,
+    given_up: Vec<GivenUpPart>,
+) -> Result<(), CodecError> {
+    let mut committed = BTreeSet::new();
+    for part in given_up {
+        if committed.insert(part.id().clone()) {
+            let loss = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
+            decoded.body.losses.push(loss);
+        }
+    }
+    Ok(())
+}
+
+/// Gives up each container entry whose indexed object-model section search
+/// reached its work bound as an `om-entry` part. An entry larger than the
+/// retained-byte allowance keeps only its length and digest.
+fn give_up_bounded_om_entries(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    decoded: &mut Decoded,
+) -> Result<(), CodecError> {
+    for entry in scan.container.bounded_indexed_om_entries() {
+        let why = NxLossCode::SourceScanBounded.note(format!(
+            "The indexed object-model section search in {} reached its work bound of {}; \
+             its remaining sections were skipped.",
+            entry.name,
+            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
+        ));
+        let payload = entry.file_span().and_then(|(offset, length)| {
+            let start = usize::try_from(offset).ok()?;
+            let end = start.checked_add(usize::try_from(length).ok()?)?;
+            Some((offset, scan.container.data.get(start..end)?))
+        });
+        if let Some((offset, bytes)) = payload {
+            let part = Part::at(
+                "nx",
+                "om-entry",
+                offset,
+                bytes,
+                [ArenaClass::Model, ArenaClass::Design],
+            )
+            .named(entry.name.clone())
+            .in_stream(cadmpeg_ir::stream_name!("nx:container"));
+            let part = if cadmpeg_core::decode::u64_from_index(bytes.len())
+                > ctx.retained_bytes_available()
+            {
+                part.digest_only()
+            } else {
+                part
+            };
+            let part = ctx.give_up_part(
+                part,
+                CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+            )?;
+            let loss = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
+            decoded.body.losses.push(loss);
+        }
+        decoded.body.losses.push(why);
+    }
+    Ok(())
 }
 
 fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
@@ -256,14 +334,6 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
                     content.label()
                 )));
         }
-    }
-    for entry in scan.container.bounded_indexed_om_entries() {
-        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
-            "The indexed object-model section search in {} reached its work bound of {}; \
-             its remaining sections were skipped.",
-            entry.name,
-            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-        )));
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
@@ -354,12 +424,12 @@ fn build_metadata_ir(
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             annotations.note(
-                unknown.id().as_str(),
+                unknown.id(),
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             );
-            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            annotations.exactness(unknown.id(), Exactness::Derived);
             scan.note_untyped(unknown.id(), [ArenaClass::Model]);
             unknowns.push(unknown);
         }

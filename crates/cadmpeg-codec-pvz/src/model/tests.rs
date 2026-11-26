@@ -194,6 +194,7 @@ fn cycles_and_extra_roots_are_reported() {
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
             PvzLossCode::StructureOccurrenceCycle.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 }
@@ -225,8 +226,32 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     assert_eq!(ir.model.occurrences.len(), LIMIT);
     assert_eq!(
         codes(&losses),
-        [PvzLossCode::StructureOccurrenceTruncated.kind()]
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
+    assert!(
+        losses[1].message.starts_with(&format!(
+            "record pvz:model:child-occurrence#1-{} given up: ",
+            LIMIT - 1
+        )),
+        "{}",
+        losses[1].message
+    );
+    // The walk stops inside the first child of A, so every later child of A
+    // is dropped with the stopped child occurrence.
+    let dropped = losses[1]
+        .message
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge names the dropped child occurrences");
+    let mut expected = (1..LIMIT)
+        .map(|occurrence| format!("pvz:model:child-occurrence#0-{occurrence}"))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(dropped, expected);
 }
 
 /// Each definition's children are walked once (§8.1), so the walk is linear
@@ -242,10 +267,12 @@ fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
         LIMIT,
     );
     assert_eq!(ir.model.occurrences.len(), LIMIT / 2);
-    assert_eq!(
-        codes(&losses),
-        [PvzLossCode::StructureOccurrenceCycle.kind()]
-    );
+    let mut expected = vec![PvzLossCode::StructureOccurrenceCycle.kind()];
+    expected.extend(std::iter::repeat_n(
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        LIMIT,
+    ));
+    assert_eq!(codes(&losses), expected);
     assert_eq!(
         losses[0].message,
         format!("{LIMIT} child occurrences close a definition cycle and were left out")
@@ -404,16 +431,26 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         ],
         has_exact: false,
         residue: crate::ol::MemberResidue::default(),
+        given_up: Vec::new(),
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let body = display_geometry(&ctx, "part.ol", &geometry, None, &mut ir, &mut losses)
-        .unwrap()
-        .unwrap();
-    assert_eq!(body.as_str(), "pvz:model:body#part.ol");
+    let part: cadmpeg_ir::ids::ProductDefinitionId =
+        "pvz:model:product-definition#part".try_into().unwrap();
+    display_geometry(
+        &ctx,
+        "part.ol",
+        &geometry,
+        None,
+        Some(part.clone()),
+        &mut ir,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(ir.geometry.bodies.is_empty());
     assert_eq!(ir.model.tessellations.len(), 1);
     let mesh = &ir.model.tessellations[0];
-    assert_eq!(mesh.body.as_ref(), Some(&body));
+    assert_eq!(mesh.of, cadmpeg_ir::tessellation::Meshed::definition(part));
     assert_eq!(
         mesh.vertices()[1].get(),
         cadmpeg_ir::math::Point3::new(f64::from(0.001_f32) * 1000.0, 0.0, 0.0)
@@ -423,6 +460,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         [
             PvzLossCode::TessellationRecordsUndecoded.kind(),
             PvzLossCode::TessellationMeshRejected.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 
@@ -430,11 +468,9 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         meshes: Vec::new(),
         ..geometry
     };
-    assert!(
-        display_geometry(&ctx, "e.ol", &empty, None, &mut ir, &mut Vec::new())
-            .unwrap()
-            .is_none()
-    );
+    let meshes = ir.model.tessellations.len();
+    display_geometry(&ctx, "e.ol", &empty, None, None, &mut ir, &mut Vec::new()).unwrap();
+    assert_eq!(ir.model.tessellations.len(), meshes);
 }
 
 #[test]
@@ -489,7 +525,13 @@ fn placement_defects_and_deep_chains_are_reported() {
     // Each definition above the depth limit places the next; the root
     // definition, at the top, is placed by no occurrence (§8.1).
     assert_eq!(ir.model.occurrences.len(), depth - 1);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
 }
 
 #[test]
@@ -520,11 +562,15 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
         ],
     );
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let geometry =
-        crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+    let geometry = crate::ol::decode(
+        &ctx,
+        "hot.ol",
+        cadmpeg_core::decode::View::over_retained(&bytes),
+    )
+    .unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    display_geometry(&ctx, "hot.ol", &geometry, None, &mut ir, &mut losses).unwrap();
+    display_geometry(&ctx, "hot.ol", &geometry, None, None, &mut ir, &mut losses).unwrap();
     assert!(ir.model.appearances[0].base_color.is_none());
     assert_eq!(ir.model.appearance_bindings.len(), 1);
     assert_eq!(

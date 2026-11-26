@@ -182,7 +182,7 @@ fn native_validation_rejects_orphan_history_records() {
     let orphan = decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(cadmpeg_ir::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("features")
         .unwrap()[0]
@@ -195,7 +195,7 @@ fn native_validation_rejects_orphan_history_records() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut(cadmpeg_ir::codec_id!("sldprt"))
         .arenas_mut()
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(
@@ -242,15 +242,9 @@ fn native_validation_rejects_edited_relation_binding() {
             .message
             .contains("relation bindings do not match the native payload")
     }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("relation bindings do not match the native payload"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("relation bindings do not match the native payload"));
 }
 
 #[test]
@@ -282,15 +276,9 @@ fn native_validation_rejects_edited_relation_instance() {
             .message
             .contains("relation instances do not match the native payload")
     }));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("relation instances do not match the native payload"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("relation instances do not match the native payload"));
 }
 
 #[test]

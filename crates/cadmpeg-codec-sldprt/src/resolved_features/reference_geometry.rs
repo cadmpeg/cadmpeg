@@ -2,8 +2,7 @@
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::{
-    sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
-    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    sketch_plane_frames, SketchPlaneUAxisSource, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use super::scalars::FeatureObjectNames;
 use super::selections::{
@@ -541,7 +540,7 @@ pub(crate) fn enrich_history_reference_planes(
         {
             feature.properties.insert(
                 cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
-                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
+                crate::records::CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
             );
         } else {
             feature
@@ -2368,7 +2367,18 @@ fn plane_intersection_axis_sources(
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let mut sources = [0; 2];
     let mut source_count = 0;
-    for bytes in payload.windows(RECORD_LEN) {
+    let finder = memchr::memmem::Finder::new(TERMINATOR);
+    let mut cursor = 38;
+    while cursor < payload.len() {
+        let Some(rel) = finder.find(&payload[cursor..]) else {
+            break;
+        };
+        let term = cursor + rel;
+        cursor = term + 1;
+        let offset = term - 38;
+        let Some(bytes) = payload.get(offset..offset + RECORD_LEN) else {
+            continue;
+        };
         let source = (|| {
             let source = View::u32_le_at(bytes, 0)?;
             (known_sources.contains(&source)
@@ -2378,8 +2388,7 @@ fn plane_intersection_axis_sources(
                 && bytes.get(22).is_some_and(|object| *object != 0xff)
                 && bytes.get(23..30)?.iter().all(|byte| *byte == 0)
                 && matches!(bytes.get(30), Some(0 | 3))
-                && bytes.get(31..38)?.iter().all(|byte| *byte == 0)
-                && bytes.get(38..46) == Some(TERMINATOR))
+                && bytes.get(31..38)?.iter().all(|byte| *byte == 0))
             .then_some(source)
         })();
         if let Some(source) = source {
@@ -2400,11 +2409,14 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
         0x2d, 0x80, 0x2b, 0x80,
     ];
     let mut unique = None;
-    for bytes in payload.windows(4 + TRAILER.len()) {
-        let Some(source) = View::u32_le_at(bytes, 0) else {
+    if payload.len() < 4 + TRAILER.len() {
+        return None;
+    }
+    for rel in memchr::memmem::find_iter(&payload[4..], TRAILER) {
+        let Some(source) = View::u32_le_at(payload, rel) else {
             continue;
         };
-        if source == 0 || bytes.get(4..) != Some(TRAILER) {
+        if source == 0 {
             continue;
         }
         match unique {
@@ -2419,41 +2431,63 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
 fn structured_offset_plane_sources(payload: &[u8]) -> impl Iterator<Item = u32> + '_ {
     const RECORD_LEN: usize = 140;
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    payload.windows(RECORD_LEN).filter_map(|bytes| {
-        let header = bytes.get(4..8)?;
-        let identity = bytes.get(8..20)?;
-        let link = bytes.get(28..32)?;
-        let source = View::u32_le_at(bytes, 44)?;
-        let address = bytes.get(116..120)?;
-        (bytes.get(..4) == Some(&4u32.to_le_bytes())
-            && header != [0; 4]
-            && bytes.get(48..52) == Some(header)
-            && identity != [0; 12]
-            && bytes.get(32..44) == Some(identity)
-            && bytes.get(52..64) == Some(identity)
-            && bytes.get(76..88) == Some(identity)
-            && bytes.get(20..28) == Some(&[0; 8])
-            && link != [0; 4]
-            && bytes.get(72..76) == Some(link)
-            && bytes.get(64..68) == Some(&1u32.to_le_bytes())
-            && bytes.get(68..72) == Some(&[0; 4])
-            && bytes.get(88..92) == Some(&1u32.to_le_bytes())
-            && bytes.get(92..108) == Some(&[0; 16])
-            && bytes.get(108..112) == Some(&1u32.to_le_bytes())
-            && bytes.get(112..116) == Some(&[0; 4])
-            && address != [0; 4]
-            && bytes.get(120..132) == Some(&[0; 12])
-            && bytes.get(132..140) == Some(TERMINATOR))
-        .then_some(source)
-    })
+    let finder = memchr::memmem::Finder::new(TERMINATOR);
+    let mut cursor = 132;
+    let mut out = Vec::new();
+    while cursor < payload.len() {
+        let Some(rel) = finder.find(&payload[cursor..]) else {
+            break;
+        };
+        let term = cursor + rel;
+        cursor = term + 1;
+        let offset = term - 132;
+        let Some(bytes) = payload.get(offset..offset + RECORD_LEN) else {
+            continue;
+        };
+        let found = (|| {
+            let header = bytes.get(4..8)?;
+            let identity = bytes.get(8..20)?;
+            let link = bytes.get(28..32)?;
+            let source = View::u32_le_at(bytes, 44)?;
+            let address = bytes.get(116..120)?;
+            (bytes.get(..4) == Some(&4u32.to_le_bytes())
+                && header != [0; 4]
+                && bytes.get(48..52) == Some(header)
+                && identity != [0; 12]
+                && bytes.get(32..44) == Some(identity)
+                && bytes.get(52..64) == Some(identity)
+                && bytes.get(76..88) == Some(identity)
+                && bytes.get(20..28) == Some(&[0; 8])
+                && link != [0; 4]
+                && bytes.get(72..76) == Some(link)
+                && bytes.get(64..68) == Some(&1u32.to_le_bytes())
+                && bytes.get(68..72) == Some(&[0; 4])
+                && bytes.get(88..92) == Some(&1u32.to_le_bytes())
+                && bytes.get(92..108) == Some(&[0; 16])
+                && bytes.get(108..112) == Some(&1u32.to_le_bytes())
+                && bytes.get(112..116) == Some(&[0; 4])
+                && address != [0; 4]
+                && bytes.get(120..132) == Some(&[0; 12]))
+            .then_some(source)
+        })();
+        if let Some(source) = found {
+            out.push(source);
+        }
+    }
+    out.into_iter()
 }
 
 fn classed_offset_plane_sources(payload: &[u8]) -> impl Iterator<Item = u32> + '_ {
     const TRAILER: &[u8] = b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00";
-    payload.windows(4 + TRAILER.len()).filter_map(|bytes| {
-        let source = View::u32_le_at(bytes, 0)?;
-        (bytes.get(4..) == Some(TRAILER)).then_some(source)
-    })
+    let mut out = Vec::new();
+    if payload.len() >= 4 + TRAILER.len() {
+        for rel in memchr::memmem::find_iter(&payload[4..], TRAILER) {
+            if let Some(source) = View::u32_le_at(payload, rel) {
+                out.push(source);
+            }
+        }
+    }
+    out.into_iter()
 }
 
 fn offset_plane_reference_source(
@@ -2464,21 +2498,37 @@ fn offset_plane_reference_source(
 ) -> Option<u32> {
     const RECORD_LEN: usize = 46;
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let typed_sources = payload.windows(RECORD_LEN).filter_map(|bytes| {
-        let source = View::u32_le_at(bytes, 0)?;
-        let signature = bytes.get(4..8)?;
-        let selector = View::u32_le_at(bytes, 10)?;
-        (known_reference_plane_sources.contains(&source)
-            && Some(source) != self_source
-            && signature != [0; 4]
-            && bytes.get(8..10) == Some(&[0, 0])
-            && selector <= 3
-            && bytes.get(14..18) == Some(&1u32.to_le_bytes())
-            && bytes.get(18..22) == Some(&[0; 4])
-            && bytes.get(26..38) == Some(&[0; 12])
-            && bytes.get(38..46) == Some(TERMINATOR))
-        .then_some(source)
-    });
+    let finder = memchr::memmem::Finder::new(TERMINATOR);
+    let mut typed_sources = Vec::new();
+    let mut cursor = 38;
+    while cursor < payload.len() {
+        let Some(rel) = finder.find(&payload[cursor..]) else {
+            break;
+        };
+        let term = cursor + rel;
+        cursor = term + 1;
+        let offset = term - 38;
+        let Some(bytes) = payload.get(offset..offset + RECORD_LEN) else {
+            continue;
+        };
+        let found = (|| {
+            let source = View::u32_le_at(bytes, 0)?;
+            let signature = bytes.get(4..8)?;
+            let selector = View::u32_le_at(bytes, 10)?;
+            (known_reference_plane_sources.contains(&source)
+                && Some(source) != self_source
+                && signature != [0; 4]
+                && bytes.get(8..10) == Some(&[0, 0])
+                && selector <= 3
+                && bytes.get(14..18) == Some(&1u32.to_le_bytes())
+                && bytes.get(18..22) == Some(&[0; 4])
+                && bytes.get(26..38) == Some(&[0; 12]))
+            .then_some(source)
+        })();
+        if let Some(source) = found {
+            typed_sources.push(source);
+        }
+    }
     let compact_sources = compact_offset_plane_source(payload)
         .filter(|source| Some(*source) != self_source && known_sources.contains(source));
     let structured_sources = structured_offset_plane_sources(payload)
@@ -2487,6 +2537,7 @@ fn offset_plane_reference_source(
         .filter(|source| Some(*source) != self_source && known_sources.contains(source));
     let mut unique = None;
     for source in typed_sources
+        .into_iter()
         .chain(compact_sources)
         .chain(structured_sources)
         .chain(classed_sources)
@@ -2503,7 +2554,18 @@ fn offset_plane_reference_source(
 fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
     const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
     let mut unique = None;
-    for (offset, body) in payload.windows(115).enumerate() {
+    let finder = memchr::memmem::Finder::new(TERMINATOR);
+    let mut cursor = 107;
+    while cursor < payload.len() {
+        let Some(rel) = finder.find(&payload[cursor..]) else {
+            break;
+        };
+        let term = cursor + rel;
+        cursor = term + 1;
+        let offset = term - 107;
+        let Some(body) = payload.get(offset..offset + 115) else {
+            continue;
+        };
         let alias = (|| {
             let token = View::u16_le_at(body, 0)?;
             if !is_class_token(token)
@@ -2519,7 +2581,6 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
                 || body[95..99] != [0; 4]
                 || body[99..103] != 3u32.to_le_bytes()
                 || body[103..107] != [0; 4]
-                || &body[107..115] != TERMINATOR
             {
                 return None;
             }

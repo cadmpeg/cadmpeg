@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::serde_erase::json;
 
 use std::collections::HashMap;
 
@@ -464,10 +465,8 @@ fn paired_body_to_component_owner_reads_typed_body_runs() {
         .map(|row| row.offset)
         .eq(offsets.iter().copied()));
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(
-            serde_json::to_value(&construction).unwrap()
-        )
-        .unwrap(),
+        json::from_value::<DesignBaseFeatureConstruction>(json::to_value(&construction).unwrap())
+            .unwrap(),
         construction
     );
 

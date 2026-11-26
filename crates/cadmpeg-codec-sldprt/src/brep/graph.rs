@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext};
-use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
+use cadmpeg_ir::annotations::{AnnotationBuilder, AnnotationKey, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_pcurve_uv,
     nurbs_surface_isocurve,
@@ -56,6 +56,9 @@ use super::typed;
 use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
+
+mod prune;
+use prune::prune_rejected_topology;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
@@ -132,8 +135,76 @@ pub(crate) struct Brep {
     /// whose lane the reader refused. The model carries the absence of each
     /// refused carrier, so the decode continues and reports the loss.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Topology records the decode drops. They stay apart from `losses`
+    /// until [`Brep::take_losses`], because [`Brep::qualify_ids`] renames
+    /// the ids they name.
+    pub(crate) dropped: Vec<DroppedRecord>,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
+}
+
+/// A topology record the decode drops (CADIR §3.3).
+#[derive(Debug, Clone)]
+pub(crate) enum DroppedRecord {
+    /// A record given up for its own content, and the records dropped with it.
+    GivenUp {
+        record: String,
+        at: Option<cadmpeg_ir::SourceProvenance>,
+        error: String,
+        dropping: Vec<String>,
+    },
+    /// A record dropped only because it needs the record `needs`.
+    With { record: String, needs: String },
+}
+
+impl DroppedRecord {
+    fn with(record: &str, needs: &str) -> Self {
+        Self::With {
+            record: record.to_owned(),
+            needs: needs.to_owned(),
+        }
+    }
+
+    fn qualify(&mut self, site: &str) {
+        match self {
+            Self::GivenUp {
+                record, dropping, ..
+            } => {
+                *record = qualified_reference(record, site);
+                for id in dropping {
+                    *id = qualified_reference(id, site);
+                }
+            }
+            Self::With { record, needs } => {
+                *record = qualified_reference(record, site);
+                *needs = qualified_reference(needs, site);
+            }
+        }
+    }
+
+    fn loss(self) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::ids::Identity;
+        Ok(match self {
+            Self::GivenUp {
+                record,
+                at,
+                error,
+                dropping,
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
+                .at(at)
+                .dropping(
+                    dropping
+                        .into_iter()
+                        .map(Identity::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .loss(),
+            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
+                Identity::new(record)?,
+                Identity::new(needs)?,
+            ),
+        })
+    }
 }
 
 /// A resolved face color retains the stream that admitted its source row.
@@ -151,6 +222,17 @@ pub(crate) struct OwnedFaceColor {
 }
 
 impl Brep {
+    /// The losses of the decode: its notes, then one loss per dropped record.
+    pub(crate) fn take_losses(
+        &mut self,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut losses = std::mem::take(&mut self.losses);
+        for dropped in std::mem::take(&mut self.dropped) {
+            losses.push(dropped.loss()?);
+        }
+        Ok(losses)
+    }
+
     pub(crate) fn neutral_entity_count(&self) -> Result<u64, cadmpeg_core::CodecError> {
         let counts = [
             self.bodies.len(),
@@ -413,6 +495,9 @@ impl Brep {
                 *target = qualified_reference(target, site);
             }
         }
+        for record in &mut self.dropped {
+            record.qualify(site);
+        }
         self.annotations
             .map_ids(|value| Ok(qualified_reference(value, site)))?
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -644,6 +729,34 @@ fn qualified_reference(value: &str, site: &str) -> String {
         format!("{value}@{site}")
     } else {
         value.to_owned()
+    }
+}
+
+/// The topology record `record` that the decode gives up for `code`, at
+/// `offset` in `stream` where the record has one. `dropped` names the
+/// records the decode drops with it.
+fn topology_given_up(
+    record: impl std::fmt::Display,
+    stream: &cadmpeg_ir::StreamName,
+    offset: Option<usize>,
+    code: crate::loss::SldprtLossCode,
+    why: &str,
+    dropped: &[SurfaceId],
+) -> DroppedRecord {
+    DroppedRecord::GivenUp {
+        record: record.to_string(),
+        at: offset.map(|offset| {
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "sldprt",
+                stream.clone(),
+                u64_from_index(offset),
+            )
+        }),
+        error: format!("{}: {why}", code.kind()),
+        dropping: dropped
+            .iter()
+            .map(|surface| surface.as_str().to_owned())
+            .collect(),
     }
 }
 
@@ -974,7 +1087,7 @@ fn emit_offset_surface(
     offset: &OffsetCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(offset.offset),
         Some("00_3c"),
@@ -1057,7 +1170,7 @@ fn emit_sweep_support(
         attr,
     );
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(sweep.offset),
         Some("procedural_support"),
@@ -1134,7 +1247,7 @@ fn ensure_surface_support(
             {
                 let geometry = retain_surface_geometry(sink.ctx, &carrier.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    match annotate_surface_frame(annotations, id.as_str(), solved) {
+                    match annotate_surface_frame(annotations, &id, solved) {
                         Ok(()) => {}
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
                             return Err(error);
@@ -1143,7 +1256,7 @@ fn ensure_surface_support(
                     }
                 }
                 annotations.note(
-                    id.as_str(),
+                    &id,
                     source_stream,
                     u64_from_index(carrier.offset),
                     Some("procedural_support"),
@@ -1220,7 +1333,7 @@ fn ensure_surface_support(
                     .iter()
                     .any(|candidate| candidate.id == surface)
             {
-                annotations.exactness(surface.as_str(), Exactness::Unknown);
+                annotations.exactness(&surface, Exactness::Unknown);
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
                 sink.out.surfaces.push(Surface {
@@ -2058,12 +2171,12 @@ fn attach_surface_curve(
             ),
         };
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some(note),
         );
-        annotations.exactness(curve_id.as_str(), exactness);
+        annotations.exactness(&curve_id, exactness);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2093,12 +2206,12 @@ fn attach_surface_curve(
     });
     let Some(context) = context else {
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some("unknown_curve"),
         );
-        annotations.exactness(curve_id.as_str(), Exactness::Unknown);
+        annotations.exactness(&curve_id, Exactness::Unknown);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2110,12 +2223,12 @@ fn attach_surface_curve(
         return Ok(());
     };
     annotations.note(
-        curve_id.as_str(),
+        &curve_id,
         source_stream,
         u64_from_index(carrier.offset),
         Some("sp_curve"),
     );
-    annotations.exactness(curve_id.as_str(), Exactness::Derived);
+    annotations.exactness(&curve_id, Exactness::Derived);
     let support = context.sides()[0]
         .surface
         .as_ref()
@@ -3824,7 +3937,7 @@ fn decode_graph_inner(
     for a in point_attrs {
         let rec = &t.points()[&a];
         annotations.note(
-            id_point(a).as_str(),
+            id_point(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_1d"),
@@ -3846,7 +3959,7 @@ fn decode_graph_inner(
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
         annotations.note(
-            id_vertex(a).as_str(),
+            id_vertex(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_12"),
@@ -3874,6 +3987,7 @@ fn decode_graph_inner(
     let mut emitted_curves: HashSet<u32> = HashSet::new();
     let mut surface_curve_attrs = Vec::new();
     let mut edge_set: HashSet<u32> = HashSet::new();
+    let mut withheld_edges = HashSet::<u32>::new();
     let mut edge_endpoint_positions = HashMap::<u32, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
@@ -3900,6 +4014,15 @@ fn decode_graph_inner(
             )
         {
             out.stats.withheld_ring_edges += 1;
+            withheld_edges.insert(e);
+            out.dropped.push(topology_given_up(
+                id_edge(e),
+                stream,
+                t.edge_uses().get(&e).map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
+                "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
+                &[],
+            ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
@@ -3918,10 +4041,10 @@ fn decode_graph_inner(
             } else {
                 "derived_closed_curve_seam"
             };
-            annotations.note(point_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(point_id.as_str(), Exactness::Derived);
-            annotations.note(vertex_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(vertex_id.as_str(), Exactness::Derived);
+            annotations.note(&point_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&point_id, Exactness::Derived);
+            annotations.note(&vertex_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&vertex_id, Exactness::Derived);
             let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4091,13 +4214,12 @@ fn decode_graph_inner(
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations.note(
-                                id_curve(curve_attr).as_str(),
+                                id_curve(curve_attr),
                                 &source_stream,
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             );
-                            annotations
-                                .exactness(id_curve(curve_attr).as_str(), Exactness::Derived);
+                            annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
                     curve = Some(id_curve(curve_attr));
@@ -4113,12 +4235,12 @@ fn decode_graph_inner(
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations.note(
-                            id_curve(curve_attr).as_str(),
+                            id_curve(curve_attr),
                             &source_stream,
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         );
-                        annotations.exactness(id_curve(curve_attr).as_str(), Exactness::Unknown);
+                        annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         admit_brep_entity(ctx)?;
                         out.curves.push(Curve {
                             parameter_range: None,
@@ -4137,7 +4259,7 @@ fn decode_graph_inner(
         }
         let off = eu.map_or(0, |r| r.offset);
         annotations.note(
-            id_edge(e).as_str(),
+            id_edge(e),
             &source_stream,
             u64_from_index(off),
             Some("00_10"),
@@ -4149,7 +4271,7 @@ fn decode_graph_inner(
             || (closed_point.is_some() && !marker_conflict)
         {
             annotations
-                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .derived(id_edge(e), "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         admit_brep_entity(ctx)?;
@@ -4196,6 +4318,43 @@ fn decode_graph_inner(
             }
         }
     }
+    // A ring that uses a withheld edge builds no loop. Its loop and coedges
+    // are dropped with that edge, and its other edges with those coedges.
+    let mut unbuilt_uses = Vec::<(EdgeId, CoedgeId)>::new();
+    for f in &faces {
+        for (loop_attr, ring) in &f.loops {
+            if kept_loops.contains(loop_attr) {
+                continue;
+            }
+            let Some(first) = ring.iter().find(|c| {
+                t.coedges()
+                    .get(c)
+                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
+            }) else {
+                continue;
+            };
+            let loop_id = id_loop(*loop_attr);
+            for c in ring {
+                let Some(ce) = t.coedges().get(c) else {
+                    continue;
+                };
+                let coedge = id_coedge(*c);
+                let edge = id_edge(ce.refs[6]);
+                let needs = if withheld_edges.contains(&ce.refs[6]) {
+                    edge.as_str()
+                } else {
+                    loop_id.as_str()
+                };
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), needs));
+                unbuilt_uses.push((edge, coedge));
+            }
+            out.dropped.push(DroppedRecord::with(
+                loop_id.as_str(),
+                id_coedge(*first).as_str(),
+            ));
+        }
+    }
     let mut emitted_coedges = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
@@ -4225,7 +4384,7 @@ fn decode_graph_inner(
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| id_coedge(twin));
                 annotations.note(
-                    id_coedge(ce_attr).as_str(),
+                    id_coedge(ce_attr),
                     &source_stream,
                     u64_from_index(ce.offset),
                     Some("00_11"),
@@ -4291,7 +4450,7 @@ fn decode_graph_inner(
                         );
                         let offset = curve_carrier.offset;
                         annotations.note(
-                            id.as_str(),
+                            &id,
                             &source_stream,
                             u64_from_index(offset),
                             Some(match source {
@@ -4304,7 +4463,7 @@ fn decode_graph_inner(
                                 }
                             }),
                         );
-                        annotations.exactness(id.as_str(), Exactness::Derived);
+                        annotations.exactness(&id, Exactness::Derived);
                         admit_brep_entity(ctx)?;
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
@@ -4376,7 +4535,7 @@ fn decode_graph_inner(
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
@@ -4398,7 +4557,7 @@ fn decode_graph_inner(
             }
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
@@ -4443,10 +4602,22 @@ fn decode_graph_inner(
     };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
-        out.stats.unclaimed_faces += faces
+        for face in faces
             .iter()
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
-            .count();
+        {
+            out.stats.unclaimed_faces += 1;
+            out.dropped.push(topology_given_up(
+                id_face(face.bridge_attr),
+                stream,
+                t.bridges()
+                    .get(&face.bridge_attr)
+                    .map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
+                "no body record claims the face",
+                &[id_surf(face.bridge_attr)],
+            ));
+        }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     // The tolerance each emitted edge states: a blend cache bounds the face
@@ -4510,14 +4681,38 @@ fn decode_graph_inner(
             FaceAdmission::Admitted => {}
             FaceAdmission::VertexLoopUnresolved => {
                 out.stats.withheld_vertex_loop_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
+                    "a vertex loop of the face names no resolved vertex",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::FinAmbiguous => {
                 out.stats.withheld_ambiguous_fin_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+                    "a loop of the face holds an ambiguous FIN",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::NoLoop => {
                 out.stats.withheld_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
+                    "no loop of the face decodes",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
         }
@@ -4537,18 +4732,14 @@ fn decode_graph_inner(
                         .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
-                    id_surf(f.bridge_attr).as_str(),
+                    id_surf(f.bridge_attr),
                     &source_stream,
                     u64_from_index(c.offset),
                     Some("compact_surface"),
                 );
                 let geometry = retain_surface_geometry(ctx, &c.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    annotate_surface_frame(
-                        &mut annotations,
-                        id_surf(f.bridge_attr).as_str(),
-                        solved,
-                    )?;
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), solved)?;
                 }
                 admit_brep_entity(ctx)?;
                 out.surfaces.push(Surface {
@@ -4698,7 +4889,7 @@ fn decode_graph_inner(
                             emit_curve(ctx, &mut out, carrier)?;
                             out.approximations.intersection(indexed);
                             annotations.note(
-                                id_curve(blend.spine).as_str(),
+                                id_curve(blend.spine),
                                 &source_stream,
                                 u64_from_index(carrier.offset),
                                 Some("blend_spine"),
@@ -4954,15 +5145,15 @@ fn decode_graph_inner(
                         cache: cache.map(|cache| SolvedSurfaceGeometry::Nurbs(cache.surface)),
                     };
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(blend.offset),
                         Some("00_38"),
                     );
                     if derived_cache {
                         annotations.field_exactness(
-                            id_surf(f.bridge_attr).as_str(),
-                            "geometry.cache",
+                            id_surf(f.bridge_attr),
+                            "geometry.value.cache",
                             Exactness::Derived,
                         )?;
                     }
@@ -4998,13 +5189,13 @@ fn decode_graph_inner(
                     resolved
                 } {
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(offset),
                         Some(tag),
                     );
                     if let Some(exactness) = exactness {
-                        annotations.exactness(id_surf(f.bridge_attr).as_str(), exactness);
+                        annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
@@ -5026,12 +5217,12 @@ fn decode_graph_inner(
                 {
                     out.stats.unknown_surface_faces += 1;
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     );
-                    annotations.exactness(id_surf(f.bridge_attr).as_str(), Exactness::Unknown);
+                    annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
@@ -5045,7 +5236,7 @@ fn decode_graph_inner(
             }
         }
         annotations.note(
-            id_face(f.bridge_attr).as_str(),
+            id_face(f.bridge_attr),
             &source_stream,
             u64_from_index(surf_off),
             Some("00_0e"),
@@ -5148,7 +5339,7 @@ fn decode_graph_inner(
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_spherical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &unbuilt_uses);
     out.stats.tolerant_edges_without_curve = out
         .edges
         .iter()
@@ -5159,6 +5350,7 @@ fn decode_graph_inner(
         return Ok(Brep {
             approximations: out.approximations,
             losses: out.losses,
+            dropped: out.dropped,
             stats: out.stats,
             ..Brep::default()
         });
@@ -5176,18 +5368,19 @@ fn decode_graph_inner(
             &body_namespace(),
             body_record.map_or(0_u32, |record| record.attr),
         );
-        let mut annotate_group =
-            |id: &str, source: Option<(usize, &str)>| -> Result<(), cadmpeg_core::CodecError> {
-                let (offset, tag, exactness) = source.map_or(
-                    (0, "synthetic_grouping", Exactness::Derived),
-                    |(offset, tag)| (offset, tag, Exactness::ByteExact),
-                );
-                annotations.note(id, &source_stream, u64_from_index(offset), Some(tag));
-                annotations.exactness(id, exactness);
-                Ok(())
-            };
+        let mut annotate_group = |key: AnnotationKey,
+                                  source: Option<(usize, &str)>|
+         -> Result<(), cadmpeg_core::CodecError> {
+            let (offset, tag, exactness) = source.map_or(
+                (0, "synthetic_grouping", Exactness::Derived),
+                |(offset, tag)| (offset, tag, Exactness::ByteExact),
+            );
+            annotations.note(&key, &source_stream, u64_from_index(offset), Some(tag));
+            annotations.exactness(key, exactness);
+            Ok(())
+        };
         annotate_group(
-            body_id.as_str(),
+            AnnotationKey::from(&body_id),
             body_record.map(|record| (record.offset, "00_51_body")),
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
@@ -5195,7 +5388,7 @@ fn decode_graph_inner(
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
-            annotate_group(region_id.as_str(), None)?;
+            annotate_group(AnnotationKey::from(&region_id), None)?;
             let mut region_shells = Vec::new();
             for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                 .into_iter()
@@ -5206,7 +5399,7 @@ fn decode_graph_inner(
                 } else {
                     shell_component(&native_shell_id, component)?
                 };
-                annotate_group(shell_id.as_str(), None)?;
+                annotate_group(AnnotationKey::from(&shell_id), None)?;
                 let mut face_ids = HashSet::new();
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
@@ -5232,7 +5425,10 @@ fn decode_graph_inner(
         } else {
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
-                annotate_group(region_id.as_str(), Some((region.offset, "00_51_region")))?;
+                annotate_group(
+                    AnnotationKey::from(&region_id),
+                    Some((region.offset, "00_51_region")),
+                )?;
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
@@ -5246,7 +5442,7 @@ fn decode_graph_inner(
                             shell_component(&native_shell_id, component)?
                         };
                         annotate_group(
-                            shell_id.as_str(),
+                            AnnotationKey::from(&shell_id),
                             (component == 0).then_some((shell.offset, "00_51_shell")),
                         )?;
                         let mut face_ids = HashSet::new();
@@ -5338,7 +5534,7 @@ fn decode_graph_inner(
         if let Some(indexed) = carriers.curve(attr) {
             let carrier = indexed.carrier();
             annotations.note(
-                curve.id.as_str(),
+                &curve.id,
                 &source_stream,
                 u64_from_index(carrier.offset),
                 Some("compact_curve"),
@@ -5347,7 +5543,7 @@ fn decode_graph_inner(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
             ) {
-                annotations.exactness(curve.id.as_str(), Exactness::Unknown);
+                annotations.exactness(&curve.id, Exactness::Unknown);
             }
         }
     }
@@ -5466,154 +5662,37 @@ fn phase_full_turn_edge_ranges(
         ) {
             edge.carrier = carrier;
             annotations
-                .derived(edge.id.as_str(), "carrier.param_range")
+                .derived(&edge.id, "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
 }
 
-fn prune_rejected_topology(out: &mut Brep) {
-    let kept_loops = out
-        .faces
-        .iter()
-        .flat_map(|face| face.loops.stated())
-        .map(cadmpeg_ir::ids::LoopId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.loops
-        .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
-
-    let kept_coedges = out
-        .loops
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Loop::coedges)
-        .map(cadmpeg_ir::ids::CoedgeId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.coedges
-        .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
-    for coedge in &mut out.coedges {
-        if !kept_coedges.contains(coedge.radial_next.as_str()) {
-            coedge.radial_next = coedge.id.clone();
-        }
-    }
-
-    let kept_pcurves = out
-        .coedges
-        .iter()
-        .flat_map(|coedge| &coedge.pcurves)
-        .map(|use_| &use_.pcurve)
-        .map(cadmpeg_ir::ids::PcurveId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.pcurves
-        .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
-
-    let kept_edges = out
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.edges
-        .retain(|edge| kept_edges.contains(edge.id.as_str()));
-
-    let kept_vertices = out
-        .edges
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Edge::vertices)
-        .chain(
-            out.loops
-                .iter()
-                .flat_map(cadmpeg_ir::topology::Loop::vertices),
-        )
-        .map(cadmpeg_ir::ids::VertexId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.vertices
-        .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
-
-    let kept_points = out
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.points
-        .retain(|point| kept_points.contains(point.id.as_str()));
-
-    let kept_curves = out
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
-        .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-            match surface.definition() {
-                ProceduralSurfaceDefinition::Blend(definition) => definition.spine().as_ref(),
-                ProceduralSurfaceDefinition::LinearSweep(definition) => {
-                    Some(definition.directrix())
-                }
-                _ => None,
-            }
-            .map(cadmpeg_ir::ids::CurveId::as_str)
-        }))
-        .collect::<std::collections::HashSet<_>>();
-    out.curves
-        .retain(|curve| kept_curves.contains(curve.id.as_str()));
-    let kept_constructions = out
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            curve
-                .geometry
-                .procedural_construction()
-                .map(ProceduralCurveId::as_str)
-        })
-        .collect::<std::collections::HashSet<_>>();
-    out.procedural_curves
-        .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
-    let unknown_curves = out
-        .curves
-        .iter()
-        .filter(|curve| {
-            matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .map(|curve| curve.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.stats.unknown_curve_edges = out
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.curve()
-                .is_some_and(|curve_id| unknown_curves.contains(curve_id.as_str()))
-        })
-        .count();
-}
-
 fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    id: &SurfaceId,
     mut geometry: &SolvedSurfaceGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    loop {
+    let mut path = String::from("geometry.value");
+    let fields: &[&str] = loop {
         match geometry {
-            SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness(id, "geometry.u_axis", Exactness::Derived)?;
-                break;
-            }
+            SolvedSurfaceGeometry::Plane(_) => break &["u_axis"],
             SolvedSurfaceGeometry::Cylinder(_)
             | SolvedSurfaceGeometry::Cone(_)
-            | SolvedSurfaceGeometry::Torus(_) => {
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
+            | SolvedSurfaceGeometry::Torus(_) => break &["ref_direction"],
+            SolvedSurfaceGeometry::Sphere(_) => break &["axis", "ref_direction"],
+            SolvedSurfaceGeometry::Transformed(placed) => {
+                path.push_str(".basis");
+                geometry = placed.basis();
             }
-            SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness(id, "geometry.axis", Exactness::Derived)?;
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Unknown { .. } => break,
+            | SolvedSurfaceGeometry::Unknown { .. } => break &[],
         }
+    };
+    for field in fields {
+        annotations.field_exactness(id, format!("{path}.{field}"), Exactness::Derived)?;
     }
     Ok(())
 }
@@ -5817,8 +5896,8 @@ fn derive_planar_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(id.as_str(), source_stream, 0, Some("derived_planar_pcurve"));
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_planar_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6196,13 +6275,8 @@ fn derive_cylindrical_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_cylindrical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_cylindrical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6736,12 +6810,12 @@ fn derive_revolved_circle_pcurves(
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some("derived_revolved_circle_pcurve"),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -7111,13 +7185,8 @@ fn derive_spherical_pcurves(
                     parameter_range,
                 });
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_spherical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_spherical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -7334,7 +7403,7 @@ fn derive_nurbs_isoparametric_pcurves(
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some(if cache {
@@ -7343,7 +7412,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 "derived_nurbs_isoparametric_pcurve"
             }),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         if let Some(tolerance) = pcurve.fit_tolerance().filter(|_| cache) {
             out.approximations.inverse_boundary(tolerance.get());
         }
@@ -9288,14 +9357,14 @@ fn synthesize_cylinder_seams(
         let coedge_namespace = cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge");
         let seam_a = CoedgeId::compose(&coedge_namespace, suffix.clone().colon(0_u32));
         let seam_b = CoedgeId::compose(&coedge_namespace, suffix.colon(1_u32));
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            seam_a.as_str(),
-            seam_b.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&seam_a),
+            AnnotationKey::from(&seam_b),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_periodic_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_periodic_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -9505,13 +9574,8 @@ fn synthesize_sphere_seams(
             &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
             cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
         );
-        annotations.note(
-            curve_id.as_str(),
-            source_stream,
-            0,
-            Some("derived_sphere_seam"),
-        );
-        annotations.exactness(curve_id.as_str(), Exactness::Derived);
+        annotations.note(&curve_id, source_stream, 0, Some("derived_sphere_seam"));
+        annotations.exactness(&curve_id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -9672,9 +9736,12 @@ fn synthesize_sphere_seams(
                     &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
                     seam_face_key.clone(),
                 );
-                for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-                    annotations.exactness(id, Exactness::Derived);
+                for key in [
+                    AnnotationKey::from(&point_id),
+                    AnnotationKey::from(&vertex_id),
+                ] {
+                    annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+                    annotations.exactness(key, Exactness::Derived);
                 }
                 admit_brep_entity(ctx)?;
                 out.points
@@ -9706,14 +9773,14 @@ fn synthesize_sphere_seams(
                     .unwrap_or(false)
             })
             .map_or(ring.len(), |index| index + 1);
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            coedge_id.as_str(),
-            pcurve_id.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&coedge_id),
+            AnnotationKey::from(&pcurve_id),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -11060,7 +11127,7 @@ mod tests {
             ..Default::default()
         };
 
-        super::prune_rejected_topology(&mut brep);
+        super::prune_rejected_topology(&mut brep, &[]);
         assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 

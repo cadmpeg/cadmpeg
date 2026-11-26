@@ -35,7 +35,7 @@ impl ShiftedBinary64 {
 
     pub(crate) fn from_wire(value: f64, raw: [u8; 8]) -> Result<Self, &'static str> {
         let atom = Self::try_from(raw)?;
-        if value.to_bits() != atom.value().get().to_bits() {
+        if value != atom.value().get() {
             return Err("scalars must match raw_scalars");
         }
         Ok(atom)
@@ -71,7 +71,7 @@ impl Eq for ShiftedBinary32 {}
 impl ShiftedBinary32 {
     pub(crate) fn from_wire(value: f64, raw: [u8; 4]) -> Result<Self, &'static str> {
         let scalar = Self::read(&raw).ok_or("raw_values must contain shifted binary32 atoms")?;
-        if scalar.value().get().to_bits() != value.to_bits() {
+        if scalar.value().get() != value {
             return Err("values must match raw_values atoms");
         }
         Ok(scalar)
@@ -112,7 +112,7 @@ pub(crate) enum ShiftedScalar {
 impl ShiftedScalar {
     pub(crate) fn from_wire(value: f64, raw: &[u8]) -> Result<Self, &'static str> {
         let scalar = Self::read(raw).ok_or("raw_values must contain shifted scalar atoms")?;
-        if scalar.raw().len() != raw.len() || scalar.value().get().to_bits() != value.to_bits() {
+        if scalar.raw().len() != raw.len() || scalar.value().get() != value {
             return Err("values must match exact raw_values atoms");
         }
         Ok(scalar)
@@ -203,7 +203,7 @@ impl PayloadScalarAtom {
         if atom.encoding() != encoding {
             return Err("encodings must match raw_values");
         }
-        if atom.value().get().to_bits() != value.to_bits() {
+        if atom.value().get() != value {
             return Err("values must match raw_values");
         }
         Ok(atom)

@@ -239,15 +239,26 @@ pub(crate) fn decode_parameter_scopes(
                     .map(|row| row.type_guid.as_str()),
             )?
             else {
-                if let Some(tail_length) = unparsed_rigid_group_tail_length(
+                if let Some((tail_length, end)) = unparsed_rigid_group_frame(
                     bytes,
                     &records,
                     header.record_index,
                     header.byte_offset,
                 ) {
-                    losses.push(crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
-                        format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
-                    ));
+                    let start = usize::try_from(header.byte_offset)
+                        .map_err(|_| CodecError::malformed("F3D rigid-group frame offset"))?;
+                    let mut frames = Vec::new();
+                    crate::design::decode::record::RecordFrame::new(&entry.name, start, end)
+                        .give_up(
+                            crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
+                                format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
+                            ),
+                            &mut losses,
+                            &mut frames,
+                        );
+                    given_up.extend(crate::design::decode::record::give_up_frames(
+                        ctx, scan, frames,
+                    )?);
                 }
                 continue;
             };
@@ -1488,11 +1499,11 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let Ok(bytes) = serde_json::to_vec(scope) else {
+    let Ok(text) = cadmpeg_core::serde_erase::to_json_string(scope) else {
         return Ok(None);
     };
     let mut refusal = None;
-    let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
+    let mut deserializer = serde_json::Deserializer::from_str(&text);
     let parsed = crate::design::json_value::ValueSeed {
         ctx,
         refusal: &mut refusal,
@@ -1776,12 +1787,14 @@ enum ScopeTailForm {
     TypedExtended,
 }
 
-fn unparsed_rigid_group_tail_length(
+/// The tail length and the frame end of a rigid-group record whose frame
+/// matches the ordinary layout up to an unadmitted tail.
+fn unparsed_rigid_group_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     byte_offset: u64,
-) -> Option<usize> {
+) -> Option<(usize, usize)> {
     use crate::layout::assembly_alternate_rigid_group_prefix as alternate;
     use crate::layout::assembly_rigid_as_built_scope as ordinary;
     let start = usize::try_from(byte_offset).ok()?;
@@ -1815,8 +1828,8 @@ fn unparsed_rigid_group_tail_length(
             && bytes.get(guid_end..table)?.iter().all(|byte| *byte == 0))
         .then_some(tail_length)
     });
-    if known_tail.is_some() {
-        return known_tail;
+    if let Some(tail_length) = known_tail {
+        return Some((tail_length, paired));
     }
     let prologue_shift = if crate::bytes::local_reference_target(
         bytes,
@@ -1899,7 +1912,7 @@ fn unparsed_rigid_group_tail_length(
     {
         return None;
     }
-    paired.checked_sub(kind_end)
+    Some((paired.checked_sub(kind_end)?, paired))
 }
 
 /// The tail offsets of the timeline state of a feature item tail.

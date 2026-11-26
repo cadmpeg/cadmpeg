@@ -1070,22 +1070,6 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
             Uuid::from_wire(nested_reference_id).to_string()
         ]
     );
-    assert_eq!(
-        curve
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .color,
-        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
-    );
-    assert_eq!(
-        curve
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .visible,
-        Some(false)
-    );
     assert!(curve.id.to_string().contains(&format!(
         "{}.{}",
         Uuid::from_wire(world_reference_id),

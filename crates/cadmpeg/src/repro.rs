@@ -2,9 +2,10 @@
 //! Command wrappers for the reproduction library.
 use crate::application::{
     artifact_store::FileDestination,
-    refusal::{ApplicationError, CheckOperation, ConversionRefusal},
+    refusal::{ApplicationError, ConversionRefusal},
 };
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::check::Finding;
 use cadmpeg_registry::{
     repro::{check, cut, Bundle, CutOptions},
@@ -37,7 +38,7 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
     let text =
         crate::application::artifact_store::read_bounded_text(&args.from, MAX_REPRO_INPUT_BYTES)?;
     let report: serde_json::Value = serde_json::from_str(&text)?;
-    let finding: Finding = serde_json::from_value(
+    let finding: Finding = json::from_value(
         report["check_report"]["findings"]
             .get(args.finding)
             .context("finding index is outside the report")?
@@ -49,11 +50,12 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
     let document = crate::loader::load_artifact(
         inputs,
         Path::new(input),
-        cadmpeg_ir::codec::DecodeOptions::default(),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
         None,
     )?;
     let bundle = cut(&document.ir, &finding, &CutOptions::default())?;
-    let bytes = serde_json::to_vec(&bundle)?;
+    let mut bytes = cadmpeg_ir::hash::finite_json::to_canonical_json_string(&bundle)?.into_bytes();
+    bytes.push(b'\n');
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -84,9 +86,8 @@ pub(crate) fn check_fragment(
         findings,
         losses: Vec::new(),
     };
-    let body = serde_json::json!({"check_report": report});
+    let body = cadmpeg_core::json!({"check_report": report});
     let refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-        operation: CheckOperation::Check,
         decode_report: None,
         validation: report.clone(),
     });

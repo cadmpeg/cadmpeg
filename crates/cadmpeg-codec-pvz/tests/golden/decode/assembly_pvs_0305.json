@@ -22,18 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "pvz:model:body#bracket.ol",
-          "kind": "general",
-          "name": "bracket.ol"
-        },
-        {
-          "id": "pvz:model:body#plate.ol",
-          "kind": "general",
-          "name": "plate.ol"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -94,17 +83,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -189,7 +172,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -212,18 +194,14 @@
             "pvz:model:occurrence#2"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "TOP.ASM",
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#bracket.ol"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "pvz:model:definition#1",
           "instance_bodies": [],
@@ -231,17 +209,13 @@
           "native_ref": "definition 1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "BRACKET.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#plate.ol"
-          ],
+          "bodies": [],
           "bom_properties": {
             "MATERIAL": "STEEL"
           },
@@ -251,29 +225,18 @@
           "native_ref": "definition 2",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PLATE.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "pvz:model:body#bracket.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#bracket.ol:0",
           "mesh": {
@@ -323,6 +286,15 @@
               }
             ]
           },
+          "of": {
+            "definition": "pvz:model:definition#1",
+            "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "bracket.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -338,9 +310,7 @@
           ]
         },
         {
-          "body": "pvz:model:body#plate.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#plate.ol:0",
           "mesh": {
@@ -408,6 +378,15 @@
               }
             ]
           },
+          "of": {
+            "definition": "pvz:model:definition#2",
+            "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "plate.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -423,7 +402,18 @@
       ],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "pvz": {
+        "unknowns": [
+          {
+            "id": "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4",
+            "links": [
+              "pvz:model:definition#2"
+            ]
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -509,8 +499,7 @@
           "value": {
             "code": "geometry.exact-undecoded",
             "kind": "geometry_not_transferred",
-            "namespace": "pvz",
-            "strict_floor": "warning"
+            "namespace": "pvz"
           }
         },
         "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
@@ -558,8 +547,7 @@
           "value": {
             "code": "tessellation.edges-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "pvz",
-            "strict_floor": "warning"
+            "namespace": "pvz"
           }
         },
         "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",
@@ -576,6 +564,25 @@
         },
         "message": "1 of 2 geometry members carry the 19-byte preamble block whose fields are an open item (PVZ-11); the block was not transferred",
         "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: exact stream does not end with its stream terminator; dropped=[]",
+        "provenance": {
+          "format": "pvz",
+          "offset": 414,
+          "stream": "pvz:plate.ol",
+          "tag": "ol-stream"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -592,9 +599,25 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "37dd2c6cfdf29f467b5df26a32130a8e2fe4caf97c235ce9f4353c225eb27cf0",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4": {
+        "bytes": {
+          "data": "H4sIAAAAAAAA/wEMAPP/AgAAAQQAAAAEAAAAHtW9iwwAAAA=",
+          "kind": "inline"
+        },
+        "offset": 414,
+        "stream": "pvz:plate.ol",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

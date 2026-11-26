@@ -412,20 +412,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -442,24 +435,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1239,8 +1223,7 @@
           "value": {
             "code": "geometry.unresolved-carriers",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "The transferred model retains 0 unresolved curve carriers and 1 unresolved surface carriers without exact procedural constructions. Surface carriers: catia:standard:surf#1.",
@@ -1264,8 +1247,7 @@
           "value": {
             "code": "topology.boundary-graph-not-emitted",
             "kind": "topology_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
@@ -1277,8 +1259,7 @@
           "value": {
             "code": "geometry.plane-parameters-invalid",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "1 plane surface record(s) were located but not decoded because their tag-bridged parameter records were absent or invalid.",
@@ -1295,6 +1276,32 @@
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record catia:standard:face#0 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record catia:standard:face#1 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -1317,7 +1324,6 @@
         "catia:consolidated:construction#0": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1467,6 +1473,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "0a04a8be265bcf156e1941b77a133cb870b35bc3b81c893ab95e7742455071a6",
     "file_digests": {},
     "retained_records": {

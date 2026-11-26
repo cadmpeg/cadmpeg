@@ -26,7 +26,750 @@
           }
         }
       ],
-      "evaluations": [],
+      "evaluations": [
+        {
+          "content": {
+            "base": {
+              "kind": "empty"
+            },
+            "delta": {
+              "instance_bodies": [],
+              "members": {},
+              "names": [],
+              "owners": {},
+              "poses": [],
+              "records": {
+                "bodies": [
+                  {
+                    "id": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:9",
+                    "kind": "solid",
+                    "visible": false
+                  }
+                ],
+                "coedges": [
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
+                    "pcurves": [
+                      {
+                        "parameter_range": [
+                          0.0,
+                          4.0
+                        ],
+                        "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A3%3A1"
+                      }
+                    ],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1",
+                    "sense": "reversed"
+                  },
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
+                    "pcurves": [
+                      {
+                        "parameter_range": [
+                          0.0,
+                          4.0
+                        ],
+                        "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A2%3A1"
+                      }
+                    ],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1",
+                    "sense": "forward"
+                  },
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
+                    "pcurves": [
+                      {
+                        "parameter_range": [
+                          0.0,
+                          5.0
+                        ],
+                        "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A2"
+                      }
+                    ],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
+                    "sense": "forward"
+                  },
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
+                    "pcurves": [
+                      {
+                        "parameter_range": [
+                          0.0,
+                          5.0
+                        ],
+                        "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A1"
+                      }
+                    ],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3",
+                    "sense": "reversed"
+                  },
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1",
+                    "pcurves": [],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
+                    "sense": "forward"
+                  },
+                  {
+                    "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
+                    "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1",
+                    "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1",
+                    "pcurves": [],
+                    "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
+                    "sense": "reversed"
+                  }
+                ],
+                "curves": [
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "direction": {
+                          "x": 0.0,
+                          "y": 0.0,
+                          "z": 1.0
+                        },
+                        "kind": "line",
+                        "origin": {
+                          "x": 0.0,
+                          "y": -10.0,
+                          "z": 0.0
+                        }
+                      }
+                    },
+                    "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "degree": 2,
+                        "kind": "nurbs",
+                        "knots": [
+                          -2.0,
+                          -1.0,
+                          0.0,
+                          1.0,
+                          2.0,
+                          3.0,
+                          4.0,
+                          5.0,
+                          6.0
+                        ],
+                        "periodic": true,
+                        "poles": {
+                          "kind": "polynomial",
+                          "points": [
+                            {
+                              "x": -10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": 10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": -10.0,
+                              "y": 10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": -10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "basis": {
+                          "degree": 2,
+                          "kind": "nurbs",
+                          "knots": [
+                            -2.0,
+                            -1.0,
+                            0.0,
+                            1.0,
+                            2.0,
+                            3.0,
+                            4.0,
+                            5.0,
+                            6.0
+                          ],
+                          "periodic": true,
+                          "poles": {
+                            "kind": "polynomial",
+                            "points": [
+                              {
+                                "x": -10.0,
+                                "y": -10.0,
+                                "z": 0.0
+                              },
+                              {
+                                "x": 10.0,
+                                "y": -10.0,
+                                "z": 0.0
+                              },
+                              {
+                                "x": 10.0,
+                                "y": 10.0,
+                                "z": 0.0
+                              },
+                              {
+                                "x": -10.0,
+                                "y": 10.0,
+                                "z": 0.0
+                              },
+                              {
+                                "x": -10.0,
+                                "y": -10.0,
+                                "z": 0.0
+                              },
+                              {
+                                "x": 10.0,
+                                "y": -10.0,
+                                "z": 0.0
+                              }
+                            ]
+                          }
+                        },
+                        "kind": "transformed",
+                        "transform": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            5.0
+                          ]
+                        ]
+                      }
+                    },
+                    "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "degree": 2,
+                        "kind": "nurbs",
+                        "knots": [
+                          -2.0,
+                          -1.0,
+                          0.0,
+                          1.0,
+                          2.0,
+                          3.0,
+                          4.0,
+                          5.0,
+                          6.0
+                        ],
+                        "periodic": true,
+                        "poles": {
+                          "kind": "polynomial",
+                          "points": [
+                            {
+                              "x": -10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": 10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": -10.0,
+                              "y": 10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": -10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            },
+                            {
+                              "x": 10.0,
+                              "y": -10.0,
+                              "z": 0.0
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  }
+                ],
+                "edges": [
+                  {
+                    "carrier": {
+                      "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+                      "param_range": [
+                        0.0,
+                        5.0
+                      ]
+                    },
+                    "ends": {
+                      "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+                      "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4"
+                    },
+                    "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "tolerance": 1e-7
+                  },
+                  {
+                    "carrier": {
+                      "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                      "param_range": [
+                        0.0,
+                        4.0
+                      ]
+                    },
+                    "ends": {
+                      "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+                      "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4"
+                    },
+                    "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
+                    "tolerance": 1e-7
+                  },
+                  {
+                    "carrier": {
+                      "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
+                      "param_range": [
+                        0.0,
+                        4.0
+                      ]
+                    },
+                    "ends": {
+                      "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+                      "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6"
+                    },
+                    "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
+                    "tolerance": 1e-7
+                  }
+                ],
+                "faces": [
+                  {
+                    "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:5",
+                    "loops": {
+                      "kind": "unspecified",
+                      "loops": [
+                        "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1"
+                      ]
+                    },
+                    "sense": "reversed",
+                    "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+                    "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+                    "tolerance": 1e-7
+                  },
+                  {
+                    "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11",
+                    "loops": {
+                      "kind": "unspecified",
+                      "loops": [
+                        "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1"
+                      ]
+                    },
+                    "sense": "forward",
+                    "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+                    "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
+                    "tolerance": 1e-7
+                  },
+                  {
+                    "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9",
+                    "loops": {
+                      "kind": "unspecified",
+                      "loops": [
+                        "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1"
+                      ]
+                    },
+                    "sense": "reversed",
+                    "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+                    "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "tolerance": 1e-7
+                  }
+                ],
+                "loops": [
+                  {
+                    "boundary": {
+                      "coedges": [
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3"
+                      ],
+                      "kind": "ring",
+                      "vertex_uses": []
+                    },
+                    "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:5",
+                    "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1"
+                  },
+                  {
+                    "boundary": {
+                      "coedges": [
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1"
+                      ],
+                      "kind": "ring",
+                      "vertex_uses": []
+                    },
+                    "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11",
+                    "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1"
+                  },
+                  {
+                    "boundary": {
+                      "coedges": [
+                        "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1"
+                      ],
+                      "kind": "ring",
+                      "vertex_uses": []
+                    },
+                    "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9",
+                    "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1"
+                  }
+                ],
+                "pcurves": [
+                  {
+                    "geometry": {
+                      "direction": {
+                        "u": 0.0,
+                        "v": -1.0
+                      },
+                      "kind": "line",
+                      "origin": {
+                        "u": 0.0,
+                        "v": 0.0
+                      }
+                    },
+                    "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A1",
+                    "metadata": {
+                      "form": {
+                        "parameter_range": [
+                          0.0,
+                          5.0
+                        ]
+                      },
+                      "kind": "general"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "direction": {
+                        "u": 0.0,
+                        "v": -1.0
+                      },
+                      "kind": "line",
+                      "origin": {
+                        "u": 4.0,
+                        "v": 0.0
+                      }
+                    },
+                    "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A2",
+                    "metadata": {
+                      "form": {
+                        "parameter_range": [
+                          0.0,
+                          5.0
+                        ]
+                      },
+                      "kind": "general"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "direction": {
+                        "u": 1.0,
+                        "v": 0.0
+                      },
+                      "kind": "line",
+                      "origin": {
+                        "u": 0.0,
+                        "v": 0.0
+                      }
+                    },
+                    "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A2%3A1",
+                    "metadata": {
+                      "form": {
+                        "parameter_range": [
+                          0.0,
+                          4.0
+                        ]
+                      },
+                      "kind": "general"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "direction": {
+                        "u": 1.0,
+                        "v": 0.0
+                      },
+                      "kind": "line",
+                      "origin": {
+                        "u": 0.0,
+                        "v": -5.0
+                      }
+                    },
+                    "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A3%3A1",
+                    "metadata": {
+                      "form": {
+                        "parameter_range": [
+                          0.0,
+                          4.0
+                        ]
+                      },
+                      "kind": "general"
+                    }
+                  }
+                ],
+                "points": [
+                  {
+                    "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+                    "position": {
+                      "x": 0.0,
+                      "y": -10.0,
+                      "z": 0.0
+                    },
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+                    "position": {
+                      "x": 0.0,
+                      "y": -10.0,
+                      "z": 5.0
+                    },
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  }
+                ],
+                "procedural_curves": [],
+                "procedural_surfaces": [
+                  {
+                    "definition": {
+                      "cache": {
+                        "kind": "legacy"
+                      },
+                      "direction": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -1.0
+                      },
+                      "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
+                      "kind": "extrusion"
+                    },
+                    "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:construction",
+                    "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1"
+                  }
+                ],
+                "regions": [
+                  {
+                    "body": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:9",
+                    "id": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:9",
+                    "shells": [
+                      "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8"
+                    ]
+                  }
+                ],
+                "shells": [
+                  {
+                    "id": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+                    "members": [],
+                    "region": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:9"
+                  }
+                ],
+                "subds": [],
+                "surfaces": [
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "kind": "unknown"
+                      }
+                    },
+                    "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "kind": "plane",
+                        "normal": {
+                          "x": 0.0,
+                          "y": 0.0,
+                          "z": 1.0
+                        },
+                        "origin": {
+                          "x": -1.1e-16,
+                          "y": 1.1e-16,
+                          "z": 0.0
+                        },
+                        "u_axis": {
+                          "x": 1.0,
+                          "y": 0.0,
+                          "z": 0.0
+                        }
+                      }
+                    },
+                    "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  },
+                  {
+                    "geometry": {
+                      "kind": "solved",
+                      "value": {
+                        "basis": {
+                          "kind": "plane",
+                          "normal": {
+                            "x": 0.0,
+                            "y": 0.0,
+                            "z": 1.0
+                          },
+                          "origin": {
+                            "x": -1.1e-16,
+                            "y": 1.1e-16,
+                            "z": 0.0
+                          },
+                          "u_axis": {
+                            "x": 1.0,
+                            "y": 0.0,
+                            "z": 0.0
+                          }
+                        },
+                        "kind": "transformed",
+                        "transform": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            5.0
+                          ]
+                        ]
+                      }
+                    },
+                    "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
+                    "source_object": {
+                      "format": "fcstd",
+                      "instance_path": [],
+                      "object_id": "fcstd:native:object#Pad"
+                    }
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+                    "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
+                    "tolerance": 1e-7
+                  },
+                  {
+                    "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+                    "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
+                    "tolerance": 1e-7
+                  }
+                ]
+              },
+              "removed": []
+            }
+          },
+          "id": "fcstd:design:evaluation#Pad:AddSubShape:Pad.AddSubShape.brp",
+          "native_ref": "fcstd:native:shape-payload#Pad:AddSubShape:Pad.AddSubShape.brp",
+          "of": {
+            "kind": "tool",
+            "value": "fcstd:design:feature#Pad"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "status": "current"
+        }
+      ],
       "features": [
         {
           "definition": {
@@ -183,21 +926,6 @@
         {
           "id": "fcstd:model:body#Body:Shape:Body.Shape.brp:13%40location1",
           "kind": "solid"
-        },
-        {
-          "id": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:9",
-          "kind": "solid",
-          "visible": false
-        },
-        {
-          "id": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:9%40location1",
-          "kind": "solid",
-          "visible": false
-        },
-        {
-          "id": "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:3%40location1",
-          "kind": "wire",
-          "visible": false
         }
       ],
       "coedges": [
@@ -279,166 +1007,6 @@
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:9%40location20%3A1",
           "pcurves": [],
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:7%40location1%3A1%3A2",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A3%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A2%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                5.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A2"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                5.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1",
-          "pcurves": [],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
-          "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1",
-          "pcurves": [],
-          "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location14",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:3%3A3%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location13%3A1%3A1",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location16",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A2",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:3%3A2%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location15%3A1%3A1",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A3",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                5.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:2%3A2%3A2"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A4",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A4",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                5.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:2%3A2%3A1"
-            }
-          ],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A3",
-          "sense": "reversed"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location14",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location13%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location13%3A1",
-          "pcurves": [],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A1",
-          "sense": "forward"
-        },
-        {
-          "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location16",
-          "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location15%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location15%3A1",
-          "pcurves": [],
-          "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A2",
           "sense": "reversed"
         }
       ],
@@ -680,410 +1248,6 @@
           "geometry": {
             "kind": "solved",
             "value": {
-              "direction": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "kind": "line",
-              "origin": {
-                "x": 0.0,
-                "y": -10.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "basis": {
-                "degree": 2,
-                "kind": "nurbs",
-                "knots": [
-                  -2.0,
-                  -1.0,
-                  0.0,
-                  1.0,
-                  2.0,
-                  3.0,
-                  4.0,
-                  5.0,
-                  6.0
-                ],
-                "periodic": true,
-                "poles": {
-                  "kind": "polynomial",
-                  "points": [
-                    {
-                      "x": -10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": 10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": -10.0,
-                      "y": 10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": -10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    }
-                  ]
-                }
-              },
-              "kind": "transformed",
-              "transform": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  5.0
-                ]
-              ]
-            }
-          },
-          "id": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "direction": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "kind": "line",
-              "origin": {
-                "x": 0.0,
-                "y": -10.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "basis": {
-                "degree": 2,
-                "kind": "nurbs",
-                "knots": [
-                  -2.0,
-                  -1.0,
-                  0.0,
-                  1.0,
-                  2.0,
-                  3.0,
-                  4.0,
-                  5.0,
-                  6.0
-                ],
-                "periodic": true,
-                "poles": {
-                  "kind": "polynomial",
-                  "points": [
-                    {
-                      "x": -10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": 10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": -10.0,
-                      "y": 10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": -10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    },
-                    {
-                      "x": 10.0,
-                      "y": -10.0,
-                      "z": 0.0
-                    }
-                  ]
-                }
-              },
-              "kind": "transformed",
-              "transform": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  5.0
-                ]
-              ]
-            }
-          },
-          "id": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2%403251c289d7abc9cd",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:curve#Sketch:Shape:Sketch.Shape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Sketch"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
               "degree": 2,
               "kind": "nurbs",
               "knots": [
@@ -1141,192 +1305,6 @@
             "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:directrix",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "degree": 2,
-              "kind": "nurbs",
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": 10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": -10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": -10.0,
-                    "z": 0.0
-                  }
-                ]
-              }
-            }
-          },
-          "id": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:directrix",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Sketch"
-          }
         }
       ],
       "edges": [
@@ -1374,111 +1352,6 @@
           },
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:5%40location18",
           "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-            "param_range": [
-              0.0,
-              5.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
-            "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4"
-          },
-          "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
-            "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4"
-          },
-          "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location4",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
-            "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6"
-          },
-          "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:3%40location6",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:1",
-            "param_range": [
-              0.0,
-              5.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
-            "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location16"
-          },
-          "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2%403251c289d7abc9cd",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
-            "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14"
-          },
-          "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location14",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location16",
-            "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location16"
-          },
-          "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:3%40location16",
-          "tolerance": 1e-7
-        },
-        {
-          "carrier": {
-            "curve": "fcstd:model:curve#Sketch:Shape:Sketch.Shape.brp:1",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "ends": {
-            "end": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1",
-            "start": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1"
-          },
-          "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:2%40location1",
-          "tolerance": 1e-7
         }
       ],
       "faces": [
@@ -1520,84 +1393,6 @@
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:2",
           "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:5",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1"
-            ]
-          },
-          "sense": "reversed",
-          "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1"
-            ]
-          },
-          "sense": "forward",
-          "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1"
-            ]
-          },
-          "sense": "reversed",
-          "shell": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:5%40location1",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1"
-            ]
-          },
-          "sense": "reversed",
-          "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:8%40location1",
-          "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7%40location13",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location13%3A1"
-            ]
-          },
-          "sense": "forward",
-          "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:8%40location1",
-          "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2%403251c289d7abc9cd",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7%40location15",
-          "loops": {
-            "kind": "unspecified",
-            "loops": [
-              "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location15%3A1"
-            ]
-          },
-          "sense": "reversed",
-          "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:8%40location1",
-          "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2",
-          "tolerance": 1e-7
         }
       ],
       "loops": [
@@ -1636,78 +1431,6 @@
           },
           "face": "fcstd:model:face#Body:Shape:Body.Shape.brp:9%40location20",
           "id": "fcstd:model:loop#Body:Shape:Body.Shape.brp:9%40location20%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A1",
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A4",
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A2",
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1%3A3"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:5",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:5%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1%3A1"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location11%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1%3A1"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9",
-          "id": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%40location9%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A1",
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A4",
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A2",
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:5%40location1%3A1%3A3"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:5%40location1",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:5%40location1%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location13%3A1%3A1"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7%40location13",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location13%3A1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location15%3A1%3A1"
-            ],
-            "kind": "ring",
-            "vertex_uses": []
-          },
-          "face": "fcstd:model:face#Pad:Shape:Pad.Shape.brp:7%40location15",
-          "id": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%40location15%3A1"
         }
       ],
       "pcurves": [
@@ -1802,190 +1525,6 @@
             },
             "kind": "general"
           }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                5.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 4.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:2%3A2%3A2",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                5.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                4.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": -5.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:AddSubShape:Pad.AddSubShape.brp:3%3A3%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                4.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:2%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                5.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 4.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:2%3A2%3A2",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                5.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:3%3A2%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                4.0
-              ]
-            },
-            "kind": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": -5.0
-            }
-          },
-          "id": "fcstd:model:pcurve#Pad:Shape:Pad.Shape.brp:3%3A3%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                4.0
-              ]
-            },
-            "kind": "general"
-          }
         }
       ],
       "points": [
@@ -2014,71 +1553,6 @@
             "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
-        },
-        {
-          "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
-          "position": {
-            "x": 0.0,
-            "y": -10.0,
-            "z": 0.0
-          },
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "id": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
-          "position": {
-            "x": 0.0,
-            "y": -10.0,
-            "z": 5.0
-          },
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location14",
-          "position": {
-            "x": 0.0,
-            "y": -10.0,
-            "z": 5.0
-          },
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "id": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location16",
-          "position": {
-            "x": 0.0,
-            "y": -10.0,
-            "z": 0.0
-          },
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "id": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:1%40location1",
-          "position": {
-            "x": 0.0,
-            "y": -10.0,
-            "z": 0.0
-          },
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Sketch"
-          }
         }
       ],
       "procedural_curves": [],
@@ -2098,54 +1572,6 @@
           },
           "id": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1:construction",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1"
-        },
-        {
-          "definition": {
-            "cache": {
-              "kind": "legacy"
-            },
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
-            "kind": "extrusion"
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:construction",
-          "surface": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1"
-        },
-        {
-          "definition": {
-            "cache": {
-              "kind": "legacy"
-            },
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "directrix": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:directrix",
-            "kind": "extrusion"
-          },
-          "id": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:construction",
-          "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1"
-        },
-        {
-          "definition": {
-            "cache": {
-              "kind": "legacy"
-            },
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "directrix": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:directrix",
-            "kind": "extrusion"
-          },
-          "id": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:construction",
-          "surface": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1"
         }
       ],
       "regions": [
@@ -2155,27 +1581,6 @@
           "shells": [
             "fcstd:model:shell#Body:Shape:Body.Shape.brp:12%40location1"
           ]
-        },
-        {
-          "body": "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:9",
-          "id": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:9",
-          "shells": [
-            "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8"
-          ]
-        },
-        {
-          "body": "fcstd:model:body#Pad:Shape:Pad.Shape.brp:9%40location1",
-          "id": "fcstd:model:region#Pad:Shape:Pad.Shape.brp:9%40location1",
-          "shells": [
-            "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:8%40location1"
-          ]
-        },
-        {
-          "body": "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:3%40location1",
-          "id": "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:3%40location1",
-          "shells": [
-            "fcstd:model:shell#Sketch:Shape:Sketch.Shape.brp:3%40location1"
-          ]
         }
       ],
       "shells": [
@@ -2183,26 +1588,6 @@
           "id": "fcstd:model:shell#Body:Shape:Body.Shape.brp:12%40location1",
           "members": [],
           "region": "fcstd:model:region#Body:Shape:Body.Shape.brp:13%40location1"
-        },
-        {
-          "id": "fcstd:model:shell#Pad:AddSubShape:Pad.AddSubShape.brp:8",
-          "members": [],
-          "region": "fcstd:model:region#Pad:AddSubShape:Pad.AddSubShape.brp:9"
-        },
-        {
-          "id": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:8%40location1",
-          "members": [],
-          "region": "fcstd:model:region#Pad:Shape:Pad.Shape.brp:9%40location1"
-        },
-        {
-          "id": "fcstd:model:shell#Sketch:Shape:Sketch.Shape.brp:3%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:edge#Sketch:Shape:Sketch.Shape.brp:2%40location1",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "fcstd:model:region#Sketch:Shape:Sketch.Shape.brp:3%40location1"
         }
       ],
       "subds": [],
@@ -2330,210 +1715,6 @@
             "instance_path": [],
             "object_id": "fcstd:native:object#Body"
           }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "unknown"
-            }
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": -1.1e-16,
-                "y": 1.1e-16,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "basis": {
-                "kind": "plane",
-                "normal": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 1.0
-                },
-                "origin": {
-                  "x": -1.1e-16,
-                  "y": 1.1e-16,
-                  "z": 0.0
-                },
-                "u_axis": {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              },
-              "kind": "transformed",
-              "transform": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  5.0
-                ]
-              ]
-            }
-          },
-          "id": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2%403251c289d7abc9cd",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "unknown"
-            }
-          },
-          "id": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "plane",
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": -1.1e-16,
-                "y": 1.1e-16,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            }
-          },
-          "id": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "basis": {
-                "kind": "plane",
-                "normal": {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 1.0
-                },
-                "origin": {
-                  "x": -1.1e-16,
-                  "y": 1.1e-16,
-                  "z": 0.0
-                },
-                "u_axis": {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              },
-              "kind": "transformed",
-              "transform": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  5.0
-                ]
-              ]
-            }
-          },
-          "id": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2%403251c289d7abc9cd",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Pad"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "solved",
-            "value": {
-              "kind": "unknown"
-            }
-          },
-          "id": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1",
-          "source_object": {
-            "format": "fcstd",
-            "instance_path": [],
-            "object_id": "fcstd:native:object#Sketch"
-          }
         }
       ],
       "vertices": [
@@ -2546,31 +1727,6 @@
           "id": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2%40location19",
           "point": "fcstd:model:point#Body:Shape:Body.Shape.brp:2%40location19",
           "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
-          "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location4",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
-          "point": "fcstd:model:point#Pad:AddSubShape:Pad.AddSubShape.brp:1%40location6",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14",
-          "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location14",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location16",
-          "point": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location16",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#Sketch:Shape:Sketch.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#Sketch:Shape:Sketch.Shape.brp:1%40location1",
-          "tolerance": 1e-7
         }
       ]
     },
@@ -2579,178 +1735,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "active_child": "fcstd:design:feature#Pad",
-                  "children": [
-                    "fcstd:design:feature#Sketch",
-                    "fcstd:design:feature#Pad"
-                  ]
-                },
-                "role": "solid_bodies"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:Body.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Tip": "fcstd:native:object#Pad",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body"
-        },
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "automatic"
-              },
-              "operation": {
-                "kind": "extrude",
-                "value": {
-                  "allow_multi_profile_faces": true,
-                  "direction": {
-                    "kind": "explicit",
-                    "source": {
-                      "kind": "profile_normal"
-                    },
-                    "vector": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 1.0
-                    }
-                  },
-                  "extent": {
-                    "kind": "one_sided",
-                    "side": {
-                      "termination": {
-                        "kind": "blind",
-                        "length": 5.0
-                      }
-                    }
-                  },
-                  "length_along_profile_normal": true,
-                  "op": "new_body",
-                  "profile": {
-                    "kind": "planar",
-                    "value": {
-                      "kind": "sketch",
-                      "value": "fcstd:design:sketch#Sketch"
-                    }
-                  },
-                  "solid": true,
-                  "start": {
-                    "kind": "profile_plane"
-                  }
-                }
-              },
-              "refine": true
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Sketch",
-            "fcstd:design:feature#Body"
-          ],
-          "id": "fcstd:design:feature#Pad",
-          "name": "Pad",
-          "native_ref": "fcstd:native:object#Pad",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#Pad:Shape:Pad.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Suppressed": "false",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Pad",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#Sketch"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 9,
-          "outputs": [
-            "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:3%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "5",
-            "Visibility": "false"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "5.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Pad:Length",
-          "ordinal": 9,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 5.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "10.0000000000000000",
-          "id": "fcstd:design:parameter#Pad:Length2",
-          "name": "Length2",
-          "native_ref": "fcstd:native:property#Pad:Length2",
-          "ordinal": 10,
-          "owner": "fcstd:design:feature#Pad",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 10.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -2767,129 +1758,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Sketch:1",
-            "kind": "fixed"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "curve": {
-              "degree": 2,
-              "knots": [
-                -2.0,
-                -1.0,
-                0.0,
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
-                6.0
-              ],
-              "periodic": true,
-              "poles": {
-                "kind": "polynomial",
-                "points": [
-                  {
-                    "u": -10.0,
-                    "v": -10.0
-                  },
-                  {
-                    "u": 10.0,
-                    "v": -10.0
-                  },
-                  {
-                    "u": 10.0,
-                    "v": 10.0
-                  },
-                  {
-                    "u": -10.0,
-                    "v": 10.0
-                  },
-                  {
-                    "u": -10.0,
-                    "v": -10.0
-                  },
-                  {
-                    "u": 10.0,
-                    "v": -10.0
-                  }
-                ]
-              }
-            },
-            "kind": "nurbs"
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:1",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -2929,7 +1806,7 @@
           "design_census": "59e7da2094937f39b4c389045509dbf5c66d8174d5249ebd119dec2559b97b44",
           "document": "7c4f12a223361f333f615c7d560d598761641809039c2652c596fe5d0fe558ef",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "element_maps": "1078a23de625a767d5c2ee2f601e1ac77ab87d4565ab4293ba3f384ad11eda82",
+          "element_maps": "51be941bbbcbe7056a80ce9678a2239bda8cd734b27abb0caf6c1e7dbb10aedd",
           "entries": "8fbc65470f75337fec92c521a9fb7527bbcecb8a54aa7420b1d1759339c5c0bc",
           "extensions": "1ecfa119e4477f9656e3d14b65b6eeedfa9e618e9f3565cdb5ed621230b728ce",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -3658,7 +2535,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -3733,6 +2609,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c55205033fe8d9931abcfacf4a827a4feb94b68db1815ff0047fb410d43befdd",
     "file_digests": {},
     "retained_records": {},

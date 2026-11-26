@@ -60,6 +60,25 @@ fn value_in(
         .and_then(|expression| evaluate_in(index, chain, expression))
 }
 
+/// The cache of `parameter` in the configuration whose chain, nearest first,
+/// is `chain` (§5.13): the `value` of the nearest override that states the
+/// parameter, else the parameter's own `value` where it holds in that
+/// configuration. `None` where no cache is stated there. An empty chain is
+/// the base.
+pub(super) fn cache_in<'a>(
+    index: &DesignRecords<'a>,
+    chain: &[&'a DesignConfiguration],
+    parameter: &ParameterId,
+) -> Option<&'a ParameterValue> {
+    if let Some(stated) = nearest_override(chain, parameter) {
+        return stated.value.as_ref();
+    }
+    if reads_override(index, chain, parameter) {
+        return None;
+    }
+    index.parameters.get(parameter.as_str())?.value.as_ref()
+}
+
 fn nearest_override<'a>(
     chain: &[&'a DesignConfiguration],
     parameter: &ParameterId,

@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
@@ -151,10 +151,10 @@ pub(crate) fn findings_from_rows(
             Ok(None) => continue,
             Ok(Some(message)) => Finding {
                 check: Check::DeclaredMeasure,
-                severity: match measure.provenance {
-                    DeclaredMeasureProvenance::SavedCache => Severity::Warning,
-                    DeclaredMeasureProvenance::SourceDeclaration
-                    | DeclaredMeasureProvenance::ValidationProperty => Severity::Error,
+                rule: cadmpeg_ir::rule_name!("measure/declared.declared-quantity-differs"),
+                severity: match measure.basis {
+                    Some(MeasureBasis::Cache) => Severity::Warning,
+                    None | Some(MeasureBasis::Validation) => Severity::Error,
                 },
                 message,
                 entity: Some(measure.id.to_string()),
@@ -168,6 +168,7 @@ pub(crate) fn findings_from_rows(
                     }
                 }
                 Finding {
+                    rule: cadmpeg_ir::rule_name!("measure/declared.declared-not-compared"),
                     check: Check::DeclaredMeasure,
                     severity: Severity::Warning,
                     message: format!(
@@ -364,7 +365,7 @@ fn compare(
         .collect::<Result<_, _>>()?;
     let name = quantity_description(measure);
     let source_error = measure
-        .source_error
+        .precision
         .map_or(0.0, cadmpeg_ir::scalar::NonNegativeReal::get);
     match &measure.quantity {
         DeclaredQuantity::Volume { value } => {
@@ -395,11 +396,11 @@ fn compare(
         }
         DeclaredQuantity::SolidCentroid { value } => {
             let measured = centroid(&rows, VOLUME, CENTROID)?;
-            point_disagreement(&name, value.get(), measured, source_error)
+            point_disagreement(&name, value.get(), measured, point_error(source_error))
         }
         DeclaredQuantity::SheetCentroid { value } => {
             let measured = centroid(&rows, AREA, AREA_CENTROID)?;
-            point_disagreement(&name, value.get(), measured, source_error)
+            point_disagreement(&name, value.get(), measured, point_error(source_error))
         }
     }
 }
@@ -600,6 +601,12 @@ fn point_disagreement(
             source_error,
         )
     }))
+}
+
+/// The distance within which a stored point lies of the computed point when
+/// each of its three coordinates lies within `precision` of its own.
+fn point_error(precision: f64) -> f64 {
+    precision * 3.0_f64.sqrt()
 }
 
 fn combined_error_allowance(

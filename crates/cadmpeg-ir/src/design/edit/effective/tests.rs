@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The display resolvers on small assemblies.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -468,7 +469,7 @@ fn color(r: f64) -> Color {
 }
 
 fn appearance(key: u32, base: Option<Color>) -> Appearance {
-    let mut record: Appearance = serde_json::from_value(serde_json::json!({
+    let mut record: Appearance = json::from_value(cadmpeg_core::json!({
         "id": format!("test:effective:appearance#{key}"),
         "properties": {},
         "textures": [],
@@ -487,6 +488,7 @@ fn binding(
         id: id("appearance-binding", key),
         target,
         appearance: id("appearance", appearance),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -602,6 +604,7 @@ fn visibility_is_every_stated_gate_combined_with_and() {
         description: None,
         visible: Some(false),
         items,
+        native_ref: None,
     };
     document.model.presentation_layers =
         vec![layer(vec![InstanceTarget::new(PresentationItem::Body {
@@ -630,6 +633,7 @@ fn a_hidden_parent_layer_hides_its_sublayers_items() {
         description: None,
         visible,
         items,
+        native_ref: None,
     };
     document.model.presentation_layers = vec![
         layer(1, None, Some(false), Vec::new()),

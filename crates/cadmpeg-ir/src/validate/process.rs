@@ -7,9 +7,10 @@
 //! parameter's cached value only where a rule asks for its value.
 
 mod bindings;
-mod evaluations;
+mod caches;
+pub(crate) mod evaluations;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 mod operations;
 mod order;
 mod records;
@@ -17,10 +18,13 @@ mod references;
 mod scope;
 mod walk;
 
+use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+use super::design::matching::Matchers;
 use super::design::records::DesignRecords;
+use super::design::states::States;
 use crate::document::CadIr;
 use crate::index::ModelIndex;
 use crate::report::{
@@ -29,33 +33,42 @@ use crate::report::{
 };
 use records::ProcessRecords;
 
-/// Check the process layer of `ir` against part 10's process rules.
-pub(super) fn check_process(
+/// Check the design layer of `ir`, then its process layer against part
+/// 10's process rules. The process picks resolve through the design pass's
+/// index and matchers, so the process records are walked before those are
+/// built and outlive them.
+pub(super) fn check_design_and_process(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    if is_empty(ir) {
+    let design;
+    let records;
+    let walked;
+    let process = if is_empty(ir) {
+        None
+    } else {
+        design = DesignRecords::new(ir);
+        records = ProcessRecords::new(&design);
+        walked = walk::walk_records(&records);
+        Some((&records, walked.as_slice()))
+    };
+    let states = States::new(ir);
+    let matchers = Matchers::new(&states);
+    let index = super::design::check_design(ctx, ir, ids, &matchers, findings)?;
+    let Some((records, walked)) = process else {
         return Ok(());
-    }
-    let design = DesignRecords::new(ir);
-    let records = ProcessRecords::new(&design);
-    let walked = walk::walk_records(&records);
-    order::check_order(&records, findings);
-    for record in &walked {
-        order::check_nesting(record.arena, record.id, &record.found, findings);
-    }
-    references::check_references(&records, findings);
-    bindings::check_bindings(&records, &walked, findings);
-    scope::check_scope(&records, &walked, findings);
-    evaluations::check_evaluations(
-        &records,
-        ctx.policy().limits.max_state_chain_depth,
-        findings,
-    );
-    evaluations::check_resolved_states(ctx, &records, ids, findings)?;
-    operations::check_operations(&records, findings);
+    };
+    order::check_order(records, findings);
+    references::check_references(records, findings);
+    references::check_native_refs(records, ids, findings);
+    bindings::check_bindings(records, walked, findings);
+    scope::check_scope(records, walked, &index, &matchers, findings);
+    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;
+    evaluations::check_resolved_states(ctx, records, ids, findings)?;
+    operations::check_operations(records, findings);
+    caches::check_caches(records, findings);
     Ok(())
 }
 
@@ -86,7 +99,7 @@ fn as_process<T>(findings: &mut Vec<Finding>, check: impl FnOnce(&mut Vec<Findin
     result
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Process,
@@ -96,7 +109,7 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
     );
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Process,

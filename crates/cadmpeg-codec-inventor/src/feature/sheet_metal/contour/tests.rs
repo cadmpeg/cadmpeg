@@ -3,6 +3,7 @@ use super::*;
 use crate::feature::{PmDcFeatureEnumFamily as EnumFamily, PmDcFeaturePropertyKind as Kind};
 use crate::test_support::sheet_metal::{feature, reference, ContourFixture};
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchId, SketchPlacement, SketchProfiles};
 
@@ -441,7 +442,7 @@ fn refused_contours_report_one_loss_for_each_native_plate() {
     refusals.insert("plate".to_owned(), ContourRefusal::Corner);
     let losses = refusals.losses(&[native("a", "plate"), native("b", "other")]);
     assert_eq!(losses.len(), 1);
-    let text = serde_json::to_string(&losses).expect("losses");
+    let text = json::to_string(&losses).expect("losses");
     assert!(text.contains("feature.sheet-metal-contour-flange-refused"));
     assert!(text.contains("contour-flange check is bend."));
 }
@@ -550,7 +551,7 @@ fn projected_contours_report_retained_controls_and_style_forms() {
     ));
     let losses = super::super::retained_control_losses([&feature]);
     assert_eq!(losses.len(), 2);
-    let text = serde_json::to_string(&losses).expect("losses");
+    let text = json::to_string(&losses).expect("losses");
     assert!(text.contains("feature.sheet-metal-contour-controls-retained"));
     assert!(text.contains("neutral factor stays unresolved"));
     assert!(text.contains("feature.sheet-metal-style-forms-native"));

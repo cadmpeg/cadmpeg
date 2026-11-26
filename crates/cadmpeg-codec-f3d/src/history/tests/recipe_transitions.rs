@@ -685,7 +685,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
             FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                     SweepMode::Unresolved {},
-                    SweepSection::Unresolved(None),
+                    SweepSection::Unresolved,
                     Vec::new(),
                 ),
 
@@ -1008,6 +1008,8 @@ fn hole_case_with(
     feature.native_ref = Some(scope_id.into());
     let mut input_topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),

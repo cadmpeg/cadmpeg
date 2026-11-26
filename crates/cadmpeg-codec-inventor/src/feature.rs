@@ -53,6 +53,7 @@ pub(crate) mod fillet;
 pub(crate) mod history;
 pub(crate) mod history_bodies;
 pub(crate) mod history_states;
+pub(crate) mod history_views;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod mirror;
@@ -2177,6 +2178,9 @@ impl FeatureFamily {
 pub(crate) struct ProjectionIndex<'a> {
     body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
     result_model: Option<&'a CadIr>,
+    /// Models of history states, which a loft result check reads when the
+    /// final model no longer holds the faces of the loft.
+    result_states: Option<&'a dyn history_views::ResultStates>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::selections::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
@@ -2204,12 +2208,14 @@ pub(crate) struct ProjectionIndex<'a> {
 }
 
 /// The projected sketch model that features consume.
+#[derive(Default)]
 pub(crate) struct ProjectedSketches<'a> {
     pub(crate) sketches: &'a [Sketch],
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
     pub(crate) result_model: Option<&'a CadIr>,
+    pub(crate) result_states: Option<&'a dyn history_views::ResultStates>,
 }
 
 pub(crate) fn project(
@@ -2225,6 +2231,7 @@ pub(crate) fn project(
         entities: sketch_entities,
         profile_bodies,
         result_model,
+        result_states,
     } = *projected;
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
@@ -2325,6 +2332,7 @@ pub(crate) fn project(
     let mut index = ProjectionIndex {
         body_joins: None,
         result_model,
+        result_states,
         thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
         sketch_entities: if inventory.properties.iter().any(|property| {
@@ -4975,6 +4983,9 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 }
 
 #[cfg(test)]
+use cadmpeg_core::serde_erase::json as json_wire;
+
+#[cfg(test)]
 pub(crate) mod tests {
     mod holes;
     mod sheet_metal;
@@ -4982,7 +4993,7 @@ pub(crate) mod tests {
     mod thicken;
 
     use super::{
-        inventory, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
+        inventory, json_wire, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
         parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
         parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
         parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
@@ -5102,7 +5113,7 @@ pub(crate) mod tests {
                     sketches: &[],
                     entities: &[],
                     profile_bodies: &[],
-                    result_model: None,
+                    ..Default::default()
                 },
             )
             .expect("feature projection")
@@ -5433,30 +5444,30 @@ pub(crate) mod tests {
     #[test]
     fn located_label_retains_empty_name_and_rejects_wrong_class_width() {
         let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
-        let valid = serde_json::to_value(&label).expect("valid label fixture");
+        let valid = json_wire::to_value(&label).expect("valid label fixture");
         let admitted: PmDcFeatureLabel =
-            serde_json::from_value(valid.clone()).expect("valid label fixture");
+            json_wire::from_value(valid.clone()).expect("valid label fixture");
         assert_eq!(
-            serde_json::to_value(admitted).expect("valid label fixture"),
+            json_wire::to_value(admitted).expect("valid label fixture"),
             valid
         );
         for (field, value) in [("class_id", "a".repeat(31)), ("class_id", "a".repeat(33))] {
             let mut wire = valid.clone();
-            wire[field] = serde_json::json!(value);
-            assert!(serde_json::from_value::<PmDcFeatureLabel>(wire)
+            wire[field] = cadmpeg_core::json!(value);
+            assert!(json_wire::from_value::<PmDcFeatureLabel>(wire)
                 .expect_err("invalid label")
                 .to_string()
                 .contains(field));
         }
         let mut unnamed = valid.clone();
-        unnamed["name"] = serde_json::json!("");
+        unnamed["name"] = cadmpeg_core::json!("");
         let label: PmDcFeatureLabel =
-            serde_json::from_value(unnamed.clone()).expect("optional label");
+            json_wire::from_value(unnamed.clone()).expect("optional label");
         assert!(label.name().is_none());
-        assert_eq!(serde_json::to_value(label).expect("label JSON"), unnamed);
+        assert_eq!(json_wire::to_value(label).expect("label JSON"), unnamed);
         let mut wire = valid;
-        wire["class_id"] = serde_json::json!("z".repeat(32));
-        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
+        wire["class_id"] = cadmpeg_core::json!("z".repeat(32));
+        assert!(json_wire::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
     pub(crate) fn test_label(
@@ -5561,6 +5572,7 @@ pub(crate) mod tests {
         ProjectionIndex {
             body_joins: None,
             result_model: None,
+            result_states: None,
             thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
             dimensions: std::collections::HashMap::new(),
@@ -6904,8 +6916,8 @@ pub(crate) mod tests {
         let class_id = ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]));
         let owned = String::from(class_id);
         assert_eq!(
-            serde_json::to_vec(&class_id).expect("borrowed class id"),
-            serde_json::to_vec(&owned).expect("owned class id")
+            json_wire::to_vec(&class_id).expect("borrowed class id"),
+            json_wire::to_vec(&owned).expect("owned class id")
         );
         let record = Record {
             id: "inventor:pmdc:class-id#1",
@@ -6913,7 +6925,7 @@ pub(crate) mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
     }
 
@@ -6951,8 +6963,8 @@ pub(crate) mod tests {
         .expect("feature label");
         let owned = PmDcFeatureLabelPayloadWire::from(label.clone());
         assert_eq!(
-            serde_json::to_vec(&label).expect("borrowed feature label"),
-            serde_json::to_vec(&owned).expect("owned feature label")
+            json_wire::to_vec(&label).expect("borrowed feature label"),
+            json_wire::to_vec(&owned).expect("owned feature label")
         );
         let record = Record {
             id: "inventor:pmdc:feature-label#1",
@@ -6961,7 +6973,7 @@ pub(crate) mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

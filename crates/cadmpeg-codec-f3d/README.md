@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     F3dCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(&mut output)?;
     Ok(())

@@ -51,6 +51,7 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
             panic!("construction owner")
         };
         *cache = opaque_cache.then_some(SolvedSurfaceGeometry::Unknown { record: None });
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let checked = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
         let mut bytes = Vec::new();

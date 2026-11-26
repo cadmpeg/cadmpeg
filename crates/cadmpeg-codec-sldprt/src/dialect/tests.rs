@@ -141,7 +141,7 @@ fn format_13006_is_admitted_for_a_versioned_solidworks_host() {
 }
 
 #[test]
-fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
+fn residual_parasolid_schema_charges_a_dialect_loss_with_no_strict_floor() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
         cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
@@ -163,10 +163,9 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
         losses[0].code,
         SldprtLossCode::KernelDialectUnverified.kind()
     );
-    assert_eq!(
-        losses[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Reject
-    );
+    assert!(!crate::test_support::ir::strict_options()
+        .strictness
+        .refuses(&losses[0], false));
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
     assert!(losses[0].message.contains("block@7:body+3"));
 }
