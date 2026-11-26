@@ -162,7 +162,7 @@ fn decode_scan(
         return Ok(decoded);
     }
 
-    if let Some((ir, body, annotations, unknowns, given_up)) = try_decode_geometry(
+    let refused = match try_decode_geometry(
         ctx,
         scan,
         &dialects,
@@ -170,28 +170,33 @@ fn decode_scan(
         &notes,
         &mut admitted_entities,
     )? {
-        let mut decoded = decoded(
-            ctx,
-            decode_digest,
-            ir,
-            body,
-            annotations,
-            unknowns,
-            &mut admitted_entities,
-        )?;
-        commit_given_up(ctx, &mut decoded, given_up)?;
-        return Ok(decoded);
-    }
+        Ok((ir, body, annotations, unknowns, given_up)) => {
+            let mut decoded = decoded(
+                ctx,
+                decode_digest,
+                ir,
+                body,
+                annotations,
+                unknowns,
+                &mut admitted_entities,
+            )?;
+            commit_given_up(ctx, &mut decoded, given_up)?;
+            return Ok(decoded);
+        }
+        Err(refused) => refused,
+    };
 
     let MetadataIr {
         ir,
         annotations,
         unknowns,
         losses: native_losses,
-        given_up,
+        mut given_up,
     } = build_metadata_ir(ctx, scan, &dialects)?;
     let mut body = build_container_body(scan, dialect_losses, notes);
     body.losses.extend(native_losses);
+    body.losses.extend(refused.losses);
+    given_up.extend(refused.given_up);
     report_untransferred_streams(scan, &mut body, TypedNative::Available);
     let mut decoded = decoded(
         ctx,

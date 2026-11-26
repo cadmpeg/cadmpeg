@@ -80,6 +80,9 @@ loss_codes! {
     /// Two or more surface-intersection records of a stream share one
     /// identity, and each is withheld.
     IntersectionIdentityDuplicated => ("intersection.identity-duplicated", Warning, ObjectRecordsUntransferred),
+    /// A surface-intersection record's references state no construction,
+    /// and the record is withheld.
+    IntersectionRecordUnresolved => ("intersection.record-unresolved", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
     IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
@@ -237,6 +240,7 @@ mod tests {
                 "topology.primary-node-unresolved",
                 "intersection.records-opaque",
                 "intersection.identity-duplicated",
+                "intersection.record-unresolved",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",

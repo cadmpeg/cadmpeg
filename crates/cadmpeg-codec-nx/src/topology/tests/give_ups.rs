@@ -273,3 +273,35 @@ fn a_withheld_body_with_no_record_is_named_by_no_charge() {
         "{losses:#?}"
     );
 }
+
+#[test]
+fn the_loops_of_a_face_whose_loop_chain_does_not_resolve_are_given_up_with_their_fins() {
+    // LOOP 5 names no FIN, so FACE 4's loop chain does not resolve and the
+    // face is stated partial with none of its loops.
+    let mut stream = schemaless(topology_partition_stream());
+    let loop_ = node_at(&stream, NodeKind::Loop, 5);
+    put_ref(&mut stream, loop_.0 + 10, 1);
+    let loop_ = node_at(&stream, NodeKind::Loop, 5);
+
+    let result = decode(&stream);
+    let model = &result.ir().geometry;
+    assert!(has_id(
+        model.faces.iter().map(|f| f.id.as_str()),
+        "nx:s0:face#4"
+    ));
+    assert!(model.loops.is_empty());
+    assert!(model.edges.is_empty());
+    let charge = part_charge(&result.report().losses, loop_);
+    assert_eq!(
+        dropped(charge),
+        ["nx:s0:edge#8", "nx:s0:fin#7", "nx:s0:vertex#10"],
+        "{charge:#?}"
+    );
+
+    match decode_with(&stream, true) {
+        Err(DecodeFailure::StrictRejected { rejection }) => {
+            assert!(is_part_charge(rejection.loss(), loop_), "{rejection:#?}");
+        }
+        other => panic!("a pinned decode refuses the give-up: {other:?}"),
+    }
+}

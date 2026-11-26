@@ -332,6 +332,9 @@ pub(crate) struct CurveScan {
     /// Every construction whose identity another construction of the stream
     /// also carries.
     pub(crate) duplicates: Vec<CompositeCurve>,
+    /// The identity and framed bytes of each graph INTERSECTION record whose
+    /// references state no construction.
+    pub(crate) unread: Vec<(u32, std::ops::Range<usize>)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -391,7 +394,16 @@ pub(crate) fn scan_with_graph(
     let uv = uv_records(stream, starts);
     let mut constructions = graph.composite_curves();
     append_declared_composite_curves(stream, &mut constructions);
-    scan_with_auxiliaries(
+    let read = constructions
+        .iter()
+        .map(|construction| construction.pos)
+        .collect::<BTreeSet<_>>();
+    let unread = graph
+        .of_kind(NodeKind::Intersection)
+        .filter(|node| !read.contains(&node.pos()))
+        .map(|node| (node.xmt(), node.pos()..node.end()))
+        .collect();
+    let mut scan = scan_with_auxiliaries(
         AuxiliaryMaps {
             charts: &chart_records(stream, point_layout, starts),
             terms: &term_records(stream, point_layout, starts),
@@ -400,7 +412,9 @@ pub(crate) fn scan_with_graph(
         },
         graph,
         constructions,
-    )
+    )?;
+    scan.unread = unread;
+    Ok(scan)
 }
 
 fn append_declared_composite_curves(stream: &[u8], constructions: &mut Vec<CompositeCurve>) {

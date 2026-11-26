@@ -991,3 +991,45 @@ fn a_record_that_ends_before_its_node_end_is_not_read_at_that_node() {
         );
     });
 }
+
+#[test]
+fn an_intersection_record_that_names_no_surface_is_given_up() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let construction = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .unwrap();
+    put_ref(&mut stream, construction + 19, 1);
+    put_ref(&mut stream, construction + 21, 1);
+    let graph = crate::topology::Graph::parse(&stream);
+    let node = graph
+        .get(crate::framing::node_kind::NodeKind::Intersection, 12)
+        .expect("the record stays a framed INTERSECTION");
+    assert_eq!(node.pos(), construction);
+    let length = node.end() - node.pos();
+    let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let decoded =
+                crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
+            let losses = &decoded.body.losses;
+            assert!(losses.iter().any(|loss| loss.code.local_code()
+                == "intersection.record-unresolved"
+                && loss.message.contains("INTERSECTION 12")));
+            assert!(
+                losses.iter().any(|loss| loss.code
+                    == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss
+                        .message
+                        .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                    && loss
+                        .message
+                        .contains(&format!("\" offset={construction} length={length} record="))),
+                "{losses:#?}"
+            );
+        },
+    );
+}

@@ -979,6 +979,13 @@ pub(super) fn emit_topology(
         });
         faces.insert(node.xmt(), id);
     }
+    leave_out_unresolved_boundaries(
+        &mut left_out,
+        (graph, &scope),
+        &face_loop_failures,
+        (&valid_edge_xmts, &valid_vertex_xmts),
+        &unresolved,
+    )?;
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
     let mut partial_faces: BTreeSet<FaceId> = BTreeSet::new();
@@ -1692,6 +1699,133 @@ pub(super) fn emit_topology(
     });
     left_out.finish(topology_losses, given_up);
     Ok(endpoint_witnesses)
+}
+
+/// Leaves out the boundary of each FACE whose loop chain does not resolve,
+/// none of which emission states. Each LOOP that names such a FACE is given
+/// up, or is dropped with the FACE where emission left the FACE out. Each FIN
+/// of that LOOP is dropped with it, and each EDGE and VERTEX that such a FIN
+/// names, or an EDGE that names such a FIN, is dropped with the FIN when
+/// emission has no candidate for it.
+fn leave_out_unresolved_boundaries(
+    left_out: &mut LeftOut<'_, '_, '_>,
+    (graph, scope): (&Graph, &IdScope),
+    failures: &BTreeMap<u32, FaceLoopFailure>,
+    (edge_candidates, vertex_candidates): (&BTreeSet<u32>, &BTreeSet<u32>),
+    unresolved: &impl Fn(String) -> cadmpeg_ir::report::loss::LossNote,
+) -> Result<(), CodecError> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+    let mut fins_by_loop: BTreeMap<u32, Vec<&Node>> = BTreeMap::new();
+    for fin in graph.of_kind(NodeKind::Fin) {
+        let loop_xmt = match fin.fin_fields() {
+            Some(fields) => fields.loop_xmt,
+            None => fin
+                .vertex_loop_fin_fields()
+                .and_then(|fields| fields.loop_xmt),
+        };
+        if let Some(loop_xmt) = loop_xmt {
+            fins_by_loop
+                .entry(u32::from(loop_xmt))
+                .or_default()
+                .push(fin);
+        }
+    }
+    let mut edges_by_fin: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for edge in graph.of_kind(NodeKind::Edge) {
+        if let Some(fin) = edge.edge_fields().and_then(|fields| fields.fin) {
+            edges_by_fin
+                .entry(u32::from(fin))
+                .or_default()
+                .push(edge.xmt());
+        }
+    }
+    for node in graph.of_kind(NodeKind::Loop) {
+        let Some(face_xmt) = node
+            .loop_fields()
+            .and_then(|fields| fields.face.map(u32::from))
+        else {
+            continue;
+        };
+        let Some(failure) = failures.get(&face_xmt) else {
+            continue;
+        };
+        left_out.drop_with_or_give_up(
+            (NodeKind::Loop, node),
+            scope.id_from_display::<Identity>(
+                &cadmpeg_ir::identity_component!("loop"),
+                node.xmt(),
+            )?,
+            Some((NodeKind::Face, face_xmt)),
+            || {
+                unresolved(format!(
+                    "LOOP {} of FACE {face_xmt} is withheld: the face's loop chain does not \
+                     resolve: {failure}",
+                    node.xmt()
+                ))
+            },
+        )?;
+        let Some(loop_entry) = left_out.get(NodeKind::Loop, node.xmt()).cloned() else {
+            continue;
+        };
+        for fin in fins_by_loop.get(&node.xmt()).into_iter().flatten() {
+            let (needs, edges, vertex) = match fin.fin_fields() {
+                Some(fields) => {
+                    left_out.drop_with(
+                        (NodeKind::Fin, fin.xmt()),
+                        scope.id_from_display::<Identity>(
+                            &cadmpeg_ir::identity_component!("fin"),
+                            fin.xmt(),
+                        )?,
+                        &loop_entry,
+                    );
+                    let Some(fin_entry) = left_out.get(NodeKind::Fin, fin.xmt()).cloned() else {
+                        continue;
+                    };
+                    let edges = fields
+                        .edge
+                        .map(u32::from)
+                        .into_iter()
+                        .chain(edges_by_fin.get(&fin.xmt()).into_iter().flatten().copied())
+                        .collect::<Vec<_>>();
+                    (fin_entry, edges, fields.vertex)
+                }
+                None => (
+                    loop_entry.clone(),
+                    Vec::new(),
+                    fin.vertex_loop_fin_fields()
+                        .and_then(|fields| fields.vertex),
+                ),
+            };
+            for edge in edges {
+                if !edge_candidates.contains(&edge) && graph.get(NodeKind::Edge, edge).is_some() {
+                    left_out.drop_with(
+                        (NodeKind::Edge, edge),
+                        scope.id_from_display::<Identity>(
+                            &cadmpeg_ir::identity_component!("edge"),
+                            edge,
+                        )?,
+                        &needs,
+                    );
+                }
+            }
+            if let Some(vertex) = vertex.map(u32::from).filter(|vertex| {
+                !vertex_candidates.contains(vertex)
+                    && graph.get(NodeKind::Vertex, *vertex).is_some()
+            }) {
+                left_out.drop_with(
+                    (NodeKind::Vertex, vertex),
+                    scope.id_from_display::<Identity>(
+                        &cadmpeg_ir::identity_component!("vertex"),
+                        vertex,
+                    )?,
+                    &needs,
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The fields, POINT, and position of a VERTEX whose point resolves.

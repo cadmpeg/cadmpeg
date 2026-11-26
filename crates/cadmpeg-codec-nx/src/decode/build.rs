@@ -145,8 +145,9 @@ fn give_up_stream_bytes(
 
 /// Gives up the records and spans of each Parasolid stream that its primary
 /// parse frames and leaves out: the nodes and EDGE records the graph does
-/// not select, the bytes past a stop of the primary framing, and every
-/// intersection construction whose identity another one also carries.
+/// not select, the surface-intersection records that state no construction,
+/// the bytes past a stop of the primary framing, and every intersection
+/// construction whose identity another one also carries.
 pub(super) fn give_up_unread(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -182,6 +183,15 @@ pub(super) fn give_up_unread(
                 "Primary {kind:?} node in stream #{si} at byte {} has no typed projection \
                  under its declared field contract and source identity; exact Source bytes \
                  remain retained.",
+                range.start
+            ));
+            give_up("parasolid-record", range.clone(), why)?;
+        }
+        for (xmt, range) in &view.intersections.unread {
+            let why = NxLossCode::IntersectionRecordUnresolved.note(format!(
+                "parasolid#{si} INTERSECTION {xmt} at byte {} states no construction: a \
+                 reference is null, or neither surface reference names a record, or the chart \
+                 and term references are neither a chart nor null; the record is withheld.",
                 range.start
             ));
             give_up("parasolid-record", range.clone(), why)?;
@@ -276,8 +286,6 @@ fn ordered_fixed_candidates<T>(
     candidates.into_values().collect()
 }
 
-/// Decode analytic carriers from every Parasolid stream. Returns `None` when no
-/// carrier of any kind passes its gate, so the caller falls back to metadata.
 type GeometryDecode = (
     CadIr,
     DecodeBody,
@@ -286,6 +294,17 @@ type GeometryDecode = (
     Vec<GivenUpPart>,
 );
 
+/// The carrier records that a geometry decode which admits no carrier gave
+/// up, with their notes. The metadata decode the caller falls back to reads
+/// no carrier record, so it commits these.
+pub(super) struct RefusedCarriers {
+    pub(super) losses: Vec<LossNote>,
+    pub(super) given_up: Vec<GivenUpPart>,
+}
+
+/// Decode analytic carriers from every Parasolid stream. Returns
+/// [`RefusedCarriers`] when no carrier of any kind passes its gate, so the
+/// caller falls back to metadata.
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
@@ -293,7 +312,7 @@ pub(super) fn try_decode_geometry(
     dialect_losses: &[LossNote],
     notes: &[String],
     admitted_entities: &mut u64,
-) -> Result<Option<GeometryDecode>, CodecError> {
+) -> Result<Result<GeometryDecode, RefusedCarriers>, CodecError> {
     let mut ir = CadIr::empty();
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
@@ -306,6 +325,7 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
+    let mut refused_carriers = BTreeSet::new();
     let mut given_up = Vec::new();
     let mut topology_losses = Vec::new();
     give_up_unread(ctx, scan, &parsed, &mut topology_losses, &mut given_up)?;
@@ -486,7 +506,9 @@ pub(super) fn try_decode_geometry(
             );
         for (node, note) in refused {
             if let Some(node) = node {
-                given_up.push(give_up_record(ctx, (si, &stream_name), node, &note)?);
+                let part = give_up_record(ctx, (si, &stream_name), node, &note)?;
+                refused_carriers.insert(part.id().clone());
+                given_up.push(part);
             }
             carrier_refusals.push(note);
         }
@@ -1586,7 +1608,11 @@ pub(super) fn try_decode_geometry(
     )?;
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
-        return Ok(None);
+        given_up.retain(|part| refused_carriers.contains(part.id()));
+        return Ok(Err(RefusedCarriers {
+            losses: carrier_refusals,
+            given_up,
+        }));
     }
 
     ir.source = Some(source_meta(scan, dialects, Some(&parsed))?);
@@ -1713,7 +1739,7 @@ pub(super) fn try_decode_geometry(
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
-    Ok(Some((ir, report, annotations, unknowns, given_up)))
+    Ok(Ok((ir, report, annotations, unknowns, given_up)))
 }
 
 fn extend_endpoint_witnesses(target: &mut EndpointWitnesses, source: EndpointWitnesses) {
