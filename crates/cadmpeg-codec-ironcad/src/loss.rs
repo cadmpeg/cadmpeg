@@ -15,6 +15,12 @@ pub(crate) enum IronCadLossCode {
     KernelPrologueUnreadable,
     KernelUnverified,
     BodiesPending,
+    BodyUnreadable,
+    BodyRecordsRetained,
+    BodyExtensionsRetained,
+    FeatureShapeRetained,
+    FaceBoundaryUnstated,
+    SurfaceUntyped,
     SceneStreamsPending,
 }
 
@@ -43,6 +49,21 @@ impl IronCadLossCode {
             ),
             Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
+            Self::BodyUnreadable => ("body.unreadable", LossTaxonomy::GeometryNotTransferred),
+            Self::BodyRecordsRetained => ("body.records-retained", LossTaxonomy::RecordNotTyped),
+            Self::BodyExtensionsRetained => (
+                "body.extensions-retained",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
+            Self::FeatureShapeRetained => (
+                "body.feature-shape-retained",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::FaceBoundaryUnstated => (
+                "face.boundary-unstated",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
+            Self::SurfaceUntyped => ("surface.untyped", LossTaxonomy::GeometryNotTransferred),
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,

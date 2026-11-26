@@ -87,10 +87,10 @@ The node grammar of [`parasolid.md`](parasolid.md) follows.
 
 ### 3.2 ACIS kernel bytes
 
-The kernel bytes are one ACIS binary save stream. It starts with the magic
-`ACIS BinaryFile` and ends with the `End-of-ACIS-data` terminator record. The
-header product string names `IronCAD`. The header and record grammar are
-specified in [`asm.md`](asm.md).
+The kernel bytes are one interned ACIS binary save stream
+([`asm.md`](asm.md) §2.4). It starts with the magic `ACIS BinaryFile` and ends
+with the `End-of-ACIS-data` identifier. The save-format word is `3200`, and the
+header product string names `IronCAD`. Lengths are centimetres (`asm.md` §4).
 
 ## 4. Units
 
