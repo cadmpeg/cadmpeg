@@ -265,7 +265,7 @@ jobs:
       CI_FULL: ${{ needs.changes.outputs.full }}
       CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -315,7 +315,20 @@ jobs:
         shell: bash
         run: |
           (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
-          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+          python3 scripts/ci_cargo.py run-tests
+
+      - name: TEMP topology measurement
+        if: always()
+        shell: bash
+        run: |
+          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > /tmp/m.log 2>&1; rc=$?; e=$(date +%s); tail -12 /tmp/m.log; echo "=== rc $rc wall $((e - s))s"; }
+          m "jobs2" env CI_TEST_JOBS=2 python3 scripts/ci_cargo.py run-tests
+          m "nosplit" env CI_TEST_SPLIT=0 python3 scripts/ci_cargo.py run-tests
+          m "all-at-once" env CI_TEST_JOBS=64 python3 scripts/ci_cargo.py run-tests
+          m "jobs4-again" python3 scripts/ci_cargo.py run-tests
+          m "cargo-test-serial" python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
+          m "nextest" cargo nextest run --workspace --bins --tests --no-fail-fast --cargo-quiet --status-level fail --final-status-level slow
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -516,7 +529,7 @@ jobs:
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
     # 3-core runner the test build takes about 50 minutes when it stays in
     # memory, and the tests about 20; on the 5-core runner, 13 and 9.
-    timeout-minutes: 120
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
@@ -556,11 +569,21 @@ jobs:
       # than being cancelled, and the report and cache steps run.
       - name: Build tests
         timeout-minutes: 75
-        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
+        run: python3 scripts/ci_cargo.py test --no-run --bins --tests
 
       - name: Unit and integration tests
         timeout-minutes: 40
-        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+        run: python3 scripts/ci_cargo.py run-tests
+
+      - name: TEMP topology measurement
+        if: always()
+        timeout-minutes: 70
+        shell: bash
+        run: |
+          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > m.log 2>&1; rc=$?; e=$(date +%s); tail -12 m.log; echo "=== rc $rc wall $((e - s))s"; }
+          m "jobs2" env CI_TEST_JOBS=2 python3 scripts/ci_cargo.py run-tests
+          m "nosplit" env CI_TEST_SPLIT=0 python3 scripts/ci_cargo.py run-tests
+          m "cargo-test-serial" python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
       # A step timeout stops only the step's shell: cargo, rustc and the test
       # binaries keep running. Name them, then stop them before the cache step.
