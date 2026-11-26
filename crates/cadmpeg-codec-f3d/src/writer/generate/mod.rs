@@ -29,11 +29,12 @@ mod reduce;
 mod smbh;
 use preconditions::{
     replaced_by_stamp, unreachable_record_headers, unwritable_continuities,
-    unwritable_link_records, unwritable_tolerant_coedges, validate_source_less_auxiliary_geometry,
-    validate_source_less_design_bindings, validate_source_less_design_links,
-    validate_source_less_design_ownership, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
+    unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
+    validate_source_less_design_links, validate_source_less_design_ownership,
+    validate_source_less_history_graph, validate_source_less_procedural_carriers,
+    validate_source_less_recipes, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -225,6 +226,7 @@ fn attempt<W: Write + Seek>(
     } else {
         if let Some(unwritable) = unwritable_continuities(&native)
             .or_else(|| unwritable_tolerant_coedges(target, &native))
+            .or_else(|| unwritable_tolerant_tails(target, &native))
         {
             return Err(Failure::unwritable(Stage::Brep, unwritable));
         }

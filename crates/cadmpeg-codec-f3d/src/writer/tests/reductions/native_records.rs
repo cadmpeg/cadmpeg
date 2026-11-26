@@ -365,3 +365,78 @@ fn a_tolerant_coedge_record_with_another_range_is_dropped_alone() {
     assert!(f3d_native(&decoded).tolerant_coedge_parameters.is_empty());
     assert_eq!(decoded.geometry.bodies.len(), 1);
 }
+
+#[test]
+fn an_unset_tolerant_vertex_tail_on_a_vertex_with_a_tolerance_is_dropped_alone() {
+    use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("a length");
+    ir.geometry.vertices[0].tolerance = Some(tolerance);
+    let tail = TolerantVertexTail {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        record_index: 0,
+        vertex: ir.geometry.vertices[0].id.clone(),
+        leading_tolerances: [-1.0, -1.0]
+            .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
+        evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
+    };
+    let id = tail.id();
+    f3d_native_mut(&mut ir).tolerant_vertex_tails = vec![tail];
+
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex",
+    );
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report)
+            .iter()
+            .any(|message| message.ends_with(&format!(": {id}"))),
+        "{:#?}",
+        report.losses
+    );
+    let decoded = write_and_decode(&ir);
+    let vertex = decoded
+        .geometry
+        .vertices
+        .iter()
+        .find_map(|vertex| vertex.tolerance)
+        .expect("the vertex tolerance reads back");
+    assert!((vertex.get() - tolerance.get()).abs() <= 1.0e-12);
+    assert_eq!(f3d_native(&decoded).tolerant_vertex_tails.len(), 1);
+}
+
+#[test]
+fn a_tolerant_edge_tail_on_an_edge_with_no_tolerance_is_dropped_alone() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let tail = cadmpeg_asm::brep::records::TolerantEdgeTail {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        edge: ir.geometry.edges[0].id.clone(),
+        record_index: 0,
+        entity_revision: 22800,
+        trailing_field: Some(1),
+    };
+    let id = tail.id();
+    f3d_native_mut(&mut ir).tolerant_edge_tails = vec![tail];
+
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of tolerant-edge records on an edge with no tolerance",
+    );
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report)
+            .iter()
+            .any(|message| message.ends_with(&format!(": {id}"))),
+        "{:#?}",
+        report.losses
+    );
+    let decoded = write_and_decode(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert!(f3d_native(&decoded).tolerant_edge_tails.is_empty());
+}

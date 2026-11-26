@@ -463,7 +463,7 @@ fn generated_source_less_drops_collapsed_native_topology_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires finite fields and a tolerant vertex",
+        "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex",
     );
 }
 

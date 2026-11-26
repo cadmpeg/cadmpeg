@@ -437,6 +437,15 @@ pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> 
     )
 }
 
+/// The records of the groups that hold more than one record.
+fn shared<K>(groups: BTreeMap<K, Vec<String>>) -> BTreeSet<String> {
+    groups
+        .into_values()
+        .filter(|records| records.len() > 1)
+        .flatten()
+        .collect()
+}
+
 /// The tolerant-coedge records the B-rep stream cannot hold as they stand,
 /// in groups by reason. The coedge record holds one extension, written
 /// inline, whose embedded curve is the coedge's NURBS use curve. The decoder
@@ -512,11 +521,6 @@ pub(super) fn unwritable_tolerant_coedges(
             }
         }
     }
-    let shared = by_coedge
-        .into_values()
-        .filter(|records| records.len() > 1)
-        .flatten()
-        .collect();
     [
         (
             "of tolerant-coedge records that name a coedge the document does not hold",
@@ -524,7 +528,7 @@ pub(super) fn unwritable_tolerant_coedges(
         ),
         (
             "of tolerant-coedge records that share their coedge with another record (the coedge record holds one extension, and the records do not state which one it is)",
-            shared,
+            shared(by_coedge),
         ),
         (
             "of tolerant-coedge records whose coedge has no NURBS use curve for the embedded curve",
@@ -537,6 +541,83 @@ pub(super) fn unwritable_tolerant_coedges(
         (
             "of tolerant-coedge records whose extension names another record (the written coedge record holds its extension inline)",
             relocated,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, records)| Unwritable::of(reason, records))
+}
+
+/// The tolerant vertex and edge tails the B-rep stream cannot hold as they
+/// stand, in groups by reason. The written vertex and edge records hold the
+/// tolerance of the neutral vertex or edge, and one tail each.
+pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
+    let vertices = target
+        .geometry
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<HashMap<_, _>>();
+    let edges = target
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let mut vertex_absent = BTreeSet::new();
+    let mut by_vertex = BTreeMap::<_, Vec<String>>::new();
+    let mut slot_disagrees = BTreeSet::new();
+    for tail in &native.tolerant_vertex_tails {
+        let Some(vertex) = vertices.get(&tail.vertex) else {
+            vertex_absent.insert(tail.id());
+            continue;
+        };
+        by_vertex.entry(&tail.vertex).or_default().push(tail.id());
+        if vertex.tolerance.is_some()
+            != matches!(
+                tail.evaluated_slot,
+                EvaluatedToleranceSlot::Evaluated { .. }
+            )
+        {
+            slot_disagrees.insert(tail.id());
+        }
+    }
+    let mut edge_absent = BTreeSet::new();
+    let mut by_edge = BTreeMap::<_, Vec<String>>::new();
+    let mut no_tolerance = BTreeSet::new();
+    for tail in &native.tolerant_edge_tails {
+        let Some(edge) = edges.get(&tail.edge) else {
+            edge_absent.insert(tail.id());
+            continue;
+        };
+        by_edge.entry(&tail.edge).or_default().push(tail.id());
+        if edge.tolerance.is_none() {
+            no_tolerance.insert(tail.id());
+        }
+    }
+    [
+        (
+            "of tolerant-vertex records that name a vertex the document does not hold",
+            vertex_absent,
+        ),
+        (
+            "of tolerant-vertex records that share their vertex with another record (the vertex record holds one tolerance tail, and the records do not state which one it is)",
+            shared(by_vertex),
+        ),
+        (
+            "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex (the written vertex record holds the vertex tolerance)",
+            slot_disagrees,
+        ),
+        (
+            "of tolerant-edge records that name an edge the document does not hold",
+            edge_absent,
+        ),
+        (
+            "of tolerant-edge records that share their edge with another record (the edge record holds one tolerance tail, and the records do not state which one it is)",
+            shared(by_edge),
+        ),
+        (
+            "of tolerant-edge records on an edge with no tolerance (the written edge record holds the edge tolerance)",
+            no_tolerance,
         ),
     ]
     .into_iter()
@@ -1167,41 +1248,6 @@ pub(super) fn validate_source_less_design_links(
         "vertex-ownership"
     );
     validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
-    validate_unique_targets!(
-        &native.tolerant_edge_tails,
-        edge,
-        edges,
-        "tolerant-edge",
-        [id()],
-        |tail, edge| {
-            if edge.tolerance.is_none() {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D tolerant-edge metadata {} requires a tolerant edge",
-                    tail.id()
-                )));
-            }
-        }
-    );
-    validate_unique_targets!(
-        &native.tolerant_vertex_tails,
-        vertex,
-        vertices,
-        "tolerant-vertex",
-        [id()],
-        |tail, vertex| {
-            if vertex.tolerance.is_some()
-                != matches!(
-                    tail.evaluated_slot,
-                    EvaluatedToleranceSlot::Evaluated { .. }
-                )
-            {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
-                    tail.id()
-                )));
-            }
-        }
-    );
     let mut wire_record_indices = BTreeSet::new();
     for wire in &native.wire_topologies {
         let shell = shells.get(&wire.shell).copied().ok_or_else(|| {
@@ -1491,13 +1537,12 @@ pub(super) fn validate_source_less_wire_ownership(
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_source_less_design_links, F3dNative};
+    use super::{unwritable_tolerant_tails, F3dNative};
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
-    use cadmpeg_core::CodecError;
 
     #[test]
-    fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
+    fn an_unset_tolerant_vertex_tail_on_a_vertex_with_a_tolerance_is_unwritable() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.geometry.vertices[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).unwrap());
@@ -1514,11 +1559,9 @@ mod tests {
             }],
             ..F3dNative::default()
         };
-        let error = validate_source_less_design_links(&target, &native)
-            .expect_err("unset native evaluation must not coexist with a neutral tolerance");
-        assert!(matches!(error, CodecError::InvalidInput(_)));
-        assert!(error
-            .to_string()
-            .contains("requires finite fields and a tolerant vertex"));
+        let id = native.tolerant_vertex_tails[0].id();
+        let unwritable =
+            unwritable_tolerant_tails(&target, &native).expect("the tail is unwritable");
+        assert_eq!(unwritable.records, std::collections::BTreeSet::from([id]));
     }
 }
