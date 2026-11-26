@@ -31,6 +31,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: state_id.clone(),
             input_of: feature_id.clone(),
             bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1346,6 +1347,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
@@ -1417,6 +1419,7 @@ fn input_face_owners_name_their_own_state_members_once() {
         .push(FeatureInputTopology {
             face_owners: vec![owner(&face, &body)],
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::try_from(vec![body.clone(), other.clone()]).unwrap(),
@@ -1497,6 +1500,7 @@ fn input_face_geometry_names_its_own_state_faces_once() {
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: vec![geometry(&face)],
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
@@ -1642,4 +1646,82 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
             !valid
         );
     }
+}
+
+#[test]
+fn input_body_writers_name_state_bodies_once_and_model_features() {
+    use crate::features::evaluation::{FeatureInputTopology, HistoricalBodyWriter};
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
+
+    let feature = |id: &str, ordinal| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
+                kind: "Shell".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    };
+    let body = HistoricalBodyId::mint("test:model:historical-body#1").expect("valid identity");
+    let writer = |body: &HistoricalBodyId, feature: &str| HistoricalBodyWriter {
+        body: body.clone(),
+        writer: FeatureId::mint(feature).expect("identity grammar"),
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .features
+        .push(feature("test:model:feature#extrude", 0));
+    ir.model
+        .features
+        .push(feature("test:model:feature#shell", 1));
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: vec![writer(&body, "test:model:feature#extrude")],
+            id: FeatureInputTopologyId::mint("test:model:feature-input#shell").unwrap(),
+            input_of: FeatureId::mint("test:model:feature#shell").unwrap(),
+            bodies: DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+            faces: DistinctMembers::default(),
+            edges: DistinctMembers::default(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    let state_findings = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature-input#shell"))
+            .count()
+    };
+    assert_eq!(state_findings(&ir), 0);
+
+    ir.model.feature_input_topologies[0]
+        .body_writers
+        .push(writer(&body, "test:model:feature#extrude"));
+    assert_eq!(state_findings(&ir), 1);
+
+    ir.model.feature_input_topologies[0].body_writers =
+        vec![writer(&body, "test:model:feature#absent")];
+    assert_eq!(state_findings(&ir), 1);
+
+    let missing = HistoricalBodyId::mint("test:model:historical-body#missing").unwrap();
+    ir.model.feature_input_topologies[0].body_writers =
+        vec![writer(&missing, "test:model:feature#extrude")];
+    assert_eq!(state_findings(&ir), 1);
 }
