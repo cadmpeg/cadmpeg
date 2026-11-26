@@ -38,28 +38,27 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 ///
 /// Every command loads through here, so here is where the load's notices go
 /// to stderr: a decode sidecar the load ignored, each entry of a CADIR read's
-/// report, a document whose scope excludes a class the command requested, and
-/// a detection below high confidence.
+/// report, a document whose scope is below full, and a detection below high
+/// confidence.
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
     options: &DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
-    let requested = options.depth.scope();
     let document = load(catalog, path, options, forced)?;
-    print_load_notice(path, &document, requested);
+    print_load_notice(path, &document);
     Ok(document)
 }
 
-fn print_load_notice(path: &Path, document: &LoadedDocument, requested: ContentScope) {
+fn print_load_notice(path: &Path, document: &LoadedDocument) {
     if let Some(loss) = &document.stale_sidecar {
         eprintln!("warning: {}: {}", loss.code, loss.message);
     }
     for entry in &document.read_report {
         eprintln!("warning: {}: {}", entry.code, entry.message);
     }
-    if let Some(note) = scope_note(document.ir.scope(), requested) {
+    if let Some(note) = scope_note(document.ir.scope()) {
         eprintln!("note: {}: {note}", path.display());
     }
     let LoadOrigin::Decoded {
@@ -78,10 +77,10 @@ fn print_load_notice(path: &Path, document: &LoadedDocument, requested: ContentS
     }
 }
 
-/// The note for a document whose scope excludes a class `requested` holds:
-/// the arenas of an excluded class state nothing about the source.
-fn scope_note(scope: ContentScope, requested: ContentScope) -> Option<String> {
-    let excluded = scope.missing_from(requested);
+/// The note for a document whose scope is below full: the arenas of an
+/// excluded class state nothing about the source.
+fn scope_note(scope: ContentScope) -> Option<String> {
+    let excluded = scope.missing_from(ContentScope::full());
     (!excluded.is_empty()).then(|| {
         format!(
             "the document's scope excludes {excluded}; the arenas of an excluded class state \
@@ -215,24 +214,17 @@ mod tests {
     use cadmpeg_registry::{ForcedInput, InputCatalog};
 
     #[test]
-    fn a_scope_that_excludes_a_requested_class_is_noted() {
+    fn every_sub_full_scope_is_noted() {
         use cadmpeg_core::decode::ContentScope;
 
         assert_eq!(
-            super::scope_note(ContentScope::geometry(), ContentScope::full()).as_deref(),
+            super::scope_note(ContentScope::geometry()).as_deref(),
             Some(
                 "the document's scope excludes design, process; the arenas of an excluded class \
                  state nothing about the source"
             )
         );
-        assert_eq!(
-            super::scope_note(ContentScope::full(), ContentScope::full()),
-            None
-        );
-        assert_eq!(
-            super::scope_note(ContentScope::geometry(), ContentScope::geometry()),
-            None
-        );
+        assert_eq!(super::scope_note(ContentScope::full()), None);
     }
 
     #[test]
