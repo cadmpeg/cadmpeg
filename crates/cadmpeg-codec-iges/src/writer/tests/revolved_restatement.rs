@@ -35,6 +35,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::{IgesCodec, IgesVersion};
 
+mod boundary_start;
 mod loop_periods;
 
 /// The sweep of the sphere lune and the cone sector, narrower than 45°.

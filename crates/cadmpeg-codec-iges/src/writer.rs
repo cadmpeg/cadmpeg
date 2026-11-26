@@ -485,7 +485,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
     let dissimilar = placement::dissimilar_supports(ranged.as_ref());
     let admitted = |surface: &str| !brep || dissimilar.contains(surface);
     let stated = exact::state_pcurves(ranged.as_ref(), admitted)?;
-    let (restated, omitted_pcurves) =
+    let (restated, omitted_pcurves, seam_cuts) =
         rational_support::rational_analytic_supports(stated.as_ref(), admitted)?;
     let (placed, placement_losses) = placement::placed_bodies(restated.as_ref())?;
     let forward = exact::forward_normals(placed.as_ref());
@@ -578,6 +578,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         topology_entities(
             ctx,
             validate_trimmed_sheet_topology(ctx, &index, version)?,
+            &seam_cuts,
             &mut body_presentations,
             &mut losses,
         )?
@@ -3018,6 +3019,7 @@ fn same_float(left: f64, right: f64) -> bool {
 fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
+    seam_cuts: &rational_support::SeamCuts,
     body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
@@ -3054,6 +3056,9 @@ fn topology_entities(
     let mut faces = ir.geometry.faces.iter().collect::<Vec<_>>();
     faces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let mut boundaries = Vec::new();
+    // The faces whose classified loops are written as Type 141 boundaries of
+    // a Type 143 face.
+    let mut unclassified = BTreeSet::new();
     for face in &faces {
         named(face.id.as_str(), || {
             let surface_index = surface_indices[face.surface.as_str()];
@@ -3072,12 +3077,42 @@ fn topology_entities(
                 && loops
                     .iter()
                     .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
-            for loop_ in loops {
-                boundaries.push((
-                    surface_index,
-                    written_boundary(index, loop_, &surface.geometry, !bounded)?,
-                ));
+            let written = |trimmed: bool| {
+                loops
+                    .iter()
+                    .map(|loop_| written_boundary(index, loop_, &surface.geometry, trimmed))
+                    .collect::<Result<Vec<_>, _>>()
+            };
+            let mut face_boundaries = written(!bounded)?;
+            let mut unstarted = None;
+            if !bounded {
+                for boundary in &mut face_boundaries {
+                    unstarted = turn_cut::start_at_seam_cut(
+                        ctx,
+                        index,
+                        &surface.geometry,
+                        seam_cuts,
+                        boundary,
+                    )?;
+                    if unstarted.is_some() {
+                        break;
+                    }
+                }
             }
+            if let Some(reason) = unstarted {
+                face_boundaries = written(false)?;
+                losses.push(IgesLossCode::WriterLoopClassificationOmitted.note(format!(
+                    "IGES face {} is written as a Type 143 with Type 141 boundaries, without \
+                     its outer and inner loops: {reason}",
+                    face.id
+                )));
+                unclassified.insert(face.id.as_str());
+            }
+            boundaries.extend(
+                face_boundaries
+                    .into_iter()
+                    .map(|boundary| (surface_index, boundary)),
+            );
             Ok(())
         })?;
     }
@@ -3226,10 +3261,11 @@ fn topology_entities(
         named(face.id.as_str(), || {
             let surface_index = surface_indices[face.surface.as_str()];
             let loops = face_loop_order(index, face)?;
-            let bounded = !loops.is_empty()
-                && loops
-                    .iter()
-                    .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+            let bounded = unclassified.contains(face.id.as_str())
+                || (!loops.is_empty()
+                    && loops
+                        .iter()
+                        .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified));
             let mut parameters = if bounded {
                 let representation = loops
                     .first()
@@ -4019,7 +4055,7 @@ fn written_boundary<'ir>(
         } else {
             Sense::Forward
         };
-        let mut coedges = chained
+        chained
             .into_iter()
             .map(|(carrier, chain)| {
                 let coedge: &'ir Coedge = carrier.coedge;
@@ -4037,9 +4073,7 @@ fn written_boundary<'ir>(
                     cut: None,
                 })
             })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        turn_cut::start_at_parameter_gap(index.ir, loop_, surface, &mut coedges)?;
-        coedges
+            .collect::<Result<Vec<_>, CodecError>>()?
     } else {
         carriers
             .into_iter()
@@ -4993,9 +5027,8 @@ impl<'a> PcurveOrientationContext<'a> {
         self.orientation(uses).map(|_| ())
     }
 
-    /// The direction of the pcurve chain relative to the edge curve. A chain
-    /// runs in the coedge's traversal; a reversed coedge also admits a chain
-    /// stated in the edge curve's direction.
+    /// The direction of the pcurve chain relative to the edge curve. The
+    /// chain runs along the coedge's traversal or against it.
     fn orientation(&self, uses: &[PcurveUse]) -> Result<Sense, CodecError> {
         let traversal = self.direction.traversal;
         if uses.is_empty() {
@@ -5011,10 +5044,11 @@ impl<'a> PcurveOrientationContext<'a> {
         if pcurve_chain_matches(&mapped, directed_start, directed_end, tolerance) {
             return Ok(traversal);
         }
-        if traversal == Sense::Reversed
-            && pcurve_chain_matches(&mapped, self.natural_start, self.natural_end, tolerance)
-        {
-            return Ok(Sense::Forward);
+        if pcurve_chain_matches(&mapped, directed_end, directed_start, tolerance) {
+            return Ok(match traversal {
+                Sense::Forward => Sense::Reversed,
+                Sense::Reversed => Sense::Forward,
+            });
         }
         Err(CodecError::malformed(format_args!(
             "IGES {} pcurve chain endpoints disagree with its directed support edge",

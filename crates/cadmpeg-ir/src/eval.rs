@@ -5457,7 +5457,7 @@ fn helix_parameter_near_point(
 }
 
 /// Invert a direct curve carrier near a caller-selected parameter seed.
-pub(crate) fn curve_parameter_near_point(
+pub fn curve_parameter_near_point(
     ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
     point: Point3,

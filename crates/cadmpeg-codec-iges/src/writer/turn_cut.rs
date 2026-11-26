@@ -1,27 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The start of a Type 142 boundary whose parameter curves join in the
-//! parameter plane at all places but one. A loop that turns around a
-//! periodic parameter of its support has its parameter curves cut at the end
-//! of the turn that holds its face, and the pieces lie at the two ends of the
-//! turn. A Type 102 composite of the parameter curves joins only when it
-//! starts at that cut, and the model-space curve of the Type 142 starts at
-//! the same point.
+//! The start of a Type 142 boundary of a loop that turns around a periodic
+//! parameter of its restated support. The restatement cuts one parameter
+//! curve of the loop at the end of the turn that holds the face, and the
+//! pieces lie at the two ends of the turn. A Type 102 composite of the
+//! parameter curves joins only when it starts at that cut, and the
+//! model-space curve of the Type 142 starts at the same point.
 
-use super::{CarrierEntity, CurveSpan, WrittenCoedge, WrittenPcurveUse};
+use super::rational_support::SeamCuts;
+use super::{
+    effective_topology_tolerance, topology_edge_explicit_tolerance, CarrierEntity, CurveSpan,
+    TopologyIndex, WrittenBoundary, WrittenPcurveUse,
+};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
-use cadmpeg_ir::eval::{finite_or_refusal, model_surface_point};
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::eval::{curve_parameter_near_point, finite_or_refusal, model_surface_point};
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::topology::Loop;
 use cadmpeg_ir::units::FiniteVector;
-use cadmpeg_ir::CadIr;
-use std::f64::consts::TAU;
 
-/// The largest parameter-plane distance at which the end of one parameter
-/// curve of a boundary joins the start of the next.
-const PARAMETER_JOIN: f64 = 1.0e-9;
+/// The distance from the cut point, relative to the largest magnitude of its
+/// coordinates and at least 1, within which an edge curve that passes
+/// through the cut point gives its parameter there.
+const CUT_RESOLUTION: f64 = 1.0e-9;
 
 /// The cut in the model-space curve of the first coedge of a Type 142
 /// boundary that starts inside that coedge.
@@ -33,66 +35,74 @@ pub(super) struct CoedgeCut {
     pub(super) spans: [CurveSpan; 2],
 }
 
-/// Moves the start of the Type 142 boundary of `loop_` on `surface`, written
-/// as `coedges`, to the one place where its parameter curves do not join.
-/// Fails where they do not join at more places, or where the boundary starts
-/// inside a coedge whose edge curve is not a circle or an ellipse.
-pub(super) fn start_at_parameter_gap(
-    ir: &CadIr,
-    loop_: &Loop,
+/// Moves the start of the Type 142 `boundary` on `surface` to the seam cut
+/// that `cuts` names between two parameter curves of one of its coedges, and
+/// cuts the edge curve of that coedge at the same point. A boundary with no
+/// seam cut keeps its start. Returns the reason the boundary has no common
+/// start where the edge curve has no parameter at the cut.
+pub(super) fn start_at_seam_cut(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
     surface: &SurfaceGeometry,
-    coedges: &mut [WrittenCoedge<'_>],
-) -> Result<(), CodecError> {
-    let mut uses = Vec::new();
-    for (coedge, written) in coedges.iter().enumerate() {
-        for (position, pcurve_use) in written.pcurves.iter().enumerate() {
-            let Some(ends) = written_ends(pcurve_use)? else {
-                return Ok(());
-            };
-            uses.push((coedge, position, ends));
-        }
-    }
-    let gaps = uses
-        .windows(2)
-        .filter(|pair| distance(pair[0].2[1], pair[1].2[0]) > PARAMETER_JOIN)
-        .map(|pair| (pair[1].0, pair[1].1, pair[0].2[1]))
-        .collect::<Vec<_>>();
-    let (coedge, first_use, uv) = match gaps.as_slice() {
-        [] => return Ok(()),
-        [gap] => *gap,
-        _ => {
-            return Err(CodecError::NotImplemented(format!(
-                "IGES Type 142 loop {}: its parameter curves join in no one order",
-                loop_.id
-            )))
-        }
+    cuts: &SeamCuts,
+    boundary: &mut WrittenBoundary<'_>,
+) -> Result<Option<String>, CodecError> {
+    let Some((coedge, first_use)) =
+        boundary
+            .coedges
+            .iter()
+            .enumerate()
+            .find_map(|(coedge, written)| {
+                written
+                    .pcurves
+                    .windows(2)
+                    .position(|pair| {
+                        cuts.cut_between(pair[0].pcurve.id.as_str(), pair[1].pcurve.id.as_str())
+                    })
+                    .map(|before| (coedge, before + 1))
+            })
+    else {
+        return Ok(None);
     };
-    coedges.rotate_left(coedge);
-    if first_use == 0 {
-        return Ok(());
-    }
-    let written = &mut coedges[0];
+    boundary.coedges.rotate_left(coedge);
+    let loop_id = &boundary.loop_.id;
+    let written = &mut boundary.coedges[0];
     let carrier = &written.carrier;
-    let point = finite_or_refusal(model_surface_point(
+    let unstarted = |what: &str| {
+        Ok(Some(format!(
+            "coedge {} of loop {loop_id} {what} at the seam cut of its parameter curves",
+            carrier.coedge.id
+        )))
+    };
+    let Some([_, uv]) = written_ends(&written.pcurves[first_use - 1])? else {
+        return unstarted("has no finite parameter curve end");
+    };
+    let Some(point) = finite_or_refusal(model_surface_point(
         EvaluationAdmission::Standard,
-        ir,
+        index.ir,
         surface,
         uv.u,
         uv.v,
     ))?
-    .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
+    .map(cadmpeg_ir::features::geometry::FinitePoint3::get) else {
+        return unstarted("has no finite support point");
+    };
     let [start, end] = carrier.span.range.get();
-    let Some((point, parameter)) = point
-        .and_then(|point| {
-            let angle = conic_parameter(&carrier.geometry, point)?;
-            Some((point, (angle - start).rem_euclid(TAU) + start))
-        })
-        .filter(|(_, parameter)| start < *parameter && *parameter < end)
-    else {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES Type 142 loop {}: coedge {} starts the boundary inside an edge curve that is not a circle or an ellipse",
-            loop_.id, carrier.coedge.id
-        )));
+    let seed = 0.5f64.mul_add(end - start, start);
+    let exact = CUT_RESOLUTION * point.x.abs().max(point.y.abs()).max(point.z.abs()).max(1.0);
+    let tolerance =
+        effective_topology_tolerance(topology_edge_explicit_tolerance(index, carrier.edge));
+    let mut parameter = None;
+    for tolerance in [exact, tolerance] {
+        parameter = curve_parameter_near_point(ctx, &carrier.geometry, point, seed, tolerance)?
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .filter(|parameter| start < *parameter && *parameter < end);
+        if parameter.is_some() {
+            break;
+        }
+    }
+    let Some(parameter) = parameter else {
+        return unstarted("has no edge curve parameter inside its span");
     };
     let span = |range: [f64; 2], ends: [Point3; 2]| {
         FiniteVector::new(range)
@@ -103,8 +113,8 @@ pub(super) fn start_at_parameter_gap(
             })
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "IGES Type 142 loop {} cuts coedge {} at a non-finite parameter",
-                    loop_.id, carrier.coedge.id
+                    "IGES Type 142 loop {loop_id} cuts coedge {} at a non-finite parameter",
+                    carrier.coedge.id
                 ))
             })
     };
@@ -118,7 +128,7 @@ pub(super) fn start_at_parameter_gap(
             [lower, upper]
         },
     });
-    Ok(())
+    Ok(None)
 }
 
 /// The parameter-plane start and end of the curve that a written use
@@ -143,29 +153,4 @@ fn written_ends(pcurve_use: &WrittenPcurveUse<'_>) -> Result<Option<[Point2; 2]>
         ends.reverse();
     }
     Ok(Some(ends))
-}
-
-fn distance(first: Point2, second: Point2) -> f64 {
-    (first.u - second.u).hypot(first.v - second.v)
-}
-
-/// The angle parameter of `point` on a circle or ellipse `geometry`.
-fn conic_parameter(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
-    let (center, frame, [major, minor]) = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
-            (circle.center(), circle.frame(), [circle.radius().get(); 2])
-        }
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) => (
-            ellipse.center(),
-            ellipse.frame(),
-            [ellipse.major_radius().get(), ellipse.minor_radius().get()],
-        ),
-        _ => return None,
-    };
-    let center = center.get();
-    let offset =
-        cadmpeg_ir::math::Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
-    let reference = *frame.reference().as_raw();
-    let across = frame.axis().as_raw().cross(reference);
-    Some((offset.dot(across) / minor).atan2(offset.dot(reference) / major))
 }

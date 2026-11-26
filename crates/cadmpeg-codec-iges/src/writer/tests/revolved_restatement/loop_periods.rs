@@ -4,12 +4,24 @@
 
 use std::f64::consts::{PI, TAU};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve, TorusSurface};
-use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
+use cadmpeg_ir::geometry::{
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Coedge, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Sense};
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::topology::{
+    Coedge, Face, FaceLoops, IncreasingParameterInterval, Loop, LoopBoundary, LoopBoundaryRole,
+    LoopRing, Sense,
+};
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
+
+use crate::entities::curve_conversion::elliptical_arc_nurbs;
 
 use super::{
     assert_boundary_in_domain, azimuth, boundary, charged, face_boundary, id, largest_gap, origin,
@@ -487,35 +499,37 @@ fn cylinder_sheet() -> Sheet {
     ))
 }
 
-/// `sheet` with the face of `loops` and, where `second` names a loop of
-/// `sheet`, the face `second` that this loop bounds, on the same support.
-fn faces(mut sheet: Sheet, loops: FaceLoops, second: Option<LoopId>) -> CadIr {
-    let second_face = id(FaceId::mint, "face", "second");
-    if let Some(second) = &second {
+/// `sheet` with the face of `loops` and, for each key and loop of `sheet` in
+/// `others`, the face of that key that the loop bounds, on the same support.
+fn faces(mut sheet: Sheet, loops: FaceLoops, others: Vec<(&str, LoopId)>) -> CadIr {
+    for (key, other) in &others {
         sheet
             .ir
             .geometry
             .loops
             .iter_mut()
-            .find(|loop_| loop_.id == *second)
-            .expect("the second loop")
-            .face = second_face.clone();
+            .find(|loop_| loop_.id == *other)
+            .expect("the loop of another face")
+            .face = id(FaceId::mint, "face", key);
     }
     let mut ir = sheet.faced(loops);
-    if let Some(second) = second {
+    if others.is_empty() {
+        return ir;
+    }
+    for (key, other) in others {
         ir.geometry.faces.push(Face {
-            id: second_face,
+            id: id(FaceId::mint, "face", key),
             shell: id(ShellId::mint, "shell", "sheet"),
             surface: id(SurfaceId::mint, "surface", "face"),
             sense: Sense::Forward,
-            loops: FaceLoops::classified(second, Vec::new()),
+            loops: FaceLoops::classified(other, Vec::new()),
             name: None,
             color: None,
             tolerance: None,
             native_ref: None,
         });
-        ir.finalize();
     }
+    ir.finalize();
     ir
 }
 
@@ -529,7 +543,7 @@ fn two_patches(first: [[f64; 2]; 2], second: [[f64; 2]; 2], shift: [f64; 2]) -> 
     faces(
         sheet,
         FaceLoops::classified(first, Vec::new()),
-        Some(second),
+        vec![("second", second)],
     )
 }
 
@@ -571,7 +585,7 @@ fn a_face_stated_a_turn_from_the_faces_before_it_moves_by_that_turn() {
 }
 
 #[test]
-fn a_face_that_no_turn_holds_with_the_faces_before_it_is_dropped() {
+fn a_face_that_no_turn_holds_with_the_other_faces_is_dropped() {
     let first = [[1.0, 3.5], [0.0, 2.0]];
     for stretch in [STRETCH, MIRROR_STRETCH] {
         let (losses, read) = written_under(
@@ -668,7 +682,11 @@ fn cylinder_band(
     } else {
         FaceLoops::unspecified(loops)
     };
-    faces(sheet, loops, patch)
+    faces(
+        sheet,
+        loops,
+        patch.into_iter().map(|patch| ("second", patch)).collect(),
+    )
 }
 
 /// Assert that the face that `band` builds, with its loops unclassified and
@@ -727,4 +745,302 @@ fn band_circles_that_start_at_different_azimuths_lie_in_one_turn() {
         |classified, patch| cylinder_band([0.0, PI], None, classified, patch),
         None,
     );
+}
+
+/// Faces on one cylinder about `+z`, one for each parameter rectangle of
+/// `regions`, in that order.
+fn patches(regions: &[[[f64; 2]; 2]]) -> CadIr {
+    let mut sheet = cylinder_sheet();
+    let keys = (0..regions.len())
+        .map(|position| format!("patch-{position}"))
+        .collect::<Vec<_>>();
+    let mut loops = keys
+        .iter()
+        .zip(regions)
+        .map(|(key, region)| rectangle_loop(&mut sheet, &CYLINDER, key, *region, [0.0, 0.0], false))
+        .collect::<Vec<_>>();
+    let first = loops.remove(0);
+    faces(
+        sheet,
+        FaceLoops::classified(first, Vec::new()),
+        keys[1..].iter().map(String::as_str).zip(loops).collect(),
+    )
+}
+
+#[test]
+fn faces_that_one_turn_holds_are_all_written() {
+    // The turn from azimuth 3 holds the three faces; no turn from the first
+    // face holds the third.
+    let regions = [
+        [[0.0, 0.5], [0.0, 1.0]],
+        [[3.0, 3.5], [0.0, 1.0]],
+        [[3.4, 6.5], [2.0, 3.0]],
+    ];
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(patches(&regions), stretch);
+        assert_eq!(read.geometry.faces.len(), 3);
+        assert_boundary_in_domain(&read);
+        assert_on_cylinder_regions(&read, stretch, &regions);
+    }
+}
+
+/// `band` with the geometry of the edge curve of its lower circle set to
+/// `geometry`.
+fn with_lower_curve(mut band: CadIr, geometry: SolvedCurveGeometry) -> CadIr {
+    band.geometry
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == id(CurveId::mint, "curve", "lower"))
+        .expect("the lower circle")
+        .geometry = CurveGeometry::Solved(geometry);
+    band
+}
+
+/// The lower circle of the cylinder band as a rational B-spline over the
+/// azimuths `[0, 2π]`.
+fn lower_b_spline() -> SolvedCurveGeometry {
+    let radius = PositiveLength::new(CYLINDER_RADIUS).expect("a radius");
+    SolvedCurveGeometry::Nurbs(
+        elliptical_arc_nurbs(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+            radius,
+            [0.0, TAU],
+        )
+        .expect("a rational circle")
+        .expect("a rational circle over one turn"),
+    )
+}
+
+#[test]
+fn a_band_whose_b_spline_circle_crosses_the_seam_cut_cuts_the_b_spline_there() {
+    assert_band_written(
+        |classified, patch| {
+            with_lower_curve(
+                cylinder_band([0.0, 0.0], Some(SEAM_HOLE), classified, patch),
+                lower_b_spline(),
+            )
+        },
+        Some(SEAM_HOLE),
+    );
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let band = with_lower_curve(
+            cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false),
+            lower_b_spline(),
+        );
+        let (losses, read) = written_under(band, stretch);
+        assert!(
+            charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        let face = &read.geometry.faces[0];
+        assert!(face
+            .loops
+            .stated()
+            .any(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Outer));
+    }
+}
+
+/// `band` with the edge curve of its lower circle stated as a composite of
+/// the circle.
+fn with_composite_lower_circle(mut band: CadIr) -> CadIr {
+    let circle = id(CurveId::mint, "curve", "lower-circle");
+    band.geometry.curves.push(Curve {
+        id: circle.clone(),
+        geometry: CurveGeometry::Solved((CYLINDER.along_u)(0.0)),
+        parameter_range: IncreasingParameterInterval::new([0.0, TAU]),
+        source_object: None,
+        native_ref: None,
+    });
+    let mut band = with_lower_curve(
+        band,
+        SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: circle,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }]
+            .try_into()
+            .expect("one segment"),
+            self_intersect: None,
+        },
+    );
+    band.finalize();
+    band
+}
+
+#[test]
+fn a_classified_band_whose_edge_curve_has_no_parameter_at_the_seam_cut_is_written_unclassified() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let band =
+            with_composite_lower_circle(cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false));
+        let (losses, read) = written_under(band, stretch);
+        let unclassified = charged(&losses, "iges/writer.loop-classification-omitted");
+        assert_eq!(unclassified.len(), 1, "{losses:#?}");
+        assert!(
+            unclassified[0].starts_with("IGES face test:model:face#face ")
+                && unclassified[0].contains("coedge test:model:coedge#lower "),
+            "{unclassified:#?}"
+        );
+        assert!(
+            charged(&losses, "iges/writer.face-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        assert_eq!(read.geometry.faces.len(), 1);
+        let face = &read.geometry.faces[0];
+        assert!(face
+            .loops
+            .stated()
+            .all(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Unspecified));
+        assert_eq!(face.loops.stated().count(), 3);
+        assert_on_cylinder_regions(
+            &read,
+            stretch,
+            &[
+                [[0.0, TAU], [0.0, 0.0]],
+                [[0.0, TAU], [BAND_HEIGHT, BAND_HEIGHT]],
+                SEAM_HOLE,
+            ],
+        );
+    }
+}
+
+/// The source position of the vertex where the traversal of the loop of
+/// `read` whose edges lie on the circle of the band at `height` starts, and
+/// the source azimuths along that traversal, unwrapped across the seam.
+fn circle_travel(read: &CadIr, stretch: Stretch, height: f64) -> (Point3, Vec<f64>) {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let geometry = &read.geometry;
+    let mut loops = geometry.loops.iter().map(|loop_| {
+        let mut first = None;
+        let mut points = Vec::new();
+        for coedge_id in loop_.coedges() {
+            let coedge = geometry
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)
+                .expect("the loop coedge reads back");
+            let edge = geometry
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .expect("the coedge edge reads back");
+            let curve = geometry
+                .curves
+                .iter()
+                .find(|curve| Some(&curve.id) == edge.carrier.curve())
+                .expect("the edge curve reads back");
+            let solved = match &curve.geometry {
+                CurveGeometry::Solved(solved) => solved,
+                CurveGeometry::Procedural { cache, .. } => {
+                    cache.as_ref().expect("the edge curve reads back solved")
+                }
+            };
+            let [start, end] = edge
+                .param_range()
+                .map(FiniteVector::get)
+                .expect("a bounded edge");
+            let mut samples = (0..=CIRCLE_SAMPLES)
+                .map(|step| {
+                    let parameter =
+                        (f64::from(step) / f64::from(CIRCLE_SAMPLES)).mul_add(end - start, start);
+                    stretch.source(
+                        curve_point_solved(&ctx, solved, parameter)
+                            .expect("a point on the edge")
+                            .get(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if coedge.sense == Sense::Reversed {
+                samples.reverse();
+            }
+            let ends = edge.ends.as_ref().expect("a bounded edge");
+            let vertex = if coedge.sense == Sense::Forward {
+                &ends.start
+            } else {
+                &ends.end
+            };
+            first.get_or_insert_with(|| {
+                let vertex = geometry
+                    .vertices
+                    .iter()
+                    .find(|other| other.id == *vertex)
+                    .expect("the edge vertex reads back");
+                let point = geometry
+                    .points
+                    .iter()
+                    .find(|point| point.id == vertex.point)
+                    .expect("the vertex point reads back");
+                stretch.source(point.position().get())
+            });
+            points.extend(samples);
+        }
+        (first.expect("a loop with a coedge"), points)
+    });
+    let (start, points) = loops
+        .find(|(_, points)| {
+            points
+                .iter()
+                .all(|point| (point.z - height).abs() <= ON_SURFACE)
+        })
+        .expect("a loop on the circle");
+    let mut azimuths = vec![points[0].y.atan2(points[0].x)];
+    for pair in points.windows(2) {
+        let step =
+            (pair[1].y.atan2(pair[1].x) - pair[0].y.atan2(pair[0].x) + PI).rem_euclid(TAU) - PI;
+        azimuths.push(azimuths[azimuths.len() - 1] + step);
+    }
+    (start, azimuths)
+}
+
+/// The largest difference between the azimuth span of a read-back edge
+/// curve over the range of its edge and the span between its vertices.
+const READ_BACK_SPAN: f64 = 1.0e-4;
+
+/// The samples of each edge curve of a loop in [`circle_travel`].
+const CIRCLE_SAMPLES: u32 = 64;
+
+#[test]
+fn a_cut_band_circle_reads_back_from_the_cut_once_around_in_one_direction() {
+    // Both circles cross the end of the turn that starts at the low side of
+    // the seam hole, so the boundary of each starts at that azimuth.
+    for lower in [None, Some(lower_b_spline())] {
+        for stretch in [MIRROR_STRETCH, STRETCH] {
+            let band = cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false);
+            let band = match &lower {
+                Some(geometry) => with_lower_curve(band, geometry.clone()),
+                None => band,
+            };
+            let read = read_back(band, stretch);
+            for height in [0.0, BAND_HEIGHT] {
+                let (start, azimuths) = circle_travel(&read, stretch, height);
+                let cut = start.y.atan2(start.x);
+                assert!(
+                    ((cut - SEAM_HOLE[0][0] + PI).rem_euclid(TAU) - PI).abs() <= ON_SURFACE
+                        && (start.z - height).abs() <= ON_SURFACE,
+                    "the circle at height {height} starts at {start:?} (b-spline {}, scale {:?})",
+                    lower.is_some(),
+                    stretch.scale
+                );
+                let first = azimuths[0];
+                let last = azimuths[azimuths.len() - 1];
+                assert!(
+                    ((first - cut + PI).rem_euclid(TAU) - PI).abs() <= READ_BACK_SPAN
+                        && ((last - first).abs() - TAU).abs() <= READ_BACK_SPAN,
+                    "the circle at height {height} runs from {first} to {last}"
+                );
+                let direction = (last - first).signum();
+                assert!(
+                    azimuths
+                        .windows(2)
+                        .all(|pair| (pair[1] - pair[0]) * direction >= -ON_SURFACE),
+                    "the circle at height {height} turns back: {azimuths:?}"
+                );
+            }
+        }
+    }
 }
