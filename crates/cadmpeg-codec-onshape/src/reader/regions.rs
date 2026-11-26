@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::document::Model;
 use serde_json::{json, Value};
 
+use super::intersection::ROUNDOFF_FACTOR;
 use super::{id, query, rows, text, topology, Mapping};
 const WORK_LIMIT: usize = 1_000_000;
 const OUTPUT_LIMIT: usize = 20_000;
@@ -216,7 +217,7 @@ pub(super) fn profile(
                 .iter()
                 .find(|e| e.id().as_str() == entity_id)
                 .ok_or("a sketch-region boundary has no solved source curve")?;
-            let mut entity = serde_json::to_value(entity)
+            let mut entity = cadmpeg_core::serde_erase::json::to_value(entity)
                 .map_err(|_| "a sketch-region source curve is unreadable")?;
             if entity.get("construction").and_then(Value::as_bool) == Some(true) {
                 return Err("a sketch-region boundary selects construction geometry".into());
@@ -256,6 +257,7 @@ pub(super) fn profile(
         if edges.is_empty() {
             return Err("the sketch region has no resolved boundary edges".into());
         }
+        attach_tangencies(&sketch_id, &mut edges, model, &mut recovery.budget)?;
         let region = if outside {
             exterior_region(&sketch_id, &edges, model, &mut recovery)?
         } else {
@@ -276,6 +278,121 @@ pub(super) fn profile(
         json!({"kind": "sketch_regions", "value": {"sketch": sketch.ok_or("the sketch-region selection is empty")?, "regions": regions}}),
     )
 }
+
+/// The regions `qSketchRegion(sketch, true)` selects: every region not contained in another
+/// region, each with the loops directly inside it as holes. The whole sketch when no loop is
+/// contained. Two crossing loops keep the whole sketch; crossing loops among three or more, and
+/// loops nested more than one level, are refused.
+pub(super) fn filtered_profile(
+    sketch: &str,
+    model: &Model,
+    inputs: &topology::Inputs<'_>,
+) -> Mapping<Value> {
+    let mut recovery = inputs
+        .regions
+        .try_borrow_mut()
+        .map_err(|_| "the sketch-region recovery state is already in use")?;
+    let Recovery { budget, loops } = &mut *recovery;
+    let topology = loops
+        .entry(sketch.to_owned())
+        .or_insert_with(|| source_loops(sketch, model, budget))
+        .as_ref()
+        .map_err(Clone::clone)?;
+    if topology.open.is_empty() {
+        if let [first, second] = topology.rings.as_slice() {
+            if has_exterior_vertex(first, second, budget)?
+                && has_exterior_vertex(second, first, budget)?
+            {
+                return Ok(json!({"kind":"sketch", "value":sketch}));
+            }
+        }
+    }
+    let mut containers: Vec<Vec<usize>> = topology.rings.iter().map(|_| Vec::new()).collect();
+    for (i, ring) in topology.rings.iter().enumerate() {
+        let point = ring.edges.first().ok_or("the sketch region is empty")?.0.a;
+        for (j, other) in topology.rings.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            budget.work(
+                ring.edges
+                    .len()
+                    .checked_mul(other.edges.len())
+                    .ok_or(BUDGET_LOSS)?,
+            )?;
+            admit_separate_rings(ring, other)?;
+            budget.work(other.edges.len())?;
+            if other.contains(point)? {
+                containers.get_mut(i).ok_or(BUDGET_LOSS)?.push(j);
+            }
+        }
+    }
+    if containers.iter().any(|c| c.len() > 1) {
+        return Err(
+            "filtered sketch regions nested more than one level are not supported yet".into(),
+        );
+    }
+    if containers.iter().all(Vec::is_empty) {
+        return Ok(json!({"kind":"sketch", "value":sketch}));
+    }
+    for edge in &topology.open {
+        if !isolated(edge, topology, budget)? {
+            return Err("the filtered sketch regions have an unresolved open divider".into());
+        }
+    }
+    let mut regions = Vec::new();
+    for (i, outer) in topology.rings.iter().enumerate() {
+        if !containers.get(i).ok_or(BUDGET_LOSS)?.is_empty() {
+            continue;
+        }
+        let mut holes = Vec::new();
+        for (j, hole) in topology.rings.iter().enumerate() {
+            budget.work(1)?;
+            if containers.get(j).ok_or(BUDGET_LOSS)?.as_slice() == [i] {
+                for (edge, _) in &hole.edges {
+                    budget.boundary(edge)?;
+                }
+                holes.push(hole.oriented(false)?);
+            }
+        }
+        for (edge, _) in &outer.edges {
+            budget.boundary(edge)?;
+        }
+        regions.push(
+            json!({"kind":"trimmed", "outer_boundary":outer.oriented(true)?, "hole_boundaries":holes}),
+        );
+    }
+    Ok(json!({"kind":"sketch_regions", "value":{"sketch":sketch, "regions":regions}}))
+}
+
+fn has_exterior_vertex(inner: &Ring, outer: &Ring, budget: &mut Budget) -> Mapping<bool> {
+    for axis in [[1.0, 0.0], [0.0, 1.0]] {
+        let mut low = f64::INFINITY;
+        let mut high = f64::NEG_INFINITY;
+        for (edge, _) in &outer.edges {
+            budget.work(1)?;
+            let [from, to] = edge.projection(axis, edge.conic()?);
+            low = low.min(from);
+            high = high.max(to);
+        }
+        if !low.is_finite() || !high.is_finite() {
+            return Ok(false);
+        }
+        for (edge, _) in &inner.edges {
+            budget.work(1)?;
+            for point in [edge.a, edge.b] {
+                let value = dot(point, axis);
+                let scale = low.abs().max(high.abs()).max(value.abs()).max(1.0);
+                let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
+                if value < low - roundoff || value > high + roundoff {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn ellipse_interval(
     edge: &Value,
     native: &str,
@@ -389,6 +506,11 @@ fn ellipse_interval(
     Ok([start, end])
 }
 
+pub(super) fn curve_endpoints(entity: &Value) -> Mapping<[[f64; 2]; 2]> {
+    let edge = Edge::new(String::new(), entity)?;
+    Ok([edge.a, edge.b])
+}
+
 struct Edge {
     id: String,
     a: [f64; 2],
@@ -397,6 +519,7 @@ struct Edge {
     closed: bool,
     geometry: Value,
     side: i64,
+    tangent_peers: BTreeSet<String>,
 }
 
 impl Edge {
@@ -474,8 +597,13 @@ impl Edge {
                 )
             }
         };
-        if a.iter().chain(&b).any(|n| !n.is_finite()) {
+        if a.iter().chain(&b).chain(&range).any(|n| !n.is_finite()) {
             return Err("the sketch-region boundary exceeds the finite range".into());
+        }
+        if text(geometry, "kind")? != "line"
+            && !(range[1] > range[0] && range[1] - range[0] <= std::f64::consts::TAU)
+        {
+            return Err("the sketch-region curve interval is missing or exceeds one turn".into());
         }
         Ok(Self {
             id,
@@ -485,6 +613,7 @@ impl Edge {
             closed,
             geometry: geometry.clone(),
             side: 1,
+            tangent_peers: BTreeSet::new(),
         })
     }
 
@@ -514,6 +643,50 @@ fn isolated(edge: &Edge, loops: &Loops, budget: &mut Budget) -> Mapping<bool> {
         }
     }
     Ok(true)
+}
+
+fn attach_tangencies(
+    sketch: &str,
+    edges: &mut [Edge],
+    model: &Model,
+    budget: &mut Budget,
+) -> Mapping<()> {
+    budget.work(
+        model
+            .sketch_constraints
+            .len()
+            .checked_add(edges.len())
+            .ok_or(BUDGET_LOSS)?,
+    )?;
+    let mut peers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for constraint in &model.sketch_constraints {
+        // Only an applied constraint of the region's own sketch states a contact.
+        if constraint.sketch.as_str() != sketch
+            || constraint.active == Some(false)
+            || constraint.driving == Some(false)
+        {
+            continue;
+        }
+        let wire = cadmpeg_core::serde_erase::json::to_value(constraint)
+            .map_err(|_| "a stored tangent constraint is unreadable")?;
+        let Some(definition) = wire.get("definition") else {
+            continue;
+        };
+        if definition.get("kind").and_then(Value::as_str) != Some("tangent") {
+            continue;
+        }
+        let first = text(definition, "first")?;
+        let second = text(definition, "second")?;
+        peers.entry(first.into()).or_default().insert(second.into());
+        peers.entry(second.into()).or_default().insert(first.into());
+    }
+    for edge in edges {
+        if let Some(peers) = peers.get(&edge.id) {
+            budget.work(peers.len())?;
+            edge.tangent_peers = peers.clone();
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -628,7 +801,8 @@ fn trig_bounds(c: f64, s: f64, [from, to]: [f64; 2]) -> [f64; 2] {
     }
     let mut low = a.min(b);
     let mut high = a.max(b);
-    let tolerance = 64.0 * f64::EPSILON * from.abs().max(to.abs()).max(std::f64::consts::TAU);
+    let tolerance =
+        ROUNDOFF_FACTOR * f64::EPSILON * from.abs().max(to.abs()).max(std::f64::consts::TAU);
     let phase = s.atan2(c);
     for (angle, maximum) in [(phase, true), (phase + std::f64::consts::PI, false)] {
         let offset = (angle - from).rem_euclid(std::f64::consts::TAU);
@@ -658,7 +832,7 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             )
             .map(f64::abs)
             .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON * scale;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
     for axis in [
         Some([1.0, 0.0]),
         Some([0.0, 1.0]),
@@ -682,6 +856,21 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             return Ok(true);
         }
     }
+    if let (Some(conic), None) | (None, Some(conic)) = (ca, cb) {
+        let line = if ca.is_none() { a } else { b };
+        let offset = conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+        let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+        let qa = dot(delta, delta);
+        let qb = 2.0 * dot(offset, delta);
+        let qc = dot(offset, offset) - 1.0;
+        let uncertainty = ROUNDOFF_FACTOR
+            * f64::EPSILON
+            * (qb * qb + 4.0 * qa * qc.abs()).max(1.0)
+            * (1.0 + scale / conic.radii[0].min(conic.radii[1]));
+        if (qb * qb - 4.0 * qa * qc).abs() <= uncertainty {
+            return Ok(false);
+        }
+    }
     if let (Some(ca), Some(cb)) = (ca, cb) {
         for (edge, source, target) in [(a, ca, cb), (b, cb, ca)] {
             if conic_separated(edge, source, target, scale) {
@@ -689,7 +878,21 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             }
         }
     }
-    Ok(false)
+    if let (Some(ca), Some(cb)) = (ca, cb) {
+        if ca.center == cb.center && ca.radii == cb.radii && ca.axis == cb.axis {
+            return Ok(false);
+        }
+    }
+    if ca.is_none()
+        && cb.is_none()
+        && cross(
+            [a.b[0] - a.a[0], a.b[1] - a.a[1]],
+            [b.b[0] - b.a[0], b.b[1] - b.a[1]],
+        ) == 0.0
+    {
+        return Ok(false);
+    }
+    Ok(intersections(a, b)?.is_empty())
 }
 fn conic_separated(edge: &Edge, source: Conic, target: Conic, scale: f64) -> bool {
     let [x, y] = source.center;
@@ -708,11 +911,287 @@ fn conic_separated(edge: &Edge, source: Conic, target: Conic, scale: f64) -> boo
     let [l2, h2] = trig_bounds(c2, s2, [2.0 * from, 2.0 * to]);
     let [major, minor] = target.radii;
     let magnitude = (constant.abs() + c1.hypot(s1) + c2.hypot(s2)).max(1.0);
-    let tolerance = 64.0 * f64::EPSILON * magnitude * (1.0 + scale / major.min(minor));
+    let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * magnitude * (1.0 + scale / major.min(minor));
     let low = constant + l1 + l2;
     let high = constant + h1 + h2;
     [low, high, tolerance].iter().all(|v| v.is_finite())
         && (low > 1.0 + tolerance || high < 1.0 - tolerance)
+}
+
+fn on_curve(edge: &Edge, point: [f64; 2]) -> Mapping<bool> {
+    let Some(conic) = edge.conic()? else {
+        let delta = [edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]];
+        let length = dot(delta, delta);
+        if length == 0.0 {
+            return Err("a boundary line has no direction".into());
+        }
+        let t = dot([point[0] - edge.a[0], point[1] - edge.a[1]], delta) / length;
+        let slack = parameter_slack(edge.a.into_iter().chain(edge.b).chain(point), length.sqrt());
+        return Ok((-slack..=1.0 + slack).contains(&t));
+    };
+    if edge.closed {
+        return Ok(true);
+    }
+    let [u, v] = conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
+    let offset = (v.atan2(u) - edge.range[0]).rem_euclid(std::f64::consts::TAU);
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * std::f64::consts::TAU;
+    Ok(offset <= edge.range[1] - edge.range[0] + roundoff
+        || std::f64::consts::TAU - offset <= roundoff)
+}
+
+fn intersections(a: &Edge, b: &Edge) -> Mapping<Vec<[f64; 2]>> {
+    let candidates = if a.tangent_peers.contains(&b.id) || b.tangent_peers.contains(&a.id) {
+        if let Some(point) = tangent_contact(a, b)? {
+            vec![point]
+        } else {
+            carrier_intersections(a, b).map_err(|reason| {
+                format!(
+                    "the {} and {} boundary intersection is unresolved: {reason}",
+                    a.geometry
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    b.geometry
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                )
+            })?
+        }
+    } else {
+        carrier_intersections(a, b).map_err(|reason| {
+            format!(
+                "the {} and {} boundary intersection is unresolved: {reason}",
+                a.geometry
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown"),
+                b.geometry
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            )
+        })?
+    };
+    if candidates.iter().flatten().any(|n| !n.is_finite()) {
+        return Err("the analytic boundary intersection exceeds the finite range".into());
+    }
+    candidates
+        .into_iter()
+        .filter_map(|point| {
+            match on_curve(a, point).and_then(|x| on_curve(b, point).map(|y| x && y)) {
+                Ok(true) => Some(Ok(point)),
+                Ok(false) => None,
+                Err(reason) => Some(Err(reason)),
+            }
+        })
+        .collect()
+}
+fn circular(conic: Conic) -> bool {
+    let [a, b] = conic.radii;
+    (a - b).abs() <= ROUNDOFF_FACTOR * f64::EPSILON * (a + b)
+}
+
+fn tangent_contact(first: &Edge, second: &Edge) -> Mapping<Option<[f64; 2]>> {
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON;
+    match (first.conic()?, second.conic()?) {
+        (Some(conic), None) | (None, Some(conic)) => {
+            let line = if first.conic()?.is_none() {
+                first
+            } else {
+                second
+            };
+            let offset =
+                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            let length = dot(delta, delta);
+            if length == 0.0 || !length.is_finite() {
+                return Err("the stored tangent line has no finite direction".into());
+            }
+            let t = -dot(offset, delta) / length;
+            let normal_distance = cross(offset, delta).abs() / length.sqrt();
+            if !t.is_finite()
+                || !normal_distance.is_finite()
+                || (normal_distance - 1.0).abs() > roundoff * (normal_distance + 1.0)
+            {
+                return Err(
+                    "the stored tangent constraint contradicts its line and conic carriers".into(),
+                );
+            }
+            Ok(Some([
+                line.a[0] + t * (line.b[0] - line.a[0]),
+                line.a[1] + t * (line.b[1] - line.a[1]),
+            ]))
+        }
+        (Some(ca), Some(cb)) if circular(ca) && circular(cb) => {
+            let delta = [cb.center[0] - ca.center[0], cb.center[1] - ca.center[1]];
+            let center_distance = delta[0].hypot(delta[1]);
+            let first_radius = ca.radii[0];
+            let second_radius = cb.radii[0];
+            if center_distance == 0.0 || !center_distance.is_finite() {
+                return Err("the stored tangent circles have no distinct finite centers".into());
+            }
+            let tolerance = roundoff * (center_distance + first_radius + second_radius);
+            let external = (center_distance - first_radius - second_radius).abs() <= tolerance;
+            let internal =
+                (center_distance - (first_radius - second_radius).abs()).abs() <= tolerance;
+            if external == internal {
+                return Err("the stored tangent constraint contradicts its circle carriers".into());
+            }
+            let along = if external || first_radius > second_radius {
+                first_radius
+            } else {
+                -first_radius
+            };
+            Ok(Some([
+                ca.center[0] + along * delta[0] / center_distance,
+                ca.center[1] + along * delta[1] / center_distance,
+            ]))
+        }
+        _ => Ok(None),
+    }
+}
+fn carrier_intersections(first: &Edge, second: &Edge) -> Mapping<Vec<[f64; 2]>> {
+    let candidates = match (first.conic()?, second.conic()?) {
+        (None, None) => {
+            let da = [first.b[0] - first.a[0], first.b[1] - first.a[1]];
+            let db = [second.b[0] - second.a[0], second.b[1] - second.a[1]];
+            let offset = [second.a[0] - first.a[0], second.a[1] - first.a[1]];
+            let determinant = cross(da, db);
+            let first_numerator = cross(offset, db);
+            let second_numerator = cross(offset, da);
+            if ![determinant, first_numerator, second_numerator]
+                .iter()
+                .all(|n| n.is_finite())
+            {
+                return Err("the analytic line intersection exceeds the finite range".into());
+            }
+            if determinant == 0.0 {
+                if cross(offset, da) == 0.0 {
+                    return Err("the analytic boundary lines overlap or touch".into());
+                }
+                Vec::new()
+            } else {
+                let t = first_numerator / determinant;
+                let u = second_numerator / determinant;
+                if !t.is_finite() || !u.is_finite() {
+                    return Err(
+                        "the analytic line intersection parameters exceed the finite range".into(),
+                    );
+                }
+                let conditioning = 1.0 + offset[0].hypot(offset[1]) / determinant.abs();
+                let slack_t = ROUNDOFF_FACTOR * f64::EPSILON * conditioning * db[0].hypot(db[1]);
+                let slack_u = ROUNDOFF_FACTOR * f64::EPSILON * conditioning * da[0].hypot(da[1]);
+                if (-slack_t..=1.0 + slack_t).contains(&t)
+                    && (-slack_u..=1.0 + slack_u).contains(&u)
+                {
+                    vec![[first.a[0] + t * da[0], first.a[1] + t * da[1]]]
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+        (Some(conic), None) | (None, Some(conic)) => {
+            let line = if first.conic()?.is_none() {
+                first
+            } else {
+                second
+            };
+            let offset =
+                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            let slack = ROUNDOFF_FACTOR * f64::EPSILON;
+            super::intersection::roots(&[
+                dot(offset, offset) - 1.0,
+                2.0 * dot(offset, delta),
+                dot(delta, delta),
+            ])?
+            .into_iter()
+            .filter(|t| (-slack..=1.0 + slack).contains(t))
+            .map(|t| {
+                [
+                    line.a[0] + t * (line.b[0] - line.a[0]),
+                    line.a[1] + t * (line.b[1] - line.a[1]),
+                ]
+            })
+            .collect()
+        }
+        (Some(source), Some(target)) => {
+            let offset = target.normalize([
+                source.center[0] - target.center[0],
+                source.center[1] - target.center[1],
+            ]);
+            let (cosine, sine) = source.vectors();
+            let cosine_local = target.normalize(cosine);
+            let sine_local = target.normalize(sine);
+            let x = [
+                offset[0] + cosine_local[0],
+                2.0 * sine_local[0],
+                offset[0] - cosine_local[0],
+            ];
+            let y = [
+                offset[1] + cosine_local[1],
+                2.0 * sine_local[1],
+                offset[1] - cosine_local[1],
+            ];
+            let square = |[p0, p1, p2]: [f64; 3]| {
+                [
+                    p0 * p0,
+                    2.0 * p0 * p1,
+                    p1 * p1 + 2.0 * p0 * p2,
+                    2.0 * p1 * p2,
+                    p2 * p2,
+                ]
+            };
+            let xx = square(x);
+            let yy = square(y);
+            let mut coefficients: Vec<f64> = Vec::with_capacity(5);
+            let mut scale = 1.0_f64;
+            for ((xs, ys), unit) in xx.into_iter().zip(yy).zip([1.0, 0.0, 2.0, 0.0, 1.0]) {
+                coefficients.push(xs + ys - unit);
+                scale = scale.max(xs.abs() + ys.abs() + unit);
+            }
+            if coefficients
+                .iter()
+                .all(|c| c.abs() <= ROUNDOFF_FACTOR * f64::EPSILON * scale)
+            {
+                return Err("the analytic intersection carriers coincide".into());
+            }
+            let at = |angle: f64| {
+                [
+                    source.center[0] + cosine[0] * angle.cos() + sine[0] * angle.sin(),
+                    source.center[1] + cosine[1] * angle.cos() + sine[1] * angle.sin(),
+                ]
+            };
+            // tan(theta/2) omits theta=pi. The leading coefficient is the value of
+            // that chart seam; a seam within roundoff of zero is zero.
+            let seam = dot([x[2], y[2]], [x[2], y[2]]) - 1.0;
+            let on_seam = seam.abs()
+                <= ROUNDOFF_FACTOR * f64::EPSILON * (dot([x[2], y[2]], [x[2], y[2]]) + 1.0);
+            if on_seam {
+                coefficients[4] = 0.0;
+            }
+            let mut points: Vec<_> = super::intersection::roots(&coefficients)?
+                .into_iter()
+                .map(|t| at(2.0 * t.atan()))
+                .collect();
+            if on_seam {
+                points.push(at(std::f64::consts::PI));
+            }
+            points
+        }
+    };
+    Ok(candidates)
+}
+
+/// Roundoff of a line parameter that a point at `extent` from the origin sets, in units of the
+/// line length. A contact the parameter misses by less than this stays a contact.
+fn parameter_slack(coordinates: impl IntoIterator<Item = f64>, length: f64) -> f64 {
+    let extent = coordinates
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0_f64, f64::max);
+    ROUNDOFF_FACTOR * f64::EPSILON * (1.0 + extent / length)
 }
 
 fn cross([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
@@ -723,9 +1202,8 @@ fn distance([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
     (a - c).hypot(b - d)
 }
 
-const BOUNDARY_ROUNDOFF_FACTOR: f64 = 64.0;
 fn boundary_roundoff(edges: &[Edge]) -> f64 {
-    BOUNDARY_ROUNDOFF_FACTOR
+    ROUNDOFF_FACTOR
         * f64::EPSILON
         * edges
             .iter()
@@ -845,12 +1323,15 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
             {
                 let shared = [first.a, first.b].into_iter().any(endpoint);
                 let axis = usize::from(first_delta[0].abs() < first_delta[1].abs());
-                let low = first.a[axis]
-                    .min(first.b[axis])
-                    .max(second.a[axis].min(second.b[axis]));
-                let high = first.a[axis]
-                    .max(first.b[axis])
-                    .min(second.a[axis].max(second.b[axis]));
+                let [a, b, c, d] = [first.a, first.b, second.a, second.b].map(|point| {
+                    if axis == 0 {
+                        point[0]
+                    } else {
+                        point[1]
+                    }
+                });
+                let low = a.min(b).max(c.min(d));
+                let high = a.max(b).min(c.max(d));
                 return Ok(shared && high - low <= roundoff);
             }
             let offset = [second.a[0] - first.a[0], second.a[1] - first.a[1]];
@@ -860,45 +1341,8 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
                 first.a[1] + parameter * first_delta[1],
             ]))
         }
-        (Some(conic), None) | (None, Some(conic)) => {
-            let (curve, line) = if first.conic()?.is_some() {
-                (first, second)
-            } else {
-                (second, first)
-            };
-            let offset =
-                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
-            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
-            let qa = dot(delta, delta);
-            let qb = 2.0 * dot(offset, delta);
-            let qc = dot(offset, offset) - 1.0;
-            let discriminant = qb * qb - 4.0 * qa * qc;
-            if !discriminant.is_finite() || discriminant < 0.0 || qa == 0.0 {
-                return Ok(false);
-            }
-            for parameter in [
-                (-qb - discriminant.sqrt()) / (2.0 * qa),
-                (-qb + discriminant.sqrt()) / (2.0 * qa),
-            ] {
-                if !(0.0..=1.0).contains(&parameter) {
-                    continue;
-                }
-                let point = [
-                    line.a[0] + parameter * (line.b[0] - line.a[0]),
-                    line.a[1] + parameter * (line.b[1] - line.a[1]),
-                ];
-                let [local_u, local_v] =
-                    conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
-                let angle = local_v.atan2(local_u);
-                if (curve.closed
-                    || (angle - curve.range[0]).rem_euclid(std::f64::consts::TAU)
-                        < curve.range[1] - curve.range[0])
-                    && !endpoint(point)
-                {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+        (Some(_), None) | (None, Some(_)) => {
+            Ok(intersections(first, second)?.into_iter().all(endpoint))
         }
         (Some(ca), Some(cb)) => {
             if ca.center != cb.center
@@ -907,19 +1351,19 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
                 || first.closed
                 || second.closed
             {
-                return Ok(false);
+                return Ok(intersections(first, second)?.into_iter().all(endpoint));
             }
             let tau = std::f64::consts::TAU;
             let a_span = first.range[1] - first.range[0];
             let b_span = second.range[1] - second.range[0];
             let offset = (second.range[0] - first.range[0]).rem_euclid(tau);
-            let tolerance = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * tau;
+            let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * tau;
             Ok(offset >= a_span - tolerance && offset + b_span <= tau + tolerance)
         }
     }
 }
 fn ray_heights(y: f64, ay: f64, by: f64) -> (f64, f64) {
-    let tolerance = 64.0 * f64::EPSILON * ay.abs().max(by.abs()).max(y.abs()).max(1.0);
+    let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * ay.abs().max(by.abs()).max(y.abs()).max(1.0);
     let height = |v: f64| {
         if (v - y).abs() <= tolerance {
             0.0
@@ -942,6 +1386,21 @@ struct Ring {
 impl Ring {
     fn boundary(&self) -> Vec<Value> {
         self.edges.iter().map(|(e, r)| e.boundary(*r)).collect()
+    }
+
+    /// The boundary uses in the requested sense about the sketch normal. A ring
+    /// stored in the other sense is traversed backwards: the edge order reverses
+    /// and every use flips.
+    fn oriented(&self, counterclockwise: bool) -> Mapping<Vec<Value>> {
+        if self.counterclockwise()? == counterclockwise {
+            return Ok(self.boundary());
+        }
+        Ok(self
+            .edges
+            .iter()
+            .rev()
+            .map(|(e, r)| e.boundary(!*r))
+            .collect())
     }
 
     fn counterclockwise(&self) -> Mapping<bool> {
@@ -1097,18 +1556,19 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
         if entity.sketch.as_str() != sketch || entity.construction {
             continue;
         }
-        let wire = serde_json::to_value(entity).map_err(|_| refused)?;
+        let wire = cadmpeg_core::serde_erase::json::to_value(entity).map_err(|_| refused)?;
         if wire.pointer("/geometry/kind").and_then(Value::as_str) == Some("point") {
             continue;
         }
         edges.push(Edge::new(entity.id().as_str().to_owned(), &wire)?);
     }
+    attach_tangencies(sketch, &mut edges, model, budget)?;
     let scale = edges
         .iter()
         .flat_map(|e| e.a.into_iter().chain(e.b))
         .map(f64::abs)
         .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON * scale;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
     let mut rings = Vec::new();
     let mut open = Vec::new();
     while let Some(first) = edges.pop() {
@@ -1278,7 +1738,7 @@ fn exterior_region(
     budget.work(topology.rings.iter().try_fold(0usize, |count, ring| {
         count.checked_add(ring.edges.len()).ok_or(BUDGET_LOSS)
     })?)?;
-    let roundoff = BOUNDARY_ROUNDOFF_FACTOR
+    let roundoff = ROUNDOFF_FACTOR
         * f64::EPSILON
         * topology
             .rings
@@ -1300,8 +1760,11 @@ fn exterior_region(
             budget.boundary(edge)?;
         }
     }
-    let holes: Vec<_> = holes.into_iter().map(Ring::boundary).collect();
-    Ok(json!({"kind":"trimmed","outer_boundary":outer.boundary(),"hole_boundaries":holes}))
+    let holes = holes
+        .into_iter()
+        .map(|hole| hole.oriented(false))
+        .collect::<Mapping<Vec<_>>>()?;
+    Ok(json!({"kind":"trimmed","outer_boundary":outer.oriented(true)?,"hole_boundaries":holes}))
 }
 
 fn segment_in_hole(edge: &Edge, hole: &Ring) -> Mapping<bool> {
@@ -1340,268 +1803,4 @@ fn segment_in_hole(edge: &Edge, hole: &Ring) -> Mapping<bool> {
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-    use super::*;
-    use std::f64::consts::{FRAC_PI_2, PI, TAU};
-
-    fn edge(name: &str, geometry: Value) -> Edge {
-        let record = serde_json::Map::from_iter([("geometry".into(), geometry)]);
-        Edge::new(name.to_owned(), &Value::Object(record)).unwrap()
-    }
-
-    fn half_ring(ellipse: bool, from: f64, to: f64, reverse: bool) -> Ring {
-        let geometry = if ellipse {
-            json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_radius":2.0,
-                "minor_radius":1.0,"major_angle":0.0,"bounds":[from,to]})
-        } else {
-            json!({"kind":"arc","center":{"u":0.0,"v":0.0},"radius":1.0,"start_angle":from,"end_angle":to})
-        };
-        let arc = edge("arc", geometry);
-        let diameter = edge(
-            "diameter",
-            json!({"kind":"line", "start":{"u":arc.b[0],"v":arc.b[1]},
-            "end":{"u":arc.a[0],"v":arc.a[1]}}),
-        );
-        let mut edges = vec![(arc, reverse), (diameter, reverse)];
-        if reverse {
-            edges.reverse();
-        }
-        Ring { edges }
-    }
-
-    #[test]
-    fn curved_endpoint_height_crossings_agree_with_lines_and_reversed_uses() {
-        for ellipse in [false, true] {
-            for reverse in [false, true] {
-                let upper = half_ring(ellipse, 0.0, PI, reverse);
-                assert!(!upper.contains([-3.0, 0.0]).unwrap());
-                assert!(!upper.contains([3.0, 0.0]).unwrap());
-                assert!(upper.contains([0.0, 0.5]).unwrap());
-                assert!(!upper.contains([0.0, -0.5]).unwrap());
-                let lower = half_ring(ellipse, PI, TAU, reverse);
-                assert!(!lower.contains([-3.0, 0.0]).unwrap());
-                assert!(lower.contains([0.0, -0.5]).unwrap());
-                let left = half_ring(ellipse, FRAC_PI_2, 3.0 * FRAC_PI_2, reverse);
-                for y in [-1.0, 1.0] {
-                    assert!(!left.contains([-3.0, y]).unwrap());
-                }
-                assert!(left.contains([-0.5, 0.0]).unwrap());
-            }
-        }
-    }
-
-    #[test]
-    fn full_carrier_seams_and_interior_tangencies_do_not_double_count() {
-        for ellipse in [false, true] {
-            let g = if ellipse {
-                json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_radius":2.0,"minor_radius":1.0,"major_angle":0.0})
-            } else {
-                json!({"kind":"circle","center":{"u":0.0,"v":0.0},"radius":1.0})
-            };
-            let ring = Ring {
-                edges: vec![(edge("closed", g), false)],
-            };
-            assert!(ring.contains([0.0, 0.0]).unwrap());
-            assert!(!ring.contains([-3.0, 0.0]).unwrap());
-            for y in [-1.0, 1.0] {
-                assert!(!ring.contains([-3.0, y]).unwrap());
-            }
-        }
-    }
-
-    #[test]
-    fn rotated_ellipse_endpoints_near_extrema_keep_crossing_parity() {
-        let angle = 0.3_f64;
-        let phase = angle.cos().atan2(2.0 * angle.sin());
-        for reverse in [false, true] {
-            let arc = edge(
-                "rotated",
-                json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},
-                "major_radius":2.0,"minor_radius":1.0,"major_angle":angle,
-                "bounds":[phase - 0.0001, phase + 3.0]}),
-            );
-            let heights = [arc.a[1], arc.b[1]];
-            let chord = edge(
-                "chord",
-                json!({"kind":"line","start":{"u":arc.b[0],"v":arc.b[1]},
-                "end":{"u":arc.a[0],"v":arc.a[1]}}),
-            );
-            let ring = Ring {
-                edges: vec![(arc, reverse), (chord, reverse)],
-            };
-            for y in heights {
-                assert!(!ring.contains([-6.0, y]).unwrap());
-            }
-        }
-    }
-
-    #[test]
-    fn isolation_certificates_accept_disjoint_arcs_and_keep_contacts_unproven() {
-        let arc = |name, radius, from, to| {
-            edge(
-                name,
-                json!({"kind":"arc","center":{"u":0.0,"v":0.0},
-            "radius":radius,"start_angle":from,"end_angle":to}),
-            )
-        };
-        let wide = arc("wide", 3.0, 0.0, 1.5 * PI);
-        let gap = arc("gap", 3.0, 5.0 * PI / 3.0, 11.0 * PI / 6.0);
-        let inner = arc("inner", 1.0, PI / 4.0, 3.0 * PI / 4.0);
-        assert!(separated(&wide, &gap).unwrap());
-        assert!(separated(&wide, &inner).unwrap());
-        let touching = arc("touching", 3.0, 1.5 * PI, 11.0 * PI / 6.0);
-        assert!(!separated(&wide, &touching).unwrap());
-        let diameter = edge(
-            "diameter",
-            json!({"kind":"line","start":{"u":-4.0,"v":0.0},"end":{"u":4.0,"v":0.0}}),
-        );
-        assert!(!separated(&wide, &diameter).unwrap());
-    }
-
-    #[test]
-    fn isolation_projections_keep_roundoff_near_translated_contacts_unproven() {
-        let origin = 1_000_000_000.0;
-        let arc = edge(
-            "translated",
-            json!({"kind":"arc","center":{"u":origin,"v":origin},"radius":2.0,"start_angle":PI/4.0,"end_angle":3.0*PI/4.0}),
-        );
-        for (gap, proven) in [(0.0, false), (0.000_001, false), (0.001, true)] {
-            let line = edge(
-                "line",
-                json!({"kind":"line","start":{"u":origin-1.0,"v":origin+2.0+gap},"end":{"u":origin+1.0,"v":origin+2.0+gap}}),
-            );
-            assert_eq!(separated(&arc, &line).unwrap(), proven);
-        }
-    }
-
-    fn frame_model() -> Model {
-        let mut model = cadmpeg_ir::CadIr::empty().model;
-        let mut geometries = vec![
-            json!({"kind":"line","start":{"u":-4.0,"v":-1.0},"end":{"u":-2.0,"v":-1.0}}),
-            json!({"kind":"line","start":{"u":-2.0,"v":-1.0},"end":{"u":-2.0,"v":1.0}}),
-            json!({"kind":"line","start":{"u":-2.0,"v":1.0},"end":{"u":-4.0,"v":1.0}}),
-            json!({"kind":"line","start":{"u":-4.0,"v":1.0},"end":{"u":-4.0,"v":-1.0}}),
-            json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
-        ];
-        let half = half_ring(false, 0.0, PI, false);
-        geometries.extend(half.edges.into_iter().map(|(e, _)| e.geometry));
-        for (i, g) in geometries.into_iter().enumerate() {
-            model.sketch_entities.push(
-                serde_json::from_value(json!({"id":format!("synthetic:model:sketch-entity#{i}"),
-                "sketch":"synthetic:model:sketch#frame","construction":false,"endpoint_refs":[],"geometry":g}))
-                .unwrap(),
-            );
-        }
-        model
-    }
-
-    #[test]
-    fn unrelated_semicircle_does_not_enclose_the_rectangle_hole_witness() {
-        let model = frame_model();
-        let witness = edge(
-            "synthetic:model:sketch-entity#4",
-            json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
-        );
-        assert_eq!(witness.a, [-3.0, 0.0]);
-        let region = exterior_region(
-            "synthetic:model:sketch#frame",
-            &[witness],
-            &model,
-            &mut Recovery::default(),
-        )
-        .unwrap();
-        assert_eq!(region["outer_boundary"].as_array().unwrap().len(), 4);
-        assert_eq!(region["hole_boundaries"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn long_escaped_ids_exhaust_bytes_before_boundary_expansion() {
-        let mut model = frame_model();
-        let mut wire = serde_json::to_value(&model.sketch_entities[0]).unwrap();
-        wire["id"] = json!(format!(
-            "synthetic:model:sketch-entity#{}",
-            "quoted\"".repeat(512)
-        ));
-        model.sketch_entities[0] = serde_json::from_value(wire).unwrap();
-        let witness = edge(
-            "synthetic:model:sketch-entity#4",
-            json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
-        );
-        let mut recovery = Recovery::default();
-        recovery.budget.bytes = 1024;
-        assert_eq!(
-            exterior_region(
-                "synthetic:model:sketch#frame",
-                &[witness],
-                &model,
-                &mut recovery
-            )
-            .unwrap_err(),
-            BUDGET_LOSS
-        );
-        assert_eq!(recovery.budget.bytes, 0);
-        assert!(recovery.budget.output > 0);
-        assert_eq!(recovery.check().unwrap_err(), BUDGET_LOSS);
-        let work = recovery.budget.work;
-        assert_eq!(recovery.budget.work(1).unwrap_err(), BUDGET_LOSS);
-        assert_eq!(recovery.budget.work, work);
-    }
-
-    #[test]
-    fn cached_topology_still_charges_cumulative_output_and_work() {
-        for output_limited in [false, true] {
-            let model = frame_model();
-            let witness = edge(
-                "synthetic:model:sketch-entity#4",
-                json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
-            );
-            let mut recovery = Recovery::default();
-            if output_limited {
-                recovery.budget.output = 10;
-            } else {
-                recovery.budget.work = 200;
-            }
-            exterior_region(
-                "synthetic:model:sketch#frame",
-                std::slice::from_ref(&witness),
-                &model,
-                &mut recovery,
-            )
-            .unwrap();
-            let after_first = recovery.budget.work;
-            exterior_region(
-                "synthetic:model:sketch#frame",
-                std::slice::from_ref(&witness),
-                &model,
-                &mut recovery,
-            )
-            .unwrap();
-            assert_eq!(recovery.loops.len(), 1);
-            if !output_limited {
-                eprintln!(
-                    "Cached recovery: first {} work units, next {} work units",
-                    200 - after_first,
-                    after_first - recovery.budget.work
-                );
-            }
-            if !output_limited {
-                assert!(after_first - recovery.budget.work < 200 - after_first);
-            }
-            let mut refused = false;
-            for _ in 0..20 {
-                if let Err(reason) = exterior_region(
-                    "synthetic:model:sketch#frame",
-                    std::slice::from_ref(&witness),
-                    &model,
-                    &mut recovery,
-                ) {
-                    assert_eq!(reason, BUDGET_LOSS);
-                    refused = true;
-                    break;
-                }
-            }
-            assert!(refused);
-        }
-    }
-}
+mod tests;

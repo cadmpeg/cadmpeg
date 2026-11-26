@@ -177,6 +177,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-ironcad"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
+]
+
+[[package]]
 name = "cadmpeg-codec-nx"
 version = "0.6.12"
 dependencies = [
@@ -238,6 +249,7 @@ dependencies = [
  "cadmpeg-parasolid",
  "crc32fast",
  "flate2",
+ "memchr",
  "rmp",
  "roxmltree",
  "serde",
@@ -252,6 +264,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
 ]
 
 [[package]]
@@ -301,6 +314,7 @@ dependencies = [
  "ruzstd",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -321,6 +335,7 @@ dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-ironcad",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",

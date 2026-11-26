@@ -67,7 +67,7 @@ fn projected_fixture(
             &inputs,
         )
         .unwrap();
-        let first = serde_json::to_value(&features).unwrap();
+        let first = cadmpeg_core::serde_erase::json::to_value(&features).unwrap();
         assert!(super::projection::project(
             scan,
             &native.design_types,
@@ -77,7 +77,10 @@ fn projected_fixture(
         )
         .unwrap()
         .is_empty());
-        assert_eq!(serde_json::to_value(&features).unwrap(), first);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&features).unwrap(),
+            first
+        );
         (
             features.remove(0),
             losses.into_iter().map(|loss| loss.code).collect(),

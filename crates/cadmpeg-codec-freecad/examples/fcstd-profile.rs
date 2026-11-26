@@ -1115,7 +1115,11 @@ fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Err
         namespace.arenas_mut().remove("byte_coverage");
         namespace.arenas_mut().remove("logical_ledger");
     }
-    Ok(ir.to_canonical_json()?)
+    Ok(format!(
+        "{}{}",
+        ir.to_canonical_json()?,
+        ir.model.omitted_arenas_value()?
+    ))
 }
 
 fn logical_side_entries(

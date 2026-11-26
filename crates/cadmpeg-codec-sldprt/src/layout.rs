@@ -2494,6 +2494,26 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const NAME_LENGTH: usize = 5;
 }
 
+/// Byte offsets for the `revolution_turn_block` record.
+///
+/// Spec §Extrusion feature objects. Record length 9 B.
+pub(crate) mod revolution_turn_block {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `lead` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const LEAD: usize = 0;
+    /// Stated value of `lead` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const LEAD_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Offset of `reverse` (`u8`). Spec §Extrusion feature objects.
+    pub(crate) const REVERSE: usize = 2;
+    /// Offset of `pad` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const PAD: usize = 3;
+    /// Stated value of `pad` (`bytes[2]`). Spec §Extrusion feature objects.
+    pub(crate) const PAD_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Offset of `word` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const WORD: usize = 5;
+}
+
 /// Byte offsets for the `revolution_line_reference_record_tail` record.
 ///
 /// Spec §2. Record length 57 B.

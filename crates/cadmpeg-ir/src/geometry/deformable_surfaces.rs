@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Structurally selected deformable-surface payload.
 // A source states raw values; a `DeformableSurfacePayload` holds the admitted
 // payload, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
@@ -126,7 +126,7 @@ pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Four-vector frame used by full deformable surfaces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DeformableVectorFrame<R = f64, V = Vector3> {
@@ -139,7 +139,7 @@ pub struct DeformableVectorFrame<R = f64, V = Vector3> {
 }
 
 /// Shared frame payload of deformable-surface modes 1 and 3.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DeformableSurfaceFrame<R = f64, V = Vector3, P = Point3> {
@@ -164,7 +164,7 @@ pub struct DeformableSurfaceFrame<R = f64, V = Vector3, P = Point3> {
 /// Complete native deformable-surface construction.
 // A source states raw values; a `DeformableSurfacePayload` holds the admitted
 // construction, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]

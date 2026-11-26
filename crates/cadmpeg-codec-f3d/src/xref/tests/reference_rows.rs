@@ -13,7 +13,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: Vec<Value>) -> Vec<u8> {
-    serde_json::to_vec(&json!({
+    cadmpeg_core::serde_erase::json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],

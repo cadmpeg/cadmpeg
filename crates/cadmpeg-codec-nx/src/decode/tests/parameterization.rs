@@ -720,8 +720,10 @@ fn unselected_ext11_deltas_do_not_assign_primary_uv_lanes() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
+            .unwrap(),
+        cadmpeg_core::serde_erase::json::to_value((&baseline.ir().geometry, &baseline.ir().model))
+            .unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

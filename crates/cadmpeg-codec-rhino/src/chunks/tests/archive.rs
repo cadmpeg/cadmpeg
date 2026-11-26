@@ -8,7 +8,6 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
 use std::fmt::Write;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::report::Severity;
@@ -282,8 +281,8 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
             .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).expect("required invariant"),
-        serde_json::to_vec(second.report()).expect("required invariant")
+        cadmpeg_core::serde_erase::json::to_vec(first.report()).expect("required invariant"),
+        cadmpeg_core::serde_erase::json::to_vec(second.report()).expect("required invariant")
     );
 }
 
@@ -496,32 +495,58 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         panic!("polyline carrier");
     };
     assert_eq!(polyline.knots().as_slice(), [2.0, 2.0, 3.5, 9.0, 9.0]);
-    assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
-    let root = result
-        .ir()
-        .geometry
-        .procedural_curves
-        .iter()
-        .find(|curve| !curve.id.as_str().contains("component"))
-        .expect("root compound");
-    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Compound(compound) =
-        root.definition()
-    else {
-        panic!("compound definition");
-    };
-    let parameters = compound.parameters();
-    let components = compound.components();
-
-    assert_eq!(
-        parameters
+    assert!(result.ir().geometry.procedural_curves.is_empty());
+    let composite = |range: [f64; 2]| {
+        let curve = result
+            .ir()
+            .geometry
+            .curves
             .iter()
-            .map(|value| value.get())
-            .collect::<Vec<_>>(),
-        vec![0.0, 2.0, 5.0]
-    );
-    assert_eq!(components.len(), 2);
-    assert!(components[0].component.as_str().contains("component-0"));
-    assert!(components[1].component.as_str().contains("component-1"));
+            .find(|curve| {
+                matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+                ) && curve
+                    .parameter_range
+                    .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                    == Some(range)
+            })
+            .unwrap_or_else(|| panic!("composite over {range:?}"));
+        let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+            &curve.geometry
+        else {
+            unreachable!("a composite curve");
+        };
+        segments
+            .iter()
+            .map(|segment| {
+                assert!(segment.same_sense);
+                result
+                    .ir()
+                    .geometry
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == segment.curve)
+                    .expect("the segment curve")
+            })
+            .collect::<Vec<_>>()
+    };
+    let root = composite([0.0, 5.0]);
+    assert_eq!(root.len(), 2);
+    assert!(root[0].id.as_str().contains("component-0"));
+    assert!(root[1].id.as_str().contains("component-1"));
+    let Some(SolvedCurveGeometry::Nurbs(first)) = root[0].geometry.solved() else {
+        panic!("first segment carrier");
+    };
+    assert_eq!(first.knots().as_slice(), [0.0, 0.0, 2.0, 2.0]);
+    let inner = composite([2.0, 5.0]);
+    let [inner_line] = inner.as_slice() else {
+        panic!("one inner segment");
+    };
+    let Some(SolvedCurveGeometry::Nurbs(inner_line)) = inner_line.geometry.solved() else {
+        panic!("inner segment carrier");
+    };
+    assert_eq!(inner_line.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
     assert_eq!(
         result
             .ir()
@@ -669,7 +694,7 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = RhinoCodec
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)

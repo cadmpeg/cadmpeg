@@ -1190,8 +1190,35 @@ pub(crate) fn renamed(ir: &CadIr, from: &str, to: &str) -> CadIr {
     copy
 }
 
-/// The neutral arenas of `a` and `b` in one document; `b`'s IDs must not
-/// collide with `a`'s.
+/// `later`'s list members appended to `earlier`'s same-named lists; every
+/// other field of the two records is equal.
+fn joined(earlier: &mut serde_json::Value, later: &serde_json::Value, arena: &str) {
+    let (Some(fields), Some(others)) = (earlier.as_object_mut(), later.as_object()) else {
+        panic!("`{arena}` states a record that is no object");
+    };
+    for (name, other) in others {
+        match (fields.get_mut(name), other) {
+            (Some(serde_json::Value::Array(members)), serde_json::Value::Array(more)) => {
+                for member in more {
+                    if !members.contains(member) {
+                        members.push(member.clone());
+                    }
+                }
+            }
+            (Some(value), other) => assert_eq!(
+                value, other,
+                "`{arena}` states `{name}` differently for one id in the two documents"
+            ),
+            (None, other) => {
+                fields.insert(name.clone(), other.clone());
+            }
+        }
+    }
+}
+
+/// The neutral arenas of `a` and `b` in one document. A record both state
+/// under one id appears once, with the members of its lists joined; `b`'s
+/// other IDs must not collide with `a`'s.
 pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
     let mut first: serde_json::Value =
         serde_json::from_str(&a.to_canonical_json().expect("json")).expect("value");
@@ -1213,6 +1240,13 @@ pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
             ) {
                 target.extend(records.iter().cloned());
                 target.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+                target.dedup_by(|later, earlier| {
+                    let repeated = later["id"] == earlier["id"];
+                    if repeated {
+                        joined(earlier, later, arena);
+                    }
+                    repeated
+                });
             }
         }
     }

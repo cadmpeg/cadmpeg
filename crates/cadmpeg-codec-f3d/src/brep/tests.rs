@@ -600,7 +600,10 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         let face = entity(3, 1);
         let ring = entity(4, 1);
         asm.bodies.push(
-            serde_json::from_value(serde_json::json!({"id": body, "kind": "solid"})).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value(
+                serde_json::json!({"id": body, "kind": "solid"}),
+            )
+            .unwrap(),
         );
         asm.regions.push(Region::new(
             RegionId::mint(region.clone()).unwrap(),
@@ -618,7 +621,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
             Vec::new(),
         ));
         asm.faces.push(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": face, "shell": shell, "surface": entity(6, 1), "sense": "forward",
                 "loops": {"kind": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
             }))
@@ -629,7 +632,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
             .collect::<Vec<_>>();
         if spec.edges != 0 {
             asm.loops.push(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges, "vertex_uses": []},
                 }))
                 .unwrap(),
@@ -638,7 +641,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         for index in 0..spec.edges {
             let edge = entity(5, index);
             asm.coedges.push(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id": coedges[usize::try_from(index).unwrap()], "owner_loop": ring, "edge": edge,
                     "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward", "pcurves": [],
                 }))
@@ -672,7 +675,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         }
         if spec.face_attribute {
             asm.attributes.push(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id": entity(8, 1), "target": {"entity": {"kind": "face", "value": face}},
                     "name": "generic_tag_attrib_def", "values": [],
                 }))

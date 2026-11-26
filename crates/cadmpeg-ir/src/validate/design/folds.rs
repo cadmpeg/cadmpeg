@@ -27,7 +27,7 @@ use super::Held;
 pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
-    held: &'a [Held<'a>],
+    held: &[Held<'a>],
     findings: &mut Vec<Finding>,
 ) {
     let linear = index.records.ir.tolerances.linear.get();
@@ -60,7 +60,11 @@ pub(super) fn check<'a>(
                     }
                 }
                 for message in messages {
-                    super::error(findings, record.holder.record(), format_args!("{message}"));
+                    super::error(
+                        findings,
+                        record.holder.record(),
+                        crate::rule!("design.fold-straight-edge-picks", "{message}"),
+                    );
                 }
             }
         }

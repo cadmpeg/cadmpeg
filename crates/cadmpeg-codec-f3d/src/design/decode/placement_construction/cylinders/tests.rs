@@ -50,7 +50,7 @@ fn scope() -> DesignParameterScope {
         DesignFeatureKind::CylinderPrimitive,
         1,
     );
-    let primitive = serde_json::from_value(serde_json::json!({
+    let primitive = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "height": 2.6, "height_record_index": 259,
         "height_offset": 1000, "diameter": 0.5, "diameter_record_index": 262,
         "diameter_offset": 1100, "operation": "join", "operation_offset": 20,
@@ -93,8 +93,10 @@ fn named_cylinder_binds_decoded_version_nine_frame() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
-    let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    let restored: DesignParameterScope = cadmpeg_core::serde_erase::json::from_value(
+        cadmpeg_core::serde_erase::json::to_value(&scope).unwrap(),
+    )
+    .unwrap();
     assert_eq!(restored, scope);
     assert!(super::bind(std::slice::from_mut(&mut scope), &[]).is_empty());
     assert_eq!(scope, restored);
@@ -278,8 +280,10 @@ fn extended_cylinder_composes_the_explicit_same_stream_support_on_the_left() {
             [0.0, 0.0, 0.0, 1.0],
         ],
     );
-    let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    let restored: DesignParameterScope = cadmpeg_core::serde_erase::json::from_value(
+        cadmpeg_core::serde_erase::json::to_value(&scope).unwrap(),
+    )
+    .unwrap();
     assert_eq!(restored, scope);
 }
 

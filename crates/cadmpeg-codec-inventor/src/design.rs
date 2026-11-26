@@ -1913,18 +1913,23 @@ mod tests {
             visible: true,
             derived: reference(0, false),
         };
-        let wire = serde_json::to_value(&unit).expect("valid test fixture");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&unit).expect("valid test fixture");
         assert_eq!(wire["numerator_metadata"], serde_json::json!([3, 7]));
         assert_eq!(
-            serde_json::from_value::<PmDcUnitKind>(wire.clone()).expect("valid test fixture"),
+            cadmpeg_core::serde_erase::json::from_value::<PmDcUnitKind>(wire.clone())
+                .expect("valid test fixture"),
             unit
         );
         let mut missing_metadata = wire.clone();
         missing_metadata["numerator_metadata"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<PmDcUnitKind>(missing_metadata).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmDcUnitKind>(missing_metadata).is_err()
+        );
         let mut orphan_metadata = wire;
         orphan_metadata["denominator_metadata"] = serde_json::json!([3, 7]);
-        assert!(serde_json::from_value::<PmDcUnitKind>(orphan_metadata).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmDcUnitKind>(orphan_metadata).is_err()
+        );
     }
 
     #[test]

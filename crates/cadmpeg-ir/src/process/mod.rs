@@ -9,8 +9,8 @@
 //!
 //! Each type has the wire form of §2.5 of the CADIR v11 specification. Read a
 //! document that holds them through [`crate::design::read::from_str`], which
-//! enforces the nesting ceilings of
-//! [`cadmpeg_core::decode::ResourceLimits`].
+//! reads a document as deep as the bounds of §2.5 admit and walks each chain
+//! of state bases under [`cadmpeg_core::decode::ResourceLimits`].
 
 pub mod cycle;
 pub mod feature;

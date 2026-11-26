@@ -66,6 +66,10 @@
             "a": 1.0
           },
           "visible": true
+        },
+        {
+          "id": "f3d:tspline:body#TSpline.synthetic",
+          "kind": "sheet"
         }
       ],
       "regions": [
@@ -75,6 +79,13 @@
           "shells": [
             "f3d:brep:entity#3"
           ]
+        },
+        {
+          "id": "f3d:tspline:region#TSpline.synthetic",
+          "body": "f3d:tspline:body#TSpline.synthetic",
+          "shells": [
+            "f3d:tspline:shell#TSpline.synthetic"
+          ]
         }
       ],
       "shells": [
@@ -82,6 +93,16 @@
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
           "members": []
+        },
+        {
+          "id": "f3d:tspline:shell#TSpline.synthetic",
+          "region": "f3d:tspline:region#TSpline.synthetic",
+          "members": [
+            {
+              "kind": "subd",
+              "id": "f3d:tspline:subd#TSpline.synthetic"
+            }
+          ]
         }
       ],
       "faces": [
@@ -405,68 +426,6 @@
     },
     "model": {
       "assets": [],
-      "features": [
-        {
-          "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat4:Form1:1400",
-          "ordinal": 0,
-          "name": "Form 1",
-          "suppressed": false,
-          "dependencies": [],
-          "source_properties": {
-            "reference:0": "1500"
-          },
-          "source_tag": "Form",
-          "source_content": [],
-          "outputs": [],
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "form",
-              "value": {
-                "cages": {
-                  "kind": "retained",
-                  "value": {
-                    "observations": [],
-                    "membership": {
-                      "kind": "partial",
-                      "order": "unknown",
-                      "members": []
-                    }
-                  }
-                },
-                "inputs": {
-                  "parameters": {},
-                  "references": [
-                    "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record#1500"
-                  ],
-                  "reference_runs": [],
-                  "lists": [],
-                  "reference_evidence": [],
-                  "position_evidence": [],
-                  "order_evidence": [],
-                  "cardinality_evidence": [],
-                  "closure_evidence": [],
-                  "resource_evidence": [],
-                  "resource_associations": [],
-                  "resource_state_evidence": []
-                }
-              }
-            }
-          },
-          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
-        }
-      ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -476,16 +435,15 @@
             "document": {}
           },
           "bodies": [
-            "f3d:brep:entity#1"
+            "f3d:brep:entity#1",
+            "f3d:tspline:body#TSpline.synthetic"
           ],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -543,8 +501,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],
@@ -1790,8 +1747,8 @@
       "exactness": {
         "f3d:brep:entity#6": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }

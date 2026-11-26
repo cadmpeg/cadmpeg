@@ -340,8 +340,7 @@ fn placed_reference_edit(
 ) {
     const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
     const OUTER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9300";
-    const PART: &str =
-        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-component-occurrence#";
+    const PART: &str = "f3d:role/occurrence-0@Design/BulkStream.dat:design-component-occurrence#";
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
         occurrence("f3d:model:occurrence#root", None, 0.0),
@@ -353,17 +352,17 @@ fn placed_reference_edit(
             stored_x,
         ),
         occurrence(
-            "f3d:xref/role/occurrence-0/model:occurrence#member-root",
+            "f3d:role/occurrence-0@model:occurrence#member-root",
             None,
             0.0,
         ),
         occurrence(
-            "f3d:xref/role/occurrence-0/model:occurrence#part-496",
+            "f3d:role/occurrence-0@model:occurrence#part-496",
             Some(&format!("{PART}496")),
             30.0,
         ),
         occurrence(
-            "f3d:xref/role/occurrence-0/model:occurrence#part-497",
+            "f3d:role/occurrence-0@model:occurrence#part-497",
             Some(&format!("{PART}497")),
             -30.0,
         ),
@@ -383,16 +382,16 @@ fn placed_reference_edit(
             Some("f3d:model:occurrence#owner"),
         ),
         (
-            "f3d:xref/role/occurrence-0/model:occurrence#member-root",
+            "f3d:role/occurrence-0@model:occurrence#member-root",
             Some("f3d:model:occurrence#owner:xref-0-0"),
         ),
         (
-            "f3d:xref/role/occurrence-0/model:occurrence#part-496",
-            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
+            "f3d:role/occurrence-0@model:occurrence#part-496",
+            Some("f3d:role/occurrence-0@model:occurrence#member-root"),
         ),
         (
-            "f3d:xref/role/occurrence-0/model:occurrence#part-497",
-            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
+            "f3d:role/occurrence-0@model:occurrence#part-497",
+            Some("f3d:role/occurrence-0@model:occurrence#member-root"),
         ),
     ]);
     prepare(&mut ir, &mut parents);
@@ -941,7 +940,7 @@ fn repeated_contained_design_records_keep_an_ambiguous_target_native() {
         |ir, parents| {
             let mut repeated = ir.model.occurrences[5].clone();
             repeated.id =
-                OccurrenceId::mint("f3d:xref/role/occurrence-0/model:occurrence#repeated-child")
+                OccurrenceId::mint("f3d:role/occurrence-0@model:occurrence#repeated-child")
                     .unwrap();
             repeated.prototype =
                 cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{}/definition", repeated.id))
@@ -1042,9 +1041,8 @@ fn contained_component_paths_follow_the_expanded_scope_of_a_shared_design() {
         ),
         10.0,
         |ir, _| {
-            ir.model.occurrences[5].native_ref = Some(
-                "f3d:xref/first/xref/shared/Design:design-component-occurrence#496".to_owned(),
-            );
+            ir.model.occurrences[5].native_ref =
+                Some("f3d:first/xref/shared@Design:design-component-occurrence#496".to_owned());
         },
     );
     assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 130.0).abs() < 1e-9);
@@ -1085,13 +1083,11 @@ fn contained_component_paths_refuse_two_member_scopes_below_one_insertion() {
         ),
         10.0,
         |ir, parents| {
-            ir.model.occurrences.push(occurrence(
-                "f3d:xref/other/model:occurrence#root",
-                None,
-                0.0,
-            ));
+            ir.model
+                .occurrences
+                .push(occurrence("f3d:other@model:occurrence#root", None, 0.0));
             parents.push((
-                "f3d:xref/other/model:occurrence#root".to_owned(),
+                "f3d:other@model:occurrence#root".to_owned(),
                 Some("f3d:model:occurrence#owner:xref-0-0".to_owned()),
             ));
         },
@@ -1151,8 +1147,9 @@ fn owned_nested_component_paths_keep_the_saved_state_native() {
 
 #[test]
 fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance() {
-    const REFERENCE: &str = "f3d:xref/source/occurrence-0/xref:reference#0-occurrence-0";
-    const PART: &str = "f3d:xref/source/occurrence-0/xref/part/Design/BulkStream.dat:design-component-occurrence#496";
+    const REFERENCE: &str = "f3d:source/occurrence-0@xref:reference#0-occurrence-0";
+    const PART: &str =
+        "f3d:source/occurrence-0/xref/part@Design/BulkStream.dat:design-component-occurrence#496";
     let mut pose = retained(12, 496, &[], translation(3.0, 4.0, 5.0));
     let mut bytes = pose.frame_bytes.to_vec();
     let mut at = 24;
@@ -1173,9 +1170,9 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
     let mut parents = Parents::new();
     for instance in 0..2 {
         let boundary = format!("f3d:model:occurrence#source-{instance}");
-        let insertion = format!("f3d:xref/source-{instance}/model:occurrence#insertion");
-        let root = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#root");
-        let leaf = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#leaf");
+        let insertion = format!("f3d:source-{instance}@model:occurrence#insertion");
+        let root = format!("f3d:source-{instance}/xref/part@model:occurrence#root");
+        let leaf = format!("f3d:source-{instance}/xref/part@model:occurrence#leaf");
         ir.model.occurrences.extend([
             occurrence(&boundary, None, f64::from(instance) * 100.0),
             occurrence(&insertion, Some(REFERENCE), 0.0),
@@ -1389,7 +1386,7 @@ fn placements_of_one_shared_member_each_take_their_own_contained_pose() {
     let mut root = definition("f3d:model:component#root");
     root.occurrences = vec![OccurrenceId::mint("f3d:model:occurrence#owner").unwrap()];
     let mut owner_definition = definition("f3d:model:component#owner");
-    let mut member = definition("f3d:xref/member/model:component#root");
+    let mut member = definition("f3d:member@model:component#root");
     ir.model
         .occurrences
         .push(occurrence("f3d:model:occurrence#owner", Some(OWNER), 5.0));
@@ -1406,11 +1403,11 @@ fn placements_of_one_shared_member_each_take_their_own_contained_pose() {
         owner_definition
             .occurrences
             .push(OccurrenceId::mint(id.as_str()).unwrap());
-        scopes.insert(xref.id.clone(), format!("f3d:xref/instance-{placement}"));
+        scopes.insert(xref.id.clone(), format!("f3d:instance-{placement}"));
         ir.model.occurrences.push(xref);
-        let part = format!("f3d:xref/instance-{placement}/model:occurrence#part");
+        let part = format!("f3d:instance-{placement}@model:occurrence#part");
         let part_native =
-            format!("f3d:xref/instance-{placement}/Design:design-component-occurrence#496");
+            format!("f3d:instance-{placement}@Design:design-component-occurrence#496");
         let mut leaf = occurrence(&part, Some(&part_native), 30.0);
         leaf.prototype =
             cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{part}/definition")).unwrap();
@@ -1476,8 +1473,8 @@ fn nested_member_placed_several_times(
     Vec<(OccurrenceId, crate::xref::XrefTable)>,
     crate::f3z::merge::InstanceScopes,
 ) {
-    const REFERENCE: &str = "f3d:xref/holder-0/xref:reference#0-occurrence-0";
-    const PART: &str = "f3d:xref/part-top/Design/BulkStream.dat:design-component-occurrence#496";
+    const REFERENCE: &str = "f3d:holder-0@xref:reference#0-occurrence-0";
+    const PART: &str = "f3d:part-top@Design/BulkStream.dat:design-component-occurrence#496";
     let definition = |id: &str| {
         ProductDefinition::new(
             cadmpeg_ir::ids::ProductDefinitionId::mint(id).unwrap(),
@@ -1496,8 +1493,8 @@ fn nested_member_placed_several_times(
     let mut reference = reference(vec![pose]);
     reference.id = REFERENCE.to_owned();
     let mut root = definition("f3d:model:component#root");
-    let mut holder = definition("f3d:xref/holder-0/model:component#root");
-    let mut nested = definition("f3d:xref/part-top/model:component#root");
+    let mut holder = definition("f3d:holder-0@model:component#root");
+    let mut nested = definition("f3d:part-top@model:component#root");
     let mut scopes = crate::f3z::merge::InstanceScopes::new();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut tables = Vec::new();
@@ -1518,14 +1515,14 @@ fn nested_member_placed_several_times(
         200.0,
         &nested,
     );
-    scopes.insert(top.clone(), "f3d:xref/part-top".to_owned());
+    scopes.insert(top.clone(), "f3d:part-top".to_owned());
     root.occurrences.push(top);
     let leaf = place(
         &mut ir,
-        "f3d:xref/part-top/model:occurrence#leaf",
+        "f3d:part-top@model:occurrence#leaf",
         Some(PART),
         7.0,
-        &definition("f3d:xref/part-top/model:component#leaf"),
+        &definition("f3d:part-top@model:component#leaf"),
     );
     nested.occurrences.push(leaf);
     for instance in 0..holders {
@@ -1543,12 +1540,12 @@ fn nested_member_placed_several_times(
                 [0.0, 0.0, 1.0, 0.0],
             ]);
         }
-        let scope = format!("f3d:xref/holder-{instance}");
+        let scope = format!("f3d:holder-{instance}");
         scopes.insert(boundary.clone(), scope.clone());
         root.occurrences.push(boundary.clone());
         let insertion = place(
             &mut ir,
-            &format!("{scope}/model:occurrence#insertion"),
+            &format!("{scope}@model:occurrence#insertion"),
             Some(REFERENCE),
             0.0,
             &nested,
@@ -1557,10 +1554,10 @@ fn nested_member_placed_several_times(
         holder.occurrences.push(insertion);
         let leaf = place(
             &mut ir,
-            &format!("{scope}/xref/part/model:occurrence#leaf"),
+            &format!("{scope}/xref/part@model:occurrence#leaf"),
             Some(PART),
             7.0,
-            &definition("f3d:xref/part-top/model:component#leaf"),
+            &definition("f3d:part-top@model:component#leaf"),
         );
         nested.occurrences.push(leaf);
         tables.push((
@@ -1604,14 +1601,12 @@ fn assert_each_holder_places_its_nested_part(holders: usize) {
             .transform
             .unwrap()
     };
-    assert!((at("f3d:xref/part-top/model:occurrence#leaf").rows()[0][3] - 7.0).abs() < 1e-9);
+    assert!((at("f3d:part-top@model:occurrence#leaf").rows()[0][3] - 7.0).abs() < 1e-9);
     for instance in 0..holders {
         let boundary = at(&format!("f3d:model:occurrence#xref-0-{instance}"));
-        let insertion = at(&format!(
-            "f3d:xref/holder-{instance}/model:occurrence#insertion"
-        ));
+        let insertion = at(&format!("f3d:holder-{instance}@model:occurrence#insertion"));
         let leaf = at(&format!(
-            "f3d:xref/holder-{instance}/xref/part/model:occurrence#leaf"
+            "f3d:holder-{instance}/xref/part@model:occurrence#leaf"
         ));
         assert_eq!(insertion.rows(), Transform::identity().rows());
         let world = boundary

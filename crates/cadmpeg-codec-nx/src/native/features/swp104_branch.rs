@@ -298,7 +298,7 @@ mod tests {
                         |token| Some(format!("block#{}", token.value())),
                     )
                     .unwrap();
-                    let wire = serde_json::to_value(&branch).unwrap();
+                    let wire = cadmpeg_core::serde_erase::json::to_value(&branch).unwrap();
                     assert_eq!(wire["byte_len"], payload.len());
                     assert_eq!(
                         wire["members"][0]["source_offset"],
@@ -308,12 +308,18 @@ mod tests {
                     assert_eq!(wire["successor"]["ordinal"], member_count);
                     assert_eq!(wire["successor"]["data_block"], "block#256");
                     assert_eq!(
-                        serde_json::from_value::<FeatureSwp104LeadingBranch>(wire.clone()).unwrap(),
+                        cadmpeg_core::serde_erase::json::from_value::<FeatureSwp104LeadingBranch>(
+                            wire.clone()
+                        )
+                        .unwrap(),
                         branch
                     );
                     let mut invalid = wire;
                     invalid["members"][0]["raw_object_index"] = serde_json::json!("01");
-                    assert!(serde_json::from_value::<FeatureSwp104LeadingBranch>(invalid).is_err());
+                    assert!(cadmpeg_core::serde_erase::json::from_value::<
+                        FeatureSwp104LeadingBranch,
+                    >(invalid)
+                    .is_err());
                     assert!(from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),

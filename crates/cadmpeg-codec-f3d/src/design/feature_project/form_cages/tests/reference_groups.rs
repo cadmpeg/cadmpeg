@@ -19,7 +19,7 @@ fn group_json_keys_match_serde_and_return_allocation_refusals() {
         let slot = form_cages::ReferenceSlot::ungrouped(300, FormReferenceRole::Body, 0);
         let fact = form_cages::profile_reference(ctx, &scope, slot, Some(&reference), false)?;
         let value = (&fact, "serializer\"name");
-        assert_eq!(form_cages::group_json_key(ctx, &value)?, serde_json::to_vec(&value).unwrap());
+        assert_eq!(form_cages::group_json_key(ctx, &value)?, cadmpeg_core::serde_erase::json::to_vec(&value).unwrap());
         let mut writer = form_cages::GroupKeyWriter::default();
         writer.reserve(usize::MAX);
         serde_json::to_writer(&mut writer, &value).unwrap();
@@ -66,7 +66,7 @@ fn duplicate_material_envelopes_keep_separate_null_and_unreadable_groups() {
                 assert_eq!(fact.target, expected);
             }
         }
-        let wire = serde_json::to_string(&result).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_string(&result).unwrap();
         let round_trip: FormConstruction = serde_json::from_str(&wire).unwrap();
         assert_eq!(round_trip, result);
     }
@@ -404,7 +404,7 @@ fn projector_rejects_unwitnessed_groups_and_does_not_publish_failed_attempts() {
     archive.write_all(b"synthetic resource").unwrap();
     let archive = archive.finish().unwrap().into_inner();
     let scope = form_scope(201, vec![]);
-    let feature: Feature = serde_json::from_value(serde_json::json!({
+    let feature: Feature = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id":"f3d:model:feature#form", "ordinal":0, "native_ref":scope.id,
         "definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},
         "dependencies":[], "source_properties":{}, "source_content":[], "outputs":[]

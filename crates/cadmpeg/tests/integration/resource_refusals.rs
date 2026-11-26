@@ -54,7 +54,7 @@ fn check_json_reports_a_tiny_input_policy_refusal() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_resource_report(&value, "check");
     assert!(String::from_utf8_lossy(&output.stderr).contains("during complete input"));
 }
@@ -108,12 +108,14 @@ fn report_files_retain_resource_refusals_without_writing_artifacts() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{command}");
-        let value: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let value: Value =
+            cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_resource_report(&value, command);
         if matches!(command, "dump" | "convert") {
             assert!(output.stdout.is_empty(), "{command}");
         } else {
-            let stdout: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let stdout: Value =
+                cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
             assert_eq!(stdout, value, "{command}");
         }
         assert!(!artifact.exists(), "{command}");
@@ -143,7 +145,8 @@ fn check_resource_report_works_without_json_stdout() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    let value: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_resource_report(&value, "check");
 }
 
@@ -195,7 +198,8 @@ fn codec_failures_write_one_envelope_for_each_reporting_command() {
                 .output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
-            let value: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+            let value: Value =
+                cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
             assert_eq!(value["command"], command);
             assert_eq!(value["status"], "refused");
             assert_eq!(value["refusal"]["stage"], "decode");
@@ -207,7 +211,8 @@ fn codec_failures_write_one_envelope_for_each_reporting_command() {
             if matches!(command, "dump" | "convert") {
                 assert!(output.stdout.is_empty());
             } else {
-                let stdout: Value = serde_json::from_slice(&output.stdout).unwrap();
+                let stdout: Value =
+                    cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
                 assert_eq!(stdout, value);
             }
         }
@@ -235,7 +240,8 @@ fn binary_stdout_guard_writes_the_requested_refusal_report() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    let value: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["code"], "binary_stdout_rejected");
     assert_eq!(value["refusal"]["stage"], "plan");
@@ -266,7 +272,7 @@ fn report_io_failure_preserves_resource_exit_status_and_json_evidence() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_resource_report(&value, "check");
     assert!(!report.exists());
     assert!(
@@ -328,7 +334,7 @@ fn input_byte_override_admits_the_exact_file_length() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
 }
@@ -337,7 +343,8 @@ fn input_byte_override_admits_the_exact_file_length() {
 #[test]
 fn check_json_retains_semantic_decode_refusals() {
     let directory = tempdir().unwrap();
-    let strict = crate::support::minimal_rhino_archive(directory.path(), "undeclared.3dm", "100");
+    let strict =
+        crate::support::rhino_archive_with_unreadable_point(directory.path(), "unreadable.3dm");
     let unsupported = directory.path().join("part28.xml");
     fs::write(&unsupported, b"<iso_10303_28/>").unwrap();
     for (input, format, code) in [
@@ -360,11 +367,12 @@ fn check_json_retains_semantic_decode_refusals() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(1));
-        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["status"], "refused");
         assert_eq!(value["refusal"]["stage"], "decode");
         assert_eq!(value["refusal"]["code"], code);
-        let saved: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        let saved: Value =
+            cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
         assert_eq!(saved, value);
     }
 }
@@ -387,7 +395,7 @@ fn inspect_container_json_retains_resource_evidence() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["subcommand"], "container");
     assert_eq!(value["status"], "refused");

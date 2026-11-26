@@ -20,9 +20,9 @@ pub(crate) fn changed_fixture(fixture: &[u8], mut edit: impl FnMut(&mut Value)) 
         let mut bytes = Vec::new();
         member.read_to_end(&mut bytes).unwrap();
         if name.ends_with("features.json") {
-            let mut response = serde_json::from_slice(&bytes).unwrap();
+            let mut response = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
             edit(&mut response);
-            bytes = serde_json::to_vec(&response).unwrap();
+            bytes = cadmpeg_core::serde_erase::json::to_vec(&response).unwrap();
         }
         output
             .start_file(name.as_str(), zip::write::SimpleFileOptions::default())

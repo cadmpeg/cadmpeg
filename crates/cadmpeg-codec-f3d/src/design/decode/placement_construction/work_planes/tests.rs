@@ -16,8 +16,9 @@ fn work_plane_binds_explicit_unmarked_and_identity_placements() {
         let losses = super::bind(std::slice::from_mut(&mut scope), &[placement]);
         assert!(losses.is_empty());
         assert_eq!(scope.work_plane_transform(), Some(expected));
-        let wire = serde_json::to_value(&scope).unwrap();
-        let restored: DesignParameterScope = serde_json::from_value(wire).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+        let restored: DesignParameterScope =
+            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
         assert_eq!(restored, scope);
     }
 }

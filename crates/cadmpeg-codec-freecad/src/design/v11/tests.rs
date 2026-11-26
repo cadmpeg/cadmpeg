@@ -355,7 +355,7 @@ fn a_parameter_with_an_empty_expression_is_stated_with_its_stored_value() {
             .iter()
             .find(|parameter| parameter.id.as_str() == "fcstd:design:parameter#Pad:Length")
             .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
-        let wire = serde_json::to_value(&length.definition).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&length.definition).unwrap();
         assert_eq!(wire["value"]["kind"], "neutral", "{wire}");
         assert_eq!(wire["value"]["value"]["text"], "20[mm]", "{wire}");
         let empty = crate::loss::FreecadLossCode::ParameterExpressionEmpty.note("");
@@ -394,15 +394,30 @@ fn a_scoped_root_owns_its_current_states_and_unproduced_shapes_at_every_depth() 
     assert!(current.is_disjoint(&unproduced));
     let root = root_bodies(&design);
     assert_eq!(root, &current | &unproduced);
-    // A Body member's shape is a state of its Body: no definition owns it.
-    assert!(root
-        .iter()
-        .all(|body| !body.starts_with("fcstd:model:body#Hole:Shape:")));
+    // A Body member's shape is a state of its Body, which an evaluation
+    // states, or the `Tip`'s repeat of the current state: no body of the
+    // geometry (§5.4).
     assert!(design
         .geometry
         .bodies
         .iter()
-        .any(|body| body.id.as_str().starts_with("fcstd:model:body#Hole:Shape:")));
+        .all(|body| !body.id.as_str().starts_with("fcstd:model:body#Hole:Shape:")));
+    let owners = design
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .map(|body| body.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let mut listed = owners.clone();
+    listed.sort();
+    listed.dedup();
+    assert_eq!(listed.len(), owners.len());
+    assert!(design
+        .geometry
+        .bodies
+        .iter()
+        .all(|body| owners.contains(&body.id.as_str().to_owned())));
     assert_eq!(
         root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry)),
         root

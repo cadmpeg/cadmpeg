@@ -60,8 +60,8 @@ fn configuration_json_values_and_diagnostics_match_serde() {
                 let actual = actual.unwrap();
                 assert_eq!(actual, expected, "{text}");
                 assert_eq!(
-                    serde_json::to_vec(&actual).unwrap(),
-                    serde_json::to_vec(&expected).unwrap()
+                    cadmpeg_core::serde_erase::json::to_vec(&actual).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_vec(&expected).unwrap()
                 );
             }
             Err(expected) => assert!(

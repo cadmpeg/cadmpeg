@@ -434,7 +434,8 @@ fn hole_extents_keep_their_termination_kind() {
                 panic!("hole extent");
             };
             assert_eq!(
-                serde_json::to_value(extent).expect("termination JSON")["kind"],
+                cadmpeg_core::serde_erase::json::to_value(extent).expect("termination JSON")
+                    ["kind"],
                 expected
             );
             if let LinearTermination::Blind { length } = extent {

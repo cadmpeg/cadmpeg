@@ -138,17 +138,19 @@ mod numeric_tests {
             [0x50, 0xff, 0x89, 0xab, 0xac, 0x0d, 0xee],
         ];
         let scalars = raw.map(|bytes| Q155::from_raw(bytes).expect("valid signed atom"));
-        let encoded = serde_json::to_value(Pair { scalars }).expect("serialize pair");
+        let encoded =
+            cadmpeg_core::serde_erase::json::to_value(Pair { scalars }).expect("serialize pair");
         assert_eq!(encoded["scalars"]["raw_values"][0], "7446a1f19b5338");
         assert_eq!(encoded["scalars"]["raw_values"][1], "50ff89abac0dee");
-        let decoded: Pair = serde_json::from_value(encoded.clone()).expect("deserialize pair");
+        let decoded: Pair =
+            cadmpeg_core::serde_erase::json::from_value(encoded.clone()).expect("deserialize pair");
         assert_eq!(decoded.scalars, scalars);
 
         let mut wrong_value = encoded.clone();
         wrong_value["scalars"]["values"][1] = serde_json::json!(0.5);
-        assert!(serde_json::from_value::<Pair>(wrong_value).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Pair>(wrong_value).is_err());
         let mut wrong_raw = encoded;
         wrong_raw["scalars"]["raw_values"][1] = serde_json::json!("00000000000000");
-        assert!(serde_json::from_value::<Pair>(wrong_raw).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Pair>(wrong_raw).is_err());
     }
 }

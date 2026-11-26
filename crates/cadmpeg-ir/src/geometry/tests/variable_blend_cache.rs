@@ -17,7 +17,7 @@ fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
             shape_prefix: NonZeroI64::new(prefix).unwrap(),
             fit_tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.125).unwrap(),
         };
-        let wire = serde_json::to_value(CacheWire {
+        let wire = cadmpeg_core::serde_erase::json::to_value(CacheWire {
             cache: cache.clone(),
         })
         .unwrap();
@@ -30,7 +30,9 @@ fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
             }})
         );
         assert_eq!(
-            serde_json::from_value::<CacheWire>(wire).unwrap().cache,
+            cadmpeg_core::serde_erase::json::from_value::<CacheWire>(wire)
+                .unwrap()
+                .cache,
             cache
         );
     }
@@ -38,9 +40,12 @@ fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
     let stale = CacheWire {
         cache: VariableBlendCache::Stale {},
     };
-    let wire = serde_json::to_value(&stale).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&stale).unwrap();
     assert_eq!(wire, json!({"cache": {"kind": "stale"}}));
-    assert_eq!(serde_json::from_value::<CacheWire>(wire).unwrap(), stale);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<CacheWire>(wire).unwrap(),
+        stale
+    );
 
     for prefix in [-1, 0, 11] {
         let cache = CacheWire {
@@ -49,10 +54,13 @@ fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
                 parameterization: RevisionSurfaceParameterization::default(),
             },
         };
-        let wire = serde_json::to_value(&cache).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&cache).unwrap();
         assert_eq!(wire["cache"]["kind"], "parameterization");
         assert_eq!(wire["cache"]["shape_prefix"], prefix);
-        assert_eq!(serde_json::from_value::<CacheWire>(wire).unwrap(), cache);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::from_value::<CacheWire>(wire).unwrap(),
+            cache
+        );
     }
 }
 
@@ -75,13 +83,13 @@ fn a_variable_blend_cache_carries_no_key_of_another_form() {
         }}),
     ] {
         assert!(
-            serde_json::from_value::<CacheWire>(wire.clone()).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<CacheWire>(wire.clone()).is_err(),
             "{wire}"
         );
     }
 
     let bogus = json!({"cache": {"kind": "stale", "zz_bogus": 1}});
-    let error = serde_json::from_value::<CacheWire>(bogus)
+    let error = cadmpeg_core::serde_erase::json::from_value::<CacheWire>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");

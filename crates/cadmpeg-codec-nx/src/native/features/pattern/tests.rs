@@ -260,7 +260,10 @@ fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
         let error =
-            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
+            cadmpeg_core::serde_erase::json::from_value::<FeatureIdenticalInstanceOutputLane>(
+                malformed,
+            )
+            .unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }
@@ -294,11 +297,17 @@ fn pattern_rows_reject_scalar_families_outside_their_layout() {
     let mut wrong_first: serde_json::Value = serde_json::from_str(wide).unwrap();
     wrong_first["encodings"][0] = serde_json::json!("binary32");
     wrong_first["raw_values"][0] = serde_json::json!("50200000");
-    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_first).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FeaturePatternTransformLane>(wrong_first)
+            .is_err()
+    );
     let mut wrong_terminal: serde_json::Value = serde_json::from_str(wide).unwrap();
     wrong_terminal["encodings"][4] = serde_json::json!("binary64");
     wrong_terminal["raw_values"][4] = serde_json::json!("2ff0000000000000");
-    assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_terminal).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FeaturePatternTransformLane>(wrong_terminal)
+            .is_err()
+    );
     assert!(serde_json::from_str::<FeaturePatternTransformLane>(
         &wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")
     )
@@ -310,12 +319,15 @@ fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
     let json = r#"{"id":"lane","operation_label":"operation","declared_count":2,"object_indices":[1],"raw_object_indices":["f001"],"data_blocks":[null],"source_offset":18,"object_index_source_offsets":[20]}"#;
     let lane: crate::native::features::pattern::FeaturePatternCountedReferenceLane =
         serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+        json
+    );
     for raw in [vec![240, 2], vec![255], vec![240], vec![240, 1, 0]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["raw_object_indices"] =
             serde_json::json!([cadmpeg_ir::native::bytes::NativeBytes::from(raw)]);
-        let error = serde_json::from_value::<
+        let error = cadmpeg_core::serde_erase::json::from_value::<
             crate::native::features::pattern::FeaturePatternCountedReferenceLane,
         >(wire)
         .unwrap_err();
@@ -343,7 +355,9 @@ fn pattern_transform_selectors_require_matching_compact_tokens() {
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error = serde_json::from_value::<FeaturePatternTransformLane>(malformed).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeaturePatternTransformLane>(malformed)
+                .unwrap_err();
         assert!(error.to_string().contains("selectors"), "{error}");
     }
 }
@@ -361,7 +375,10 @@ fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
         let error =
-            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
+            cadmpeg_core::serde_erase::json::from_value::<FeatureIdenticalInstanceOutputLane>(
+                malformed,
+            )
+            .unwrap_err();
         assert!(error.to_string().contains("selectors"), "{error}");
     }
     for count in [253, 254] {
@@ -374,9 +391,14 @@ fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
                 count
             ]);
         wire["selector_source_offsets"] = serde_json::json!(vec![110; count]);
-        let result = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(wire.clone());
+        let result = cadmpeg_core::serde_erase::json::from_value::<
+            FeatureIdenticalInstanceOutputLane,
+        >(wire.clone());
         if count == 253 {
-            assert_eq!(serde_json::to_value(result.unwrap()).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(result.unwrap()).unwrap(),
+                wire
+            );
         } else {
             assert!(result.unwrap_err().to_string().contains("selectors"));
         }
@@ -409,8 +431,10 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error =
-            serde_json::from_value::<FeatureMultiInstanceOutputLane>(malformed).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<FeatureMultiInstanceOutputLane>(
+            malformed,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains(error_field), "{error}");
     }
     let mut incomplete: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -428,7 +452,9 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
             incomplete[field].as_array_mut().unwrap().pop();
         }
     }
-    let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();
+    let error =
+        cadmpeg_core::serde_erase::json::from_value::<FeatureMultiInstanceOutputLane>(incomplete)
+            .unwrap_err();
     assert!(error.to_string().contains("trailing_object_indices"));
 }
 
@@ -436,7 +462,10 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
 fn pattern_counted_references_require_nonempty_framed_payload_tokens() {
     let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"object_indices":[1,258],"raw_object_indices":["f001","f10102"],"data_blocks":[null,"block"],"source_offset":18,"object_index_source_offsets":[20,22]}"#;
     let lane: super::FeaturePatternCountedReferenceLane = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+        json
+    );
     for (field, value) in [
         ("object_index_source_offsets", serde_json::json!([20, 23])),
         ("source_offset", serde_json::json!(u64::MAX)),
@@ -444,9 +473,11 @@ fn pattern_counted_references_require_nonempty_framed_payload_tokens() {
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = value;
-        let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire)
-            .unwrap_err()
-            .to_string();
+        let error = cadmpeg_core::serde_erase::json::from_value::<
+            super::FeaturePatternCountedReferenceLane,
+        >(wire)
+        .unwrap_err()
+        .to_string();
         assert!(error.contains(field), "{error}");
     }
     let mut empty: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -459,8 +490,10 @@ fn pattern_counted_references_require_nonempty_framed_payload_tokens() {
     ] {
         empty[field] = serde_json::json!([]);
     }
-    let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(empty)
-        .unwrap_err()
-        .to_string();
+    let error = cadmpeg_core::serde_erase::json::from_value::<
+        super::FeaturePatternCountedReferenceLane,
+    >(empty)
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("declared_count"), "{error}");
 }

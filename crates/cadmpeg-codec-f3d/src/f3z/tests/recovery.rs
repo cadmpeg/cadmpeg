@@ -207,9 +207,13 @@ fn a_merged_member_part_loss_names_the_stub_in_the_document() {
     let stubs = decoded.ir().native_unknowns("f3d").unwrap();
     let stub = stubs
         .iter()
-        .find(|stub| stub.id.as_str().contains("/source:part#"))
+        .find(|stub| stub.id.as_str().contains("@source:part#"))
         .expect("the member's given-up preview has a stub");
-    assert!(stub.id.as_str().starts_with("f3d:xref/"), "{}", stub.id);
+    assert!(
+        crate::ids::member_key(stub.id.as_str()).is_some(),
+        "{}",
+        stub.id
+    );
     assert!(
         loss.message.contains(&format!(" record={}: ", stub.id)),
         "{}",
@@ -270,7 +274,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .native_unknowns("f3d")
         .unwrap()
         .into_iter()
-        .filter(|stub| stub.id.as_str().contains("/source:part#"))
+        .filter(|stub| stub.id.as_str().contains("@source:part#"))
         .collect::<Vec<_>>();
     assert_eq!(stubs.len(), 2, "{stubs:?}");
     let mut owners = Vec::new();
@@ -278,10 +282,13 @@ fn each_member_part_links_to_its_own_member_definition() {
         let [link] = stub.links.as_slice() else {
             panic!("{} has one link: {:?}", stub.id, stub.links);
         };
-        let (member, _) = stub.id.as_str().split_once("/source:part#").unwrap();
+        let (member, _) = stub.id.as_str().split_once("@source:part#").unwrap();
         assert_eq!(
             link.as_str(),
-            format!("{member}/archive:product-definition#0"),
+            format!(
+                "f3d:xref:product-definition#{}",
+                member.strip_prefix("f3d:").unwrap()
+            ),
             "{}",
             stub.id
         );

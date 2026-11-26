@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part Studio history projection.
+//! Part Studio history and assembly projection.
 
 use crate::archive;
+mod assembly;
 pub(super) mod expression;
 mod features;
+mod intersection;
+mod planes;
 pub(super) mod query;
 mod regions;
 mod sketch;
+mod sweep;
 mod thin;
 pub(super) mod topology;
 
@@ -81,7 +85,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        serde_json::from_value(row)
+        cadmpeg_core::serde_erase::json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -95,6 +99,37 @@ fn definition(kind: &str, value: Value) -> Value {
         ("kind".into(), Value::String("operation".into())),
         ("value".into(), Value::Object(operation)),
     ]))
+}
+
+fn mapping_loss_code(
+    feature: &Value,
+    region_budget_exhausted: bool,
+    valid_suppression: bool,
+    reason: &str,
+) -> OnshapeLossCode {
+    if !region_budget_exhausted
+        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
+        && features::value(feature, "bodyType") == Some("THIN")
+    {
+        OnshapeLossCode::ThinNotSupported
+    } else if !region_budget_exhausted
+        && valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("sweep")
+        && sweep::validate_record(feature).is_ok()
+        && !reason.starts_with(sweep::PATH_BUDGET_EXHAUSTED)
+    {
+        OnshapeLossCode::SweepNotSupported
+    } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
+        planes::loss_code(feature, reason)
+    } else if valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("shell")
+        && features::shell_record_valid(feature)
+        && reason.starts_with(features::SHELL_REFUSAL)
+    {
+        OnshapeLossCode::ShellNotSupported
+    } else {
+        OnshapeLossCode::HistoryNotSupported
+    }
 }
 
 fn loss(report: &mut Report, subject: &str, reason: &str, has_step: bool, code: OnshapeLossCode) {
@@ -151,11 +186,21 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
             .product_definitions
             .iter()
             .filter(|d| Some(&d.id) != owner_id.as_ref())
-            .any(|d| !placed.contains(d.id.as_str()))
+            .any(|d| {
+                // A part body is an embedded leaf definition, active, with no own
+                // occurrences, instance bodies or representations; anything else is a
+                // real insertion and keeps its occurrence.
+                !placed.contains(d.id.as_str())
+                    || !matches!(d.storage, cadmpeg_ir::products::Storage::Embedded)
+                    || !d.occurrences.is_empty()
+                    || !d.instance_bodies.is_empty()
+                    || !d.representations.is_empty()
+                    || d.active == Some(false)
+            })
     {
         return;
     }
-    let Ok(text) = serde_json::to_string(&model.ir) else {
+    let Ok(text) = cadmpeg_core::serde_erase::json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -196,10 +241,8 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         })
         .collect();
     for body in &mut model.ir.geometry.bodies {
-        if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) {
-            if let Some(name) = names.get(body.id.as_str()) {
-                body.name = Some(name.clone());
-            }
+        if let Some(name) = names.get(body.id.as_str()) {
+            body.name = Some(name.clone());
         }
     }
 }
@@ -385,19 +428,46 @@ pub(super) fn read(
     report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
-    if elements.len() != 1
-        || elements
+    let mut model = if elements.len() == 1
+        && elements
             .first()
             .and_then(|e| e.get("type"))
             .and_then(Value::as_str)
-            != Some("PARTSTUDIO")
+            == Some("PARTSTUDIO")
     {
-        return Err(Error::Decode("Onshape bundles with assemblies or multiple elements are not supported yet; fetch one Part Studio".into()));
-    }
-    let element = elements
-        .first()
-        .ok_or_else(|| Error::Decode("Onshape bundle has no Part Studio".into()))?;
-    let eid = text(element, "id").map_err(Error::Decode)?;
+        studio(
+            ctx,
+            root,
+            step_decoder,
+            report,
+            &bundle,
+            &mid,
+            text(
+                elements
+                    .first()
+                    .ok_or_else(|| Error::Decode("element missing".into()))?,
+                "id",
+            )
+            .map_err(Error::Decode)?,
+        )?
+    } else {
+        assembly::read(ctx, root, step_decoder, report, &bundle, &mid, manifest)?
+    };
+    report
+        .notes
+        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    Ok(model)
+}
+
+fn studio(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    step_decoder: crate::StepDecoder,
+    report: &mut Report,
+    bundle: &Bundle<'_>,
+    mid: &str,
+    eid: &str,
+) -> Result<Model, Error> {
     if !eid
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
@@ -432,7 +502,7 @@ pub(super) fn read(
             (&[][..], RollbackBar::default())
         }
     };
-    let inputs = topology::Inputs::new(&bundle, &prefix, &mid, features, report);
+    let inputs = topology::Inputs::new(bundle, &prefix, mid, features, report);
     let step_path = format!("{prefix}/export.step");
     let step = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
@@ -488,9 +558,6 @@ pub(super) fn read(
         part_studio_bodies(&mut model);
     }
     if ctx.depth() == cadmpeg_core::decode::DecodeDepth::Geometry {
-        report
-            .notes
-            .extend(bundle.retain_assets(ctx, &mut model.ir)?);
         return Ok(model);
     }
     let creators: Vec<usize> = features
@@ -499,7 +566,7 @@ pub(super) fn read(
         .filter(|(_, feature)| {
             matches!(
                 feature.get("featureType").and_then(Value::as_str),
-                Some("extrude" | "revolve")
+                Some("extrude" | "revolve" | "sweep")
             ) && features::value(feature, "operationType") == Some("NEW")
                 && suppression(feature) == Ok(false)
         })
@@ -624,7 +691,7 @@ pub(super) fn read(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
@@ -679,6 +746,9 @@ pub(super) fn read(
                 definition
             }
             Err(reason) => {
+                let mut tail = report.notes.split_off(note_start);
+                tail.retain(|note| !OnshapeLossCode::SketchPlaneAssumed.matches(note));
+                report.notes.extend(tail);
                 model.ir.model.sketches.truncate(sizes.0);
                 model.ir.model.sketch_entities.truncate(sizes.1);
                 model.ir.model.sketch_constraints.truncate(sizes.2);
@@ -690,14 +760,12 @@ pub(super) fn read(
                         .regions
                         .try_borrow()
                         .is_ok_and(|recovery| recovery.exhausted());
-                    let code = if !region_budget_exhausted
-                        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
-                        && features::value(feature, "bodyType") == Some("THIN")
-                    {
-                        OnshapeLossCode::ThinNotSupported
-                    } else {
-                        OnshapeLossCode::HistoryNotSupported
-                    };
+                    let code = mapping_loss_code(
+                        feature,
+                        region_budget_exhausted,
+                        suppressed.is_ok(),
+                        &reason,
+                    );
                     loss(report, name, &reason, model.source_step.is_some(), code);
                 }
                 definition(
@@ -765,6 +833,12 @@ pub(super) fn read(
                     .any(|design| design.id.as_str() == feature_id)
                     && features::value(feature, "operationType") == Some("NEW"))
                     || definition
+                        .pointer("/value/value/shape/op")
+                        .and_then(Value::as_str)
+                        == Some("new_body")
+                        && definition.pointer("/value/kind").and_then(Value::as_str)
+                            == Some("sweep")
+                    || definition
                         .pointer("/value/value/op")
                         .and_then(Value::as_str)
                         == Some("new_body")
@@ -783,7 +857,8 @@ pub(super) fn read(
             model.ir.design.features.truncate(design_length);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
-                !OnshapeLossCode::ThinModelNotSupported.matches(note)
+                !OnshapeLossCode::SketchPlaneAssumed.matches(note)
+                    && !OnshapeLossCode::ThinModelNotSupported.matches(note)
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
@@ -801,10 +876,6 @@ pub(super) fn read(
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
     annotate(&mut model, features)?;
-    report
-        .notes
-        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
-    model.ir.finalize();
     Ok(model)
 }
 

@@ -29,7 +29,9 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
     assert!(arenas
         .get("feature_body_write_group_partition_uses")
         .is_none_or(Vec::is_empty));
-    let branches = serde_json::to_value(&arenas["feature_swp104_leading_branches"]).unwrap();
+    let branches =
+        cadmpeg_core::serde_erase::json::to_value(&arenas["feature_swp104_leading_branches"])
+            .unwrap();
     assert_eq!(branches.as_array().unwrap().len(), 2);
     assert_eq!(branches[0]["parameter_class_index"], 17);
     assert_eq!(branches[0]["profile_class_index"], 18);

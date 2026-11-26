@@ -46,6 +46,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         &fidelity.codec_digests,
         &records,
         &[],
+        &[],
         &mut written,
     )
     .expect("semantic write succeeds")

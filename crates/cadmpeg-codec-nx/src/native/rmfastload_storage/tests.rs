@@ -30,11 +30,11 @@ fn rmfastload_storage_retains_entry_relative_spans_and_opaque_terminal_bytes() {
                     cadmpeg_ir::hash::digest::Sha256Digest::digest(&source[lo..hi])
                 );
             }
-            let value = serde_json::to_value(&records[0]).unwrap();
+            let value = cadmpeg_core::serde_erase::json::to_value(&records[0]).unwrap();
             assert_eq!(value["terminal_trailer"], "ffffffffffffffffffffffff");
             assert_eq!(value["terminal_rows"][1]["tokens"][0], "c0000000");
             assert_eq!(
-                serde_json::from_value::<RmFastLoadStorage>(value).unwrap(),
+                cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(value).unwrap(),
                 records[0]
             );
         },
@@ -49,7 +49,10 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
         |_| {},
         |ctx| {
             let container = crate::container::scan_bytes(bytes.clone()).unwrap();
-            let value = serde_json::to_value(&collect(ctx, &container, &[]).unwrap()[0]).unwrap();
+            let value = cadmpeg_core::serde_erase::json::to_value(
+                &collect(ctx, &container, &[]).unwrap()[0],
+            )
+            .unwrap();
             for field in [
                 "boundaries",
                 "table_words",
@@ -59,7 +62,7 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
                 let mut bad = value.clone();
                 bad[field].as_array_mut().unwrap().pop();
                 assert!(
-                    serde_json::from_value::<RmFastLoadStorage>(bad).is_err(),
+                    cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad).is_err(),
                     "{field}"
                 );
             }
@@ -72,19 +75,19 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
                 let mut bad = value.clone();
                 bad[field] = serde_json::json!(u64::MAX);
                 assert!(
-                    serde_json::from_value::<RmFastLoadStorage>(bad).is_err(),
+                    cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad).is_err(),
                     "{field}"
                 );
             }
             let mut bad = value.clone();
             bad["header_source_offset"] = bad["source_offset"].clone();
-            assert!(serde_json::from_value::<RmFastLoadStorage>(bad).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad).is_err());
             let mut bad = value.clone();
             bad["physical_spans"][0]["byte_len"] = serde_json::json!(113);
-            assert!(serde_json::from_value::<RmFastLoadStorage>(bad).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad).is_err());
             let mut bad = value;
             bad["terminal_rows"][0]["source_offset"] = serde_json::json!(0);
-            assert!(serde_json::from_value::<RmFastLoadStorage>(bad).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad).is_err());
         },
     );
 }
@@ -106,11 +109,15 @@ fn rmfastload_native_admission_checks_the_owning_section_class_count() {
                 .is_empty()
         );
         let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
-        let original =
-            serde_json::to_value(&namespace.arenas()["rmfastload_physical_storages"][0]).unwrap();
+        let original = cadmpeg_core::serde_erase::json::to_value(
+            &namespace.arenas()["rmfastload_physical_storages"][0],
+        )
+        .unwrap();
         let mut bad = original.clone();
         bad["header_words"][3] = serde_json::json!(1);
-        assert!(serde_json::from_value::<RmFastLoadStorage>(bad.clone()).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<RmFastLoadStorage>(bad.clone()).is_ok()
+        );
         namespace
             .set_arena(ctx, "rmfastload_physical_storages", &[bad])
             .unwrap();

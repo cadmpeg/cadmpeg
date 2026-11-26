@@ -70,7 +70,16 @@ pub mod surface_payloads;
 pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyExtensionFlags {
@@ -96,7 +105,7 @@ pub enum LegacyExtensionFlags {
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
 // A source states raw scalars; an `OffsetSurfaceConstruction` holds the
 // admitted extension, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
@@ -122,7 +131,14 @@ pub enum OffsetExtension<R = f64> {
 
 /// Analytic, NURBS, or opaque surface geometry established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -184,6 +200,24 @@ impl SolvedSurfaceGeometry {
             | Self::Unknown { .. } => 0,
         }
     }
+
+    /// `"plane"`, `"cylinder"`, or `"cone"` where this carrier is one through
+    /// every placement: a surface no face covers whole, so a face on it states
+    /// a loop (part 10, Topology and model records).
+    #[must_use]
+    pub fn plane_cylinder_or_cone(&self) -> Option<&'static str> {
+        match self {
+            Self::Plane(_) => Some("plane"),
+            Self::Cylinder(_) => Some("cylinder"),
+            Self::Cone(_) => Some("cone"),
+            Self::Transformed(placed) => placed.basis().plane_cylinder_or_cone(),
+            Self::Sphere(_)
+            | Self::Torus(_)
+            | Self::Nurbs(_)
+            | Self::Polygonal(_)
+            | Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Exact affine placement of an inline basis surface.
@@ -191,7 +225,7 @@ impl SolvedSurfaceGeometry {
 /// `try_new` is the only constructor and refuses a chain deeper than
 /// [`MAX_GEOMETRY_NESTING`], so no [`SolvedSurfaceGeometry`] value nests past
 /// the bound however it was built or read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PlacedSurfaceWire")]
 pub struct PlacedSurface {
@@ -262,7 +296,14 @@ impl TryFrom<PlacedSurfaceWire> for PlacedSurface {
 }
 
 /// Analytic, NURBS, procedural, or opaque surface geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -314,7 +355,7 @@ impl SurfaceGeometry {
 }
 
 /// An identified surface carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Surface {
@@ -340,7 +381,14 @@ pub struct Surface {
 
 /// The analytic or free-form shape of a 3D curve carrier established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -439,7 +487,7 @@ impl SolvedCurveGeometry {
 /// `try_new` is the only constructor and refuses a chain deeper than
 /// [`MAX_GEOMETRY_NESTING`], so no [`SolvedCurveGeometry`] value nests past the
 /// bound however it was built or read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PlacedCurveWire")]
 pub struct PlacedCurve {
@@ -511,7 +559,14 @@ impl TryFrom<PlacedCurveWire> for PlacedCurve {
 
 /// A curve carrier held outside a `Topology`: a leaf carrier, or an inline
 /// placement of one. It names no record.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -541,7 +596,14 @@ pub enum InlineCurve {
 
 /// A surface carrier held outside a `Topology`: a leaf carrier, or an inline
 /// placement of one. It names no record.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -570,7 +632,14 @@ pub enum InlineSurface {
 }
 
 /// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -630,7 +699,7 @@ impl CurveGeometry {
 }
 
 /// Non-empty ordered child uses of a composite curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[serde(try_from = "Vec<CompositeCurveSegment>")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CompositeCurveSegments(Vec<CompositeCurveSegment>);
@@ -670,7 +739,7 @@ impl<'a> IntoIterator for &'a CompositeCurveSegments {
 }
 
 /// One directed child use in a composite curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CompositeCurveSegment {
@@ -683,7 +752,9 @@ pub struct CompositeCurveSegment {
 }
 
 /// STEP composite-curve transition continuity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -735,7 +806,7 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
 }
 
 /// A 3D curve carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Curve {
@@ -773,7 +844,7 @@ pub struct Curve {
 /// The positions are the native record's fields. Their meaning is supplied
 /// by the owning subtype, so a partial quartet remains valid. `None` in one
 /// position means that field was absent in the source record.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[Option<f64>; 4]", into = "[Option<f64>; 4]")]
 pub struct RecordBounds([Option<f64>; 4]);
@@ -843,7 +914,7 @@ impl From<RecordBounds> for [Option<f64>; 4] {
 }
 
 /// A neutral surface construction linked to the carrier it produces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProceduralSurface {
@@ -938,7 +1009,7 @@ impl ProceduralSurface {
 }
 
 /// A neutral curve construction linked to its solved carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProceduralCurve {
@@ -1079,6 +1150,11 @@ pub(crate) struct ProceduralCurveRow {
 }
 
 impl ProceduralSurfaceRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
@@ -1103,6 +1179,11 @@ impl ProceduralSurfaceRow {
 }
 
 impl ProceduralCurveRow {
+    /// The construction's identity.
+    pub(crate) fn id_str(&self) -> &str {
+        self.id.as_str()
+    }
+
     /// The row a construction and its carrier state.
     pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
         Self {

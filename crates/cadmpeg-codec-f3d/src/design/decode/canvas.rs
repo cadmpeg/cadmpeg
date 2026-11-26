@@ -384,7 +384,7 @@ mod tests {
             bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
         }
         reference(&mut bytes, 305, 10);
-        let scope = serde_json::from_value(serde_json::json!({
+        let scope = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:scope#30",
             "byte_offset": 284,
             "class_tag": "303",
@@ -475,7 +475,7 @@ mod tests {
             bytes[label..label + 6].copy_from_slice(&modern[213..219]);
             bytes[asset + 21..scope_at].copy_from_slice(&modern[270..284]);
             reference(&mut bytes, scope_at + 21, 10);
-            let mut scope_wire = serde_json::to_value(&scope).unwrap();
+            let mut scope_wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
             for (field, value) in scope_wire.as_object_mut().unwrap() {
                 if field.ends_with("_offset") && value.is_u64() {
                     *value = serde_json::json!(
@@ -489,11 +489,11 @@ mod tests {
                     }
                 }
             }
-            let scope = serde_json::from_value(scope_wire).unwrap();
+            let scope = cadmpeg_core::serde_erase::json::from_value(scope_wire).unwrap();
             let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
             assert_eq!(image.asset_name(), "a.png");
             assert!(image.geometry().prologue.visible());
-            let wire = serde_json::to_value(&image).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&image).unwrap();
             assert_eq!(wire["geometry_frame_length"], paired);
             assert_eq!(wire["asset_byte_offset"], asset);
             if planeless {
@@ -505,14 +505,14 @@ mod tests {
             }
             assert!(!image.geometry().flag_assumed());
             let roundtrip: crate::records::canvas::DesignCanvasImage =
-                serde_json::from_value(wire.clone()).unwrap();
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             assert_eq!(image, roundtrip);
             let mut inconsistent = wire;
             inconsistent["geometry_frame_length"] = serde_json::json!(paired + 1);
-            assert!(
-                serde_json::from_value::<crate::records::canvas::DesignCanvasImage>(inconsistent)
-                    .is_err()
-            );
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                crate::records::canvas::DesignCanvasImage,
+            >(inconsistent)
+            .is_err());
             let plane_mutation = if planeless { plane } else { plane + 5 };
             for offset in [
                 visibility,
@@ -537,7 +537,8 @@ mod tests {
                 let toggled_image = toggled_image.unwrap();
                 assert!(toggled_image.geometry().flag_assumed());
                 assert_eq!(
-                    serde_json::to_value(&toggled_image).unwrap()["second_boundary_flag"],
+                    cadmpeg_core::serde_erase::json::to_value(&toggled_image).unwrap()
+                        ["second_boundary_flag"],
                     false
                 );
             }

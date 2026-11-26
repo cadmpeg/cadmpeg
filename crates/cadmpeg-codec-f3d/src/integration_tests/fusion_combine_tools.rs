@@ -18,7 +18,7 @@ fn combine_operands(bytes: &[u8]) -> (serde_json::Value, Vec<String>, serde_json
         .iter()
         .map(|loss| loss.code.local_code().to_owned())
         .collect();
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
     let mut combines = ir["model"]["features"]
         .as_array()
         .expect("feature list")
@@ -62,6 +62,8 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
             target["value"]["bodies"],
             serde_json::json!([bodies[0]["id"]])
         );
+        // Each tool box stores its own native member, so several tools keep
+        // one native member per generated body.
         let selected = &operands["tools"];
         if tools == 1 {
             assert_eq!(selected["kind"], "generated", "{tools} tools: {selected}");
@@ -71,7 +73,7 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
             );
         } else {
             assert_eq!(
-                selected["kind"], "historical_set",
+                selected["kind"], "generated_set",
                 "{tools} tools: {selected}"
             );
             assert_eq!(
@@ -79,13 +81,13 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
                 Some(tools),
                 "{tools} tools: {selected}"
             );
-            assert!(
-                codes
-                    .iter()
-                    .any(|code| code == "feature.combine-body-producer-unresolved"),
-                "{tools} tools: {codes:?}"
-            );
         }
+        assert!(
+            !codes
+                .iter()
+                .any(|code| code == "feature.combine-body-producer-unresolved"),
+            "{tools} tools: {codes:?}"
+        );
         assert!(
             !codes
                 .iter()

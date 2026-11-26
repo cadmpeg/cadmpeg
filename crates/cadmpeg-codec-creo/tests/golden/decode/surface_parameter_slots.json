@@ -137,37 +137,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#4",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -183,7 +159,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -192,14 +167,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -715,8 +683,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "creo",
-            "strict_floor": "warning"
+            "namespace": "creo"
           }
         },
         "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
@@ -740,8 +707,7 @@
           "value": {
             "code": "geometry.brep-incomplete",
             "kind": "geometry_not_transferred",
-            "namespace": "creo",
-            "strict_floor": "warning"
+            "namespace": "creo"
           }
         },
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop face additionally requires strict parameter-space containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). Face admission considered 0 candidate(s): 0 passed, 0 emitted, and 0 were rejected. First-failure rejection counts are: none. Component admission gate: 0 admitted component(s), selected body count 0; passed. Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex. Vertex solver: 0 topological, 0 carrier intersections, 0 carrier-bearing vertices, 0 pair-intersection candidate(s), 0 triple-intersection candidate(s), 0 validated carrier candidate(s), 0 carrier vertices with no candidate, 0 ambiguous carrier vertices, 0 pcurve record(s), 0 pcurve path(s), 0 path(s) without a unique surface, 0 unevaluable path(s), 0 mapped path(s), 0 unmapped record(s), 0 inconsistent record(s), 0 accepted record(s) (0 complete), 0 conflicting curve(s), 0 pcurve endpoint evidence (0 complete), 0 pcurve constraint(s), 0 analytic domain(s), 0 NURBS endpoint constraint(s), 0 directed endpoint conflict(s), 0 solved. 1 PSB geometry section(s) were preserved verbatim as unknown records.",
@@ -753,8 +719,7 @@
           "value": {
             "code": "geometry.instance-carriers-gated",
             "kind": "geometry_not_transferred",
-            "namespace": "creo",
-            "strict_floor": "warning"
+            "namespace": "creo"
           }
         },
         "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
@@ -766,8 +731,7 @@
           "value": {
             "code": "topology.incomplete-components",
             "kind": "topology_not_transferred",
-            "namespace": "creo",
-            "strict_floor": "warning"
+            "namespace": "creo"
           }
         },
         "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
@@ -791,8 +755,7 @@
           "value": {
             "code": "geometry.visibgeom-surface-untransferred",
             "kind": "geometry_not_transferred",
-            "namespace": "creo",
-            "strict_floor": "warning"
+            "namespace": "creo"
           }
         },
         "message": "1 unique VisibGeom surface row(s) were not transferred as carriers and remain structural namespace records (torus_or_sphere=1).",

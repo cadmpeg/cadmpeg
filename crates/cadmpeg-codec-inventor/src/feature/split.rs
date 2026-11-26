@@ -476,10 +476,13 @@ pub(crate) mod tests {
                             value,
                         }
                     );
-                    let wire = serde_json::to_value(&property).expect("serialize property");
+                    let wire = cadmpeg_core::serde_erase::json::to_value(&property)
+                        .expect("serialize property");
                     assert_eq!(
-                        serde_json::from_value::<PmDcFeaturePropertyPayload>(wire)
-                            .expect("deserialize property"),
+                        cadmpeg_core::serde_erase::json::from_value::<PmDcFeaturePropertyPayload>(
+                            wire
+                        )
+                        .expect("deserialize property"),
                         property
                     );
                 }

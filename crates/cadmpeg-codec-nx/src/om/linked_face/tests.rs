@@ -45,11 +45,15 @@ fn payload() -> (Vec<u8>, usize) {
 #[test]
 fn linked_face_cache_validates_names_and_retains_the_unassigned_tail() {
     let (bytes, prefix) = payload();
-    let wire = serde_json::to_value(NativeBytes::from(bytes.clone())).unwrap();
-    let decoded: LinkedFacePayload = serde_json::from_value(wire.clone()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(NativeBytes::from(bytes.clone())).unwrap();
+    let decoded: LinkedFacePayload =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.as_bytes(), bytes);
     assert_eq!(decoded.tables().unwrap()[1][1], "Face");
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&decoded).unwrap(),
+        wire
+    );
     for end in 0..prefix {
         assert!(read(&bytes[..end]).is_none(), "prefix {end}");
     }
@@ -62,10 +66,12 @@ fn linked_face_cache_validates_names_and_retains_the_unassigned_tail() {
     let name = bytes.windows(4).position(|w| w == b"Name").unwrap();
     let mut changed = bytes;
     changed[name] = b'X';
-    assert!(serde_json::from_value::<LinkedFacePayload>(
-        serde_json::to_value(NativeBytes::from(changed)).unwrap()
-    )
-    .is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<LinkedFacePayload>(
+            cadmpeg_core::serde_erase::json::to_value(NativeBytes::from(changed)).unwrap()
+        )
+        .is_err()
+    );
 }
 
 #[test]

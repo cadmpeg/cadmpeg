@@ -114,10 +114,16 @@ mod tests {
     fn column_row_bounds_derive_the_last_index_and_reject_disagreement() {
         let wire = r#"{"target_rows":["target"],"linked_rows":["linked"],"first_target_index":4,"last_target_index":2}"#;
         let rows: ColumnIndexRows = serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&rows).unwrap(), wire);
         assert_eq!(
-            serde_json::to_vec(&rows).unwrap(),
-            serde_json::to_vec(&super::ColumnIndexRowsWire::from(rows.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_string(&rows).unwrap(),
+            wire
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&rows).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&super::ColumnIndexRowsWire::from(
+                rows.clone()
+            ))
+            .unwrap()
         );
         assert_eq!(rows.first_target_index, 4);
         assert_eq!(rows.last_target_index(), 2);

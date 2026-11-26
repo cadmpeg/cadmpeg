@@ -12,6 +12,7 @@ mod cones;
 mod cube;
 mod cylinders;
 mod declared;
+mod empty_scope;
 mod extrusion;
 mod findings;
 mod history_bodies;
