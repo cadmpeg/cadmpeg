@@ -2,7 +2,22 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#968:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#968:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [],
       "evaluations": [],
       "features": [],
@@ -10,7 +25,19 @@
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#968:0",
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [],
+          "unproduced": [
+            "sldprt:brep:body#900"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -223,6 +250,7 @@
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
+          "kind": "part",
           "occurrences": [],
           "representations": [],
           "storage": {
