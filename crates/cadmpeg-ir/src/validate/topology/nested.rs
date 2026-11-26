@@ -26,9 +26,9 @@ pub(in crate::validate) fn check(
     super::check_references(ctx, &nest, &index, findings)?;
     check_typed_references(ctx, &nest, &index, findings)?;
     super::graphs::check_coedge_pairing(&nest, findings)?;
-    super::graphs::check_shell_connectivity(&nest, findings);
+    super::graphs::check_shell_connectivity(&index, findings);
     super::graphs::check_wire_topology(&nest, findings);
-    check_edge_endpoint_consistency(ctx, &nest, findings)?;
+    check_edge_endpoint_consistency(ctx, &index, findings)?;
     super::check_topology_tolerances(&nest, findings);
     Ok(())
 }

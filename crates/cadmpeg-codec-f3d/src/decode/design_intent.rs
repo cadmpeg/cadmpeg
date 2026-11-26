@@ -1094,6 +1094,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     model.history_bodies = history_bodies;
     design.history_body_consumers.remaining_work = remaining_work;
+    crate::history::body_writers::attach(
+        &model.features,
+        (&design.design_parameter_scopes, &design.asm_histories),
+        &scope_histories,
+        &mut model.feature_input_topologies,
+    );
     losses.extend(
         crate::history::face_selections::bind_feature_face_selections(
             &mut model.features,
@@ -1643,6 +1649,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.feature_input_topologies,
     )?;
     crate::history::input_topologies::retain_selected_face_owners(
+        inputs.ctx,
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
+    crate::history::input_topologies::retain_selected_face_geometry(
         inputs.ctx,
         &model.features,
         &mut model.feature_input_topologies,

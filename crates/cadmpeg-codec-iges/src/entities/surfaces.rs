@@ -1084,7 +1084,7 @@ fn homogeneous_curve_boundary_matches(
     Ok(Some(true))
 }
 
-fn surface_boundary_is_closed(
+pub(super) fn surface_boundary_is_closed(
     ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,

@@ -3,7 +3,7 @@ use super::FastMap;
 use crate::history_records::{
     AsmHistoricalBodyDesignLink, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
     AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
-    AsmHistoricalEnvelope, AsmHistoricalOptionalCarrierBinding,
+    AsmHistoricalEnvelope, AsmHistoricalFaceSample, AsmHistoricalOptionalCarrierBinding,
     AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane, AsmHistoricalPoint,
     AsmHistoricalRelation, AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius,
     AsmHistoricalTopology,
@@ -279,6 +279,7 @@ indexed_topology! {
         edge_samples = 24: AsmHistoricalEdgeSample => |row: &AsmHistoricalEdgeSample| row.edge,
         face_envelopes = 34: AsmHistoricalEnvelope => |row: &AsmHistoricalEnvelope| row.entity,
         edge_envelopes = 35: AsmHistoricalEnvelope => |row: &AsmHistoricalEnvelope| row.entity,
+        face_samples = 36: AsmHistoricalFaceSample => |row: &AsmHistoricalFaceSample| row.face,
     }
     containers {
         bodies = 25: i64 => |row: &i64| *row,

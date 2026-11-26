@@ -16,8 +16,10 @@ use cadmpeg_core::CodecError;
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
 mod key;
+mod named;
 mod sparse;
-pub use key::{AnnotationKey, AnnotationTarget};
+pub use key::{AnnotationKey, AnnotationTarget, Qualifier};
+pub(crate) use named::{delta_records, deltas, design_and_process_records, Removed};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
 /// Document-wide provenance and exactness tables keyed by annotation key.
@@ -26,8 +28,8 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 /// of a record inside the delta of an evaluation or a process state is the
 /// id of that evaluation or process state, one space, and the record's id.
 /// Validation reports a key whose qualifier names no evaluation or process
-/// state, or whose record that delta does not hold, as it reports a key that
-/// names no entity.
+/// state with a delta, or whose record that delta does not hold, as it
+/// reports a key that names no entity.
 ///
 /// An entity absent from `exactness` is byte-exact.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -585,7 +587,7 @@ impl AnnotationState {
             std::borrow::Cow::Owned(id) => {
                 self.annotations
                     .provenance
-                    .insert(AnnotationKey::from(id), provenance);
+                    .insert(AnnotationKey::read(id), provenance);
             }
             std::borrow::Cow::Borrowed(id) => {
                 if let Some(previous) = self.annotations.provenance.get_mut(id) {
@@ -593,7 +595,7 @@ impl AnnotationState {
                 } else {
                     self.annotations
                         .provenance
-                        .insert(AnnotationKey::from(id), provenance);
+                        .insert(AnnotationKey::read(id.to_owned()), provenance);
                 }
             }
         }
@@ -640,7 +642,7 @@ impl AnnotationState {
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
             self.annotations.exactness.insert(
-                AnnotationKey::from(id.into_owned()),
+                AnnotationKey::read(id.into_owned()),
                 ExactnessNote::Entity {
                     entity,
                     fields: BTreeMap::new(),
@@ -703,7 +705,7 @@ impl AnnotationState {
                 }
             }
         } else {
-            match self.annotations.exactness.entry(AnnotationKey::from(id)) {
+            match self.annotations.exactness.entry(AnnotationKey::read(id)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(ExactnessNote::Fields {
                         fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),

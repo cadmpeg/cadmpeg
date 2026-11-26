@@ -35,17 +35,42 @@ pub enum AnnotationTarget<'key> {
     },
 }
 
+/// The id of a record that holds a delta: an evaluation or a process state.
+pub trait Qualifier: sealed::Sealed {
+    /// The id, in its wire form.
+    fn as_qualifier(&self) -> &str;
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for crate::design::ids::EvaluationId {}
+    impl Sealed for crate::design::ids::ProcessStateId {}
+}
+
+impl Qualifier for EvaluationId {
+    fn as_qualifier(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Qualifier for ProcessStateId {
+    fn as_qualifier(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl AnnotationKey {
-    /// The key of `record` in the delta of `evaluation`.
+    /// The key of `record` in the delta of `qualifier`, an evaluation or a
+    /// process state.
     #[must_use]
-    pub fn in_evaluation(evaluation: &EvaluationId, record: &str) -> Self {
-        Self::qualified(evaluation.as_str(), record)
+    pub fn in_delta(qualifier: &impl Qualifier, record: &str) -> Self {
+        Self::qualified(qualifier.as_qualifier(), record)
     }
 
-    /// The key of `record` in the delta of the process state `state`.
-    #[must_use]
-    pub fn in_process_state(state: &ProcessStateId, record: &str) -> Self {
-        Self::qualified(state.as_str(), record)
+    /// The key a text states: a text that holds a space is a qualified key,
+    /// and any other text is an entity id.
+    pub(super) fn read(text: String) -> Self {
+        Self(text)
     }
 
     fn qualified(qualifier: &str, record: &str) -> Self {
@@ -62,8 +87,7 @@ impl AnnotationKey {
     }
 
     /// The id of the top-level record the annotation belongs to: the entity,
-    /// or the evaluation or process state whose delta holds the record. Keys
-    /// in increasing order give owners in nondecreasing order.
+    /// or the evaluation or process state whose delta holds the record.
     #[must_use]
     pub fn owner(&self) -> &str {
         match self.target() {
@@ -95,18 +119,6 @@ impl AnnotationKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<String> for AnnotationKey {
-    fn from(key: String) -> Self {
-        Self(key)
-    }
-}
-
-impl From<&str> for AnnotationKey {
-    fn from(key: &str) -> Self {
-        Self(key.to_owned())
     }
 }
 

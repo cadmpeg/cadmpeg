@@ -1105,7 +1105,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
             .get();
             cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                ir,
+                &cadmpeg_ir::index::ModelIndex::new_model_only(ir),
                 &surface.geometry,
                 uv.u,
                 uv.v,
