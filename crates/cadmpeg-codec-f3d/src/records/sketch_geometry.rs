@@ -2561,21 +2561,19 @@ mod tests {
         for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
             let mut wire = native_point_wire(&form);
             wire["closure"] = json!({"selector": selector, "state": state});
-            let point: SketchPoint = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
-            let serialized = cadmpeg_core::serde_erase::json::to_value(&point).unwrap();
+            let point: SketchPoint = json::from_value(wire).unwrap();
+            let serialized = json::to_value(&point).unwrap();
             assert_eq!(
                 serialized["closure"],
                 json!({"selector": selector, "state": state})
             );
-            let restored: SketchPoint =
-                cadmpeg_core::serde_erase::json::from_value(serialized).unwrap();
+            let restored: SketchPoint = json::from_value(serialized).unwrap();
             assert_eq!(restored, point);
         }
         for (selector, state) in [(1, 1), (4, 1)] {
             let mut wire = native_point_wire(&form);
             wire["closure"] = json!({"selector": selector, "state": state});
-            let error =
-                cadmpeg_core::serde_erase::json::from_value::<SketchPoint>(wire).unwrap_err();
+            let error = json::from_value::<SketchPoint>(wire).unwrap_err();
             assert!(error.to_string().contains("version-10 inline closure"));
         }
     }
