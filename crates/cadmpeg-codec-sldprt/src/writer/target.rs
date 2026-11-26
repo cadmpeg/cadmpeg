@@ -23,8 +23,8 @@ use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
 use crate::{
-    source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, SldprtWriteSession,
-    Written,
+    source_records, ReplaySkipped, RetainedRecords, SemanticFidelity, SemanticPath, SldprtCodec,
+    SldprtWriteSession, Written,
 };
 
 /// Resolve the request against the source, then plan the export it names.
@@ -230,10 +230,9 @@ fn synthesize(
         &ir,
         &Annotations::default(),
         &CodecDigests::new(),
-        &[],
+        RetainedRecords::default(),
         &shaped,
         fidelity,
-        None,
         &mut bytes,
     )?;
     if let Written::Semantic { losses, .. } = &mut written {
@@ -300,24 +299,22 @@ fn write_first(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             SemanticFidelity::NotConsumed,
-            None,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
                 SemanticFidelity::NotConsumed
             },
-            None,
             &mut bytes,
         )?,
     };

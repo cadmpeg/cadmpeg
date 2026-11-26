@@ -201,6 +201,15 @@ impl<'f> SldprtWriteSession<'f> {
     }
 }
 
+/// The retained source a semantic write patches: its records, and where the
+/// session of the write keeps the source decoded again. Without records the
+/// write synthesizes the document.
+#[derive(Clone, Copy, Default)]
+struct RetainedRecords<'r> {
+    records: &'r [SourceRecord<'r>],
+    decoded: Option<&'r OnceLock<Arc<writer::RetainedSource>>>,
+}
+
 /// A joined native-record reference whose retained payload stays owned by the
 /// source-fidelity sidecar throughout export.
 struct SourceRecord<'a> {
@@ -247,10 +256,12 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 digests,
-                records,
+                RetainedRecords {
+                    records,
+                    decoded: source,
+                },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
-                source,
                 writer,
             );
         }
@@ -259,10 +270,12 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 digests,
-                records,
+                RetainedRecords {
+                    records,
+                    decoded: source,
+                },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
-                source,
                 writer,
             );
         };
@@ -288,19 +301,17 @@ impl SldprtCodec {
     /// retained source records fed the write, `Synthesized` when the document was
     /// built from the neutral IR alone. `digests` are the codec digests the
     /// decode recorded. `shaped` names the edits that shape the stored solid
-    /// beyond those the write compares with its retained source. `source`
-    /// keeps the retained source decoded again across writes of one session.
-    #[allow(clippy::too_many_arguments)]
+    /// beyond those the write compares with its retained source.
     fn write_semantic(
         ir: &CadIr,
         annotations: &Annotations,
         digests: &CodecDigests,
-        records: &[SourceRecord<'_>],
+        retained: RetainedRecords<'_>,
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
-        source: Option<&OnceLock<Arc<writer::RetainedSource>>>,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        let RetainedRecords { records, decoded } = retained;
         if !ir.model.omitted_arenas_held()
             && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
         {
@@ -319,7 +330,7 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
-        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(source));
+        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(decoded));
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
             let mut cache = writer::SemanticWriteCache {
@@ -383,7 +394,7 @@ impl SldprtCodec {
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let shared = shared_cache.into_inner();
-        shared.keep_source(source);
+        shared.keep_source(decoded);
         let native = match shared.native {
             writer::CachedNative::Loaded(loaded) => loaded,
             writer::CachedNative::Unloaded => ir
