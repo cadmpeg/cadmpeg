@@ -156,8 +156,8 @@ fn write_without_payload(
 /// removed entry, which the patch cannot write empty from the record or from
 /// the stored record, is left out of the written file, its container's count
 /// is lowered, and its object is marked `Touched` (W1). One
-/// `export:native.records-omitted` line names the property and its entry;
-/// no edit is reported dropped, and no ledger span of the entry is named.
+/// `export:native.records-omitted` line names the property; no edit is
+/// reported dropped, and no ledger span of the entry is named.
 #[test]
 fn a_property_the_patch_cannot_empty_is_left_out() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
@@ -182,7 +182,7 @@ fn a_property_the_patch_cannot_empty_is_left_out() {
         panic!("expected one omitted line, got {omitted:?}");
     };
     assert!(
-        message.ends_with(&format!("{} names Payload.bin", payload.id)),
+        message.contains("arena `properties`") && message.ends_with(&format!(": {}", payload.id)),
         "{message}"
     );
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
@@ -190,8 +190,9 @@ fn a_property_the_patch_cannot_empty_is_left_out() {
 
 /// Where the patch cannot remove that property's element, because its
 /// container declares no count, the property is written as stored and still
-/// names the entry. One `export:native.records-omitted` line names the entry
-/// and the property; no edit is reported dropped.
+/// names the entry. The written file holds the property and lacks the
+/// entry's member, so one `export:native.records-omitted` line names the
+/// ledger span of that member; no edit is reported dropped.
 #[test]
 fn a_property_the_patch_cannot_remove_is_written_as_stored() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
@@ -212,7 +213,9 @@ fn a_property_the_patch_cannot_remove_is_written_as_stored() {
         panic!("expected one omitted line, got {omitted:?}");
     };
     assert!(
-        message.ends_with(&format!("Payload.bin named by {}", payload.id)),
+        message.contains(
+            "of `fcstd` arena `physical_ledger` whose ZIP member has no archive entry record: "
+        ) && !message.contains(&payload.id),
         "{message}"
     );
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
