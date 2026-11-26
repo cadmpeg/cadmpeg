@@ -14,32 +14,79 @@ pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
 
-/// Asserts that `loss` is the `record.unreadable` that gives up `record`.
-pub(crate) fn assert_given_up(loss: &cadmpeg_ir::report::loss::LossNote, record: &str) {
+/// Asserts that `loss` is the `record.unreadable` that gives up `part`: the
+/// part of kind `part.0` of the record of Directory sequence `part.1`.
+pub(crate) fn assert_given_up(loss: &cadmpeg_ir::report::loss::LossNote, part: (&str, u32)) {
     assert_eq!(
         loss.code,
         cadmpeg_ir::unknown::part::record_unreadable_kind(),
         "{loss:#?}"
     );
+    let (kind, sequence) = part;
     assert!(
-        loss.message.split_whitespace().any(|token| token == record),
+        loss.message
+            .starts_with(&format!("part {kind} \"D{sequence}\" ")),
         "{}",
         loss.message
     );
 }
 
-/// Asserts that the `record.unreadable` entries of `report` give up `records`,
+/// Asserts that the `record.unreadable` entries of `report` give up `parts`,
 /// in report order.
-pub(crate) fn assert_gives_up(report: &cadmpeg_ir::report::decode::DecodeReport, records: &[&str]) {
+pub(crate) fn assert_gives_up(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+    parts: &[(&str, u32)],
+) {
     let given_up = report
         .losses
         .iter()
         .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
-    assert_eq!(given_up.len(), records.len(), "{given_up:#?}");
-    for (loss, record) in given_up.into_iter().zip(records) {
-        assert_given_up(loss, record);
+    assert_eq!(given_up.len(), parts.len(), "{given_up:#?}");
+    for (loss, part) in given_up.into_iter().zip(parts) {
+        assert_given_up(loss, *part);
     }
+}
+
+/// The retained bytes of the part that `result` gives up for `part`, as
+/// [`assert_given_up`] names it, after asserting that the document holds the
+/// part's stub and no native quarantine arena.
+pub(crate) fn given_up_part_bytes(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    part: (&str, u32),
+) -> Vec<u8> {
+    let (kind, sequence) = part;
+    let head = format!("part {kind} \"D{sequence}\" ");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        })
+        .unwrap_or_else(|| panic!("no give-up of {head}: {:#?}", result.report().losses));
+    let stub = loss
+        .message
+        .split(" record=")
+        .nth(1)
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["unknowns"]
+        .iter()
+        .any(|record| record.id() == stub));
+    assert!(!native
+        .arenas()
+        .keys()
+        .any(|arena| arena.as_str().starts_with("quarantined_")));
+    result
+        .source_fidelity()
+        .retained_record(stub)
+        .unwrap()
+        .data()
+        .unwrap()
+        .to_vec()
 }
 
 /// Parses a scanned Global section with a test-owned decode session.

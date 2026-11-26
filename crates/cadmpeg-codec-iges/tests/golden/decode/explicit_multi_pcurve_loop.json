@@ -2664,18 +2664,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3530382c352c302c31372c312c312c322c312c31392c302c32312c312c31352c322c302c302c302c31372c322c312c302c302c31372c332c312c302c302c3137202020202020323350202020202031322c342c312c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202032335020202020203133",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#23",
-            "section": "parameter-data",
-            "sequence": 23,
-            "source_offset": 3402
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -2687,6 +2675,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -2797,25 +2791,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
-          }
-        },
-        "message": "record iges:entity:directory#25 stream=\"iges\" offset=2187 length=161 given up: iges/geometry.not-projected: IGES entity type 510 form 1 geometry was not projected: face loop is missing; dropped=[]",
-        "provenance": {
-          "format": "iges",
-          "offset": 2187,
-          "stream": "iges",
-          "tag": "directory_entry:D25"
-        },
-        "severity": "error"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
             "namespace": "iges"
@@ -2829,25 +2804,6 @@
           "tag": "directory_entry:D27"
         },
         "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
-          }
-        },
-        "message": "record iges:entity:directory#27 stream=\"iges\" offset=2349 length=161 given up: iges/geometry.not-projected: IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid; dropped=[]",
-        "provenance": {
-          "format": "iges",
-          "offset": 2349,
-          "stream": "iges",
-          "tag": "directory_entry:D27"
-        },
-        "severity": "error"
       },
       {
         "code": {
@@ -2877,12 +2833,11 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:quarantine:parameter#23 stream=\"iges\" offset=3402 length=161 given up: iges/parameter.data-quarantined: IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
+        "message": "part parameter-data \"D23\" stream=\"\" offset=3402 length=161 record=iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[iges:source:part#3115b54799ec9253a50c37bc0438bd9c67f8eb3b068f656a420a3e6fc4e659d6, iges:source:part#fc88b37f425d7f16b6a4492d1c0d38b9f10ca2a422b0afdd81b792b1766925ba]",
         "provenance": {
           "format": "iges",
           "offset": 3402,
-          "stream": "iges",
-          "tag": "D23:parameter"
+          "tag": "parameter-data"
         },
         "severity": "error"
       },
@@ -3060,8 +3015,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#23"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa"
           },
           "source": "D23:parameter"
         }
@@ -3085,6 +3040,17 @@
         },
         "offset": 0,
         "stream": "iges",
+        "untyped": [
+          "model"
+        ]
+      },
+      "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa": {
+        "bytes": {
+          "data": "NTA4LDUsMCwxNywxLDEsMiwxLDE5LDAsMjEsMSwxNSwyLDAsMCwwLDE3LDIsMSwwLDAsMTcsMywxLDAsMCwxNyAgICAgIDIzUCAgICAgMTIKLDQsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIzUCAgICAgMTM=",
+          "kind": "inline"
+        },
+        "offset": 3402,
+        "stream": "",
         "untyped": [
           "model"
         ]

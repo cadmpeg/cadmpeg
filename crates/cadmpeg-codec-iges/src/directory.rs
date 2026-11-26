@@ -9,7 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -295,25 +295,6 @@ pub(crate) enum DirectoryDefect {
     UnpairedCard,
 }
 
-impl Serialize for DirectoryDefect {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.key())
-    }
-}
-
-impl DirectoryDefect {
-    fn key(self) -> &'static str {
-        match self {
-            Self::FieldNotAscii(_) => "field-not-ascii",
-            Self::FieldNotAnInteger(_) => "field-not-an-integer",
-            Self::FieldBlankNotAllowed(_) => "field-blank-not-allowed",
-            Self::StatusNumberInvalid => "status-number-invalid",
-            Self::RepeatedEntityTypeMismatch { .. } => "repeated-entity-type-mismatch",
-            Self::UnpairedCard => "unpaired-card",
-        }
-    }
-}
-
 impl fmt::Display for DirectoryDefect {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -352,11 +333,6 @@ pub(crate) struct QuarantinedDirectoryRecord {
 impl QuarantinedDirectoryRecord {
     pub(crate) fn cards(&self) -> usize {
         self.bytes.len() / crate::card::CARD_WIDTH
-    }
-
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
     }
 
     pub(crate) fn loss_note(&self) -> LossNote {

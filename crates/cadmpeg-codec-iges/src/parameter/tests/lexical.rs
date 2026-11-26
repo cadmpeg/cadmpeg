@@ -265,5 +265,5 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     assert!(result.report().losses[0]
         .message
         .contains("numeric field or its delimiter crosses a card boundary"));
-    crate::test_support::assert_given_up(&result.report().losses[1], "iges:quarantine:parameter#1");
+    crate::test_support::assert_given_up(&result.report().losses[1], ("parameter-data", 1));
 }

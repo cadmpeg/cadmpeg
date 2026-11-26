@@ -150,7 +150,7 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             "{}",
             result.report().losses[0].message
         );
-        crate::test_support::assert_gives_up(result.report(), &["iges:entity:directory#3"]);
+        crate::test_support::assert_gives_up(result.report(), &[("entity", 3)]);
     }
 }
 
@@ -174,7 +174,7 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("surface pole count exceeds 1000000")
     }));
-    crate::test_support::assert_gives_up(decoded.report(), &["iges:entity:directory#1"]);
+    crate::test_support::assert_gives_up(decoded.report(), &[("entity", 1)]);
 }
 
 #[test]

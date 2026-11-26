@@ -313,7 +313,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_copious_loss(&mut losses, entry, format_args!("{message}"));
+                super::give_up_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    copious_note(entry, format_args!("{message}")),
+                );
                 continue;
             }
         };

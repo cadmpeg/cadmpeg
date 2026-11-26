@@ -270,7 +270,7 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
         },
     ]);
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"].len(),
@@ -284,13 +284,18 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
             .filter(|loss| loss.message.contains(
                 "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
             ))
-            .map(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-            .fold([0, 0], |mut counts, given_up| {
-                counts[usize::from(given_up)] += 1;
-                counts
-            }),
-        [2, 2]
+            .count(),
+        2
     );
+    // The pass only validates the assemblies, whose native records the
+    // document keeps, so its findings give up nothing and pin no floor.
+    crate::test_support::assert_gives_up(result.report(), &[]);
+    IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &crate::test_support::strict_options(),
+        )
+        .unwrap();
 }
 
 #[test]

@@ -592,11 +592,7 @@ fn decode_rejects_cyclic_boolean_tree_references() {
             .filter(|loss| loss
                 .message
                 .contains("Boolean operands, form, or reference acyclicity is invalid"))
-            .map(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-            .fold([0, 0], |mut counts, given_up| {
-                counts[usize::from(given_up)] += 1;
-                counts
-            }),
-        [2, 2]
+            .count(),
+        2
     );
 }

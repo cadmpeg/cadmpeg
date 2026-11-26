@@ -55,12 +55,12 @@ fn a_pinned_decode_refuses_an_unreadable_nurbs_pole() {
             .losses
             .iter()
             .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
-        crate::test_support::assert_gives_up(recovered.report(), &["iges:entity:directory#1"]);
+        crate::test_support::assert_gives_up(recovered.report(), &[("entity", 1)]);
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;
         match IgesCodec.decode(&mut Cursor::new(bytes), &pinned) {
             Err(DecodeFailure::StrictRejected { rejection }) => {
-                crate::test_support::assert_given_up(rejection.loss(), "iges:entity:directory#1");
+                crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
                 assert_eq!(
                     rejection
                         .report()
@@ -88,9 +88,14 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
             )
             .unwrap();
         assert_eq!(result.ir().geometry.curves.len(), 1, "{claim}, {normal}");
-        assert!(result.ir().native.namespace("iges").unwrap().arenas()
-            ["quarantined_parameter_records"]
-            .is_empty());
+        assert_eq!(
+            crate::test_support::code_count(
+                result.report(),
+                IgesLossCode::ParameterDataQuarantined
+            ),
+            0,
+            "{claim}, {normal}"
+        );
     }
 }
 

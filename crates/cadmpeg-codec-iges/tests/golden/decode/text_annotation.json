@@ -596,18 +596,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3231332c34302c32302c322c302c32302c302c302c302c31382c302c2d352c312c302c322c332c2d302e352c302c31382c302c344854554e4c2c342c31322c33202020202020203350202020202020332c312c312e353730373936333236373934383936362c302c302c302c322c31382c302c3448544f4c213b2020202020202020202020202020202020202020202020202020202020335020202020202034",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#3",
-            "section": "parameter-data",
-            "sequence": 3,
-            "source_offset": 729
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -619,6 +607,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#370fcf75bff48f60a729986b64f36958954da32a1fd10a9817009f1542f3a6bf",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -735,12 +729,11 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:quarantine:parameter#3 stream=\"iges\" offset=729 length=161 given up: iges/parameter.data-quarantined: IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
+        "message": "part parameter-data \"D3\" stream=\"\" offset=729 length=161 record=iges:source:part#370fcf75bff48f60a729986b64f36958954da32a1fd10a9817009f1542f3a6bf: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 729,
-          "stream": "iges",
-          "tag": "D3:parameter"
+          "tag": "parameter-data"
         },
         "severity": "error"
       }
@@ -778,8 +771,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#3"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#370fcf75bff48f60a729986b64f36958954da32a1fd10a9817009f1542f3a6bf"
           },
           "source": "D3:parameter"
         }
@@ -804,8 +797,21 @@
         "offset": 0,
         "stream": "iges",
         "untyped": []
+      },
+      "iges:source:part#370fcf75bff48f60a729986b64f36958954da32a1fd10a9817009f1542f3a6bf": {
+        "bytes": {
+          "data": "MjEzLDQwLDIwLDIsMCwyMCwwLDAsMCwxOCwwLC01LDEsMCwyLDMsLTAuNSwwLDE4LDAsNEhUVU5MLDQsMTIsMyAgICAgICAzUCAgICAgIDMKLDEsMS41NzA3OTYzMjY3OTQ4OTY2LDAsMCwwLDIsMTgsMCw0SFRPTCE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDQ=",
+          "kind": "inline"
+        },
+        "offset": 729,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

@@ -317,7 +317,21 @@ The V5.0 read profile applies the null-string rule to a one-string General Note:
 
 ## Record quarantine
 
-A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record: the decoder retains its raw card bytes under a stable identity, accounts for it in the transfer ledger, and charges a loss. The record has no decoded form, so its quarantine code is charged with one `record.unreadable` (CADIR §3.3) that names the quarantine identity, the offset of its first card, and the byte length from that offset to the end of its last card. A Parameter Data record that owns no card states no length. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
+A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record. The record has no decoded form, so the decoder gives it up as a part (CADIR §3.3), accounts for it in the transfer ledger, and charges its quarantine code with the `record.unreadable` of that part. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
+
+### Quarantine parts
+
+The part of a quarantined Directory Entry record has kind `directory-entry`. The part of a quarantined Parameter Data record has kind `parameter-data`. The name of each part is `D<sequence>`, where the sequence is that of the Directory Entry. A part starts at the first byte of the record's first card and ends at the last payload byte of its last card, so it includes the line endings between its cards. A Parameter Data record that owns no card is a part of length zero at the offset of its Directory Entry's first card.
+
+The part's retained record keeps the part's bytes. The document holds the part's stub in the `unknowns` arena of `native.iges` and holds no other record for the quarantined record. The `record.unreadable` message has this form:
+
+```text
+part <kind> "D<sequence>" stream="<stream>" offset=<offset> length=<length> record=<stub id>: <quarantine code>: <quarantine message>; dropped=[...]
+```
+
+Two Parameter Data records whose declared ranges conflict can start at the same card. The record with the lower sequence gives up the part that starts at that card. The other record charges its quarantine code and gives up no second part, because that part holds its cards.
+
+The reader frames records in a fixed-card image. For Fixed ASCII input, that image is the source file: a part has no stream name, and its offset is an offset in the source file. The reader normalizes Compressed ASCII and Binary input to a fixed-card image before it frames records. For that input, every part is in the stream `fixed-card-image`, and its offset and length count bytes of the normalized image, not of the source file. The retained record of such a part has the owner `fixed-card-image`.
 
 ### Card framing and the boundary-recovery reading
 
@@ -349,19 +363,19 @@ The post-Terminate rule is dialect-specific. Type 5.x retains unsequenced physic
 
 ### Quarantined records
 
-Every Directory Entry has admitted interpretation fields or is quarantined. Admitted metadata fields contain values read from the source; unreadable metadata has no substituted value. A quarantined record carries no interpreted fields. A quarantined record is retained under a stable identity that the transfer ledger and the reference graph name.
+Every Directory Entry has admitted interpretation fields or is quarantined. Admitted metadata fields contain values read from the source; unreadable metadata has no substituted value. A quarantined record carries no interpreted fields. The stub id of its part is its identity, and the transfer ledger names that id.
 
 Line Font, Level, View, Label Display, Line Weight, Color, and Subscript are independently interpretable metadata fields. An unreadable field has no interpreted value and retains its exact source bytes. It does not determine Parameter Data ownership or geometry admission. A readable display value that violates its dialect's field rule remains noncanonical metadata; it does not remove independently defined geometry.
 
-One quarantine record covers a Directory Entry whose identity, interpretation, status, transformation, or Parameter Data ownership fields cannot be read. The quarantine spans the two-card pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
+One quarantine part covers a Directory Entry whose identity, interpretation, status, transformation, or Parameter Data ownership fields cannot be read. The quarantine spans the two-card pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
 
-Quarantined records count as native entities for resource accounting, on the same charge as every other native record.
+The bytes and the stub of each quarantine part count against the retained-byte limit of the decode.
 
-Every quarantined record is accounted in the transfer ledger as retained. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null. Ledger verification stays fatal, and a failure there is a decoder defect and not a source defect.
+Every quarantined record is accounted in the transfer ledger as retained, with the stub id of its part as the target. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null. Ledger verification stays fatal, and a failure there is a decoder defect and not a source defect.
 
 ### Pointers into a quarantined record
 
-A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence.
+A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence. An explicit B-rep entity that the projection drops only because a pointer names a quarantined record gets no `record.unreadable` of its own: the give-up of the quarantine part names it in its `dropped` list (Decode admission).
 
 ### Pointers out of a quarantined record
 
@@ -373,7 +387,7 @@ A structural framing defect in one entity's Parameter Data quarantines that enti
 
 - The admitted Directory Entry retains its interpretation fields and available metadata.
 - The entity is not projected to neutral IR. No geometry, annotation, or product record is derived from tokens that were not read.
-- The raw Parameter Data text is retained under the quarantine identity. It has no other typed home.
+- The quarantine part retains the raw Parameter Data cards. They have no other typed home.
 - The decoder charges one `iges/parameter.data-quarantined` loss whose provenance tag is `D<sequence>:parameter`. The reader counts that as an attributed loss, so the generic `iges/entity.retained-unprojected` note is not also charged and the entity's ledger note states that projection was omitted with an attributed loss.
 
 Ownership of Parameter Data cards resolves in a fixed order, because the Directory Entry declaration and the card back-pointers are redundant statements of the same fact and either can be the broken one.
@@ -382,11 +396,11 @@ Ownership of Parameter Data cards resolves in a fixed order, because the Directo
 2. Otherwise the back-pointer census applies: the contiguous run of Parameter Data cards whose back-pointer names this entry.
 3. Otherwise the entity's Parameter Data is quarantined.
 
-Throughout these rules, an existing entry is one in the typed list. A back-pointer that is absent, unreadable, zero, even, or names no existing entry does not quarantine anything when rule 1 claims the card; the disagreement charges `iges/card.framing-recovered`. Any use of rule 2, and any disagreement between rule 1 and the back-pointer census, charges the same code. A readable back-pointer that names a different existing entry is a conflict rather than a broken declaration: it quarantines the Parameter Data of both entries, as does a card that two declared ranges claim. A Parameter Data card that no entry claims under either rule, and whose back-pointer names no quarantined Directory Entry record either, is retained in the `cards` arena, belongs to no record, needs no quarantine record and no ledger row, and charges `iges/card.framing-recovered`.
+Throughout these rules, an existing entry is one in the typed list. A back-pointer that is absent, unreadable, zero, even, or names no existing entry does not quarantine anything when rule 1 claims the card; the disagreement charges `iges/card.framing-recovered`. Any use of rule 2, and any disagreement between rule 1 and the back-pointer census, charges the same code. A readable back-pointer that names a different existing entry is a conflict rather than a broken declaration: it quarantines the Parameter Data of both entries, as does a card that two declared ranges claim. A Parameter Data card that no entry claims under either rule, and whose back-pointer names no quarantined Directory Entry record either, is retained in the `cards` arena, belongs to no record, needs no quarantine part and no ledger row, and charges `iges/card.framing-recovered`.
 
-A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no quarantine record and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the quarantine identity space holds one record per broken source record rather than two.
+A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no quarantine part and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the decoder gives up one part per broken source record rather than two.
 
-A non-null entity that declares zero Parameter Data cards has no declared range, so rule 2 decides: when a Parameter Data card's back-pointer names it, that contiguous run is its parameter data and the disagreement charges the framing loss; when no card names it, its quarantine record holds zero cards and no bytes. The zero-card record exists so that the entity's missing parameter data has one identity and one ledger row, on the same terms as every other quarantined record. A record with no card takes the byte offset of its owning Directory Entry's first card, because it has no first card of its own.
+A non-null entity that declares zero Parameter Data cards has no declared range, so rule 2 decides: when a Parameter Data card's back-pointer names it, that contiguous run is its parameter data and the disagreement charges the framing loss; when no card names it, its quarantine part holds no bytes. The zero-length part gives the entity's missing parameter data one identity and one ledger row, on the same terms as every other quarantined record. The part takes the byte offset of its owning Directory Entry's first card, because the record has no first card of its own.
 
 ### Loss codes
 
@@ -799,11 +813,59 @@ other IGES loss is recorded in the decode report in both modes. An entity of a
 projected type and form that no projection pass states, for its content, its
 placement, or a projection limit, a quarantined record, and a repeated
 Compressed ASCII Data record charge `record.unreadable` (CADIR §3.3), which has
-strict floor Error. The entity's `record.unreadable` names
-`iges:entity:directory#<sequence>`, the offset of its Directory Entry, and the
-byte length of its two cards. A full strict decode therefore refuses a structurally defective file,
+strict floor Error. Each `record.unreadable` gives up a part and names its
+stub id. An entity that the projection gives up is a part of kind `entity`
+named `D<sequence>`. The part is the entity's Directory Entry pair, at the
+offset of its first card, in the stream that the record quarantine section
+states for quarantine parts. The native entity record and the `cards` arena
+keep the bytes of the pair, so the part's retained record keeps only their
+length and digest. The `record.unreadable` names the stub, never
+`iges:entity:directory#<sequence>`, because the document keeps that native
+record. A full strict decode therefore refuses a structurally defective file,
 and salvage mode recovers it with the losses the record quarantine section
 states.
+
+The projection charges `record.unreadable` only where it drops an entity that
+it would otherwise emit as a neutral record: geometry, explicit topology,
+Type 314 colors, and the subfigure and network definitions and instances of
+Types 308, 320, 408, and 420. A pass that only validates an entity whose
+native record the document keeps gives up no record. These passes cover
+views, drawings, annotations, CSG trees, solid instances and solid assemblies,
+presentation entities other than Type 314 colors, properties, associativity
+definitions and instances, attribute tables, units data, external references,
+connect points, and array instances. Each finding of such a pass is an
+`iges/entity.not-projected`, `iges/geometry.not-projected`, or
+`iges/presentation.display-data-not-projected` note. These codes have no strict
+floor, so a full strict decode admits the finding.
+
+An entity that the projection drops only because an entity it points to has
+no projected record charges no `record.unreadable` of its own. Examples are an
+offset curve or surface whose base is gone, a ruled or revolved surface whose
+rail, generatrix, or axis is gone, a trimmed surface whose support or boundary
+is gone, a composite curve whose child is gone, an entity whose transformation
+is gone, and an explicit B-rep entity (Types 502, 504, 508, 510, 514, and 186)
+whose list, loop, face, surface, or curve is gone. The pass records the entity
+that it needs. After all passes, the projection examines each such entity:
+
+1. When the projection gives up the needed entity, or its Directory Entry or
+   Parameter Data is quarantined, the projection records the dependent with
+   `record.dropped-with` against the `entity` part id of the needed entity or
+   against the stub of the quarantine part.
+2. When the needed entity is itself a dependent of this type, the projection
+   records the dependent against the `entity` part id of the needed entity, and
+   step 1 or step 3 applies to the needed entity.
+3. When no give-up reaches the needed entity, for example because no pass
+   projects its type, the dependent charges its own `record.unreadable`. Of
+   dependents that need each other in a cycle, one charges its own
+   `record.unreadable` and the others are recorded against it.
+
+An entity that a pass also drops for its own content keeps its own
+`record.unreadable`. The decode names each recorded dependent in the `dropped`
+list of the `record.unreadable` that gives up the part it needs, directly or
+through the dependents between them. For example, an edge list whose Parameter
+Data is quarantined drops the loops that use it, the faces that bound those
+loops, and the shells and solids that use those faces. The give-up of the edge
+list's `parameter-data` part names all of them.
 
 A container inspection has no loss channel, because a container summary carries
 notes only. The inspection therefore reports each loss it resolves as one

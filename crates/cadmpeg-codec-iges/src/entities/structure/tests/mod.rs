@@ -444,11 +444,10 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
 
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
-            crate::test_support::assert_given_up(rejection.loss(), "iges:entity:directory#1");
-            let pinned = crate::test_support::strict_options().strictness;
-            assert!(rejection.report().losses.iter().any(|loss| {
-                loss.code == IgesLossCode::PointerUnresolved.kind() && pinned.refuses(loss, false)
-            }));
+            assert_eq!(
+                rejection.loss().code.to_string(),
+                IgesLossCode::PointerUnresolved.kind().to_string()
+            );
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }

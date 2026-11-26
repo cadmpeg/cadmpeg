@@ -57,8 +57,9 @@ fn push_presentation_loss(
     super::give_up(losses, entry, presentation_note(entry, reason));
 }
 
-/// Pushes the loss of a display attribute of an entity whose record the
-/// projection keeps.
+/// Pushes a presentation loss that gives up no record: a display attribute
+/// of an entity whose record the projection keeps, or the finding of a pass
+/// that only validates a definition whose native record the document keeps.
 fn push_retained_presentation_loss(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     entry: &DirectoryEntry,
@@ -297,7 +298,7 @@ pub(super) fn project(
         if target_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(&mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid");
+            push_retained_presentation_loss(&mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid");
         }
     }
 
@@ -306,7 +307,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
+            push_retained_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         let parameter_end = record.parameter_end();
@@ -332,7 +333,7 @@ pub(super) fn project(
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(&mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid");
+            push_retained_presentation_loss(&mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid");
         }
     }
 
@@ -341,7 +342,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
+            push_retained_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
@@ -364,7 +365,7 @@ pub(super) fn project(
         if levels_valid {
             decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "definition-level count, value, or uniqueness is invalid",
@@ -377,11 +378,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
+            push_retained_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
@@ -427,7 +428,7 @@ pub(super) fn project(
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(
+            push_retained_presentation_loss(
                 &mut losses,
                 entry,
                 "line-font definition parameters are invalid",

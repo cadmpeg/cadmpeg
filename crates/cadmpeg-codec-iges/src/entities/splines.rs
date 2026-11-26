@@ -366,7 +366,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -786,7 +791,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };

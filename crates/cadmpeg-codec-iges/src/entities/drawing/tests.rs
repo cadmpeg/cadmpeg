@@ -1030,14 +1030,13 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
 }
 
 #[test]
-fn drawing_entity_loss_names_the_entity_and_reason() {
+fn drawing_entity_finding_names_the_entity_and_gives_up_nothing() {
     let entry = directory_entry(404, 0);
     let mut losses = Vec::new();
-    super::push_drawing_entity_loss(&mut losses, &entry, "missing");
-    assert_eq!(losses.len(), 2);
+    crate::entities::push_entity_finding(&mut losses, &entry, format_args!("missing"));
+    assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,
         "IGES entity type 404 form 0 was not projected: missing"
     );
-    crate::test_support::assert_given_up(&losses[1], "iges:entity:directory#1");
 }

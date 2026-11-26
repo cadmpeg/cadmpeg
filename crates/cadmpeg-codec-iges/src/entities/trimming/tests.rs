@@ -1307,7 +1307,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         result.report().losses[0].code,
         IgesLossCode::GeometryNotProjected.kind()
     );
-    crate::test_support::assert_given_up(&result.report().losses[1], "iges:entity:directory#13");
+    crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 13));
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards
     // against: the loss must land on the trimmed surface, never on the Type

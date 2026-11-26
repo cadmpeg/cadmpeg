@@ -493,13 +493,13 @@ fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
         crate::test_support::code_count(result.report(), IgesLossCode::GeometryNotProjected),
         1
     );
-    crate::test_support::assert_gives_up(result.report(), &["iges:entity:directory#1"]);
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
     match IgesCodec.decode(&mut Cursor::new(bytes), &options) {
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
-            crate::test_support::assert_given_up(rejection.loss(), "iges:entity:directory#1");
+            crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

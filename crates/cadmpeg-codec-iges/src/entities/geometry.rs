@@ -805,6 +805,17 @@ impl From<CodecError> for TransformResolutionError {
     }
 }
 
+impl TransformFailure {
+    /// The transformation entity that has no Directory Entry in the
+    /// projection.
+    pub(crate) fn needs(&self) -> Option<u32> {
+        match self {
+            Self::MissingEntry(sequence) => Some(*sequence),
+            _ => None,
+        }
+    }
+}
+
 impl TransformResolutionError {
     pub(crate) fn non_resource(self) -> Result<TransformFailure, CodecError> {
         match self {
@@ -1579,7 +1590,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1820,7 +1836,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1936,7 +1957,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -2019,7 +2045,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -2367,7 +2398,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };

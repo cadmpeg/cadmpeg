@@ -554,8 +554,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -745,25 +743,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
-          }
-        },
-        "message": "record iges:entity:directory#1 stream=\"iges\" offset=243 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
-        "provenance": {
-          "format": "iges",
-          "offset": 243,
-          "stream": "iges",
-          "tag": "directory_entry:D1"
-        },
-        "severity": "error"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "entity.not-projected",
             "kind": "record_not_typed",
             "namespace": "iges"
@@ -777,25 +756,6 @@
           "tag": "directory_entry:D3"
         },
         "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
-          }
-        },
-        "message": "record iges:entity:directory#3 stream=\"iges\" offset=405 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 1 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
-        "provenance": {
-          "format": "iges",
-          "offset": 405,
-          "stream": "iges",
-          "tag": "directory_entry:D3"
-        },
-        "severity": "error"
       }
     ],
     "notes": [

@@ -235,16 +235,20 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let native = result.ir().native.namespace("iges").unwrap();
     let losses = &result.report().losses;
     let code = IgesLossCode::ParameterDataQuarantined.kind();
-    assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 2);
+    for sequence in [1, 3] {
+        assert_eq!(
+            crate::test_support::given_up_part_bytes(&result, ("parameter-data", sequence)).len(),
+            80
+        );
+    }
     assert!(result.ir().geometry.points.is_empty());
     assert_eq!(losses.len(), 4, "{losses:#?}");
     assert_eq!(losses.iter().filter(|loss| loss.code == code).count(), 2);
     crate::test_support::assert_gives_up(
         result.report(),
-        &["iges:quarantine:parameter#1", "iges:quarantine:parameter#3"],
+        &[("parameter-data", 1), ("parameter-data", 3)],
     );
 }
 

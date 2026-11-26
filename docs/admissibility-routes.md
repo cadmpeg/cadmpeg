@@ -93,13 +93,11 @@ is uneven:
 ## Native passthrough arenas
 
 A semantic writer refuses a native arena it cannot preserve, so an arena the
-writer does not regenerate is admitted by name. The IGES semantic writer admits
-`quarantined_directory_records` and `quarantined_parameter_records` as
-passthrough arenas. It regenerates neither, because a record that failed typing
-has no fields to write, and a non-empty one charges
-`iges/writer.passthrough-omitted` naming the arena and its record count.
-Byte-exact replay is a separate path and is unaffected: it copies the retained
-source image, which holds every quarantined card.
+writer does not regenerate is admitted by name. An IGES record that failed
+typing is a given-up part (CADIR §3.3): its `unknowns` stub and its retained
+bytes hold it, and the semantic writer reports the stub as an omitted native
+record. Byte-exact replay is a separate path: it copies the retained source
+image, which holds every quarantined card.
 
 ## Application composition
 

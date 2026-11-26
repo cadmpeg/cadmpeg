@@ -119,10 +119,7 @@ fn a_rejected_bounded_plane_face_gives_up_no_decoded_plane() {
     assert!(
         !result.report().losses.iter().any(|loss| {
             loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss
-                    .message
-                    .split_whitespace()
-                    .any(|token| token == "iges:entity:directory#1")
+                && loss.message.starts_with("part entity \"D1\" ")
         }),
         "{:#?}",
         result.report().losses

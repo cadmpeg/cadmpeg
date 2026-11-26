@@ -178,26 +178,6 @@ fn conflicting_drawing_property_forms(
     values.any(|value| value != first)
 }
 
-fn push_drawing_loss(
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    entry: &DirectoryEntry,
-    code: IgesLossCode,
-    message: std::fmt::Arguments<'_>,
-) {
-    losses.push(
-        code.note(message.to_string())
-            .with_provenance(entry.loss_provenance()),
-    );
-}
-
-fn push_drawing_entity_loss(
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    entry: &DirectoryEntry,
-    reason: &str,
-) {
-    super::push_entity_loss(losses, entry, format_args!("{reason}"));
-}
-
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -222,7 +202,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_drawing_entity_loss(&mut losses, entry, "Parameter Data record is missing");
+            super::push_entity_finding(
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let valid = if entry.form == 16 {
@@ -237,10 +221,10 @@ pub(super) fn project(
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            push_drawing_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
-                "drawing size or unit property fields are invalid",
+                format_args!("drawing size or unit property fields are invalid"),
             );
         }
     }
@@ -250,7 +234,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_drawing_entity_loss(&mut losses, entry, "Parameter Data record is missing");
+            super::push_entity_finding(
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         for form in [15, 16, 17] {
@@ -261,7 +249,7 @@ pub(super) fn project(
                 &records,
                 trailing_pointer_analysis,
             ) {
-                push_drawing_loss(
+                super::push_attributed_loss(
                     &mut losses,
                     entry,
                     IgesLossCode::DrawingPropertyAmbiguous,
@@ -310,10 +298,10 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            push_drawing_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
-                "drawing view placements or drawing-space annotations are invalid",
+                format_args!("drawing view placements or drawing-space annotations are invalid"),
             );
         }
     }
@@ -323,7 +311,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_drawing_entity_loss(&mut losses, entry, "Parameter Data record is missing");
+            super::push_entity_finding(
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let view_number_valid = record.integer_or(1, 0).is_some();
@@ -411,10 +403,12 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            push_drawing_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
-                "view number, projection, transform, scale, or clipping fields are invalid",
+                format_args!(
+                    "view number, projection, transform, scale, or clipping fields are invalid"
+                ),
             );
         }
     }
@@ -424,7 +418,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_drawing_entity_loss(&mut losses, entry, "Parameter Data record is missing");
+            super::push_entity_finding(
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
@@ -512,10 +510,12 @@ pub(super) fn project(
         if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
             decoded.insert(entry.sequence);
         } else {
-            push_drawing_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
-                "segmented-view blocks, grouping, breakpoints, or display fields are invalid",
+                format_args!(
+                    "segmented-view blocks, grouping, breakpoints, or display fields are invalid"
+                ),
             );
         }
     }
@@ -525,7 +525,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_drawing_entity_loss(&mut losses, entry, "Parameter Data record is missing");
+            super::push_entity_finding(
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            );
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
@@ -604,10 +608,10 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            push_drawing_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
-                "view-visibility blocks, display overrides, entities, or back pointers are invalid",
+                format_args!("view-visibility blocks, display overrides, entities, or back pointers are invalid"),
             );
         }
     }

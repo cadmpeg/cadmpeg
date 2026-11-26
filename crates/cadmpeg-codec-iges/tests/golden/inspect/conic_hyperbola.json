@@ -113,12 +113,11 @@
           "strict_floor": "error"
         }
       },
-      "message": "record iges:quarantine:parameter#1 stream=\"iges\" offset=405 length=161 given up: iges/parameter.data-quarantined: IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
+      "message": "part parameter-data \"D1\" stream=\"\" offset=405 length=161 record=iges:source:part#879b107aa7bcef4bfef1d5575bb930d7b4f04bf8fb80dbb1fde964327c75f786: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
       "provenance": {
         "format": "iges",
         "offset": 405,
-        "stream": "iges",
-        "tag": "D1:parameter"
+        "tag": "parameter-data"
       },
       "severity": "error"
     }
