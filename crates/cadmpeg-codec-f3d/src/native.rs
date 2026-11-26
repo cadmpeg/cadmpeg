@@ -1935,6 +1935,35 @@ pub(crate) struct F3dNative {
 }
 
 impl F3dNative {
+    /// Design records that declare content a design can hold without a BREP:
+    /// parameters and their scopes, feature timelines, sketch carriers,
+    /// component occurrences, mesh features, configurations, joints and
+    /// material assignments.
+    pub(crate) fn declared_record_count(&self) -> usize {
+        self.design_parameters.len()
+            + self.design_parameter_scopes.len()
+            + self.design_feature_timelines.len()
+            + self.design_sketch_placements.len()
+            + self.design_placement_constructions.len()
+            + self.design_component_occurrences.len()
+            + self.design_component_paths.len()
+            + self.design_mesh_features.len()
+            + self.design_configurations.len()
+            + self.design_joint_motions.len()
+            + self.design_material_assignments.len()
+            + self.design_decal_images.len()
+            + self.design_surface_trim_operations.len()
+            + self.design_sheet_metal_settings.len()
+            + self.construction_recipes.len()
+            + self.persistent_references.len()
+            + self.sketch_points.len()
+            + self.sketch_relations.len()
+            + self.sketch_curve_identities.len()
+            + self.sketch_surfaces.len()
+            + self.sketch_geometry_groups.len()
+            + self.sketch_texts.len()
+    }
+
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {

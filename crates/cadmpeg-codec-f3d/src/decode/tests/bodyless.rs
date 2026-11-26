@@ -222,6 +222,8 @@ fn mesh_only_carriers() -> crate::decode::DesignCarriers {
         declared_bodies: 0,
         sketch_entities: 0,
         reference_images: 0,
+        design_records: 0,
+        design_decoded: true,
     }
 }
 
@@ -573,4 +575,74 @@ fn bodyless_finalization_retains_the_body_history_tails() {
             .expect("incomplete body history loss");
         assert!(loss.message.contains(&body.to_string()));
     });
+}
+
+/// Carriers of a decoded Design that stores no BREP, mesh, body, sketch,
+/// reference image, or Design record.
+fn blank_design_carriers() -> crate::decode::DesignCarriers {
+    crate::decode::DesignCarriers {
+        paramesh_entries: 0,
+        ..mesh_only_carriers()
+    }
+}
+
+#[test]
+fn a_decoded_design_that_declares_nothing_is_an_empty_design() {
+    let report = classify(&blank_design_carriers(), false);
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(!has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::TopologyNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::MissingGeometryStream));
+    assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+    assert_eq!(report.losses.len(), 1);
+}
+
+#[test]
+fn design_records_without_a_geometry_carrier_name_the_unread_records() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            design_records: 3,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::DesignRecordsUntransferred.kind())
+        .unwrap();
+    assert!(loss.message.contains("3 record(s)"));
+    assert_eq!(loss.severity, Severity::Error);
+}
+
+#[test]
+fn an_undecoded_design_is_not_claimed_empty() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            design_decoded: false,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+#[test]
+fn a_brep_entry_that_selected_no_body_is_not_claimed_empty_without_maps() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
 }

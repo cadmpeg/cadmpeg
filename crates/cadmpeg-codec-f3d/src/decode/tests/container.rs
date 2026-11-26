@@ -29,6 +29,49 @@ use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
+/// A document with an empty Design stream and no BREP blob stores no
+/// geometry: it is an empty design and states no transfer loss.
+#[test]
+fn an_empty_design_stream_without_breps_is_an_empty_design() {
+    let meta = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let archive = crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &[], &meta);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let codes: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|l| l.code.clone())
+        .collect();
+    assert!(
+        codes.contains(&F3dLossCode::EmptyDesign.kind()),
+        "{codes:?}"
+    );
+    for absent in [
+        F3dLossCode::GeometryNotTransferred,
+        F3dLossCode::TopologyNotTransferred,
+        F3dLossCode::MissingGeometryStream,
+        F3dLossCode::DesignRecordsUntransferred,
+    ] {
+        assert!(!codes.contains(&absent.kind()), "{absent:?}: {codes:?}");
+    }
+    assert!(decoded.report().geometry_transferred());
+    assert!(decoded.ir().geometry.bodies.is_empty());
+}
+
+/// Design records count toward the declared content of a design; an empty
+/// native store declares none.
+#[test]
+fn declared_record_count_counts_design_records() {
+    let mut native = crate::native::F3dNative::default();
+    assert_eq!(native.declared_record_count(), 0);
+    native
+        .sketch_texts
+        .push(crate::test_support::sketch_text::neutral_text_record());
+    assert_eq!(native.declared_record_count(), 1);
+}
+
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
 /// that was never reached misreports which carrier is missing.
@@ -36,15 +79,16 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
     let archive = f3d_without_brep("part-design", "part.f3d", &[]);
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(&mut Cursor::new(archive.clone()), &DecodeOptions::default())
         .unwrap();
+    let losses = crate::test_support::zip_test::with_scan(&archive, |scan| {
+        super::super::container_losses(scan, &super::super::ModelBrepOutcome::NotAttempted)
+    });
     let message = |code: LossKind| {
-        let loss = decoded
-            .report()
-            .losses
+        let loss = losses
             .iter()
             .find(|loss| loss.code == code)
-            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report().losses));
+            .unwrap_or_else(|| panic!("{code:?} not reported: {losses:?}"));
         loss.message.clone()
     };
 

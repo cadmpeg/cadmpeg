@@ -4221,6 +4221,14 @@ impl<'a> F3dDecodeSession<'a> {
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
+                        design_records: self.native.declared_record_count(),
+                        design_decoded: projected
+                            && scan.entries.iter().any(|entry| {
+                                scan.is_design_stream(
+                                    entry,
+                                    cadmpeg_core::container::ContainerRole::Metastream,
+                                )
+                            }),
                     },
                     assembly,
                 );
@@ -5447,6 +5455,14 @@ pub(crate) struct DesignCarriers {
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,
+    /// Design records that declare content: parameters, parameter scopes,
+    /// feature timelines, sketch placements and relations, component
+    /// occurrences, mesh features and the other Design carriers that name
+    /// construction or intent.
+    pub(crate) design_records: usize,
+    /// A Design stream was read and design intent decoded, so
+    /// `design_records` is a complete count.
+    pub(crate) design_decoded: bool,
 }
 
 /// Classify the geometry transfer of a design from the carriers it stores.
@@ -5480,9 +5496,25 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
-                carriers.model_body_maps_explicitly_empty
+                (carriers.model_body_maps_explicitly_empty
+                    || (carriers.design_decoded
+                        && carriers.brep_entries == 0
+                        && carriers.design_records == 0))
                     && untransferred_mesh_containers.is_none(),
             );
+            if !report.transfer.geometry_transferred()
+                && carriers.brep_entries == 0
+                && carriers.design_records > 0
+            {
+                push_loss_vec(
+                    &mut report.losses,
+                    F3dLossCode::DesignRecordsUntransferred,
+                    format_args!(
+                        "the Design stream holds {} record(s) of parameters, features, sketches, components, or construction, and no geometry carrier transferred",
+                        carriers.design_records
+                    ),
+                );
+            }
         }
     }
 }
@@ -5547,7 +5579,7 @@ fn apply_bodyless_design_classification(
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     if empty_design {
         report.losses.push(F3dLossCode::EmptyDesign.note(
-            "empty design: the modern model-body maps select no body, and the document declares no body, sketch entity, or reference image",
+            "empty design: the document selects no body and declares no body, sketch entity, reference image, or Design record",
         ));
         return;
     }
