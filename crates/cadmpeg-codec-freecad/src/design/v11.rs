@@ -6,8 +6,9 @@
 //! rollback, and each of its members is one feature, except the stages a
 //! `MultiTransform` lists, which are its layout (§6.5). Each design object
 //! outside every Body is one feature, a member of the scope's root unordered
-//! `Group` (§5.2), whose own result is its current state (§5.3). A document
-//! with no design object and no parameter has no scope (§5.1).
+//! `Group` (§5.2), whose own result is its current state (§5.3), and each
+//! `App::Link` is a `Place` feature in that `Group` (§6.7). A document with
+//! no design object, no link, and no parameter has no scope (§5.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -20,6 +21,8 @@ use cadmpeg_ir::design::feature::{
 };
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::ops::assembly::{Place, PlaceSet, PlacementBase};
+use cadmpeg_ir::design::ops::body::ScaleFactors;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -32,13 +35,13 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::products::{ProductDefinition, Storage};
+use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::scalar::NonZeroReal;
 use cadmpeg_ir::units::UnitVector3;
 
 use crate::native::frame::FiniteFrame;
-use crate::native::{ObjectRecord, PropertyRecord};
+use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
 
 mod parameters;
 pub(crate) mod states;
@@ -53,6 +56,7 @@ pub(crate) fn project(
     definition: ProductDefinitionId,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    links: &[ProductNodeRecord],
     losses: &mut Vec<LossNote>,
 ) {
     let source = Source::of(objects, properties);
@@ -62,12 +66,15 @@ pub(crate) fn project(
         .values()
         .map(|legacy| feature(legacy, &source))
         .collect::<Vec<_>>();
-    let grouped = history
+    let mut grouped = history
         .features
         .keys()
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
+    let places = places(ir, &definition, objects, links);
+    grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
+    features.extend(places);
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
     let mut roots = Vec::new();
@@ -130,7 +137,7 @@ pub(crate) fn project(
                 .as_deref()
                 .and_then(|object| source.placements.get(object))
                 .and_then(|property| crate::placement::placement_matrix_unreported(property))
-                .and_then(placement)
+                .and_then(fixed)
                 .map(Box::new),
         });
     }
@@ -172,7 +179,9 @@ pub(crate) fn project(
         let Member::Feature(id) = &member else {
             continue;
         };
-        let legacy = history.features[id];
+        let Some(legacy) = history.features.get(id) else {
+            continue;
+        };
         let bodies = legacy.evaluation.outputs();
         if bodies.is_empty() || ir.is_stateless(id, None).unwrap_or(true) {
             continue;
@@ -289,14 +298,161 @@ fn spanned_definitions<'a>(
     spanned
 }
 
-/// The placement of a container whose source stores frame `frame` (§5.2):
-/// the frame as one fixed step. A frame equal to the identity is no
-/// placement.
-fn placement(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
-    let transform = frame.transform();
-    if transform.rows() == Transform::identity().rows() {
+/// The `Place` or `PlaceSet` feature of each `App::Link` (§6.7): the
+/// feature places the occurrences of the link that a definition of the
+/// scope of `definition` owns.
+fn places(
+    ir: &CadIr,
+    definition: &ProductDefinitionId,
+    objects: &[ObjectRecord],
+    links: &[ProductNodeRecord],
+) -> Vec<Feature> {
+    let spanned = spanned_definitions(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        definition,
+    );
+    let owned = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| spanned.contains(&definition.id))
+        .flat_map(|definition| &definition.occurrences)
+        .collect::<BTreeSet<_>>();
+    let mut by_object = HashMap::<&str, Vec<&Occurrence>>::new();
+    for occurrence in ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| owned.contains(&occurrence.id))
+    {
+        if let Some(object) = occurrence.native_ref.as_deref() {
+            by_object.entry(object).or_default().push(occurrence);
+        }
+    }
+    let objects_of = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter_map(|definition| Some((&definition.id, definition.native_ref.as_deref()?)))
+        .collect::<HashMap<_, _>>();
+    let names = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object.name()))
+        .collect::<HashMap<_, _>>();
+    let mut features = Vec::new();
+    for link in links
+        .iter()
+        .filter(|link| matches!(link.node, ProductNode::Occurrence(_)))
+    {
+        let container = crate::native::model_id("occurrence", &link.object, "container");
+        let placed = by_object
+            .get(link.object.as_str())
+            .into_iter()
+            .flatten()
+            .filter(|occurrence| occurrence.id.as_str() != container)
+            .collect::<Vec<_>>();
+        let operation = match placed.as_slice() {
+            [] => continue,
+            [occurrence] => {
+                let own = objects_of.get(&occurrence.prototype).is_some_and(|object| {
+                    by_object.get(object).is_some_and(|occurrences| {
+                        let own = crate::native::model_id("occurrence", object, "container");
+                        occurrences
+                            .iter()
+                            .any(|occurrence| occurrence.id.as_str() == own)
+                    })
+                });
+                FeatureOperation::Place(Box::new(place(link, occurrence, own)))
+            }
+            several => FeatureOperation::PlaceSet(Box::new(PlaceSet {
+                occurrences: several
+                    .iter()
+                    .map(|occurrence| occurrence.id.clone())
+                    .collect(),
+                native_options: BTreeMap::default(),
+                source_settings: BTreeMap::default(),
+            })),
+        };
+        let Ok(id) = FeatureId::mint(format!(
+            "fcstd:design:feature#{}",
+            crate::native::id_key(&link.object)
+        )) else {
+            continue;
+        };
+        features.push(Feature {
+            id,
+            name: names
+                .get(link.object.as_str())
+                .map(|name| (*name).to_owned()),
+            suppressed: None,
+            definition: FeatureDefinition {
+                operation,
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: None,
+            component: None,
+            driven_by: None,
+            native_ref: Some(link.object.clone()),
+        });
+    }
+    features
+}
+
+/// The `Place` of the one occurrence `occurrence` of link `link`. A link
+/// that is no array states its `Placement` and its scale (§6.7): under its
+/// parent where `LinkTransform` is false, and after the linked object's own
+/// occurrence where it is true and the scope holds that occurrence (`own`).
+fn place(link: &ProductNodeRecord, occurrence: &Occurrence, own: bool) -> Place {
+    let scalar = link.element_count().unwrap_or(0) == 0
+        && link.element_objects().is_empty()
+        && link.element_transforms().is_empty()
+        && link.element_scales().is_empty();
+    let base = if link.link_transform() == Some(true) {
+        own.then_some(PlacementBase::OwnOccurrence)
+    } else {
+        Some(PlacementBase::Parent)
+    };
+    let placement = link
+        .local_transform()
+        .filter(|_| scalar && base.is_some())
+        .and_then(fixed);
+    Place {
+        occurrence: occurrence.id.clone(),
+        scale: placement.as_ref().and(link.scale()).and_then(scale_factors),
+        base: placement.as_ref().and(base),
+        placement,
+        constraints: Vec::new(),
+        packaged: None,
+        native_options: BTreeMap::default(),
+        source_settings: BTreeMap::default(),
+    }
+}
+
+/// The scale of factors `factors`: `None` at one on every axis or with a
+/// factor of zero (§6.7).
+fn scale_factors(factors: [f64; 3]) -> Option<ScaleFactors> {
+    if factors == [1.0; 3] {
         return None;
     }
+    let [x, y, z] = factors.map(NonZeroReal::new);
+    let (x, y, z) = (x?, y?, z?);
+    Some(if factors[0] == factors[1] && factors[1] == factors[2] {
+        ScaleFactors::Uniform(Dimension::Literal(x))
+    } else {
+        ScaleFactors::PerAxis {
+            factors: [x, y, z].map(Dimension::Literal),
+            frame: None,
+        }
+    })
+}
+
+/// The frame `frame` a source stores as a placement: one fixed step
+/// (§5.9).
+fn fixed(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
+    let transform = frame.transform();
     let rows = frame.rows();
     let axis = |column: usize| {
         UnitVector3::new(Vector3::new(

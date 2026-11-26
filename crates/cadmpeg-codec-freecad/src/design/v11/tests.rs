@@ -9,11 +9,13 @@ use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFamily};
+use cadmpeg_ir::design::ops::assembly::{Place, PlacementBase};
+use cadmpeg_ir::design::ops::body::ScaleFactors;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use crate::test_support::test_archive::{archive, assert_valid_document};
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 
 const DESIGN_HISTORY: &[u8] = include_bytes!(concat!(
@@ -388,7 +390,12 @@ fn a_body_placement_is_its_container_placement() {
         ),
         DecodeDepth::Design,
     );
-    assert_eq!(body_placement(&identity), None);
+    let identity = body_placement(&identity).expect("a stored identity placement");
+    let frame = identity.resolved.as_ref().expect("a resolved frame");
+    let origin = frame.origin.get();
+    assert!(near([origin.x, origin.y, origin.z], [0.0; 3]));
+    assert!(near(axis(frame.x_axis), [1.0, 0.0, 0.0]));
+    assert!(near(axis(frame.z_axis), [0.0, 0.0, 1.0]));
 }
 
 #[test]
@@ -662,4 +669,150 @@ fn objects_outside_a_body_are_group_members_with_their_parameters() {
     }
     assert_eq!(written.design.features, ir.design.features);
     assert_eq!(written.design.parameters, ir.design.parameters);
+}
+
+/// The `Place` feature of link `Instance`, a member of the root `Group`.
+fn instance_place(ir: &CadIr) -> Place {
+    let instance = feature("fcstd:design:feature#Instance");
+    assert!(group_members(ir).contains(&instance));
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| Member::Feature(feature.id.clone()) == instance)
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    assert_eq!(feature.name.as_deref(), Some("Instance"));
+    let FeatureOperation::Place(place) = &feature.definition.operation else {
+        panic!("{:?}", feature.definition.operation);
+    };
+    let occurrence = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id == place.occurrence)
+        .unwrap_or_else(|| panic!("{:?}", ir.model.occurrences));
+    assert_eq!(
+        occurrence.name.as_deref(),
+        Some("fcstd:native:object#Instance")
+    );
+    (**place).clone()
+}
+
+#[test]
+fn an_app_link_is_a_place_feature_of_the_group() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="App::Part" name="Product" id="1"/>
+ <Object type="Part::Feature" name="Prototype" id="2"/>
+ <Object type="App::Link" name="Instance" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Product"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="1" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Instance"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="6" Pz="7" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="3" valueZ="4"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="FOLLOWS"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let parent = decode(
+        &archive(&document.replace("FOLLOWS", "false")),
+        DecodeDepth::Design,
+    );
+    let place = instance_place(&parent);
+    assert_eq!(place.base, Some(PlacementBase::Parent));
+    let placement = place.placement.as_ref().expect("the link's Placement");
+    assert!(placement.inputs.is_empty());
+    let origin = placement
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [5.0, 6.0, 7.0]);
+    let Some(ScaleFactors::PerAxis {
+        factors,
+        frame: None,
+    }) = &place.scale
+    else {
+        panic!("{:?}", place.scale);
+    };
+    assert_eq!(
+        factors.clone().map(|factor| match factor {
+            cadmpeg_ir::design::dimension::Dimension::Literal(value) => value.get(),
+            other => panic!("{other:?}"),
+        }),
+        [2.0, 3.0, 4.0]
+    );
+    assert!(place.constraints.is_empty());
+    // A Place has no result of its own (§5.3).
+    assert!(parent.design.scopes[0]
+        .current
+        .iter()
+        .all(|state| state.at != Position::After(feature("fcstd:design:feature#Instance"))));
+    let (written, _) = cadir_round_trip(&parent);
+    assert_eq!(written.design.features, parent.design.features);
+
+    // The object `Prototype` has an occurrence of its own in `Product`.
+    let follows = decode(
+        &archive(&document.replace("FOLLOWS", "true")),
+        DecodeDepth::Design,
+    );
+    let place = instance_place(&follows);
+    assert_eq!(place.base, Some(PlacementBase::OwnOccurrence));
+    assert!(place.placement.is_some());
+}
+
+#[test]
+fn an_app_link_array_places_its_elements_in_one_feature() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Instance"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Instance"><Properties Count="5">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="false"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="placements"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for x in [1.0_f64, 2.0] {
+        placements.extend(
+            [x, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+    }
+    let ir = decode(
+        &archive_entries(&[
+            ("Document.xml", document.as_bytes()),
+            ("placements", &placements),
+        ]),
+        DecodeDepth::Design,
+    );
+    let instance = feature("fcstd:design:feature#Instance");
+    assert!(group_members(&ir).contains(&instance));
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| Member::Feature(feature.id.clone()) == instance)
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    let FeatureOperation::PlaceSet(set) = &feature.definition.operation else {
+        panic!("{:?}", feature.definition.operation);
+    };
+    let elements = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Instance")
+        })
+        .map(|occurrence| occurrence.id.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(elements.len(), 2);
+    assert_eq!(set.occurrences, elements);
+    let (written, _) = cadir_round_trip(&ir);
+    assert_eq!(written.design.features, ir.design.features);
 }
