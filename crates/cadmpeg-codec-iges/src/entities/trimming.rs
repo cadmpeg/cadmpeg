@@ -1575,21 +1575,9 @@ fn pcurve_declared_interval_bounds(
     if bezier_blends(span_count, degree).is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
         return Ok(PcurveBounds::Unchecked);
     }
-    let mut controls = Vec::new();
-    for index in 0..nurbs.pole_rows().count() {
-        let Some(point) = nurbs
-            .pole_rows()
-            .point_at(index)
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-        else {
-            return Ok(PcurveBounds::Outside);
-        };
-        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
-        if weight <= 0.0 {
-            return Ok(PcurveBounds::Outside);
-        }
-        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
-    }
+    let Some(controls) = homogeneous_pcurve_controls(nurbs) else {
+        return Ok(PcurveBounds::Outside);
+    };
     let within =
         pcurve_spans_within_intervals(degree, knots, &controls, range, bounds, periodic, ctx)?;
     Ok(if within {
@@ -1597,6 +1585,70 @@ fn pcurve_declared_interval_bounds(
     } else {
         PcurveBounds::Outside
     })
+}
+
+/// The homogeneous controls `[w, w·u, w·v, 0]` of `nurbs`, or `None` where
+/// a pole has no point or a weight is not positive.
+fn homogeneous_pcurve_controls(nurbs: &PcurveNurbs) -> Option<Vec<[f64; 4]>> {
+    let mut controls = Vec::new();
+    for index in 0..nurbs.pole_rows().count() {
+        let point = nurbs
+            .pole_rows()
+            .point_at(index)
+            .map(cadmpeg_ir::units::FinitePoint2::get)?;
+        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
+        if weight <= 0.0 {
+            return None;
+        }
+        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
+    }
+    Some(controls)
+}
+
+/// The Bézier net of each knot span of a homogeneous parameter curve inside
+/// `range`, in parameter order, or `None` where the spans do not cover
+/// `range` or a span does not restrict to it.
+fn restricted_pcurve_spans(
+    degree: usize,
+    knots: &[f64],
+    controls: &[[f64; 4]],
+    range: [f64; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Vec<[f64; 4]>>>, CodecError> {
+    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls, ctx)? else {
+        return Ok(None);
+    };
+    let (Some(first_span), Some(last_span)) = (spans.first(), spans.last()) else {
+        return Ok(None);
+    };
+    if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
+        return Ok(None);
+    }
+    let mut nets = Vec::new();
+    for span in spans {
+        let start = range[0].max(span.domain[0]);
+        let end = range[1].min(span.domain[1]);
+        if start >= end {
+            continue;
+        }
+        let Some(local_start) =
+            cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
+        else {
+            return Ok(None);
+        };
+        let Some(local_end) =
+            cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
+        else {
+            return Ok(None);
+        };
+        let Some(restricted) =
+            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
+        else {
+            return Ok(None);
+        };
+        nets.push(restricted);
+    }
+    Ok(Some(nets))
 }
 
 fn pcurve_spans_within_intervals(
@@ -1608,18 +1660,6 @@ fn pcurve_spans_within_intervals(
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls, ctx)? else {
-        return Ok(false);
-    };
-    let Some(first_span) = spans.first() else {
-        return Ok(false);
-    };
-    let Some(last_span) = spans.last() else {
-        return Ok(false);
-    };
-    if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
-        return Ok(false);
-    }
     let in_bound =
         |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
             value.is_finite()
@@ -1645,40 +1685,17 @@ fn pcurve_spans_within_intervals(
     let Some((v_lower, v_upper)) = expand_periodic(bounds[2], bounds[3], periodic[1]) else {
         return Ok(false);
     };
-    let mut covered = false;
-    for span in spans {
-        let start = range[0].max(span.domain[0]);
-        let end = range[1].min(span.domain[1]);
-        if start >= end {
-            continue;
-        }
-        covered = true;
-        let Some(local_start) =
-            cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(local_end) =
-            cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(restricted) =
-            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
-        else {
-            return Ok(false);
-        };
-        if restricted.iter().any(|control| {
+    let Some(nets) = restricted_pcurve_spans(degree, knots, controls, range, ctx)? else {
+        return Ok(false);
+    };
+    Ok(!nets.is_empty()
+        && nets.iter().flatten().all(|control| {
             let weight = control[0];
-            !weight.is_finite()
-                || weight <= 0.0
-                || !in_bound(control[1] / weight, u_lower, u_upper)
-                || !in_bound(control[2] / weight, v_lower, v_upper)
-        }) {
-            return Ok(false);
-        }
-    }
-    Ok(covered)
+            weight.is_finite()
+                && weight > 0.0
+                && in_bound(control[1] / weight, u_lower, u_upper)
+                && in_bound(control[2] / weight, v_lower, v_upper)
+        }))
 }
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
@@ -2821,6 +2838,9 @@ pub(super) fn project(
                 ctx,
             )?);
             drafts.push((boundary_index, sequence, items, sewing_tolerance));
+        }
+        if !valid {
+            continue;
         }
         let windings = if surface_kind == BoundarySurfaceKind::Trimmed {
             winding::trimmed_boundary_windings(

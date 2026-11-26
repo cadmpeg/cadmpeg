@@ -5,11 +5,13 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::Sense;
 
+use super::super::nurbs_controls::{bezier_blends, bezier_span_count, MAX_BEZIER_BLENDS};
 use super::BoundaryItem;
 
 /// Points sampled on each boundary curve to find the boundary's winding.
@@ -28,10 +30,20 @@ const PARAMETER_RING_CLOSURE_FRACTION: f64 = 1.0e-2;
 /// no winding.
 const BOUNDARY_AREA_DEGENERATE_FRACTION: f64 = 1.0e-9;
 
-/// Two turning boundaries whose lowest or highest coordinates on the other
-/// axis differ by at most this fraction of their joint extent on that axis
-/// touch there and bound no strip.
+/// Two turning boundaries whose bounds on the lowest or the highest
+/// coordinate on the other axis are at most this fraction of their joint
+/// extent apart bound no strip.
 const RING_ORDER_TIE_FRACTION: f64 = 1.0e-9;
+
+/// Equal steps inside a Bézier span of degree three or more at which the
+/// span is evaluated for the extremes it attains.
+const BRACKET_SPAN_SAMPLES: u32 = 16;
+
+#[cfg(test)]
+thread_local! {
+    /// Calls of [`support_turn`] on this thread.
+    pub(super) static TURN_CLOSURE_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 /// A step between consecutive samples of an image that is longer than this
 /// fraction of a turn on the turning axis is a jump across the seam. A
@@ -132,6 +144,8 @@ fn support_turn(
     resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, f64)>, CodecError> {
+    #[cfg(test)]
+    TURN_CLOSURE_CHECKS.with(|checks| checks.set(checks.get() + 1));
     let lengths = match support {
         SolvedSurfaceGeometry::Nurbs(nurbs) => {
             let mut lengths = [None, None];
@@ -244,18 +258,177 @@ struct Turn {
     axis: usize,
     /// Whether the image advances along `axis`.
     forward: bool,
-    /// The lowest and the highest coordinate of the image on the other axis.
-    extremes: [f64; 2],
+}
+
+/// Closed intervals that hold the lowest and the highest coordinate of a
+/// boundary on one axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Extremes {
+    lowest: [f64; 2],
+    highest: [f64; 2],
+}
+
+impl Extremes {
+    /// The extremes of the single coordinate `value`.
+    const fn at(value: f64) -> Self {
+        Self {
+            lowest: [value; 2],
+            highest: [value; 2],
+        }
+    }
+
+    /// The extremes of the union of the two point sets.
+    fn join(self, other: Self) -> Self {
+        Self {
+            lowest: [
+                self.lowest[0].min(other.lowest[0]),
+                self.lowest[1].min(other.lowest[1]),
+            ],
+            highest: [
+                self.highest[0].max(other.highest[0]),
+                self.highest[1].max(other.highest[1]),
+            ],
+        }
+    }
 }
 
 /// A turn of one boundary of a face, at its position among the boundaries
-/// of the face.
+/// of the face, with its extremes on the other axis.
 #[derive(Debug, Clone, Copy)]
 struct Turning {
     position: usize,
     /// Whether the file states the boundary as the outer boundary.
     outer: bool,
     turn: Turn,
+    extremes: Extremes,
+}
+
+/// The extremes on `axis` of the parameter curves of a boundary, or `None`
+/// where a curve has no certain extremes.
+fn boundary_extremes(
+    items: &[BoundaryItem],
+    axis: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Extremes>, CodecError> {
+    let mut joined: Option<Extremes> = None;
+    for (geometry, range) in items.iter().flat_map(|item| &item.pcurves) {
+        let Some(extremes) = pcurve_extremes(geometry, *range, axis, ctx)? else {
+            return Ok(None);
+        };
+        joined = Some(joined.map_or(extremes, |joined| joined.join(extremes)));
+    }
+    Ok(joined)
+}
+
+/// The extremes on `axis` of a parameter curve over `range`. Each knot span
+/// is a Bézier span with positive weights: it lies in the hull of its
+/// controls and passes through its end controls. A span of degree one has
+/// its extremes at its ends, and a span of degree two at its ends or where
+/// its derivative on `axis` is zero. A span of higher degree has each
+/// extreme between its control extreme and the extreme of its points at the
+/// span ends and at [`BRACKET_SPAN_SAMPLES`] steps.
+fn pcurve_extremes(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    axis: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Extremes>, CodecError> {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
+        return Ok(None);
+    };
+    let Ok(degree) = usize::try_from(nurbs.degree()) else {
+        return Ok(None);
+    };
+    let range = [range[0].min(range[1]), range[0].max(range[1])];
+    let knots = nurbs.knots();
+    if bezier_blends(bezier_span_count(knots, range), degree)
+        .is_none_or(|blends| blends > MAX_BEZIER_BLENDS)
+    {
+        return Ok(None);
+    }
+    let Some(controls) = super::homogeneous_pcurve_controls(nurbs) else {
+        return Ok(None);
+    };
+    let Some(nets) = super::restricted_pcurve_spans(degree, knots, &controls, range, ctx)? else {
+        return Ok(None);
+    };
+    let mut joined: Option<Extremes> = None;
+    for net in &nets {
+        let Some(extremes) = span_extremes(net, axis) else {
+            return Ok(None);
+        };
+        joined = Some(joined.map_or(extremes, |joined| joined.join(extremes)));
+    }
+    Ok(joined)
+}
+
+/// The extremes on `axis` of the homogeneous Bézier span `net`.
+fn span_extremes(net: &[[f64; 4]], axis: usize) -> Option<Extremes> {
+    let coordinate = |control: &[f64; 4]| {
+        let value = control[axis + 1] / control[0];
+        (control[0].is_finite() && control[0] > 0.0 && value.is_finite()).then_some(value)
+    };
+    let values = net.iter().map(coordinate).collect::<Option<Vec<_>>>()?;
+    let ends = Extremes::at(*values.first()?).join(Extremes::at(*values.last()?));
+    let at = |parameter: f64| {
+        super::split_homogeneous_pcurve(net, parameter)
+            .and_then(|(left, _)| left.last().and_then(coordinate))
+            .map(Extremes::at)
+    };
+    match values.len() {
+        0 | 1 => None,
+        2 => Some(ends),
+        3 => quadratic_stationary(net, axis)
+            .into_iter()
+            .flatten()
+            .try_fold(ends, |joined, parameter| Some(joined.join(at(parameter)?))),
+        _ => {
+            let attained = (1..BRACKET_SPAN_SAMPLES).try_fold(ends, |joined, step| {
+                let parameter = f64::from(step) / f64::from(BRACKET_SPAN_SAMPLES);
+                Some(joined.join(at(parameter)?))
+            })?;
+            let hull = values
+                .iter()
+                .fold(ends, |joined, value| joined.join(Extremes::at(*value)));
+            Some(Extremes {
+                lowest: [hull.lowest[0], attained.lowest[1]],
+                highest: [attained.highest[0], hull.highest[1]],
+            })
+        }
+    }
+}
+
+/// The parameters in `(0, 1)` at which the coordinate on `axis` of the
+/// homogeneous quadratic Bézier span `net` is stationary: the roots of the
+/// numerator `N′W − NW′` of its derivative, a quadratic in the parameter.
+fn quadratic_stationary(net: &[[f64; 4]], axis: usize) -> [Option<f64>; 2] {
+    let &[first, middle, last] = net else {
+        return [None, None];
+    };
+    let power = |bernstein: [f64; 3]| {
+        [
+            bernstein[0],
+            2.0 * (bernstein[1] - bernstein[0]),
+            2.0f64.mul_add(-bernstein[1], bernstein[0]) + bernstein[2],
+        ]
+    };
+    let weight = power([first[0], middle[0], last[0]]);
+    let value = power([first[axis + 1], middle[axis + 1], last[axis + 1]]);
+    let constant = value[1].mul_add(weight[0], -value[0] * weight[1]);
+    let linear = 2.0 * value[2].mul_add(weight[0], -value[0] * weight[2]);
+    let quadratic = value[2].mul_add(weight[1], -value[1] * weight[2]);
+    let roots = if quadratic == 0.0 {
+        [(linear != 0.0).then(|| -constant / linear), None]
+    } else {
+        let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+        if discriminant < 0.0 {
+            [None, None]
+        } else {
+            let q = -0.5 * (linear + discriminant.sqrt().copysign(linear));
+            [Some(q / quadratic), (q != 0.0).then(|| constant / q)]
+        }
+    };
+    roots.map(|root| root.filter(|parameter| *parameter > 0.0 && *parameter < 1.0))
 }
 
 /// The turn of an image around `axis`, whose turn is `length` long. The
@@ -287,7 +460,6 @@ fn turn_of(points: &[[f64; 2]], axis: usize, length: f64) -> Option<Turn> {
     turned.then_some(Turn {
         axis,
         forward: turns > 0.0,
-        extremes: [low[other], high[other]],
     })
 }
 
@@ -365,10 +537,11 @@ fn support_oriented_area(twice_area: f64, support: &SolvedSurfaceGeometry) -> f6
 /// Type 144 and Type 142 state no traversal direction, and the face keeps the
 /// support normal, so each boundary must keep the face on its left about that
 /// normal: the outer boundary runs counterclockwise and every inner boundary
-/// clockwise. Where a boundary has no closed image, the support closes on
-/// exactly one axis over its `stated` parameter ranges within `resolution`,
-/// and exactly two boundaries turn once around that axis, one of them the
-/// outer boundary, the two bound the strip between them.
+/// clockwise. Where every boundary has a parameter-space image, a boundary
+/// has no closed image, the support closes on exactly one axis over its
+/// `stated` parameter ranges within `resolution`, and exactly two
+/// boundaries turn once around that axis, one of them the outer boundary,
+/// the two bound the strip between them.
 pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
     boundaries: impl IntoIterator<Item = (&'a [BoundaryItem<'b>], bool)>,
     index: &ModelIndex<'_>,
@@ -381,8 +554,10 @@ pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
     let periods = solved.map_or([None, None], support_parameter_periods);
     let mut windings = Vec::new();
     let mut open = Vec::new();
+    let mut imaged = true;
     for (items, outer) in boundaries {
         let image = parameter_image(items, ctx)?;
+        imaged &= image.is_some();
         let closed = image
             .as_deref()
             .and_then(|points| closed_parameter_area(points, periods));
@@ -401,29 +576,34 @@ pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
             (None, _) => None,
         };
         if let (None, Some(points)) = (area, image) {
-            open.push((windings.len(), outer, points));
+            open.push((windings.len(), outer, items, points));
         }
         windings.push(winding_from_area(area, outer));
     }
     let Some(solved) = solved else {
         return Ok(windings);
     };
-    if open.len() < 2 || !open.iter().any(|(_, outer, _)| *outer) {
+    if !imaged || open.len() < 2 || !open.iter().any(|(_, outer, _, _)| *outer) {
         return Ok(windings);
     }
     let Some((axis, length)) = support_turn(solved, stated, resolution, ctx)? else {
         return Ok(windings);
     };
-    let turns = open
-        .iter()
-        .filter_map(|(position, outer, points)| {
-            turn_of(points, axis, length).map(|turn| Turning {
-                position: *position,
-                outer: *outer,
-                turn,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut turns = Vec::new();
+    for (position, outer, items, points) in open {
+        let Some(turn) = turn_of(&points, axis, length) else {
+            continue;
+        };
+        let Some(extremes) = boundary_extremes(items, 1 - axis, ctx)? else {
+            return Ok(windings);
+        };
+        turns.push(Turning {
+            position,
+            outer,
+            turn,
+            extremes,
+        });
+    }
     let normal_reversed = support_oriented_area(1.0, solved) < 0.0;
     for (position, winding) in strip_windings(&turns, normal_reversed) {
         windings[position] = winding;
@@ -435,9 +615,10 @@ pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
 /// boundary, which keeps the strip between them on the left of each about
 /// the support normal. Of two disjoint boundaries that turn around the
 /// closed axis, the lower one has both the lower lowest point and the lower
-/// highest point on the other axis. Where the two orders disagree or tie
-/// within [`RING_ORDER_TIE_FRACTION`], the boundaries touch or cross and
-/// have no winding. The left of an advance along `u` lies toward greater
+/// highest point on the other axis. One boundary is lower where both its
+/// extreme intervals lie below those of the other by more than
+/// [`RING_ORDER_TIE_FRACTION`] of their joint extent. Otherwise the
+/// boundaries have no winding. The left of an advance along `u` lies toward greater
 /// `v`, and the left of an advance along `v` toward smaller `u`; a support
 /// normal opposite `Pu × Pv` exchanges the two sides.
 fn strip_windings(turns: &[Turning], normal_reversed: bool) -> Vec<(usize, BoundaryWinding)> {
@@ -447,13 +628,18 @@ fn strip_windings(turns: &[Turning], normal_reversed: bool) -> Vec<(usize, Bound
     if !(a.outer || b.outer) {
         return Vec::new();
     }
-    let ([a_low, a_high], [b_low, b_high]) = (a.turn.extremes, b.turn.extremes);
-    let tie = RING_ORDER_TIE_FRACTION * (a_high.max(b_high) - a_low.min(b_low));
-    let below = |first: f64, second: f64| ((first - second).abs() > tie).then_some(first < second);
-    let [lower, upper] = match (below(a_low, b_low), below(a_high, b_high)) {
-        (Some(true), Some(true)) => [a, b],
-        (Some(false), Some(false)) => [b, a],
-        _ => return Vec::new(),
+    let tie = RING_ORDER_TIE_FRACTION
+        * (a.extremes.highest[1].max(b.extremes.highest[1])
+            - a.extremes.lowest[0].min(b.extremes.lowest[0]));
+    let below = |first: &Extremes, second: &Extremes| {
+        first.lowest[1] + tie < second.lowest[0] && first.highest[1] + tie < second.highest[0]
+    };
+    let [lower, upper] = if below(&a.extremes, &b.extremes) {
+        [a, b]
+    } else if below(&b.extremes, &a.extremes) {
+        [b, a]
+    } else {
+        return Vec::new();
     };
     [(lower, true), (upper, false)]
         .into_iter()

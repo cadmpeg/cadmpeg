@@ -6,15 +6,16 @@ use std::f64::consts::TAU;
 
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface, TorusSurface};
 use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::test_support::with_service_context;
 
 use super::{
-    closed_parameter_area, strip_windings, support_oriented_area, support_parameter_periods,
-    support_turn, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn, Turning,
-    BOUNDARY_AREA_DEGENERATE_FRACTION, PARAMETER_RING_CLOSURE_FRACTION,
+    closed_parameter_area, pcurve_extremes, strip_windings, support_oriented_area,
+    support_parameter_periods, support_turn, turn_of, winding_from_area, BoundaryWinding, Extremes,
+    SignedArea, Turn, Turning, BOUNDARY_AREA_DEGENERATE_FRACTION, PARAMETER_RING_CLOSURE_FRACTION,
 };
 
 /// The counterclockwise unit square, closed at `(0, 0)`.
@@ -185,22 +186,22 @@ fn turning_line(axis: usize, level: f64, turns: f64) -> Vec<[f64; 2]> {
 }
 
 /// The turn at `position` of a boundary that is the outer boundary where
-/// `outer`, around `axis`, between the coordinates `extremes` on the other
-/// axis.
+/// `outer`, around `axis`, between the exact coordinates `extremes` on the
+/// other axis.
 fn turning(
     position: usize,
     outer: bool,
     axis: usize,
     forward: bool,
-    extremes: [f64; 2],
+    [lowest, highest]: [f64; 2],
 ) -> Turning {
     Turning {
         position,
         outer,
-        turn: Turn {
-            axis,
-            forward,
-            extremes,
+        turn: Turn { axis, forward },
+        extremes: Extremes {
+            lowest: [lowest; 2],
+            highest: [highest; 2],
         },
     }
 }
@@ -262,7 +263,6 @@ fn a_support_turns_only_around_its_one_closed_axis() {
 fn an_image_whose_ends_lie_one_turn_apart_turns_once() {
     let forward = turn_of(&turning_line(0, 2.0, 1.0), 0, TAU).expect("a turn");
     assert_eq!((forward.axis, forward.forward), (0, true));
-    assert_eq!(forward.extremes, [2.0, 2.0]);
     let backward = turn_of(&turning_line(0, 2.0, -1.0), 0, TAU).expect("a turn");
     assert_eq!((backward.axis, backward.forward), (0, false));
     for turns in [2.0, 0.5] {
@@ -300,6 +300,48 @@ fn seam_split_hole_from_its_upper_edge() -> Vec<[f64; 2]> {
 #[test]
 fn a_boundary_split_at_the_seam_does_not_turn() {
     assert!(turn_of(&seam_split_hole_from_its_upper_edge(), 0, TAU).is_none());
+}
+
+/// The degree-1 parameter curve through `vertices` at the knots
+/// `parameters`, over its whole range.
+fn degree_one(vertices: &[[f64; 2]], parameters: &[f64]) -> (PcurveGeometry, [f64; 2]) {
+    let (first, last) = (parameters[0], parameters[parameters.len() - 1]);
+    let mut knots = vec![first];
+    knots.extend_from_slice(parameters);
+    knots.push(last);
+    curve(1, knots, vertices, None, [first, last])
+}
+
+/// The parameter curve of `degree` with `knots`, `vertices`, and `weights`,
+/// over `range`.
+fn curve(
+    degree: u32,
+    knots: Vec<f64>,
+    vertices: &[[f64; 2]],
+    weights: Option<Vec<f64>>,
+    range: [f64; 2],
+) -> (PcurveGeometry, [f64; 2]) {
+    let nurbs = PcurveNurbs::from_lanes(
+        degree,
+        knots,
+        vertices
+            .iter()
+            .map(|&[u, v]| Point2::new(u, v))
+            .collect::<Vec<_>>(),
+        weights,
+        false,
+    )
+    .expect("a parameter curve");
+    (PcurveGeometry::Nurbs { nurbs }, range)
+}
+
+/// The extremes on `axis` of the parameter curve `(geometry, range)`.
+fn extremes_of((geometry, range): &(PcurveGeometry, [f64; 2]), axis: usize) -> Extremes {
+    with_service_context(b"", |ctx| {
+        pcurve_extremes(geometry, *range, axis, ctx)
+            .expect("the extremes evaluate")
+            .expect("the curve has extremes")
+    })
 }
 
 /// The points at eight equal steps of each side of the polyline through
@@ -340,21 +382,26 @@ fn two_disjoint_rings_are_ordered_by_their_lowest_and_highest_points() {
     }
     lower.extend([[2.4, 4.0], [2.4, 0.0]]);
     upper.extend([[3.8, 4.0], [3.8, 8.0]]);
-    let low = turn_of(&sampled(&lower, TAU), 0, TAU).expect("a turn");
-    let high = turn_of(&sampled(&upper, -TAU), 0, TAU).expect("a turn");
-    assert_eq!((low.extremes, high.extremes), ([0.0, 7.0], [1.0, 8.0]));
-    let turns = [
+    let turns = [(lower, TAU, true), (upper, -TAU, false)].map(|(corners, closing, outer)| {
+        let mut vertices = corners.clone();
+        vertices.push([corners[0][0] + closing, corners[0][1]]);
+        let parameters = std::iter::successors(Some(0.0), |parameter| Some(parameter + 1.0))
+            .take(vertices.len())
+            .collect::<Vec<_>>();
         Turning {
-            position: 0,
-            outer: true,
-            turn: low,
-        },
-        Turning {
-            position: 1,
-            outer: false,
-            turn: high,
-        },
-    ];
+            position: usize::from(!outer),
+            outer,
+            turn: turn_of(&sampled(&corners, closing), 0, TAU).expect("a turn"),
+            extremes: extremes_of(&degree_one(&vertices, &parameters), 1),
+        }
+    });
+    assert_eq!(
+        turns.map(|turning| turning.extremes),
+        [[0.0, 7.0], [1.0, 8.0]].map(|[lowest, highest]| Extremes {
+            lowest: [lowest; 2],
+            highest: [highest; 2],
+        })
+    );
     assert_eq!(
         strip_windings(&turns, false),
         [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Kept)]
@@ -434,4 +481,159 @@ fn rings_that_are_not_both_lower_and_higher_have_no_winding() {
         turning(1, false, 0, true, [0.0, 5.0]),
     ];
     assert!(strip_windings(&touching, false).is_empty());
+}
+
+/// A degree-1 span has its extremes at its control points, also where they
+/// fall between the reader's samples. The lower ring runs at 5 with a notch
+/// to 0 between two samples and a tab to 15 at a sample. The upper ring runs
+/// at 6 with a dip to 1 at a sample and a tab to 20 between two samples. The
+/// rings are ordered by `[0, 15]` below `[1, 20]`.
+#[test]
+fn ring_extremes_include_the_spans_between_samples() {
+    let knot = |sample: f64| sample / 64.0;
+    let lower = degree_one(
+        &[
+            [0.0, 5.0],
+            [1.0, 5.0],
+            [1.1, 0.0],
+            [1.2, 5.0],
+            [3.0, 5.0],
+            [3.1, 15.0],
+            [3.2, 5.0],
+            [TAU, 5.0],
+        ],
+        &[
+            0.0,
+            knot(10.2),
+            knot(10.5),
+            knot(10.8),
+            knot(29.0),
+            knot(30.0),
+            knot(31.0),
+            1.0,
+        ],
+    );
+    let upper = degree_one(
+        &[
+            [0.0, 6.0],
+            [1.08, 6.0],
+            [1.1, 1.0],
+            [1.12, 6.0],
+            [2.9, 6.0],
+            [3.1, 20.0],
+            [3.3, 6.0],
+            [TAU, 6.0],
+        ],
+        &[
+            0.0,
+            knot(20.0),
+            knot(21.0),
+            knot(22.0),
+            knot(40.2),
+            knot(40.5),
+            knot(40.8),
+            1.0,
+        ],
+    );
+    let turns = [(&lower, true), (&upper, false)].map(|(ring, outer)| Turning {
+        position: usize::from(!outer),
+        outer,
+        turn: Turn {
+            axis: 0,
+            forward: true,
+        },
+        extremes: extremes_of(ring, 1),
+    });
+    assert_eq!(
+        turns.map(|turning| turning.extremes),
+        [[0.0, 15.0], [1.0, 20.0]].map(|[lowest, highest]| Extremes {
+            lowest: [lowest; 2],
+            highest: [highest; 2],
+        })
+    );
+    assert_eq!(
+        strip_windings(&turns, false),
+        [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Reversed)]
+    );
+}
+
+/// Bound on the difference between a computed extreme of a circular arc and
+/// its exact value.
+const ARC_EXTREME_AGREEMENT: f64 = 1.0e-12;
+
+/// A degree-2 span has its extremes at its ends or where its derivative is
+/// zero. The unit circle arc from `-π/4` to `π/4`, a rational quadratic with
+/// middle weight `cos(π/4)`, reaches `u = 1` at its middle, inside the hull
+/// bound `√2`.
+#[test]
+fn a_circular_arc_has_its_exact_extremes() {
+    let half = std::f64::consts::FRAC_1_SQRT_2;
+    let arc = curve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        &[[half, -half], [std::f64::consts::SQRT_2, 0.0], [half, half]],
+        Some(vec![1.0, half, 1.0]),
+        [0.0, 1.0],
+    );
+    for (axis, [lowest, highest]) in [(0, [half, 1.0]), (1, [-half, half])] {
+        let extremes = extremes_of(&arc, axis);
+        for (bound, exact) in extremes
+            .lowest
+            .into_iter()
+            .map(|bound| (bound, lowest))
+            .chain(extremes.highest.into_iter().map(|bound| (bound, highest)))
+        {
+            assert!(
+                (bound - exact).abs() <= ARC_EXTREME_AGREEMENT,
+                "{extremes:?}"
+            );
+        }
+    }
+}
+
+/// A span of degree three has each extreme between its control extreme and
+/// the extreme of its evaluated points. The cubic `v = 12t(1 − t)` reaches 3
+/// inside the hull bound 4. A ring at 3.5 lies above it, inside the hull
+/// bound, and the two rings have no winding; a ring at 5 is ordered.
+#[test]
+fn a_ring_of_degree_three_is_ordered_only_beyond_its_control_hull() {
+    let cubic = curve(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        &[
+            [0.0, 0.0],
+            [TAU / 3.0, 4.0],
+            [2.0 * TAU / 3.0, 4.0],
+            [TAU, 0.0],
+        ],
+        None,
+        [0.0, 1.0],
+    );
+    let lower = extremes_of(&cubic, 1);
+    assert_eq!(
+        lower,
+        Extremes {
+            lowest: [0.0, 0.0],
+            highest: [3.0, 4.0],
+        }
+    );
+    let rings = |level: f64| {
+        [
+            Turning {
+                position: 0,
+                outer: true,
+                turn: Turn {
+                    axis: 0,
+                    forward: true,
+                },
+                extremes: lower,
+            },
+            turning(1, false, 0, false, [level, level]),
+        ]
+    };
+    assert!(strip_windings(&rings(3.5), false).is_empty());
+    assert_eq!(
+        strip_windings(&rings(5.0), false),
+        [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Kept)]
+    );
 }
