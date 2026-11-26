@@ -216,6 +216,7 @@ pub(crate) fn fill(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     inputs: Inputs<'_>,
+    model_bodies: &[cadmpeg_ir::topology::Body],
     mut bodies_out: Vec<HistoryBody>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<HistoryBody>, usize), CodecError> {
@@ -303,7 +304,16 @@ pub(crate) fn fill(
         });
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
-    fill_requests(ctx, scan, histories, &wants, &mut bodies_out, &work, losses)?;
+    let finals = super::stored_bodies::ActiveBodies::new(model_bodies, inputs.primary_brep);
+    fill_requests(
+        ctx,
+        scan,
+        (histories, Some(&finals)),
+        &wants,
+        &mut bodies_out,
+        &work,
+        losses,
+    )?;
     Ok((bodies_out, work.remaining()))
 }
 
@@ -427,7 +437,7 @@ pub(crate) fn loft_result_kinds(
     let result = fill_requests(
         &local,
         scan,
-        inputs.histories,
+        (inputs.histories, None),
         &wants,
         &mut bodies,
         &work,
@@ -516,7 +526,7 @@ pub(crate) fn fill_consumed(
     let result = fill_requests(
         ctx,
         scan,
-        inputs.histories,
+        (inputs.histories, None),
         &wants,
         &mut model.history_bodies,
         &work,
@@ -550,7 +560,7 @@ fn contain_consumed_failure(
 fn fill_requests(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    histories: &[AsmHistory],
+    (histories, finals): (&[AsmHistory], Option<&super::stored_bodies::ActiveBodies<'_>>),
     requests: &BTreeMap<usize, Vec<Want<'_>>>,
     bodies_out: &mut Vec<HistoryBody>,
     work: &WorkBudget,
@@ -568,7 +578,7 @@ fn fill_requests(
             continue;
         };
         let bytes = scan.entry_bytes(&facts.name)?;
-        fill_history(ctx, bytes, history, wants, bodies_out, work, losses)?;
+        fill_history(ctx, bytes, (history, finals), wants, bodies_out, work, losses)?;
     }
     bodies_out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(())
@@ -900,7 +910,7 @@ pub(super) fn output_history<'a>(
 fn fill_history(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    history: &AsmHistory,
+    (history, finals): (&AsmHistory, Option<&super::stored_bodies::ActiveBodies<'_>>),
     wants: &[Want<'_>],
     bodies: &mut Vec<HistoryBody>,
     work: &WorkBudget,
@@ -1053,7 +1063,9 @@ fn fill_history(
                     (produced, consumed),
                     (ordinal, bodies.len(), consumed.is_some() || join.is_some()),
                 ) {
-                    Ok(Some(built)) => {
+                    Ok(Some(mut built)) => {
+                        built.body.state_of =
+                            finals.and_then(|finals| final_body(history, finals, want));
                         place(
                             bodies,
                             &mut joinable,
@@ -1344,6 +1356,7 @@ fn build(
                 .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
             produced_by: owners.0.map(|feature| feature.id.clone()),
             consumed_by: owners.1.map(|feature| feature.id.clone()),
+            state_of: None,
             state: HistoryStateRef {
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("history ordinal"))?,
@@ -1372,6 +1385,9 @@ fn place(
         let nest = &mut bodies[found.index];
         nest.produced_by = built.body.produced_by;
         nest.state = built.body.state;
+        if nest.state_of.is_none() {
+            nest.state_of = built.body.state_of;
+        }
         return;
     }
     if consumed {
@@ -1384,6 +1400,43 @@ fn place(
         }
     }
     bodies.push(built.body);
+}
+
+/// The model body whose earlier state the body of `want` is: the result
+/// body of its slot in the BREP source of `history`, when no transition after
+/// the state of `want` deletes the slot.
+fn final_body(
+    history: &AsmHistory,
+    finals: &super::stored_bodies::ActiveBodies<'_>,
+    want: &Want<'_>,
+) -> Option<cadmpeg_ir::ids::BodyId> {
+    if want.identity.is_some() {
+        return None;
+    }
+    let order = history.states_oldest_first()?;
+    let states = history.states();
+    let mut positions = order.iter().enumerate().filter(|(_, index)| {
+        states
+            .get(**index)
+            .is_some_and(|state| state.state_id == want.state)
+    });
+    let (position, _) = positions.next()?;
+    if positions.next().is_some() {
+        return None;
+    }
+    let deleted = order[position + 1..]
+        .iter()
+        .filter_map(|index| states.get(*index)?.transition.as_ref())
+        .any(|transition| transition.topology.bodies.deleted.contains(&want.slot));
+    if deleted {
+        return None;
+    }
+    let source = super::face_resolution::historical_brep_source(&history.id)?;
+    let bodies = finals.resolve(&[want.slot], Some(source))?;
+    let [body] = bodies.as_slice() else {
+        return None;
+    };
+    Some(body.clone())
 }
 
 /// A history body, and its records before the nest identities, when kept.

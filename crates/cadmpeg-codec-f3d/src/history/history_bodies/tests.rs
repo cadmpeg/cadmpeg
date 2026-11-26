@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+mod final_bodies;
 mod historical_split;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
@@ -546,6 +547,7 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
             id: HistoryBodyId::mint("test:history-body:nest#shared-vertex").unwrap(),
             produced_by: Some(feature("base").id),
             consumed_by: None,
+            state_of: None,
             state: HistoryStateRef {
                 ordinal: 0,
                 identifier: 12,
@@ -1151,6 +1153,7 @@ fn cube_candidate() -> HistoryBody {
         id: HistoryBodyId::mint("test:history-body:nest#cube").expect("identity"),
         produced_by: Some(feature("base").id),
         consumed_by: None,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: 0,
             identifier: 1,
@@ -1651,6 +1654,7 @@ fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i
     HistoryBody {
         produced_by: produced_by.map(|native| feature(native).id),
         consumed_by: consumed_by.map(|native| feature(native).id),
+        state_of: None,
         state: HistoryStateRef {
             ordinal: u32::try_from(state).expect("small"),
             identifier: state,
