@@ -183,6 +183,66 @@ fn generated_source_less_writes_design_type_metastream() {
     assert_eq!(future.version, 11);
 }
 
+/// A dynamic class tag names a design type by its position in the
+/// `MetaStream` type table, so a decode keeps the table order.
+#[test]
+fn decoded_design_types_keep_their_metastream_order() {
+    use crate::records::entity_header::{SegmentType, SegmentTypeData};
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    f3d_native_mut(&mut source_less).design_types = (0..20_u64)
+        .map(|ordinal| {
+            SegmentType::try_new(
+                format!("f3d:generated/MetaStream.dat:design-type#{ordinal}"),
+                SegmentTypeData {
+                    byte_offset: ordinal,
+                    module: "Fusion".to_owned(),
+                    entities: crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+                    type_guid: format!("{ordinal:08x}-2222-3333-4444-555555555555")
+                        .try_into()
+                        .expect("type GUID"),
+                    type_guid_offset: 0,
+                    base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                    version: 1,
+                    version_offset: 0,
+                },
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("source-less Design MetaStream encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less Design MetaStream round trip");
+
+    let types = &f3d_native(round_trip.ir()).design_types;
+    let written = types
+        .iter()
+        .map(|design_type| design_type.type_guid.as_str()[..8].to_owned())
+        .collect::<Vec<_>>();
+    let expected = (0..20_u64)
+        .map(|ordinal| format!("{ordinal:08x}"))
+        .collect::<Vec<_>>();
+    assert_eq!(written, expected);
+    let mut by_id = types
+        .iter()
+        .map(|design_type| design_type.id().clone())
+        .collect::<Vec<_>>();
+    by_id.sort();
+    assert_ne!(
+        by_id,
+        types
+            .iter()
+            .map(|design_type| design_type.id().clone())
+            .collect::<Vec<_>>(),
+        "the type ids sort in another order than the table"
+    );
+}
+
 #[test]
 fn generated_source_less_writes_design_recipes_and_persistent_references() {
     use crate::records::{
