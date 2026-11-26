@@ -438,8 +438,11 @@ impl FaceUnit {
         }
     }
 
-    fn contains(&self, slot: i64) -> bool {
-        self.parts.values().any(|own| own.contains(&slot))
+    /// Every slot of every part of `units`.
+    fn slots<'a>(units: impl Iterator<Item = &'a Self>) -> FastSlots {
+        units
+            .flat_map(|unit| unit.parts.values().flatten().copied())
+            .collect()
     }
 
     fn is_subset(&self, slots: &FastSlots) -> bool {
@@ -2133,11 +2136,14 @@ impl<'a> Binder<'a> {
             self.wires = wire_slots(&self.live);
             wire_changed |= changed.iter().any(|slot| self.wires.contains(slot));
         }
+        let mut rebuilt_slots = None;
         let old_covered = changed.iter().all(|slot| {
             self.units.reverse.contains_key(slot)
                 || old_container_covered.contains(slot)
                 || self.container_reverse.contains_key(slot)
-                || next_units.values().any(|unit| unit.contains(*slot))
+                || rebuilt_slots
+                    .get_or_insert_with(|| FaceUnit::slots(next_units.values()))
+                    .contains(slot)
         });
         let old_edge_ownership: FastMap<_, _> = rebuilt
             .iter()
@@ -2512,11 +2518,14 @@ impl<'a> Binder<'a> {
             self.wires = wire_slots(&self.live);
             wire_changed |= changed.iter().any(|slot| self.wires.contains(slot));
         }
+        let mut rebuilt_slots = None;
         let old_covered = changed.iter().all(|slot| {
             self.units.reverse.contains_key(slot)
                 || old_container_covered.contains(slot)
                 || self.container_reverse.contains_key(slot)
-                || next_units.values().any(|unit| unit.contains(*slot))
+                || rebuilt_slots
+                    .get_or_insert_with(|| FaceUnit::slots(next_units.values()))
+                    .contains(slot)
         });
         // Only a rebuilt face unit can change an edge's face ownership.
         let old_edge_ownership: FastMap<_, _> = rebuilt
