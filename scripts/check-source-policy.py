@@ -40,10 +40,12 @@ def cached_analysis(function):
         cache = _ANALYSIS.get()
         if cache is None:
             return function(*arguments, **keywords)
-        key = (function, arguments, tuple(sorted(keywords.items())))
-        if key not in cache:
-            cache[key] = function(*arguments, **keywords)
-        return cache[key]
+        key = (function, arguments, tuple(sorted(keywords.items())) if keywords else ())
+        try:
+            return cache[key]
+        except KeyError:
+            value = cache[key] = function(*arguments, **keywords)
+            return value
     return cached
 
 
@@ -1612,6 +1614,8 @@ def scan_authoring_paths() -> list[Finding]:
             if not path.is_file() or path.suffix not in AUTHORING_PATH_TEXT_SUFFIXES:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
+            if not AUTHORING_PATH.search(text):
+                continue
             for number, line in enumerate(text.splitlines(), start=1):
                 for match in AUTHORING_PATH.finditer(line):
                     findings.append(Finding(
@@ -2101,13 +2105,17 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
         def receiver_has_type(receiver, owner):
             key = receiver, owner
             if key not in receiver_types:
+                # Each pattern spells the owner or a constructor; a file that
+                # spells neither skips the search.
                 receiver_types[key] = bool(
-                    re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
-                              + re.escape(owner) + r"\b", code)
-                    or re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                                 + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code)
-                    or any(re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                                     + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code)
+                    owner in code and (
+                        re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
+                                  + re.escape(owner) + r"\b", code)
+                        or re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                                     + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code))
+                    or any(constructor in code and re.search(
+                               r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                               + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code)
                            for constructor in owner_constructors.get(owner, ())))
             return receiver_types[key]
 
@@ -2240,7 +2248,7 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     parent = parents.get(parent)
                 bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
             level = function_level(index) if word in candidate_names else 0
-            opening = evaluation_call_open(words, index)
+            opening = evaluation_call_open(words, index) if level else None
             if level and opening in pairs:
                 refused[index] = level
             elif level:
@@ -2265,6 +2273,8 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                         refused[index] = bound_level
             if index not in refused:
                 continue
+            if opening is None:
+                opening = evaluation_call_open(words, index)
             start = evaluation_expression_start(words, pairs, index)
             end = pairs[opening] + 1 if opening in pairs else index + 1
             end, level = consume(start, end, refused[index])
