@@ -78,6 +78,12 @@ pub(super) fn check_history_bodies(
         .iter()
         .map(|feature| feature.id.as_str())
         .collect();
+    let model_bodies: HashSet<&str> = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect();
     let file_keys = super::products::decode_set::file_keys(ir);
     let mut owners = HashSet::new();
     for body in &ir.model.history_bodies {
@@ -111,6 +117,20 @@ pub(super) fn check_history_bodies(
                         ),
                     );
                 }
+            }
+        }
+        if let Some(state_of) = body.state_of.as_ref().map(crate::ids::BodyId::as_str) {
+            if !model_bodies.contains(state_of) {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(owner),
+                    crate::rule!(
+                        "history_bodies.history-body-state-names-no-body",
+                        "history body state_of {state_of} names no model body"
+                    ),
+                );
             }
         }
         check_nest(ctx, ids, body, &file_keys, findings)?;

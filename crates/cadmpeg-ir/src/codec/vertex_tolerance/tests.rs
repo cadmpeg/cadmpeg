@@ -428,6 +428,7 @@ fn a_history_body_vertex_off_its_edges_ends_is_reported_not_widened() {
         id: crate::ids::HistoryBodyId::mint("test:history-body:nest#0").unwrap(),
         produced_by: None,
         consumed_by: None,
+        state_of: None,
         state: crate::history_body::HistoryStateRef {
             ordinal: 0,
             identifier: 0,
