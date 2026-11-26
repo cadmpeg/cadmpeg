@@ -80,7 +80,7 @@ fn an_edge_continuity_the_asm_edge_record_does_not_hold_is_dropped_alone() {
         &ir,
         None,
         OMITTED,
-        "of edge continuities other than `tangent` and `unknown`",
+        "of edge continuities other than `tangent`, `tangent_not_g2` and `unknown`",
     );
     assert_no_whole_drop(&report);
     assert!(
@@ -90,6 +90,24 @@ fn an_edge_continuity_the_asm_edge_record_does_not_hold_is_dropped_alone() {
         "{:#?}",
         report.losses
     );
+}
+
+#[test]
+fn a_tangent_not_g2_edge_continuity_is_written() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let rows = vec![
+        continuity(&ir, 0, 0, "tangent_not_g2"),
+        continuity(&ir, 1, 1, "tangent"),
+    ];
+    f3d_native_mut(&mut ir).edge_continuities = rows;
+
+    let decoded = write_and_decode(&ir);
+    let tokens = f3d_native(&decoded)
+        .edge_continuities
+        .iter()
+        .filter(|row| row.continuity == "tangent_not_g2")
+        .count();
+    assert_eq!(tokens, 1);
 }
 
 #[test]

@@ -470,7 +470,7 @@ pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<U
 /// (asm.md §5.2): the edge is written with `unknown`.
 pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> {
     Unwritable::of(
-        "of edge continuities other than `tangent` and `unknown`, the tokens the ASM edge record holds",
+        "of edge continuities other than `tangent`, `tangent_not_g2` and `unknown`, the tokens the ASM edge record holds",
         native
             .edge_continuities
             .iter()
