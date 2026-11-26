@@ -19,7 +19,8 @@ use super::state::{Applied, State};
 use crate::document::Topology;
 use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
-use crate::validate::{nested_finding, nested_topology_findings};
+use crate::validate::nested_finding;
+use crate::validate::topology::nested;
 
 /// The rules of one topology on the resolved states of one validation pass.
 pub(super) struct StateRules<'c, 'd> {
@@ -33,7 +34,13 @@ impl<'c, 'd> StateRules<'c, 'd> {
     }
 
     fn findings(&self, topology: Topology, caches: bool) -> Result<Vec<Finding>, CodecError> {
-        nested_topology_findings(self.ctx, self.document, topology, false, caches)
+        nested::check(
+            self.ctx,
+            self.document,
+            topology,
+            None,
+            nested::NestRules::All { caches },
+        )
     }
 
     /// Reports against `holder` each finding of the rules on `state` that the

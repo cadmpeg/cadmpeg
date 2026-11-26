@@ -229,7 +229,7 @@ pub(super) fn state(key: &str, of: ProcessStateOf, base: ProcessBase) -> Process
 /// machining feature, a method group, a program that outputs the setup, a
 /// parameter, a toolpath, and the setup's stock and the state after the
 /// milling operation.
-pub(super) fn document() -> CadIr {
+pub(crate) fn document() -> CadIr {
     let mut ir = design::document();
     let process = &mut ir.process;
     process.setups.push(Setup {
