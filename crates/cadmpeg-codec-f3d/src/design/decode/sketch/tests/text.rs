@@ -1052,6 +1052,15 @@ fn the_txt_tag_anchor_run_widens_with_the_class_version() {
 /// tolerance, the knot, weight, and control-point arrays, an f64, two Boolean
 /// bytes, and the parameter interval.
 fn txt_tag_outline_curve(degree: u32, knots: &[f64], points: &[[f64; 3]]) -> Vec<u8> {
+    txt_tag_outline_curve_with_weights(degree, knots, &[], points)
+}
+
+fn txt_tag_outline_curve_with_weights(
+    degree: u32,
+    knots: &[f64],
+    weights: &[f64],
+    points: &[[f64; 3]],
+) -> Vec<u8> {
     let mut bytes = vec![0; 2];
     bytes.extend_from_slice(&degree.to_le_bytes());
     bytes.extend_from_slice(&1.0e-9f64.to_le_bytes());
@@ -1065,7 +1074,10 @@ fn txt_tag_outline_curve(degree: u32, knots: &[f64], points: &[[f64; 3]]) -> Vec
     for knot in knots {
         bytes.extend_from_slice(&knot.to_le_bytes());
     }
-    push_header(&mut bytes, 0);
+    push_header(&mut bytes, weights.len());
+    for weight in weights {
+        bytes.extend_from_slice(&weight.to_le_bytes());
+    }
     push_header(&mut bytes, points.len());
     for coordinate in points.iter().flatten() {
         bytes.extend_from_slice(&coordinate.to_le_bytes());
@@ -1122,8 +1134,14 @@ const OUTLINE_POINTS: [[f64; 3]; 4] = [
 #[test]
 fn a_class_version_two_txt_tag_record_stores_its_glyph_outline_ahead_of_the_text() {
     let curve = txt_tag_outline_curve(3, &OUTLINE_KNOTS, &OUTLINE_POINTS);
+    let rational = txt_tag_outline_curve_with_weights(
+        3,
+        &OUTLINE_KNOTS,
+        &[1.0, 0.5, 0.5, 1.0],
+        &OUTLINE_POINTS,
+    );
     for outline in [
-        txt_tag_outline(&[curve.clone(), curve.clone()], 3),
+        txt_tag_outline(&[curve.clone(), rational], 3),
         txt_tag_outline(&[curve.clone()], 0),
         txt_tag_outline(&[], 2),
         txt_tag_outline(&[], 0),
@@ -1184,10 +1202,26 @@ fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
         1
     ));
 
-    let mut flag = curve.clone();
-    let flag_at = flag.len() - 18;
-    flag[flag_at] = 2;
-    assert!(!decodes(&flag, 1));
+    for flag_at in [curve.len() - 18, curve.len() - 17] {
+        let mut flag = curve.clone();
+        flag[flag_at] = 2;
+        assert!(!decodes(&flag, 1));
+    }
+
+    for span_at in [curve.len() - 16, curve.len() - 8] {
+        let mut span = curve.clone();
+        span[span_at..span_at + 8].copy_from_slice(&0.5f64.to_le_bytes());
+        assert!(!decodes(&span, 1));
+    }
+
+    assert!(!decodes(
+        &txt_tag_outline_curve_with_weights(3, &OUTLINE_KNOTS, &[1.0], &OUTLINE_POINTS),
+        1
+    ));
+    assert!(!decodes(
+        &txt_tag_outline_curve(0, &OUTLINE_KNOTS[..5], &OUTLINE_POINTS),
+        1
+    ));
 
     // A curve count one above the stored blocks reads the line count as a curve.
     let mut outline = txt_tag_outline(std::slice::from_ref(&curve), 1);
@@ -1195,8 +1229,23 @@ fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
     assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_none());
     let mut outline = txt_tag_outline(std::slice::from_ref(&curve), 1);
     let line_count_at = 4 + curve.len();
-    outline[line_count_at] = 2;
+    outline[line_count_at + 3] = 1;
     assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_none());
+}
+
+#[test]
+fn a_class_version_two_txt_tag_outline_ends_on_two_zero_bytes() {
+    let outline = txt_tag_outline(&[], 1);
+    let mut bytes = txt_tag_sketch_text_record_with_outline(&outline);
+    assert!(decode_sketch_text_at(&bytes, 2).is_some());
+    let mut text = Vec::new();
+    lp_utf16(&mut text, "sketch text");
+    let text_at = bytes
+        .windows(text.len())
+        .position(|window| window == text)
+        .expect("fixture text string");
+    bytes[text_at - 1] = 1;
+    assert!(decode_sketch_text_at(&bytes, 2).is_none());
 }
 
 /// Build one sketch-text record: `properties` are the property-block keys in

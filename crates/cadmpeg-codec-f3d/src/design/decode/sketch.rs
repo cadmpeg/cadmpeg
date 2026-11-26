@@ -2728,20 +2728,20 @@ const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
 const TXT_TAG_IDENTITY_KEY_VERSION: u32 = 4;
 
 /// The `txt_tag` class version that stores the glyph outline of the text
-/// between the eight-byte lane after the anchor and the two bytes ahead of the
-/// text count.
+/// between the eight-byte lane after the anchor and the two zero bytes ahead
+/// of the text count.
 const TXT_TAG_OUTLINE_VERSION: u32 = 2;
 
 /// The eight-byte lane that follows the `txt_tag` anchor coordinates.
 const TXT_TAG_ANCHOR_LANE: usize = 8;
 
-/// Bytes of one `txt_tag` outline curve around its three counted arrays: two
-/// zero bytes, the u32 degree, and the f64 fit tolerance ahead of them; an
-/// f64, two Boolean bytes, and the f64 parameter interval after them.
+/// Bytes of one `txt_tag` outline curve ahead of its three counted arrays.
 const TXT_TAG_OUTLINE_CURVE_HEAD: usize = 14;
+
+/// Bytes of one `txt_tag` outline curve after its three counted arrays.
 const TXT_TAG_OUTLINE_CURVE_TAIL: usize = 26;
 
-/// One `txt_tag` outline line: an f64 start point and an f64 extent vector.
+/// Bytes of one `txt_tag` outline line.
 const TXT_TAG_OUTLINE_LINE: usize = 48;
 
 /// Three unknown bytes, one i32 font weight, and eight further bytes between
@@ -3105,13 +3105,9 @@ fn decode_sketch_text_tail(
     .transpose()
 }
 
-/// Walk the glyph outline a class-version-2 `txt_tag` record stores: a u32
-/// curve count and that many curve blocks, then a u32 line count and that many
-/// lines. A curve block is two zero bytes, the u32 degree, the f64 fit
-/// tolerance, the knot, weight, and control-point arrays, an f64, two Boolean
-/// bytes, and the f64 parameter interval. Each array is `u32 count, u32
-/// capacity, u32 8` and its values; a control point is three f64 coordinates.
-/// The knot count is the control-point count plus the degree plus one.
+/// Walk the glyph outline of a class-version-2 `txt_tag` record and the two
+/// zero bytes that follow it, leaving `cursor` on the text count
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
     let remaining = |cursor: usize| payload.len().checked_sub(cursor);
     let curves = View::u32_le_at(payload, *cursor)?;
@@ -3125,30 +3121,45 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
         if payload.get(*cursor..cursor.checked_add(2)?)? != [0; 2] {
             return None;
         }
-        let degree = usize::try_from(View::u32_le_at(payload, *cursor + 2)?).ok()?;
+        let degree = usize::try_from(View::u32_le_at(payload, cursor.checked_add(2)?)?).ok()?;
         *cursor = cursor.checked_add(TXT_TAG_OUTLINE_CURVE_HEAD)?;
         let mut counts = [0usize; 3];
-        for (count, width) in counts.iter_mut().zip([8usize, 8, 24]) {
+        let mut knot_span = [0u64; 2];
+        for (array, (count, width)) in counts.iter_mut().zip([8usize, 8, 24]).enumerate() {
             let stored = View::u32_le_at(payload, *cursor)?;
-            if View::u32_le_at(payload, *cursor + 4)? < stored
-                || View::u32_le_at(payload, *cursor + 8)? != 8
+            if View::u32_le_at(payload, cursor.checked_add(4)?)? != stored
+                || View::u32_le_at(payload, cursor.checked_add(8)?)? != 8
             {
                 return None;
             }
             *cursor = cursor.checked_add(12)?;
             *count =
                 cadmpeg_core::decode::bounded_len(u64::from(stored), width, remaining(*cursor)?)?;
-            *cursor = cursor.checked_add(count.checked_mul(width)?)?;
+            let end = cursor.checked_add(count.checked_mul(width)?)?;
+            if array == 0 && *count != 0 {
+                knot_span = [
+                    View::u64_le_at(payload, *cursor)?,
+                    View::u64_le_at(payload, end.checked_sub(8)?)?,
+                ];
+            }
+            *cursor = end;
         }
-        let [knots, _, points] = counts;
-        if knots != points.checked_add(degree)?.checked_add(1)? {
+        let [knots, weights, points] = counts;
+        if degree == 0
+            || knots != points.checked_add(degree)?.checked_add(1)?
+            || (weights != 0 && weights != points)
+        {
             return None;
         }
-        let tail = payload.get(*cursor..cursor.checked_add(TXT_TAG_OUTLINE_CURVE_TAIL)?)?;
-        if tail[8..10].iter().any(|flag| *flag > 1) {
+        let flags_at = cursor.checked_add(8)?;
+        let span_at = cursor.checked_add(10)?;
+        if payload.get(flags_at..span_at)?.iter().any(|flag| *flag > 1)
+            || View::u64_le_at(payload, span_at)? != knot_span[0]
+            || View::u64_le_at(payload, span_at.checked_add(8)?)? != knot_span[1]
+        {
             return None;
         }
-        *cursor += TXT_TAG_OUTLINE_CURVE_TAIL;
+        *cursor = cursor.checked_add(TXT_TAG_OUTLINE_CURVE_TAIL)?;
     }
     let lines = View::u32_le_at(payload, *cursor)?;
     *cursor = cursor.checked_add(4)?;
@@ -3158,6 +3169,11 @@ fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
         remaining(*cursor)?,
     )?;
     *cursor = cursor.checked_add(lines.checked_mul(TXT_TAG_OUTLINE_LINE)?)?;
+    let end = cursor.checked_add(2)?;
+    if payload.get(*cursor..end)? != [0; 2] {
+        return None;
+    }
+    *cursor = end;
     Some(())
 }
 
@@ -3193,7 +3209,6 @@ fn decode_txt_tag_sketch_text_tail(
         if class_version == TXT_TAG_OUTLINE_VERSION {
             cursor = cursor.checked_add(TXT_TAG_ANCHOR_LANE)?;
             skip_txt_tag_outline(payload, &mut cursor)?;
-            cursor = cursor.checked_add(anchor_run - TXT_TAG_ANCHOR_LANE)?;
         } else {
             cursor = cursor.checked_add(anchor_run)?;
         }
