@@ -307,6 +307,9 @@ jobs:
           (while sleep 30; do free -m | awk 'NR==2 {m=$3} NR==3 {print "memory used " m " MiB, swap used " $3 " MiB"}'; done) &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast --timings
 
+      - name: Experiment CPU model
+        run: grep -m1 'model name' /proc/cpuinfo || true
+
       - name: Upload build timings
         # Cargo's per-unit compile report: which crates sit on the critical
         # path and how many units ran at once.
@@ -557,6 +560,24 @@ jobs:
       - name: Build tests
         timeout-minutes: 75
         run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests --timings
+
+      - name: Experiment CPU model
+        shell: bash
+        run: (grep -m1 'model name' /proc/cpuinfo || sysctl -n machdep.cpu.brand_string) 2>/dev/null || true
+
+      - name: Experiment Windows rebuild with rust-lld
+        if: runner.os == 'Windows'
+        timeout-minutes: 75
+        shell: bash
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld.exe
+        run: cargo clean -q && python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
+
+      - name: Experiment Windows rebuild with link.exe
+        if: runner.os == 'Windows'
+        timeout-minutes: 75
+        shell: bash
+        run: cargo clean -q && python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
 
       - name: Upload build timings
         if: ${{ always() }}
