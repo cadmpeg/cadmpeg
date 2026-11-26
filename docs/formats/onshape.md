@@ -57,7 +57,8 @@ selection text. The canonical member paths above bind the Part Studio.
 
 The feature response has a `features` array in timeline order and can have
 a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
-`featureType` selects the operation. `name` carries its display label.
+`featureType` selects the operation. `name` carries its display label; a blank or
+absent `name` leaves the `featureId` as the label.
 `parameters` is an array with unique `parameterId` keys; `btType` names each
 REST record class. `suppressed` and `parentSuppressed` are Boolean fields
 that mark inactive features. `rollbackIndex` is the number of features before the
@@ -188,10 +189,6 @@ inside the outer loop and outside every hole. The target covers the complete
 profile. No other face meets a ray of the profile at a smaller positive
 distance. A plane parallel to the travel direction that crosses the profile
 prevents the target.
-
-The bundle stores no body geometry at the output of a feature with a nonempty
-`namespace`. It stores the input bodies in `bodydetails` and the final STEP
-export only.
 
 A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
 scope list identifies target bodies at the consuming rollback. An empty

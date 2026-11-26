@@ -52,8 +52,8 @@ fn custom_features_name_the_missing_frozen_shape_even_with_rollback_details() {
             );
         }
         let reason = format!(
-            "custom FeatureScript feature {name} is not supported yet: bundle format 1 \
-             lacks complete per-feature body geometry to prove a frozen step"
+            "custom FeatureScript feature {name} is not supported yet: a namespaced \
+             feature's stored parameters do not say which operation it performs"
         );
         assert_eq!(
             losses[0].detail,
@@ -105,5 +105,35 @@ fn suppressed_custom_features_do_not_report_a_frozen_shape_gap() {
             .code
             .as_deref()
             .is_some_and(|code| code.starts_with("onshape/"))));
+    }
+}
+
+#[test]
+fn a_custom_feature_with_malformed_controls_still_names_its_stop() {
+    let repeated = json!({"parameterId": "repeated", "value": true});
+    for malformed in [
+        vec![json!({"parameterId": "midplane", "value": "yes"})],
+        vec![repeated.clone(), repeated],
+    ] {
+        let bytes = changed(&fixture("plate-fillet"), |path, value| {
+            if path.ends_with("features.json") {
+                let feature = &mut value["features"][1];
+                feature["namespace"] = json!("synthetic");
+                feature["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                    .extend(malformed.clone());
+            }
+        });
+        let (_, report) = read(&bytes).unwrap();
+        assert!(
+            report
+                .losses()
+                .iter()
+                .any(|l| l.detail.contains("custom FeatureScript feature")
+                    && l.detail.contains("do not say which operation it performs")),
+            "{malformed:?}: {:?}",
+            report.losses()
+        );
     }
 }

@@ -697,6 +697,13 @@ pub(super) fn map(
     report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
+    if is_custom(feature) {
+        let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
+        return Err(format!(
+            "custom FeatureScript feature {name} is not supported yet: a namespaced \
+             feature's stored parameters do not say which operation it performs"
+        ));
+    }
     if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
         super::sweep::validate_record(feature)?;
     } else {
