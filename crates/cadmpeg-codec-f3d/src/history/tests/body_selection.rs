@@ -1361,18 +1361,24 @@ fn a_seed_body_that_an_unscoped_state_updates_is_generated_by_its_inserting_feat
         0,
         None,
         false,
-        [(81, vec![1]), (80, vec![1]), (79, vec![1]), (77, vec![1]), (2, Vec::new())]
-            .into_iter()
-            .map(|(state_id, bodies)| {
-                let mut state = history_state(state_id, bodies);
-                if state_id == 80 {
-                    for version in &mut state.2 {
-                        version.record_ref = 79;
-                    }
+        [
+            (81, vec![1]),
+            (80, vec![1]),
+            (79, vec![1]),
+            (77, vec![1]),
+            (2, Vec::new()),
+        ]
+        .into_iter()
+        .map(|(state_id, bodies)| {
+            let mut state = history_state(state_id, bodies);
+            if state_id == 80 {
+                for version in &mut state.2 {
+                    version.record_ref = 79;
                 }
-                state
-            })
-            .collect(),
+            }
+            state
+        })
+        .collect(),
     )];
     let (pattern, _, losses) = generated_selection_in_state(
         std::slice::from_ref(&body),
