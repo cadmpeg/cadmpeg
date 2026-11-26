@@ -18,6 +18,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
 
 /// The offset interval each feature owns, in start order.
@@ -257,92 +258,56 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
         .collect()
 }
 
-/// The relation-class declarations that claim the lane's dimensions.
-struct DimensionClaims<'l> {
-    /// The parameter each scalar's record states.
-    stated: HashMap<&'l str, Statement>,
-    /// Each declaration with the dimension it claims and its family.
-    candidates: Vec<(
-        &'l FeatureInputClass,
-        &'l FeatureInputScalar,
-        FeatureInputRelationFamily,
-    )>,
-    /// The number of declarations that claim each dimension.
-    counts: HashMap<&'l str, usize>,
-    /// The dimensions that no declaration claims, in stream order: the
-    /// nearest declaration of each states another quantity than its record.
-    unclaimed: Vec<&'l FeatureInputScalar>,
+/// The millimetres in one metre: the document states its linear tolerance in
+/// millimetres, and sketch coordinates and scalars are metres.
+const MILLIMETRES_PER_METRE: f64 = 1000.0;
+
+/// The span between two sketch points that a point-distance family
+/// measures.
+#[derive(Clone, Copy)]
+enum PointSpan {
+    Direct,
+    Horizontal,
+    Vertical,
 }
 
-impl<'l> DimensionClaims<'l> {
-    fn of(lane: &'l FeatureInputLane, intervals: &[(u64, Option<u64>, String)]) -> Self {
-        // A dimension whose own record states a parameter of another
-        // quantity than the declared relation's (§2) is no dimension of that
-        // relation.
-        let stated = stated_parameters(lane, None);
-        let mut candidates =
-            relation_declaration_candidates_impl(&lane.classes, &lane.scalars, intervals, true);
-        let mut refused = Vec::new();
-        candidates.retain(|(class, scalar, _)| {
-            let claims = match (relation_kind(&class.name), stated.get(scalar.id.as_str())) {
-                (Some(kind), Some(Statement::Parameter(parameter))) => parameter.class() == kind,
-                _ => true,
-            };
-            if !claims {
-                refused.push(*scalar);
-            }
-            claims
-        });
-        let mut counts = HashMap::<&str, usize>::new();
-        for (_, scalar, _) in &candidates {
-            *counts.entry(scalar.id.as_str()).or_default() += 1;
-        }
-        let mut seen = HashSet::new();
-        refused.retain(|scalar| {
-            !counts.contains_key(scalar.id.as_str()) && seen.insert(scalar.id.as_str())
-        });
-        refused.sort_by_key(|scalar| scalar.offset);
-        Self {
-            stated,
-            candidates,
-            counts,
-            unclaimed: refused,
+impl PointSpan {
+    /// The span that `family` measures, for the point-distance families.
+    fn of(family: FeatureInputRelationFamily) -> Option<Self> {
+        match family {
+            FeatureInputRelationFamily::PointPointDistance => Some(Self::Direct),
+            FeatureInputRelationFamily::PointPointHorizontalDistance => Some(Self::Horizontal),
+            FeatureInputRelationFamily::PointPointVerticalDistance => Some(Self::Vertical),
+            _ => None,
         }
     }
-}
 
-/// Parasolid's linear resolution in metres: the tolerance in force for a
-/// part whose bodies store no precision (`cadir-v11.md` §2.3), and the
-/// resolution of sketch comparisons in `sldprt.md`.
-const LINEAR_RESOLUTION_M: f64 = 1.0e-8;
-
-fn within_linear_resolution(left: f64, right: f64) -> bool {
-    (left - right).abs() <= LINEAR_RESOLUTION_M
+    fn measure(self, first: [f64; 2], second: [f64; 2]) -> f64 {
+        let [x, y] = [second[0] - first[0], second[1] - first[1]];
+        match self {
+            Self::Direct => x.hypot(y),
+            Self::Horizontal => x.abs(),
+            Self::Vertical => y.abs(),
+        }
+    }
 }
 
 /// The point-distance families, whose relation the two sketch points of its
 /// operands measure.
 fn is_point_distance_family(family: FeatureInputRelationFamily) -> bool {
-    matches!(
-        family,
-        FeatureInputRelationFamily::PointPointDistance
-            | FeatureInputRelationFamily::PointPointHorizontalDistance
-            | FeatureInputRelationFamily::PointPointVerticalDistance
-    )
+    PointSpan::of(family).is_some()
 }
 
 /// Whether a point-distance relation's bound operands are two sketch points
 /// whose distance, along the family's axis, is the relation's value within
-/// the linear resolution.
+/// `linear_m` metres.
 fn relation_measures_its_value(
     relation: &FeatureInputRelationInstance,
     index: &RelationOperandIndex<'_>,
+    linear_m: f64,
 ) -> bool {
-    let horizontal = match relation.family {
-        FeatureInputRelationFamily::PointPointDistance => None,
-        FeatureInputRelationFamily::PointPointHorizontalDistance => Some(true),
-        FeatureInputRelationFamily::PointPointVerticalDistance => Some(false),
-        _ => return false,
+    let Some(span) = PointSpan::of(relation.family) else {
+        return false;
     };
     let Some(target) = index.target_value(relation) else {
         return false;
@@ -362,11 +327,31 @@ fn relation_measures_its_value(
     let (Some(first), Some(second)) = (point(first), point(second)) else {
         return false;
     };
-    let measured = horizontal.map_or_else(
-        || point_distance(first, second),
-        |horizontal| axis_distance(first, second, horizontal),
-    );
-    within_linear_resolution(measured, target.get())
+    (span.measure(first, second) - target.get()).abs() <= linear_m
+}
+
+/// The two sketch points a relation's operands are bound to, in a fixed
+/// order, where both are bound.
+fn bound_point_pair(relation: &FeatureInputRelationInstance) -> Option<[&str; 2]> {
+    let [first, second] = relation.operands.as_slice() else {
+        return None;
+    };
+    let mut pair = [first.entity_ref.as_deref()?, second.entity_ref.as_deref()?];
+    pair.sort_unstable();
+    Some(pair)
+}
+
+/// Whether `declared` holds a relation of `relation`'s family on the same two
+/// sketch points, in either order.
+fn has_declared_twin(
+    declared: &[FeatureInputRelationInstance],
+    relation: &FeatureInputRelationInstance,
+) -> bool {
+    bound_point_pair(relation).is_some_and(|pair| {
+        declared
+            .iter()
+            .any(|other| other.family == relation.family && bound_point_pair(other) == Some(pair))
+    })
 }
 
 /// A lane's relation instances, and for a compound-file lane the loss note
@@ -376,13 +361,16 @@ pub(super) struct LaneRelations {
     pub(super) unclassed: Option<cadmpeg_ir::report::loss::LossNote>,
 }
 
-/// One loss note naming `scalars`, the sketch dimension scalars of a
-/// compound-file lane whose relation class is unknown (open item EV-05) and
-/// that no relation instance holds.
+/// One loss note for the sketch dimension scalars of a compound-file lane
+/// that no relation instance of `instances` holds: those of `tried`, whose
+/// relation class is unknown (open item EV-05), and those of `twins`, whose
+/// relation measures the sketch points of a relation of the same family that
+/// the lane declares.
 fn unclassed_dimension_note(
     lane: &FeatureInputLane,
     sketch_features: &HashSet<&str>,
-    scalars: &HashSet<String>,
+    tried: &HashSet<String>,
+    twins: &HashSet<String>,
     instances: &[FeatureInputRelationInstance],
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     let held = instances
@@ -390,53 +378,73 @@ fn unclassed_dimension_note(
         .flat_map(FeatureInputRelationInstance::scalar_refs)
         .map(String::as_str)
         .collect::<HashSet<_>>();
-    let mut unclassed = lane
-        .scalars
-        .iter()
-        .filter(|scalar| {
-            scalars.contains(scalar.id.as_str())
-                && !held.contains(scalar.id.as_str())
-                && scalar
-                    .feature_ref
-                    .as_deref()
-                    .is_some_and(|feature| sketch_features.contains(feature))
-        })
-        .collect::<Vec<_>>();
-    unclassed.sort_by_key(|scalar| scalar.offset);
-    if unclassed.is_empty() {
+    let mut unknown = Vec::new();
+    let mut twinned = Vec::new();
+    for scalar in &lane.scalars {
+        let id = scalar.id.as_str();
+        if held.contains(id)
+            || !scalar
+                .feature_ref
+                .as_deref()
+                .is_some_and(|feature| sketch_features.contains(feature))
+        {
+            continue;
+        }
+        if twins.contains(id) {
+            twinned.push(scalar);
+        } else if tried.contains(id) {
+            unknown.push(scalar);
+        }
+    }
+    if unknown.is_empty() && twinned.is_empty() {
         return None;
     }
-    let ids = unclassed
-        .iter()
-        .map(|scalar| scalar.id.as_str())
-        .collect::<Vec<_>>();
-    Some(
-        crate::loss::SldprtLossCode::SketchDimensionClassUnknown.note(format!(
+    let named = |mut scalars: Vec<&FeatureInputScalar>| {
+        scalars.sort_by_key(|scalar| scalar.offset);
+        let ids = scalars
+            .iter()
+            .map(|scalar| scalar.id.as_str())
+            .collect::<Vec<_>>();
+        crate::loss::named(&ids)
+    };
+    let mut message = Vec::new();
+    if !unknown.is_empty() {
+        message.push(format!(
             "sketch dimension scalar(s) {} of a compound-file lane form no relation instance: \
-             the relation class of their dimensions is unknown (open item EV-05). The scalar \
-             records are kept as native records.",
-            crate::loss::named(&ids)
-        )),
-    )
+             the relation class of their dimensions is unknown (open item EV-05).",
+            named(unknown)
+        ));
+    }
+    if !twinned.is_empty() {
+        message.push(format!(
+            "sketch dimension scalar(s) {} of a compound-file lane measure the two sketch \
+             points of a relation of the same family that the lane declares, and form no \
+             second relation instance (open item EV-05).",
+            named(twinned)
+        ));
+    }
+    message.push("The scalar records are kept as native records.".to_owned());
+    Some(crate::loss::SldprtLossCode::SketchDimensionClassUnknown.note(message.join(" ")))
 }
 
-fn sketch_features(histories: &[crate::records::FeatureHistory]) -> HashSet<&str> {
-    histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
-        .map(|feature| feature.id.as_str())
-        .collect()
+/// The class that a relation group takes only from a compound-file lane's
+/// relation-class token (open item EV-05).
+#[derive(Clone, Copy)]
+enum Gate<'a> {
+    /// The token declaration of this scalar gives the class.
+    Declared(&'a str),
+    /// The group is a driving scalar after a group of such a class, and takes
+    /// that group's class.
+    Following,
 }
 
 struct RelationGroup<'a> {
     feature_ref: &'a str,
     family: FeatureInputRelationFamily,
     class_ref: &'a str,
-    /// The scalar whose relation-class declaration gives the group its
-    /// class where that class comes only from a compound-file lane's
-    /// relation-class token (open item EV-05).
-    gate: Option<&'a str>,
+    /// Where the group's class comes only from a compound-file lane's
+    /// relation-class token, how the group takes it.
+    gate: Option<Gate<'a>>,
     operands: &'a [FeatureInputOperand],
     scalars: Vec<(usize, &'a FeatureInputScalar)>,
     /// Present while every scalar is a one-operand display scalar of one
@@ -639,13 +647,44 @@ const RELATION_OBJECT_ZERO: u64 = 4;
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
+    linear: PositiveLength,
 ) -> Result<LaneRelations, CodecError> {
-    let sketch_features = sketch_features(histories);
+    let linear_m = linear.get() / MILLIMETRES_PER_METRE;
+    let sketch_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
     let intervals = feature_intervals(histories, lane);
-    let claims = DimensionClaims::of(lane, &intervals);
+    // A dimension whose own record states a parameter of another quantity
+    // than the declared relation's (§2) is no dimension of that relation.
+    let stated = stated_parameters(lane, None);
+    let mut candidates =
+        relation_declaration_candidates_impl(&lane.classes, &lane.scalars, &intervals, true);
+    let mut unclaimed = Vec::new();
+    candidates.retain(|(class, scalar, _)| {
+        let claims = match (relation_kind(&class.name), stated.get(scalar.id.as_str())) {
+            (Some(kind), Some(Statement::Parameter(parameter))) => parameter.class() == kind,
+            _ => true,
+        };
+        if !claims {
+            unclaimed.push(*scalar);
+        }
+        claims
+    });
+    let mut candidate_counts = HashMap::<&str, usize>::new();
+    for (_, scalar, _) in &candidates {
+        *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
+    }
+    let mut seen = HashSet::new();
+    unclaimed.retain(|scalar| {
+        !candidate_counts.contains_key(scalar.id.as_str()) && seen.insert(scalar.id.as_str())
+    });
+    unclaimed.sort_by_key(|scalar| scalar.offset);
     let mut declarations = HashMap::new();
-    for &(class, scalar, family) in &claims.candidates {
-        if claims.counts.get(scalar.id.as_str()) == Some(&1) {
+    for &(class, scalar, family) in &candidates {
+        if candidate_counts.get(scalar.id.as_str()) == Some(&1) {
             declarations.insert(
                 scalar.id.as_str(),
                 Declaration {
@@ -657,26 +696,25 @@ pub(super) fn relation_instances(
             );
         }
     }
-    let candidate_counts = claims.counts;
     // An unclaimed dimension has the relation class its own relation-class
     // token names, of the quantity its record states (§2). A compound-file
     // lane does not state which tokens are its own (open item EV-05); there
     // a point-distance class holds where two sketch points measure the
     // relation's value, and each other class is unknown.
     let compound = compound_opening(&lane.native_payload);
-    let token_classes = if claims.unclaimed.is_empty() {
+    let token_classes = if unclaimed.is_empty() {
         HashMap::new()
     } else {
         token_relation_classes(lane, &sketch_features)
     };
-    for scalar in &claims.unclaimed {
+    for scalar in &unclaimed {
         let Some(class) = token_classes.get(scalar.id.as_str()) else {
             continue;
         };
         let Some(family) = relation_family(&class.name) else {
             continue;
         };
-        let stated_kind = match claims.stated.get(scalar.id.as_str()) {
+        let stated_kind = match stated.get(scalar.id.as_str()) {
             Some(Statement::Parameter(parameter)) => Some(parameter.class()),
             _ => None,
         };
@@ -700,33 +738,39 @@ pub(super) fn relation_instances(
     let index = RelationOperandIndex::new(lane);
     let mut lane_declarations = declarations.clone();
     lane_declarations.retain(|_, declaration| !declaration.token_only);
-    let (main, _) = form_relations(
+    let lane_formed = LaneForms {
         lane,
-        &sketch_features,
-        &lane_declarations,
-        &candidate_counts,
-        &index,
-    )?;
-    let mut tried = claims
-        .unclaimed
-        .iter()
-        .map(|scalar| scalar.id.clone())
-        .collect::<HashSet<_>>();
+        sketch_features: &sketch_features,
+        candidate_counts: &candidate_counts,
+        index: &index,
+        linear_m,
+    };
+    let (main, _) = lane_formed.relations(&lane_declarations)?;
+    // An unclaimed display scalar and the driving scalar that the grouping
+    // joins to it are one dimension.
+    let mut tried = HashSet::new();
+    for (position, scalar) in lane.scalars.iter().enumerate() {
+        if !unclaimed.iter().any(|unclaimed| unclaimed.id == scalar.id) {
+            continue;
+        }
+        tried.insert(scalar.id.clone());
+        if let Some(driving) = lane.scalars.get(position + 1).filter(|driving| {
+            scalar.role == FeatureInputScalarRole::Display
+                && driving.role == FeatureInputScalarRole::Driving
+                && driving.feature_ref == scalar.feature_ref
+                && same_operand_cells(&scalar.operands, &driving.operands)
+        }) {
+            tried.insert(driving.id.clone());
+        }
+    }
+    let mut twins = HashSet::new();
     let instances = if lane_declarations.len() == declarations.len() {
         main
     } else {
-        measured_relations(
-            lane,
-            &sketch_features,
-            declarations,
-            &candidate_counts,
-            &index,
-            main,
-            &mut tried,
-        )?
+        measured_relations(&lane_formed, declarations, main, &mut tried, &mut twins)?
     };
     let unclassed = compound
-        .then(|| unclassed_dimension_note(lane, &sketch_features, &tried, &instances))
+        .then(|| unclassed_dimension_note(lane, &sketch_features, &tried, &twins, &instances))
         .flatten();
     Ok(LaneRelations {
         instances,
@@ -734,20 +778,32 @@ pub(super) fn relation_instances(
     })
 }
 
+/// What the relation instances of one lane are formed from, besides the
+/// declarations.
+struct LaneForms<'l, 'f> {
+    lane: &'l FeatureInputLane,
+    sketch_features: &'f HashSet<&'l str>,
+    candidate_counts: &'f HashMap<&'l str, usize>,
+    index: &'f RelationOperandIndex<'l>,
+    /// The part's linear tolerance in metres.
+    linear_m: f64,
+}
+
 /// The lane's relation instances: `main`, which the lane's declarations
 /// form, and each relation whose class comes only from a compound-file
 /// lane's relation-class token (open item EV-05) where two sketch points
-/// measure its value and `main` holds none of its scalars. The lane is formed
-/// again without the token declaration of each other such relation. The
-/// scalars of every such relation go into `tried`.
+/// measure its value, `main` holds none of its scalars and `main` holds no
+/// relation of its family on the same two points. Each other such relation
+/// is left out, and where a token declaration gives its class the lane is
+/// formed again without that declaration. The scalars of every such relation
+/// go into `tried`, and those of a relation that a relation of `main` twins
+/// into `twins`.
 fn measured_relations<'l>(
-    lane: &'l FeatureInputLane,
-    sketch_features: &HashSet<&str>,
+    forms: &LaneForms<'l, '_>,
     mut declarations: HashMap<&'l str, Declaration<'l>>,
-    candidate_counts: &HashMap<&'l str, usize>,
-    index: &RelationOperandIndex<'_>,
     main: Vec<FeatureInputRelationInstance>,
     tried: &mut HashSet<String>,
+    twins: &mut HashSet<String>,
 ) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
     let held = main
         .iter()
@@ -755,26 +811,24 @@ fn measured_relations<'l>(
         .cloned()
         .collect::<HashSet<_>>();
     loop {
-        let (formed, gates) = form_relations(
-            lane,
-            sketch_features,
-            &declarations,
-            candidate_counts,
-            index,
-        )?;
+        let (formed, gates) = forms.relations(&declarations)?;
         let mut measured = Vec::new();
         let mut rejected = HashSet::new();
         for relation in formed {
-            let Some(gate) = gates.get(&relation.id) else {
+            let Some(&gate) = gates.get(&relation.id) else {
                 continue;
             };
             tried.extend(relation.scalar_refs().iter().cloned());
-            if relation_measures_its_value(&relation, index)
-                && relation.scalar_refs().iter().all(|id| !held.contains(id))
-            {
+            let accepted = relation_measures_its_value(&relation, forms.index, forms.linear_m)
+                && relation.scalar_refs().iter().all(|id| !held.contains(id));
+            let twinned = accepted && has_declared_twin(&main, &relation);
+            if twinned {
+                twins.extend(relation.scalar_refs().iter().cloned());
+            }
+            if accepted && !twinned {
                 measured.push(relation);
-            } else {
-                rejected.insert(*gate);
+            } else if let Gate::Declared(scalar) = gate {
+                rejected.insert(scalar);
             }
         }
         if rejected.is_empty() {
@@ -809,254 +863,267 @@ struct Declaration<'l> {
     token_only: bool,
 }
 
-/// The lane's relation instances under `declarations`, with their operands
-/// bound, and the gate scalar of each instance whose class comes only from a
-/// compound-file lane's relation-class token, by instance identity.
-fn form_relations<'l>(
-    lane: &'l FeatureInputLane,
-    sketch_features: &HashSet<&str>,
-    declarations: &HashMap<&'l str, Declaration<'l>>,
-    candidate_counts: &HashMap<&'l str, usize>,
-    index: &RelationOperandIndex<'_>,
-) -> Result<(Vec<FeatureInputRelationInstance>, HashMap<String, &'l str>), CodecError> {
-    let mut relation_class_offsets = lane
-        .classes
-        .iter()
-        .filter(|class| relation_family(&class.name).is_some())
-        .map(|class| class.offset)
-        .collect::<Vec<_>>();
-    relation_class_offsets.sort_unstable();
-    // Name lookup keeps the first directory record at a repeated identity.
-    let mut names_by_id = HashMap::<&str, &str>::new();
-    for name in &lane.names {
-        names_by_id
-            .entry(name.id.as_str())
-            .or_insert(name.value.as_str());
-    }
-    let mut token_relations = TokenRelations::new(lane);
-    let mut groups = Vec::<RelationGroup<'_>>::new();
-    for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
-        let Some(feature_ref) = scalar
-            .feature_ref
-            .as_deref()
-            .filter(|feature| sketch_features.contains(feature))
-        else {
-            continue;
-        };
-        let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
-        let Some(declaration) = declarations.get(scalar.id.as_str()) else {
-            if candidate_counts
-                .get(scalar.id.as_str())
-                .is_some_and(|count| *count > 1)
-            {
-                continue;
-            }
-            let declared_class = groups
-                .last()
-                .filter(|group| {
-                    first_framed_after_native(group, feature_ref, &lane.scalars, scalar_index)
-                })
-                .map(|group| group.class_ref);
-            let token_pair = declared_class
-                .and(lane.scalars.get(scalar_index + 1))
-                .filter(|driving| {
-                    !candidate_counts.contains_key(driving.id.as_str())
-                        && relation_class_offsets
-                            .get(
-                                relation_class_offsets
-                                    .partition_point(|offset| *offset <= scalar.offset),
-                            )
-                            .is_none_or(|offset| *offset >= driving.offset)
-                })
-                .and_then(|driving| token_relations.relation(scalar, driving))
-                .filter(|&(_, class_ref)| Some(class_ref) == declared_class);
-            if let Some((family, class_ref)) = token_pair {
-                groups.push(RelationGroup {
-                    feature_ref,
-                    family,
-                    class_ref,
-                    gate: None,
-                    operands: &scalar.operands,
-                    scalars: vec![(scalar_index, scalar)],
-                    circle_displays: CircleDisplays::of(scalar, scalar_name),
-                });
-                continue;
-            }
-            let Some(group) = groups.last_mut() else {
+impl<'l> LaneForms<'l, '_> {
+    /// The lane's relation instances under `declarations`, with their operands
+    /// bound, and the gate of each instance whose class comes only from a
+    /// compound-file lane's relation-class token, by instance identity.
+    fn relations(
+        &self,
+        declarations: &HashMap<&'l str, Declaration<'l>>,
+    ) -> Result<(Vec<FeatureInputRelationInstance>, HashMap<String, Gate<'l>>), CodecError> {
+        let Self {
+            lane,
+            sketch_features,
+            candidate_counts,
+            index,
+            linear_m,
+        } = *self;
+        let mut relation_class_offsets = lane
+            .classes
+            .iter()
+            .filter(|class| relation_family(&class.name).is_some())
+            .map(|class| class.offset)
+            .collect::<Vec<_>>();
+        relation_class_offsets.sort_unstable();
+        // Name lookup keeps the first directory record at a repeated identity.
+        let mut names_by_id = HashMap::<&str, &str>::new();
+        for name in &lane.names {
+            names_by_id
+                .entry(name.id.as_str())
+                .or_insert(name.value.as_str());
+        }
+        let mut token_relations = TokenRelations::new(lane);
+        let mut groups = Vec::<RelationGroup<'_>>::new();
+        for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
+            let Some(feature_ref) = scalar
+                .feature_ref
+                .as_deref()
+                .filter(|feature| sketch_features.contains(feature))
+            else {
                 continue;
             };
-            let Some((last_index, last_scalar)) = group.scalars.last() else {
-                continue;
-            };
-            // Run the class interval search and operand comparisons only
-            // when this scalar can extend an existing group.
-            let same_scope = group.feature_ref == feature_ref
-                && *last_index + 1 == scalar_index
-                && relation_class_offsets
-                    .get(
-                        relation_class_offsets
-                            .partition_point(|offset| *offset <= last_scalar.offset),
-                    )
-                    .is_none_or(|offset| *offset >= scalar.offset);
-            let same_operands = same_operand_cells(group.operands, &scalar.operands);
-            let repeated_circle_display = same_scope
-                && group.family == FeatureInputRelationFamily::CircleDiameter
-                && group
-                    .circle_displays
-                    .as_ref()
-                    .is_some_and(|displays| displays.repeated_by(scalar, scalar_name));
-            if repeated_circle_display {
-                group.push(scalar_index, scalar, scalar_name);
-            } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
-            {
-                if group.scalars.len() == 1 {
-                    group.push(scalar_index, scalar, scalar_name);
-                } else {
-                    let next = RelationGroup {
-                        feature_ref: group.feature_ref,
-                        family: group.family,
-                        class_ref: group.class_ref,
-                        gate: group.gate,
+            let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
+            let Some(declaration) = declarations.get(scalar.id.as_str()) else {
+                if candidate_counts
+                    .get(scalar.id.as_str())
+                    .is_some_and(|count| *count > 1)
+                {
+                    continue;
+                }
+                let declared_class = groups
+                    .last()
+                    .filter(|group| {
+                        first_framed_after_native(group, feature_ref, &lane.scalars, scalar_index)
+                    })
+                    .map(|group| group.class_ref);
+                let token_pair = declared_class
+                    .and(lane.scalars.get(scalar_index + 1))
+                    .filter(|driving| {
+                        !candidate_counts.contains_key(driving.id.as_str())
+                            && relation_class_offsets
+                                .get(
+                                    relation_class_offsets
+                                        .partition_point(|offset| *offset <= scalar.offset),
+                                )
+                                .is_none_or(|offset| *offset >= driving.offset)
+                    })
+                    .and_then(|driving| token_relations.relation(scalar, driving))
+                    .filter(|&(_, class_ref)| Some(class_ref) == declared_class);
+                if let Some((family, class_ref)) = token_pair {
+                    groups.push(RelationGroup {
+                        feature_ref,
+                        family,
+                        class_ref,
+                        gate: None,
                         operands: &scalar.operands,
                         scalars: vec![(scalar_index, scalar)],
                         circle_displays: CircleDisplays::of(scalar, scalar_name),
-                    };
-                    groups.push(next);
+                    });
+                    continue;
                 }
-            }
-            continue;
-        };
-        // A display scalar can precede the declaration selected by its adjacent
-        // driving scalar. The driving scalar's declaration is authoritative for
-        // that pair; display-only scalars still stop at a class declaration.
-        let gate = declaration.token_only.then_some(scalar.id.as_str());
-        let promote_class = groups.last().is_some_and(|group| {
-            group.class_ref != declaration.class_ref
-                && group.scalars.len() == 1
-                && group.scalars[0].1.role == FeatureInputScalarRole::Display
-                && scalar.role == FeatureInputScalarRole::Driving
-                && declaration.class_offset > group.scalars[0].1.offset
-                && declaration.class_offset < scalar.offset
-        });
-        let append = groups.last_mut().filter(|group| {
+                let Some(group) = groups.last_mut() else {
+                    continue;
+                };
+                let Some((last_index, last_scalar)) = group.scalars.last() else {
+                    continue;
+                };
+                // Run the class interval search and operand comparisons only
+                // when this scalar can extend an existing group.
+                let same_scope = group.feature_ref == feature_ref
+                    && *last_index + 1 == scalar_index
+                    && relation_class_offsets
+                        .get(
+                            relation_class_offsets
+                                .partition_point(|offset| *offset <= last_scalar.offset),
+                        )
+                        .is_none_or(|offset| *offset >= scalar.offset);
+                let same_operands = same_operand_cells(group.operands, &scalar.operands);
+                let repeated_circle_display = same_scope
+                    && group.family == FeatureInputRelationFamily::CircleDiameter
+                    && group
+                        .circle_displays
+                        .as_ref()
+                        .is_some_and(|displays| displays.repeated_by(scalar, scalar_name));
+                if repeated_circle_display {
+                    group.push(scalar_index, scalar, scalar_name);
+                } else if same_scope
+                    && same_operands
+                    && scalar.role == FeatureInputScalarRole::Driving
+                {
+                    if group.scalars.len() == 1 {
+                        group.push(scalar_index, scalar, scalar_name);
+                    } else {
+                        let next = RelationGroup {
+                            feature_ref: group.feature_ref,
+                            family: group.family,
+                            class_ref: group.class_ref,
+                            gate: group.gate.map(|_| Gate::Following),
+                            operands: &scalar.operands,
+                            scalars: vec![(scalar_index, scalar)],
+                            circle_displays: CircleDisplays::of(scalar, scalar_name),
+                        };
+                        groups.push(next);
+                    }
+                }
+                continue;
+            };
+            // A display scalar can precede the declaration selected by its adjacent
+            // driving scalar. The driving scalar's declaration is authoritative for
+            // that pair; display-only scalars still stop at a class declaration.
+            let gate = declaration
+                .token_only
+                .then_some(Gate::Declared(scalar.id.as_str()));
+            let promote_class = groups.last().is_some_and(|group| {
+                group.class_ref != declaration.class_ref
+                    && group.scalars.len() == 1
+                    && group.scalars[0].1.role == FeatureInputScalarRole::Display
+                    && scalar.role == FeatureInputScalarRole::Driving
+                    && declaration.class_offset > group.scalars[0].1.offset
+                    && declaration.class_offset < scalar.offset
+            });
+            let append = groups.last_mut().filter(|group| {
             group.feature_ref == feature_ref
                 && (group.family == declaration.family || promote_class)
                 && (group.class_ref == declaration.class_ref || promote_class)
                 && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
                 && same_operand_cells(group.operands, &scalar.operands)
         });
-        if let Some(group) = append {
-            if promote_class {
-                group.family = declaration.family;
-                group.class_ref = declaration.class_ref;
-                group.gate = gate;
-            } else if gate.is_none() {
-                group.gate = None;
+            if let Some(group) = append {
+                if promote_class {
+                    group.family = declaration.family;
+                    group.class_ref = declaration.class_ref;
+                    group.gate = gate;
+                } else if gate.is_none() {
+                    group.gate = None;
+                }
+                group.push(scalar_index, scalar, scalar_name);
+            } else {
+                groups.push(RelationGroup {
+                    feature_ref,
+                    family: declaration.family,
+                    class_ref: declaration.class_ref,
+                    gate,
+                    operands: &scalar.operands,
+                    scalars: vec![(scalar_index, scalar)],
+                    circle_displays: CircleDisplays::of(scalar, scalar_name),
+                });
             }
-            group.push(scalar_index, scalar, scalar_name);
-        } else {
-            groups.push(RelationGroup {
-                feature_ref,
-                family: declaration.family,
-                class_ref: declaration.class_ref,
-                gate,
-                operands: &scalar.operands,
-                scalars: vec![(scalar_index, scalar)],
-                circle_displays: CircleDisplays::of(scalar, scalar_name),
+        }
+        let mut instances = Vec::new();
+        let mut gates = HashMap::new();
+        let mut claimed_scalar_refs = HashSet::new();
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        for (ordinal, group) in groups.into_iter().enumerate() {
+            for (_, scalar) in &group.scalars {
+                claimed_scalar_refs.insert(scalar.id.as_str());
+            }
+            let offset = group.scalars[0].1.offset;
+            let id = format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{offset}");
+            if let Some(gate) = group.gate {
+                gates.insert(id.clone(), gate);
+            }
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
+            })?;
+            instances.push(FeatureInputRelationInstance {
+                id,
+                parent: lane.id.clone(),
+                ordinal,
+                offset,
+                family: group.family,
+                class_ref: group.class_ref.to_owned(),
+                feature_ref: group.feature_ref.to_owned(),
+                scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
+                    group.scalars.into_iter().map(|(_, scalar)| scalar),
+                )?,
+                operands: group.operands.to_vec(),
             });
         }
-    }
-    let mut instances = Vec::new();
-    let mut gates = HashMap::new();
-    let mut claimed_scalar_refs = HashSet::new();
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
-        .map_or(lane.id.as_str(), |(_, key)| key);
-    for (ordinal, group) in groups.into_iter().enumerate() {
-        for (_, scalar) in &group.scalars {
-            claimed_scalar_refs.insert(scalar.id.as_str());
+        // A class can declare more than one scalar relation. The ordinary
+        // instance grouper joins a display scalar to its adjacent driving scalar
+        // when their operand signatures agree; a second scalar with a different
+        // signature is still a declared relation binding and must not disappear.
+        // Promote only bindings whose scalar is not already claimed by an
+        // instance. A scalar has one relation-instance owner even if malformed
+        // input associates it with more than one class. Non-sketch bindings remain
+        // native-only, matching the existing relation-instance scope.
+        for binding in &lane.relation_bindings {
+            let Some(feature_ref) = binding
+                .feature_ref
+                .as_deref()
+                .filter(|feature| sketch_features.contains(*feature))
+            else {
+                continue;
+            };
+            let Some(scalar) = lane
+                .scalars
+                .iter()
+                .find(|scalar| scalar.id == binding.scalar_ref)
+            else {
+                continue;
+            };
+            if claimed_scalar_refs.contains(binding.scalar_ref.as_str()) {
+                continue;
+            }
+            claimed_scalar_refs.insert(binding.scalar_ref.as_str());
+            instances.push(FeatureInputRelationInstance {
+                id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{}", scalar.offset),
+                parent: lane.id.clone(),
+                ordinal: u32::try_from(instances.len()).map_err(|_| {
+                    CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
+                })?,
+                offset: scalar.offset,
+                family: binding.family,
+                class_ref: binding.class_ref.clone(),
+                feature_ref: feature_ref.to_owned(),
+                scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar])?,
+                operands: scalar.operands.clone(),
+            });
         }
-        let offset = group.scalars[0].1.offset;
-        let id = format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{offset}");
-        if let Some(gate) = group.gate {
-            gates.insert(id.clone(), gate);
-        }
-        let ordinal = u32::try_from(ordinal)
-            .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
-        instances.push(FeatureInputRelationInstance {
-            id,
-            parent: lane.id.clone(),
-            ordinal,
-            offset,
-            family: group.family,
-            class_ref: group.class_ref.to_owned(),
-            feature_ref: group.feature_ref.to_owned(),
-            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
-                group.scalars.into_iter().map(|(_, scalar)| scalar),
-            )?,
-            operands: group.operands.to_vec(),
+        instances.sort_unstable_by(|left, right| {
+            (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal))
         });
-    }
-    // A class can declare more than one scalar relation. The ordinary
-    // instance grouper joins a display scalar to its adjacent driving scalar
-    // when their operand signatures agree; a second scalar with a different
-    // signature is still a declared relation binding and must not disappear.
-    // Promote only bindings whose scalar is not already claimed by an
-    // instance. A scalar has one relation-instance owner even if malformed
-    // input associates it with more than one class. Non-sketch bindings remain
-    // native-only, matching the existing relation-instance scope.
-    for binding in &lane.relation_bindings {
-        let Some(feature_ref) = binding
-            .feature_ref
-            .as_deref()
-            .filter(|feature| sketch_features.contains(*feature))
-        else {
-            continue;
-        };
-        let Some(scalar) = lane
-            .scalars
-            .iter()
-            .find(|scalar| scalar.id == binding.scalar_ref)
-        else {
-            continue;
-        };
-        if claimed_scalar_refs.contains(binding.scalar_ref.as_str()) {
-            continue;
-        }
-        claimed_scalar_refs.insert(binding.scalar_ref.as_str());
-        instances.push(FeatureInputRelationInstance {
-            id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{}", scalar.offset),
-            parent: lane.id.clone(),
-            ordinal: u32::try_from(instances.len()).map_err(|_| {
+        for (ordinal, relation) in instances.iter_mut().enumerate() {
+            relation.ordinal = u32::try_from(ordinal).map_err(|_| {
                 CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
-            })?,
-            offset: scalar.offset,
-            family: binding.family,
-            class_ref: binding.class_ref.clone(),
-            feature_ref: feature_ref.to_owned(),
-            scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar])?,
-            operands: scalar.operands.clone(),
-        });
+            })?;
+        }
+        bind_detached_relation_drivers(&mut instances, lane)?;
+        bind_circle_dimension_centers(&mut instances, lane)?;
+        let within_linear = |left: f64, right: f64| (left - right).abs() <= linear_m;
+        for relation in &mut instances {
+            let within: &dyn Fn(f64, f64) -> bool = if gates.contains_key(&relation.id) {
+                &within_linear
+            } else {
+                &same_relation_dimension
+            };
+            bind_relation_geometry(relation, index, within);
+        }
+        Ok((instances, gates))
     }
-    instances.sort_unstable_by(|left, right| {
-        (left.offset, left.ordinal).cmp(&(right.offset, right.ordinal))
-    });
-    for (ordinal, relation) in instances.iter_mut().enumerate() {
-        relation.ordinal = u32::try_from(ordinal)
-            .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
-    }
-    bind_detached_relation_drivers(&mut instances, lane)?;
-    bind_circle_dimension_centers(&mut instances, lane)?;
-    for relation in &mut instances {
-        let within = if gates.contains_key(&relation.id) {
-            within_linear_resolution
-        } else {
-            same_relation_dimension
-        };
-        bind_relation_geometry(relation, index, within);
-    }
-    Ok((instances, gates))
 }
 
 pub(super) fn bind_circle_dimension_centers(
@@ -1642,18 +1709,6 @@ fn dynamic_solver_line<'a>(
     (first.coordinates_m?.get() != second.coordinates_m?.get()).then_some([first, second])
 }
 
-fn point_distance(first: [f64; 2], second: [f64; 2]) -> f64 {
-    (second[0] - first[0]).hypot(second[1] - first[1])
-}
-
-fn axis_distance(first: [f64; 2], second: [f64; 2], horizontal: bool) -> f64 {
-    if horizontal {
-        (second[0] - first[0]).abs()
-    } else {
-        (second[1] - first[1]).abs()
-    }
-}
-
 fn line_direction(line: [[f64; 2]; 2]) -> [f64; 2] {
     [line[1][0] - line[0][0], line[1][1] - line[0][1]]
 }
@@ -1728,8 +1783,8 @@ fn dynamic_point_matches<'a>(
     first_candidates: &[&'a crate::records::SketchInputEntity],
     second_candidates: &[&'a crate::records::SketchInputEntity],
     target: f64,
-    horizontal: Option<bool>,
-    within: fn(f64, f64) -> bool,
+    span: PointSpan,
+    within: &dyn Fn(f64, f64) -> bool,
 ) -> Vec<(&'a str, &'a str)> {
     let mut matches = Vec::<(&str, &str)>::new();
     for first in first_candidates {
@@ -1749,11 +1804,7 @@ fn dynamic_point_matches<'a>(
             else {
                 continue;
             };
-            let measured = horizontal.map_or_else(
-                || point_distance(first_coordinates, second_coordinates),
-                |horizontal| axis_distance(first_coordinates, second_coordinates, horizontal),
-            );
-            if within(measured, target) {
+            if within(span.measure(first_coordinates, second_coordinates), target) {
                 matches.push((first.id(), second.id()));
             }
         }
@@ -1765,8 +1816,8 @@ fn bind_dynamic_point_relation(
     relation: &mut FeatureInputRelationInstance,
     entities: &[&crate::records::SketchInputEntity],
     target: f64,
-    horizontal: Option<bool>,
-    within: fn(f64, f64) -> bool,
+    span: PointSpan,
+    within: &dyn Fn(f64, f64) -> bool,
 ) {
     let [first, second] = relation.operands.as_slice() else {
         clear_relation_operands(relation);
@@ -1779,13 +1830,8 @@ fn bind_dynamic_point_relation(
         .copied()
         .filter(|entity| is_finite_point(entity))
         .collect::<Vec<_>>();
-    let mut matches = dynamic_point_matches(
-        &first_candidates,
-        &second_candidates,
-        target,
-        horizontal,
-        within,
-    );
+    let mut matches =
+        dynamic_point_matches(&first_candidates, &second_candidates, target, span, within);
     if matches.is_empty() {
         let first_fallback = if first.entity_ref.is_none() {
             &coordinate_points
@@ -1797,8 +1843,7 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches =
-            dynamic_point_matches(first_fallback, second_fallback, target, horizontal, within);
+        matches = dynamic_point_matches(first_fallback, second_fallback, target, span, within);
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -1815,7 +1860,7 @@ fn bind_dynamic_point_relation(
             first_relaxed.as_deref().unwrap_or(&first_candidates),
             second_relaxed.as_deref().unwrap_or(&second_candidates),
             target,
-            horizontal,
+            span,
             within,
         );
     }
@@ -1830,7 +1875,7 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(first_relaxed, second_relaxed, target, horizontal, within);
+        matches = dynamic_point_matches(first_relaxed, second_relaxed, target, span, within);
     }
     matches.sort_unstable_by(Ord::cmp);
     matches.dedup();
@@ -1973,18 +2018,14 @@ fn bind_dynamic_line_relation(
 fn bind_relation_geometry(
     relation: &mut FeatureInputRelationInstance,
     index: &RelationOperandIndex<'_>,
-    within: fn(f64, f64) -> bool,
+    within: &dyn Fn(f64, f64) -> bool,
 ) {
     let dynamic = relation_uses_dynamic_operands(relation);
-    let unbound_points = matches!(
-        relation.family,
-        FeatureInputRelationFamily::PointPointDistance
-            | FeatureInputRelationFamily::PointPointHorizontalDistance
-            | FeatureInputRelationFamily::PointPointVerticalDistance
-    ) && relation
-        .operands
-        .iter()
-        .all(|operand| operand.entity_ref.is_none());
+    let unbound_points = is_point_distance_family(relation.family)
+        && relation
+            .operands
+            .iter()
+            .all(|operand| operand.entity_ref.is_none());
     if !(dynamic || unbound_points) || relation.family == FeatureInputRelationFamily::CircleDiameter
     {
         return;
@@ -2005,16 +2046,11 @@ fn bind_relation_geometry(
         return;
     }
     let entities = index.feature_entities(relation.feature_ref.as_str());
+    if let Some(span) = PointSpan::of(relation.family) {
+        bind_dynamic_point_relation(relation, entities, target.get(), span, within);
+        return;
+    }
     match relation.family {
-        FeatureInputRelationFamily::PointPointDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), None, within);
-        }
-        FeatureInputRelationFamily::PointPointHorizontalDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), Some(true), within);
-        }
-        FeatureInputRelationFamily::PointPointVerticalDistance => {
-            bind_dynamic_point_relation(relation, entities, target.get(), Some(false), within);
-        }
         FeatureInputRelationFamily::PointLineDistance => {
             bind_dynamic_point_line_relation(relation, entities, target.get());
         }
@@ -2024,7 +2060,7 @@ fn bind_relation_geometry(
         FeatureInputRelationFamily::Angle => {
             bind_dynamic_line_relation(relation, entities, target.get(), true);
         }
-        FeatureInputRelationFamily::CircleDiameter => {}
+        _ => {}
     }
 }
 

@@ -4,10 +4,12 @@ use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_ir::scalar::PositiveLength;
 
 pub(super) fn admit(
     native: &SldprtNative,
     ctx: &DecodeContext<'_>,
+    linear: PositiveLength,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
         if !crate::resolved_features::names::class_declarations_match(
@@ -82,7 +84,7 @@ pub(super) fn admit(
             ));
         }
     }
-    let expected = expected_lanes(ctx, native)?;
+    let expected = expected_lanes(ctx, native, linear)?;
     for (lane, expected_lane) in expected {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,
@@ -133,9 +135,12 @@ pub(super) fn admit(
     Ok(())
 }
 
+/// Each lane of `native` with the lane its payload derives under the linear
+/// tolerance `linear`.
 pub(crate) fn expected_lanes<'a>(
     ctx: &DecodeContext<'_>,
     native: &'a SldprtNative,
+    linear: PositiveLength,
 ) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {
     let mut expected_primary_lanes: Vec<FeatureInputLane> = native
         .feature_input_lanes
@@ -165,6 +170,7 @@ pub(crate) fn expected_lanes<'a>(
         expected_primary_lanes,
         expected_supplemental_lanes,
         ctx,
+        linear,
     )?
     .collect())
 }
@@ -174,6 +180,7 @@ fn expected_lane_pairs_impl<'a>(
     mut expected_primary_lanes: Vec<FeatureInputLane>,
     mut expected_supplemental_lanes: Vec<FeatureInputLane>,
     ctx: &DecodeContext<'_>,
+    linear: PositiveLength,
 ) -> Result<
     impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a,
     cadmpeg_ir::NativeConvertError,
@@ -182,11 +189,13 @@ fn expected_lane_pairs_impl<'a>(
         ctx,
         &native.feature_histories,
         &mut expected_primary_lanes,
+        linear,
     )?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &native.feature_histories,
         &mut expected_supplemental_lanes,
+        linear,
     )?;
     for (expected_lane, actual_lane) in expected_supplemental_lanes.iter_mut().zip(
         native
@@ -216,7 +225,7 @@ fn expected_lane_pairs_impl<'a>(
         for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
             expected.feature_ref.clone_from(&actual.feature_ref);
         }
-        finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
+        finalize_lane_bindings(ctx, &native.feature_histories, expected_lane, linear)?;
     }
     Ok(native
         .feature_input_lanes

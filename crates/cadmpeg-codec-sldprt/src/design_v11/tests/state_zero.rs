@@ -42,7 +42,11 @@ pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
-    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let native = crate::native::SldprtNative::load(
+        ir.native.namespace("sldprt").unwrap(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
     let entries =

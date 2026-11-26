@@ -602,7 +602,7 @@ fn the_first_token_form_dimension_after_a_native_declared_scalar_is_its_relation
         .unwrap()
         .id
         .clone();
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let ids = |range: std::ops::Range<usize>| {
@@ -640,7 +640,7 @@ fn the_first_token_form_dimension_after_a_native_declared_scalar_is_its_relation
     // A parameter-class token three above the relation-class token names
     // no class declared beside the relation class.
     let lane = token_form_lane(0x30, 0x33);
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert_eq!(
@@ -672,7 +672,7 @@ fn a_declaration_claims_no_dimension_whose_tokens_name_another_relation() {
         .unwrap()
         .id
         .clone();
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert!(instances
@@ -726,7 +726,7 @@ fn a_refused_dimension_takes_the_relation_its_token_names() {
         .unwrap()
         .id
         .clone();
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert!(instances
@@ -807,6 +807,11 @@ const DISPLAY_METRES: f64 = 0.0176;
 /// [`compound_refused_dimension_lane`].
 const DRIVING_METRES: f64 = 0.025;
 
+/// The linear tolerance of a document that states none.
+fn linear() -> cadmpeg_ir::scalar::PositiveLength {
+    cadmpeg_ir::units::Tolerances::default().linear
+}
+
 /// Whether a relation of `instances` holds `scalar`.
 fn holds(instances: &[crate::records::FeatureInputRelationInstance], scalar: &str) -> bool {
     instances
@@ -828,7 +833,7 @@ fn a_refused_dimension_of_a_compound_lane_forms_where_its_sketch_points_measure_
         .unwrap()
         .id
         .clone();
-    let relations = relation_instances(&sketch_history(), &lane).unwrap();
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
     let instances = relations.instances;
     assert!(instances.iter().all(|relation| relation.class_ref != angle));
     let dimension = instances
@@ -862,7 +867,7 @@ fn a_refused_dimension_of_a_compound_lane_forms_where_its_sketch_points_measure_
 fn a_refused_dimension_of_a_compound_lane_is_measured_by_its_driving_value() {
     for (reach, forms) in [(DRIVING_METRES, true), (DISPLAY_METRES, false)] {
         let (lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, reach);
-        let instances = relation_instances(&sketch_history(), &lane)
+        let instances = relation_instances(&sketch_history(), &lane, linear())
             .unwrap()
             .instances;
         assert_eq!(holds(&instances, &lane.scalars[3].id), forms, "{reach}");
@@ -874,21 +879,25 @@ fn a_refused_dimension_of_a_compound_lane_is_measured_by_its_driving_value() {
 }
 
 /// In a compound-file lane, a refused dimension forms where its sketch
-/// points measure its value within the linear resolution. Beyond it the
-/// dimension stays native, and one loss note names its scalars and states
-/// that their class is unknown.
+/// points measure its value within the part's linear tolerance. Beyond it
+/// the dimension stays native, and one loss note names its scalars and
+/// states that their class is unknown.
 #[test]
-fn a_refused_dimension_of_a_compound_lane_is_measured_within_the_linear_resolution() {
-    let resolution = super::LINEAR_RESOLUTION_M;
+fn a_refused_dimension_of_a_compound_lane_is_measured_within_the_linear_tolerance() {
+    const TOLERANCE_MM: f64 = 1.0e-3;
+    const TOLERANCE_M: f64 = TOLERANCE_MM / 1000.0;
+    let tolerance = cadmpeg_ir::scalar::PositiveLength::new(TOLERANCE_MM).unwrap();
     let (lane, _) =
-        compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 0.5 * resolution);
-    let relations = relation_instances(&sketch_history(), &lane).unwrap();
+        compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 0.5 * TOLERANCE_M);
+    let relations = relation_instances(&sketch_history(), &lane, tolerance).unwrap();
     assert!(holds(&relations.instances, &lane.scalars[3].id));
     assert!(relations.unclassed.is_none());
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
+    assert!(!holds(&relations.instances, &lane.scalars[3].id));
 
     let (lane, _) =
-        compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 2.0 * resolution);
-    let relations = relation_instances(&sketch_history(), &lane).unwrap();
+        compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 2.0 * TOLERANCE_M);
+    let relations = relation_instances(&sketch_history(), &lane, tolerance).unwrap();
     assert!(!holds(&relations.instances, &lane.scalars[3].id));
     let note = relations
         .unclassed
@@ -906,13 +915,135 @@ fn a_refused_dimension_of_a_compound_lane_is_measured_within_the_linear_resoluti
     );
 }
 
+/// In a compound-file lane, a refused dimension whose sketch points measure
+/// its value forms also where a driving scalar after it, with the same
+/// operands, takes its class and measures no value of those points. The
+/// loss note names that driving scalar alone.
+#[test]
+fn a_measured_refused_dimension_forms_beside_a_following_driving_value_that_does_not() {
+    let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES);
+    let mut following = lane.scalars[4].clone();
+    following.id = format!("{}-following", following.id);
+    following.offset += 1;
+    following.value = cadmpeg_ir::scalar::FiniteReal::new(0.04).unwrap();
+    lane.scalars.push(following);
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
+    assert!(holds(&relations.instances, &lane.scalars[3].id));
+    assert!(holds(&relations.instances, &lane.scalars[4].id));
+    assert!(!holds(&relations.instances, &lane.scalars[5].id));
+    let note = relations
+        .unclassed
+        .expect("a note for the following driving scalar");
+    let named = |scalar: &FeatureInputScalar| note.message.contains(&format!("`{}`", scalar.id));
+    assert!(
+        named(&lane.scalars[5]) && !named(&lane.scalars[3]) && !named(&lane.scalars[4]),
+        "{}",
+        note.message
+    );
+}
+
+/// In a compound-file lane, a refused dimension whose relation measures the
+/// two sketch points of a relation of the same family that the lane
+/// declares, in either order, forms no second relation on them, and the
+/// loss note names its scalars.
+#[test]
+fn a_refused_dimension_on_the_points_of_a_declared_relation_forms_no_second_relation() {
+    for indices in [[1, 3], [3, 1]] {
+        let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES);
+        let declared = &mut lane.scalars[0];
+        declared.role = FeatureInputScalarRole::Display;
+        declared.value = cadmpeg_ir::scalar::FiniteReal::new(DRIVING_METRES).unwrap();
+        for (operand, index) in declared.operands.iter_mut().zip(indices) {
+            operand.entity_index = index;
+        }
+        let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
+        let declared = relations
+            .instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[0].id))
+            .expect("the declared relation");
+        let mut points = declared
+            .operands
+            .iter()
+            .map(|operand| operand.entity_ref.clone())
+            .collect::<Vec<_>>();
+        points.sort();
+        assert_eq!(
+            points,
+            vec![Some("point-1".to_owned()), Some("point-3".to_owned())],
+            "{indices:?}"
+        );
+        assert!(
+            !holds(&relations.instances, &lane.scalars[3].id)
+                && !holds(&relations.instances, &lane.scalars[4].id),
+            "{indices:?}"
+        );
+        let note = relations
+            .unclassed
+            .expect("a note for the dimension on the declared relation's points");
+        assert!(
+            note.message.contains(&format!("`{}`", lane.scalars[3].id))
+                && note.message.contains(&format!("`{}`", lane.scalars[4].id))
+                && note.message.contains("that the lane declares")
+                && !note.message.contains("is unknown"),
+            "{}",
+            note.message
+        );
+    }
+}
+
+/// In a compound-file lane, a refused dimension whose relation-class token
+/// names a class outside the point-distance families stays native, and the
+/// loss note names its display and driving scalars. The two relation
+/// classes of [`compound_refused_dimension_lane`] trade names, and each
+/// declaration keeps its end.
+#[test]
+fn a_refused_dimension_of_a_compound_lane_whose_token_names_another_family_stays_native() {
+    let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES);
+    for class in &mut lane.classes {
+        let name = match class.name.as_str() {
+            "sgPntPntDist" => "sgLLDist",
+            "sgLLDist" => "sgPntPntDist",
+            _ => continue,
+        };
+        let end = class.offset + u64::try_from(class.name.len()).unwrap();
+        class.offset = end - u64::try_from(name.len()).unwrap();
+        class.name = name.to_owned();
+    }
+    let tokens = crate::resolved_features::parameter_classes::token_relation_classes(
+        &lane,
+        &std::collections::HashSet::from(["sketch"]),
+    );
+    assert_eq!(
+        tokens
+            .get(lane.scalars[3].id.as_str())
+            .map(|class| class.name.as_str()),
+        Some("sgLLDist")
+    );
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
+    assert!(
+        !holds(&relations.instances, &lane.scalars[3].id)
+            && !holds(&relations.instances, &lane.scalars[4].id)
+    );
+    let note = relations
+        .unclassed
+        .expect("a note for the dimension of another family");
+    assert!(
+        note.message.contains(&format!("`{}`", lane.scalars[3].id))
+            && note.message.contains(&format!("`{}`", lane.scalars[4].id))
+            && note.message.contains("is unknown"),
+        "{}",
+        note.message
+    );
+}
+
 /// In a compound-file lane, a refused dimension that stores only a display
 /// scalar forms where its sketch points measure the display value.
 #[test]
 fn a_display_only_refused_dimension_of_a_compound_lane_forms_where_its_points_measure_it() {
     let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, DISPLAY_METRES);
     lane.scalars.remove(4);
-    let relations = relation_instances(&sketch_history(), &lane).unwrap();
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
     let dimension = relations
         .instances
         .iter()
@@ -948,7 +1079,7 @@ fn a_detached_driving_value_of_a_refused_dimension_is_held_or_named_in_the_loss_
         let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, reach);
         lane.scalars[4].operands.clear();
         let driver = lane.scalars[4].id.clone();
-        let relations = relation_instances(&sketch_history(), &lane).unwrap();
+        let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
         let dimension = relations
             .instances
             .iter()
@@ -990,14 +1121,14 @@ fn a_measured_refused_dimension_of_a_compound_lane_leaves_the_declared_relations
     let refused = lane.scalars[3].id.clone();
     let mut declared = lane.clone();
     declared.scalars.remove(3);
-    let expected = relation_instances(&sketch_history(), &declared)
+    let expected = relation_instances(&sketch_history(), &declared, linear())
         .unwrap()
         .instances;
     assert!(expected
         .iter()
         .any(|relation| relation.parameter_scalar_ref() == Some(driver.as_str())));
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert!(holds(&instances, &refused));
@@ -1026,7 +1157,7 @@ fn a_refused_dimension_takes_the_relation_declared_before_its_parameter() {
         .unwrap()
         .id
         .clone();
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let dimension = instances
@@ -1050,7 +1181,7 @@ fn a_refused_dimension_whose_token_two_classes_precede_forms_no_relation() {
         .unwrap()
         .offset;
     lane.classes.push(class(parameter - 1, "sgLLDist"));
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert!(instances
@@ -1068,7 +1199,7 @@ fn declaration_skips_nearer_incompatible_scalar() {
     let driving = scalar(40, FeatureInputScalarRole::Driving);
     let lane = lane(vec![relation_class], vec![native, driving.clone()]);
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {
@@ -1095,7 +1226,7 @@ fn declaration_reaches_compatible_scalar_after_auxiliary_records() {
         value: "Sketch".into(),
     });
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {
@@ -1123,7 +1254,7 @@ fn declaration_stops_before_the_next_relation_class() {
         value: "Sketch".into(),
     });
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {
@@ -1148,7 +1279,9 @@ fn display_scalar_joins_driving_scalar_after_class_declaration() {
     );
 
     let history = sketch_history();
-    let instances = relation_instances(&history, &lane).unwrap().instances;
+    let instances = relation_instances(&history, &lane, linear())
+        .unwrap()
+        .instances;
     let [relation] = instances.as_slice() else {
         panic!("one relation instance");
     };
@@ -1179,7 +1312,7 @@ fn display_scalars_do_not_cross_a_class_declaration() {
     let second = scalar(40, FeatureInputScalarRole::Display);
     let lane = lane(vec![vertical, horizontal], vec![first, second]);
 
-    let relations = relation_instances(&sketch_history(), &lane)
+    let relations = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert_eq!(relations.len(), 2);
@@ -1204,7 +1337,7 @@ fn ambiguous_relation_declarations_leave_scalar_unbound() {
         vec![scalar(30, FeatureInputScalarRole::Driving)],
     );
 
-    assert!(relation_instances(&sketch_history(), &lane)
+    assert!(relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances
         .is_empty());
@@ -1328,7 +1461,7 @@ fn relation_declarations_do_not_cross_feature_intervals() {
         },
     ];
 
-    assert!(relation_instances(&history, &lane)
+    assert!(relation_instances(&history, &lane, linear())
         .unwrap()
         .instances
         .is_empty());
@@ -1369,7 +1502,9 @@ fn metadata_records_do_not_split_relation_feature_intervals() {
         },
     ];
 
-    let relations = relation_instances(&history, &lane).unwrap().instances;
+    let relations = relation_instances(&history, &lane, linear())
+        .unwrap()
+        .instances;
     let [relation] = relations.as_slice() else {
         panic!("metadata must not terminate the sketch interval");
     };
@@ -1387,7 +1522,7 @@ fn repeated_driving_scalar_starts_another_anchored_relation() {
         ],
     );
 
-    let relations = relation_instances(&sketch_history(), &lane)
+    let relations = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert_eq!(relations.len(), 2);
@@ -1436,7 +1571,7 @@ fn unclaimed_relation_binding_scalar_becomes_an_instance() {
         feature_ref: Some("sketch".into()),
     });
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     assert_eq!(instances.len(), 2);
@@ -1477,7 +1612,7 @@ fn circle_dimension_binds_driver_inside_declared_entity_handle() {
         },
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {
@@ -1518,7 +1653,7 @@ fn circle_dimension_keeps_ambiguous_handle_drivers_unbound() {
         })
         .collect();
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {
@@ -1801,7 +1936,7 @@ fn circle_dimension_groups_repeated_display_scalars_by_name_and_entity() {
         },
     ];
 
-    let instances = relation_instances(&sketch_history(), &lane)
+    let instances = relation_instances(&sketch_history(), &lane, linear())
         .unwrap()
         .instances;
     let [relation] = instances.as_slice() else {

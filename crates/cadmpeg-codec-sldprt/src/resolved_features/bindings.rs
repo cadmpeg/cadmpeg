@@ -39,6 +39,7 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -856,12 +857,14 @@ pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::featur
     }
 }
 
-/// Binds the scalar operands and relation instances of `lanes`, and returns
-/// the loss notes of their sketch dimensions of unknown relation class.
+/// Binds the scalar operands and relation instances of `lanes` under the
+/// part's linear tolerance `linear`, and returns the loss notes of their
+/// sketch dimensions of unknown relation class.
 pub(crate) fn bind_scalar_operands(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
+    linear: PositiveLength,
 ) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     let mut notes = Vec::new();
     let represented_sketches = represented_sketch_features(histories, lanes);
@@ -931,17 +934,19 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some((*parent_id).to_owned());
             }
         }
-        notes.extend(finalize_lane_bindings(ctx, histories, lane)?);
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
     Ok(notes)
 }
 
-/// Completes the bindings of `lane`, and returns the loss note of its sketch
-/// dimensions of unknown relation class.
+/// Completes the bindings of `lane` under the part's linear tolerance
+/// `linear`, and returns the loss note of its sketch dimensions of unknown
+/// relation class.
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
+    linear: PositiveLength,
 ) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
@@ -1026,7 +1031,7 @@ pub(crate) fn finalize_lane_bindings(
     }
     let intervals = feature_intervals(histories, lane);
     lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
-    let relations = relation_instances(histories, lane)?;
+    let relations = relation_instances(histories, lane, linear)?;
     lane.relation_instances = relations.instances;
     lane.body_selections = compact_body_selections(histories, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
@@ -1074,13 +1079,14 @@ fn represented_sketch_features(
 }
 
 /// Binds the detached sketch objects of the supplemental lanes in `lanes`
-/// again, and returns the loss notes of their sketch dimensions of unknown
-/// relation class.
+/// again under the part's linear tolerance `linear`, and returns the loss
+/// notes of their sketch dimensions of unknown relation class.
 pub(crate) fn bind_unresolved_detached_sketch_objects(
     ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
+    linear: PositiveLength,
 ) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     let mut unresolved = HashSet::new();
     for feature in model_features {
@@ -1111,7 +1117,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         .filter(|lane| is_supplemental_config_lane(lane))
     {
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        notes.extend(finalize_lane_bindings(ctx, histories, lane)?);
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
     Ok(notes)
 }

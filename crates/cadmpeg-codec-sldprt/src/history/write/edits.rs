@@ -614,7 +614,9 @@ impl<'source> SourceEdits<'source> {
         let source_native = source
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| {
+                SldprtNative::load(namespace, source.tolerances.linear).map_err(CodecError::from)
+            })
             .transpose()?;
         let mut edits = Self {
             source: Some(source),
