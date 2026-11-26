@@ -196,7 +196,7 @@ Procedural curve definitions are intersection, projection, offset, blend spine, 
 - `inferred`: selected from context or convention;
 - `unknown`: source fidelity remains unresolved.
 
-Absence from sidecar exactness means `byte_exact` for a decoded source-backed value. A field override takes precedence over entity exactness. Codecs record every decoded entity and field whose exactness is `derived`, `inferred`, or `unknown`. Source-less product documents omit the source-fidelity sidecar. Annotation keys resolve to globally identified product entities or retained source records. Unknown field paths are warnings so additive product fields remain readable.
+Absence from sidecar exactness means `byte_exact` for a decoded source-backed value. A field override takes precedence over entity exactness. Codecs record every decoded entity and field whose exactness is `derived`, `inferred`, or `unknown`. Source-less product documents omit the source-fidelity sidecar. Annotation keys resolve to globally identified product entities, retained source records, or records inside the delta of an evaluation or a process state, keyed `<qualifier id> <record id>` (`docs/cadir-v11.md` §3.2). Unknown field paths are warnings so additive product fields remain readable.
 
 ## Neutral feature model
 

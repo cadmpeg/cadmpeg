@@ -4,6 +4,7 @@ use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
@@ -78,8 +79,8 @@ fn decode_transfers_generated_protein_appearance() {
         12
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&f3d_native(result.ir()).act_component_links[0])
-            .unwrap()["tracked_entity_record"],
+        json::to_value(&f3d_native(result.ir()).act_component_links[0]).unwrap()
+            ["tracked_entity_record"],
         3
     );
     assert_eq!(

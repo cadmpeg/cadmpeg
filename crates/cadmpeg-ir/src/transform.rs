@@ -403,6 +403,7 @@ mod tests {
     use super::{PositiveReal, Transform, Transform2, TransformError};
     use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
+    use cadmpeg_core::serde_erase::json;
 
     mod numeric;
 
@@ -597,7 +598,7 @@ mod tests {
         assert_eq!(transform, Transform::identity());
         assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&transform).expect("serializes"),
+            json::to_string(&transform).expect("serializes"),
             "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]"
         );
 

@@ -276,9 +276,9 @@ fn a_carrier_without_retained_bytes_writes_the_part_and_names_every_property() {
         .provenance
         .iter()
         .find(|(id, provenance)| {
-            id.starts_with("sldprt:file:block#") && provenance.stream() == MEMBER
+            id.as_str().starts_with("sldprt:file:block#") && provenance.stream() == MEMBER
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .unwrap();
     crate::test_support::make_retained_record_unavailable(
         decoded.source_fidelity_mut(),

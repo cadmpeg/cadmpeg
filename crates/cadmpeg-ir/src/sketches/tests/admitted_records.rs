@@ -7,6 +7,7 @@ use crate::sketches::{
     SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchProfile, TextPlacement,
 };
 use crate::units::{FinitePoint2, UnitVector3};
+use cadmpeg_core::serde_erase::json;
 
 fn length(value: f64) -> Length {
     Length::new(value).unwrap()
@@ -72,7 +73,7 @@ fn sketch_ellipse_serialization_keeps_its_wire_fields() {
     })
     .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&geometry).unwrap(),
+        json::to_string(&geometry).unwrap(),
         r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"minor_radius":2.0}"#
     );
 }

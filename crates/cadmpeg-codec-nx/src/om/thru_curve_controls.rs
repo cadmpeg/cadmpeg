@@ -47,15 +47,13 @@ impl From<ThruCurveControls> for NativeBytes<[u8; 9]> {
 #[cfg(test)]
 mod tests {
     use super::ThruCurveControls;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn controls_keep_variable_bytes_and_derive_the_terminal_marker() {
         let json = "\"020303040101010107\"";
         let controls: ThruCurveControls = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&controls).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&controls).unwrap(), json);
         for invalid in ["\"020303040101010106\"", "\"0203030401010107\""] {
             assert!(serde_json::from_str::<ThruCurveControls>(invalid).is_err());
         }

@@ -2,6 +2,7 @@
 //! Admission and canonical ordering of borrowed metadata digest views.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
@@ -38,9 +39,7 @@ fn metadata_digest_preserves_source_order_and_excludes_unit_code() {
             ir.model.attributes[0].name.as_str(),
         ),
     ];
-    let expected = cadmpeg_ir::hash::sha256_hex(
-        &cadmpeg_core::serde_erase::json::to_vec_pretty(&expected).unwrap(),
-    );
+    let expected = cadmpeg_ir::hash::sha256_hex(&json::to_vec_pretty(&expected).unwrap());
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap(),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{BodyTailReference, DesignBodyReferenceTail, DesignBodyReferenceTailWire};
 use crate::records::identity::Located;
+use cadmpeg_core::serde_erase::json;
 
 fn wire(trailer: u32) -> DesignBodyReferenceTailWire {
     let mut reference = vec![1];
@@ -33,7 +34,7 @@ fn empty_first_run_does_not_select_the_trailing_form() {
         assert!(value.first_references.is_empty());
         assert_eq!(value.second_references[0].target(), Some(u64::MAX));
         assert!(!value.second_references[0].is_null());
-        let encoded = cadmpeg_core::serde_erase::json::to_string(&value).expect("native JSON");
+        let encoded = json::to_string(&value).expect("native JSON");
         let decoded: DesignBodyReferenceTail = serde_json::from_str(&encoded).expect("native read");
         assert_eq!(decoded, value);
     }

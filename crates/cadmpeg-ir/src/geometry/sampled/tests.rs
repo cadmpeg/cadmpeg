@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
@@ -51,23 +52,23 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     assert_eq!(polyline, original);
     assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());
     assert_eq!(polyline, original);
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&polyline).unwrap();
+    let mut wire = json::to_value(&polyline).unwrap();
     assert_eq!(wire["samples"]["kind"], "parameterized");
     assert_eq!(
         wire["samples"]["vertices"][0]["parameter"],
         serde_json::json!(2.0)
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
+        json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
         polyline
     );
     // A parameter travels in its own sample row, so a parameter list that does
     // not match the sample count has no spelling; a repeated parameter is still
     // refused by the monotonic mint.
     wire["samples"]["vertices"][1]["parameter"] = serde_json::json!(2.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PolylineCurve>(wire.clone()).is_err());
+    assert!(json::from_value::<PolylineCurve>(wire.clone()).is_err());
     wire["samples"]["parameters"] = serde_json::json!([1.0, 1.0]);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PolylineCurve>(wire).is_err());
+    assert!(json::from_value::<PolylineCurve>(wire).is_err());
     let mut surface = PolygonalSurface::new(
         vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -88,9 +89,9 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     assert_eq!(surface, original);
     assert!(surface.set_chordal_deflection(-1.0).is_err());
     assert_eq!(surface, original);
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&surface).unwrap();
+    let mut wire = json::to_value(&surface).unwrap();
     wire["chordal_deflection"] = serde_json::json!(-1.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PolygonalSurface>(wire).is_err());
+    assert!(json::from_value::<PolygonalSurface>(wire).is_err());
 }
 #[test]
 fn a_refused_sample_edit_keeps_the_prior_samples() {
@@ -176,19 +177,13 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
             Ok(())
         })
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&surface).unwrap();
+    let wire = json::to_value(&surface).unwrap();
     assert_eq!(wire["chordal_deflection"], serde_json::json!(0.5));
     assert_eq!(
         wire["vertices"][2],
-        cadmpeg_core::serde_erase::json::to_value(
-            FinitePoint3::new(Point3::new(0.0, 1.0, 2.0)).unwrap()
-        )
-        .unwrap()
+        json::to_value(FinitePoint3::new(Point3::new(0.0, 1.0, 2.0)).unwrap()).unwrap()
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PolygonalSurface>(wire).unwrap(),
-        surface
-    );
+    assert_eq!(json::from_value::<PolygonalSurface>(wire).unwrap(), surface);
 
     let samples = PolylineSamples::Unparameterized {
         points: vertices[..2]
@@ -201,12 +196,9 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
         polyline.chordal_deflection(),
         NonNegativeReal::new(0.125).unwrap()
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&polyline).unwrap();
+    let wire = json::to_value(&polyline).unwrap();
     assert_eq!(wire["chordal_deflection"], serde_json::json!(0.125));
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PolylineCurve>(wire).unwrap(),
-        polyline
-    );
+    assert_eq!(json::from_value::<PolylineCurve>(wire).unwrap(), polyline);
 }
 
 #[test]

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[serde(bound(deserialize = "R: ::serde::de::DeserializeOwned"))]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub struct CacheFirstCurveForm<R = f64> {
     /// Positive serializer-revision integer selecting the cache-first layout.
@@ -38,7 +38,14 @@ pub struct CacheFirstCurveForm<R = f64> {
 }
 
 /// One support slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -54,7 +61,14 @@ pub enum SpringSupport<R = f64> {
 }
 
 /// First pcurve slot in a context-first spring construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -70,7 +84,14 @@ pub enum SpringPcurve<R = f64> {
 }
 
 /// Mutually exclusive spring construction layouts.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(
@@ -148,7 +169,7 @@ impl<R, I> SpringLayout<R, I> {
 )]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+#[serde(bound(deserialize = "R: ::serde::de::DeserializeOwned"))]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub struct CacheFirstCurveParameterization<R = f64> {
     /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
@@ -303,7 +324,14 @@ pub struct ParametricSurfaceCurveFlags {
 }
 
 /// Mutually exclusive tail forms of a native projected intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProjectionTail<R = f64> {

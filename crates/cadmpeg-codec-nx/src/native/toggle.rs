@@ -478,6 +478,7 @@ mod tests {
         SavedToggleEntryWire, SavedToggleState, SavedToggleStreamWire, ENTRY_CLONE_COUNT,
         ENTRY_INTO_WIRE_COUNT, STREAM_INTO_WIRE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
         let mut bytes = vec![1];
@@ -507,11 +508,8 @@ mod tests {
             let parsed = super::parse_saved_toggle_stream(&bytes, 100).unwrap();
             for entry in &parsed.entries {
                 let old = SavedToggleEntryWire::from(entry.clone());
-                assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_vec(entry).unwrap(),
-                    cadmpeg_core::serde_erase::json::to_vec(&old).unwrap()
-                );
-                let expected = cadmpeg_core::serde_erase::json::to_value(&old).unwrap();
+                assert_eq!(json::to_vec(entry).unwrap(), json::to_vec(&old).unwrap());
+                let expected = json::to_value(&old).unwrap();
                 ENTRY_CLONE_COUNT.with(|count| count.set(0));
                 ENTRY_INTO_WIRE_COUNT.with(|count| count.set(0));
                 cadmpeg_test_support::native_serialization::assert_native_limit(entry, expected);
@@ -533,10 +531,10 @@ mod tests {
         let parsed = super::parse_saved_toggle_stream(&bytes, 100).unwrap();
         let old = SavedToggleStreamWire::from(parsed.stream.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&parsed.stream).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&old).unwrap()
+            json::to_vec(&parsed.stream).unwrap(),
+            json::to_vec(&old).unwrap()
         );
-        let expected = cadmpeg_core::serde_erase::json::to_value(&old).unwrap();
+        let expected = json::to_value(&old).unwrap();
         STREAM_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(&parsed.stream, expected);
         STREAM_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
@@ -549,12 +547,8 @@ mod tests {
             "entries": ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#1"],
             "trailer": "00000000", "source_offset": 0, "trailer_source_offset": 79
         });
-        let stream: super::SavedToggleStream =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(stream).unwrap(),
-            wire
-        );
+        let stream: super::SavedToggleStream = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(stream).unwrap(), wire);
         for entries in [
             ["nx:saved-toggle:entry#1", "nx:saved-toggle:entry#0"],
             ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#0"],
@@ -563,10 +557,7 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid["entries"] = serde_json::json!(entries);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::SavedToggleStream>(invalid)
-                    .is_err()
-            );
+            assert!(json::from_value::<super::SavedToggleStream>(invalid).is_err());
         }
     }
 
@@ -594,12 +585,9 @@ mod tests {
             Some("nx:saved-toggle:identity#0123456789abcdef0123456789abcdef")
         );
         assert_eq!(parsed.entries[0].source_offset, 105);
-        let entry_wire = cadmpeg_core::serde_erase::json::to_value(&parsed.entries[0]).unwrap();
+        let entry_wire = json::to_value(&parsed.entries[0]).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<super::SavedToggleEntry>(
-                entry_wire.clone()
-            )
-            .unwrap(),
+            json::from_value::<super::SavedToggleEntry>(entry_wire.clone()).unwrap(),
             parsed.entries[0]
         );
         for (field, invalid) in [
@@ -610,17 +598,11 @@ mod tests {
         ] {
             let mut wire = entry_wire.clone();
             wire[field] = invalid;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::SavedToggleEntry>(wire)
-                    .is_err()
-            );
+            assert!(json::from_value::<super::SavedToggleEntry>(wire).is_err());
         }
-        let stream_wire = cadmpeg_core::serde_erase::json::to_value(&parsed.stream).unwrap();
+        let stream_wire = json::to_value(&parsed.stream).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<super::SavedToggleStream>(
-                stream_wire.clone()
-            )
-            .unwrap(),
+            json::from_value::<super::SavedToggleStream>(stream_wire.clone()).unwrap(),
             parsed.stream
         );
         for (field, invalid) in [
@@ -630,10 +612,7 @@ mod tests {
         ] {
             let mut wire = stream_wire.clone();
             wire[field] = invalid;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::SavedToggleStream>(wire)
-                    .is_err()
-            );
+            assert!(json::from_value::<super::SavedToggleStream>(wire).is_err());
         }
         assert_eq!(
             super::SavedToggleEntryWire::from(parsed.entries[0].clone()).value_source_offset,
