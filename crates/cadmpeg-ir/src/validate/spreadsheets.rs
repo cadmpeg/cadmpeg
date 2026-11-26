@@ -72,7 +72,7 @@ mod tests {
     fn parameter_fixture() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.parameters.push(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:parameter#cell", "name": "cell", "expression": "7", "ordinal": 0, "dependencies": [], "properties": {}
             }))
             .unwrap(),
@@ -84,7 +84,7 @@ mod tests {
     fn spreadsheet_reference_findings_keep_row_order_and_missing_owner_semantics() {
         let mut ir = parameter_fixture();
         ir.model.spreadsheets.push(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:spreadsheet#sheet", "feature": "test:model:feature#missing",
                 "cells": [
                     {"address": "A1", "parameter": "test:model:parameter#cell"},

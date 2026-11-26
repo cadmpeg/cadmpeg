@@ -2434,7 +2434,7 @@ pub(crate) mod tests {
         .expect("valid linear dimension");
         let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
             .expect("dimension projection");
-        let baseline = serde_json::json!({
+        let baseline = cadmpeg_core::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
             "value": annotation.value,

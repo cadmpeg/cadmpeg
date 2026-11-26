@@ -1190,14 +1190,14 @@ fn attach_standalone_wires(
         return Ok(false);
     }
     let shell = Shell::with_members(shell_id, shell_region_id, edge_ids, Vec::new());
-    for id in [
-        body_id.as_str(),
-        region_id.as_str(),
-        shell_owner_id.as_str(),
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_owner_id),
     ] {
         annotate(
             annotations,
-            id,
+            &key,
             "consolidated_curve_wire",
             0,
             "standalone_wire_owner",
@@ -1222,16 +1222,16 @@ fn attach_standalone_wires(
             index,
             EdgeId::mint,
         )?;
-        for id in [
-            point_ids[0].as_str(),
-            point_ids[1].as_str(),
-            vertex_ids[0].as_str(),
-            vertex_ids[1].as_str(),
-            edge_id.as_str(),
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[0]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[1]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[0]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[1]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&edge_id),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "consolidated_curve_wire",
                 u64_from_index(pos),
                 "curve_domain_endpoint",
@@ -2000,16 +2000,16 @@ fn attach_closed_two_edge_face(
             native_ref: None,
         });
     }
-    for id in [
-        body_id.as_str(),
-        region_id.as_str(),
-        shell_id.as_str(),
-        face_id.as_str(),
-        loop_id.as_str(),
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&face_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&loop_id),
     ] {
         annotate(
             annotations,
-            id,
+            &key,
             annotation_source,
             u64_from_index(carrier_pos),
             "closed_two_edge_patch",
@@ -2018,10 +2018,13 @@ fn attach_closed_two_edge_face(
     }
     annotations.field_exactness(&face_id, "sense", Exactness::Inferred)?;
     for (index, position) in [first_point, second_point].into_iter().enumerate() {
-        for id in [point_ids[index].as_str(), vertex_ids[index].as_str()] {
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_ids[index]),
+        ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 annotation_source,
                 u64_from_index(carrier_pos),
                 "shared_boundary_endpoint",
@@ -2046,14 +2049,14 @@ fn attach_closed_two_edge_face(
         } else {
             [vertex_ids[1].clone(), vertex_ids[0].clone()]
         };
-        for id in [
-            edge_ids[index].as_str(),
-            coedge_ids[index].as_str(),
-            pcurve_ids[index].as_str(),
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&edge_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&coedge_ids[index]),
+            cadmpeg_ir::annotations::AnnotationKey::from(&pcurve_ids[index]),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 annotation_source,
                 u64_from_index(closed.edges[index].pos),
                 "closed_boundary",

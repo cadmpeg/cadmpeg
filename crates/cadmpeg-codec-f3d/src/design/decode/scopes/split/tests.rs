@@ -97,7 +97,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
     let value = json::to_value(&scope).unwrap();
     assert_eq!(
         value["split_tool_extension"],
-        serde_json::json!({"value": false, "offset": offset})
+        cadmpeg_core::json!({"value": false, "offset": offset})
     );
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -108,7 +108,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
     assert_eq!(decoded, scope);
 
     let mut wrong_offset = value;
-    wrong_offset["split_tool_extension"]["offset"] = serde_json::json!(offset + 1);
+    wrong_offset["split_tool_extension"]["offset"] = cadmpeg_core::json!(offset + 1);
     assert!(json::from_value::<DesignParameterScope>(wrong_offset).is_err());
 
     bytes[offset] = 2;

@@ -362,12 +362,12 @@ fn build_metadata_ir(
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             annotations.note(
-                unknown.id().as_str(),
+                unknown.id(),
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             );
-            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            annotations.exactness(unknown.id(), Exactness::Derived);
             scan.note_untyped(unknown.id(), [ArenaClass::Model]);
             unknowns.push(unknown);
         }

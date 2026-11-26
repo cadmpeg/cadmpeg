@@ -12,7 +12,7 @@ const INVALID: &str = "Fusion Design parameter scope has an invalid paired frame
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
 fn binding(entity_suffix: u32, ordinal: u32) -> DesignBodyBinding {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:design-body-binding#{}", 1000 + 100 * ordinal),
         "stream": "Design/BulkStream.dat",
         "pair_count": 4,
@@ -29,7 +29,7 @@ fn binding(entity_suffix: u32, ordinal: u32) -> DesignBodyBinding {
 }
 
 fn member(entity_suffix: u32) -> DesignBodyMember {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:design-body-member#{}", 5000 + entity_suffix),
         "byte_offset": 5000 + entity_suffix,
         "entity_suffix": entity_suffix,
@@ -40,7 +40,7 @@ fn member(entity_suffix: u32) -> DesignBodyMember {
 
 /// A scope that copies the bodies with suffixes 11 and 13 to 12 and 14.
 fn native() -> crate::native::F3dNative {
-    let operation: DesignCopyPasteBodiesOperation = json::from_value(serde_json::json!({
+    let operation: DesignCopyPasteBodiesOperation = json::from_value(cadmpeg_core::json!({
         "body_group_record_index": 501, "body_group_class_tag": "264", "body_group_byte_offset": 100,
         "body_operand_record_indices": [502, 504], "body_operand_record_offsets": [126, 137],
         "relation_record_index": 503, "relation_class_tag": "264", "relation_byte_offset": 200,

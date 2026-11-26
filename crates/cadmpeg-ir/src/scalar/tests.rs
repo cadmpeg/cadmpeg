@@ -45,14 +45,14 @@ fn feature_scalars_reject_nonfinite_constructor_and_serde_values() {
         let angle = Angle::new(value).unwrap();
         assert_eq!(length.get(), value);
         assert_eq!(angle.get(), value);
-        assert_eq!(json::to_value(length).unwrap(), serde_json::json!(value));
-        assert_eq!(json::to_value(angle).unwrap(), serde_json::json!(value));
+        assert_eq!(json::to_value(length).unwrap(), cadmpeg_core::json!(value));
+        assert_eq!(json::to_value(angle).unwrap(), cadmpeg_core::json!(value));
         assert_eq!(
-            json::from_value::<Length>(serde_json::json!(value)).unwrap(),
+            json::from_value::<Length>(cadmpeg_core::json!(value)).unwrap(),
             length
         );
         assert_eq!(
-            json::from_value::<Angle>(serde_json::json!(value)).unwrap(),
+            json::from_value::<Angle>(cadmpeg_core::json!(value)).unwrap(),
             angle
         );
     }
@@ -72,7 +72,7 @@ fn positive_lengths_reject_zero_negative_and_nonfinite_values() {
     }
     let length = PositiveLength::new(2.5).unwrap();
     assert_eq!(length.get(), 2.5);
-    assert_eq!(json::to_value(length).unwrap(), serde_json::json!(2.5));
+    assert_eq!(json::to_value(length).unwrap(), cadmpeg_core::json!(2.5));
     assert_eq!(
         serde_json::from_str::<PositiveLength>("2.5").unwrap(),
         length
@@ -85,18 +85,18 @@ fn positive_i64_admits_the_full_positive_signed_lane() {
 
     for value in [0_i64, -1] {
         assert!(PositiveI64::new(value).is_none());
-        assert!(json::from_value::<PositiveI64>(serde_json::json!(value)).is_err());
+        assert!(json::from_value::<PositiveI64>(cadmpeg_core::json!(value)).is_err());
     }
-    assert!(json::from_value::<PositiveI64>(serde_json::json!(1.5)).is_err());
+    assert!(json::from_value::<PositiveI64>(cadmpeg_core::json!(1.5)).is_err());
 
     let maximum = PositiveI64::new(i64::MAX).unwrap();
     assert_eq!(maximum.get(), i64::MAX);
     assert_eq!(
         json::to_value(maximum).unwrap(),
-        serde_json::json!(i64::MAX)
+        cadmpeg_core::json!(i64::MAX)
     );
     assert_eq!(
-        json::from_value::<PositiveI64>(serde_json::json!(i64::MAX)).unwrap(),
+        json::from_value::<PositiveI64>(cadmpeg_core::json!(i64::MAX)).unwrap(),
         maximum
     );
 }

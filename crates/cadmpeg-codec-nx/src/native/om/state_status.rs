@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn om_status_payload_streams_once_with_native_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:om:status#1", "section_link": "section", "ordinal": 0,
             "status_code": 65, "raw_status_code": "41",
             "object_index": 1, "raw_object_index": "01",

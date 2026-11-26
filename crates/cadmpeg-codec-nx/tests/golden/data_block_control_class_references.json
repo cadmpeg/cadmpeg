@@ -366,13 +366,6 @@
             "fields": {},
             "kind": "entity"
           },
-          "nx:om-entry-0:feature#equations-70": {
-            "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
-            "kind": "entity"
-          },
           "nx:om-entry-0:parameter#97": {
             "fields": {
               "definition": "derived",
@@ -409,11 +402,6 @@
             "offset": 167,
             "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
-          },
-          "nx:om-entry-0:feature#equations-70": {
-            "offset": 173,
-            "stream": "nx:container",
-            "tag": "hostglobalvariables"
           },
           "nx:om-entry-0:parameter#97": {
             "offset": 173,

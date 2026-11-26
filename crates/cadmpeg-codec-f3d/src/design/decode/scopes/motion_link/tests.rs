@@ -90,6 +90,6 @@ fn motion_link_reads_and_retains_two_ordered_rotations() {
         scope
     );
     let mut malformed = saved;
-    malformed["linked_rotations"]["joints"] = serde_json::json!([FIRST, FIRST]);
+    malformed["linked_rotations"]["joints"] = cadmpeg_core::json!([FIRST, FIRST]);
     assert!(json::from_value::<DesignParameterScope>(malformed).is_err());
 }

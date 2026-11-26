@@ -100,7 +100,7 @@ fn face_group(members: &[u32]) -> DesignConstructionOperandGroup {
     let member_offsets = (0..members.len())
         .map(|ordinal| 1026 + 11 * ordinal)
         .collect::<Vec<_>>();
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": GROUP_ID,
         "scope_record_index": 77,
         "scope_reference_ordinal": 0,

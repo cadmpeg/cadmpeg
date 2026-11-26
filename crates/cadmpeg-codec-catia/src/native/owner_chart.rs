@@ -607,8 +607,8 @@ mod tests {
         CatiaOwnerChartBridgeReference, CatiaOwnerChartBridgeReferenceWire,
         CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation, CatiaOwnerChartRelationWire,
     };
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     fn owner_chart() -> CatiaOwnerChartRelation {
         let native = crate::native::CatiaNative::decode(

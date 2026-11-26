@@ -327,7 +327,7 @@ pub(crate) fn inspect(
                     path,
                     report_path,
                     "inspect",
-                    Payload::Refused(serde_json::json!({ "summary": null }), refusal),
+                    Payload::Refused(cadmpeg_core::json!({ "summary": null }), refusal),
                     json,
                 );
             }
@@ -384,14 +384,8 @@ pub(crate) fn dump(
                 TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
-        let emission = emit_export_plan(
-            plan,
-            Format::Cadir,
-            &destination,
-            &loaded.origin,
-            &loaded.ir,
-        )
-        .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
+        let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
+            .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
         print_export_emission(&mut io::stderr(), &emission)?;
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;

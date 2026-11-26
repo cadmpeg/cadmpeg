@@ -230,7 +230,7 @@ fn root_product_has_the_root_identity() {
 #[test]
 fn kernel_annotation_is_admitted() {
     let record = cadmpeg_asm::brep::annotations::AnnotationRecord {
-        id: "inventor:body#one".into(),
+        id: "inventor:asm:body#one".into(),
         stream: "carrier".into(),
         offset: 7,
         tag: cadmpeg_asm::brep::annotations::AnnotationTag::ProceduralSurface,
@@ -411,7 +411,7 @@ fn protein_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let wire = json::from_value(serde_json::json!({
+    let wire = json::from_value(cadmpeg_core::json!({
         "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
         "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
             "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
@@ -739,7 +739,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
 
 #[test]
 fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
@@ -760,7 +760,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     assert_eq!(issues[0].record_ordinal, 1);
     assert!(issues[0].detail.contains("suffix_sha256"));
     let mut wire = wire;
-    wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
+    wire["suffix_sha256"] = cadmpeg_core::json!("0".repeat(64));
     let good = json::from_value(wire).expect("wire fixture");
     assert!(admit_assembly_placement(&ctx, good, &mut issues)
         .expect("admit the assembly placement")
@@ -769,7 +769,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
 }
 
 fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementRecordWire {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
@@ -968,7 +968,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
     let assets = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
         .filter_map(|entry_name| {
-            let wire = json::from_value(serde_json::json!({
+            let wire = json::from_value(cadmpeg_core::json!({
                 "id": "asset", "entry_name": entry_name, "ordinal": 3,
                 "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                     "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }

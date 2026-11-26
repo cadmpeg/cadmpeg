@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::{aligned, history_value, residue};
 use crate::design::dimension::{ParameterRef, RefTarget};

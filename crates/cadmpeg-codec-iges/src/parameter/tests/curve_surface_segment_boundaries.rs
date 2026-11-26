@@ -211,7 +211,7 @@ fn decode_uses_type114_entity_boundary_for_form7_association() {
         source.fields().unwrap()["association_links"]
             .as_array()
             .unwrap(),
-        &[serde_json::json!("iges:entity:directory#1")]
+        &[cadmpeg_core::json!("iges:entity:directory#1")]
     );
 }
 
@@ -411,7 +411,7 @@ fn decode_uses_type128_entity_boundary_for_form7_association() {
         source.fields().unwrap()["association_links"]
             .as_array()
             .unwrap(),
-        &[serde_json::json!("iges:entity:directory#1")]
+        &[cadmpeg_core::json!("iges:entity:directory#1")]
     );
 }
 
@@ -633,7 +633,7 @@ fn decode_uses_type144_entity_boundary_for_form0_association() {
         source.fields().unwrap()["association_links"]
             .as_array()
             .unwrap(),
-        &[serde_json::json!("iges:entity:directory#17")]
+        &[cadmpeg_core::json!("iges:entity:directory#17")]
     );
 }
 

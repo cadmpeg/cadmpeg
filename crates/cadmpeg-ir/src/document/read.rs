@@ -31,7 +31,7 @@ use super::{one_zero, CadIr, Design, Model, Process, Topology};
 use crate::annotations::Removed;
 use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
-use crate::native::{Native, NativeRecord};
+use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::report::loss::LossNote;
 use crate::report::strictness::Strictness;
 use crate::report::Severity;
@@ -85,11 +85,36 @@ pub struct CadirRead {
 }
 
 impl CadirRead {
-    /// Removes from `fidelity`, the source fidelity read together with this
-    /// document, the annotations of each record the read gave up and of each
-    /// record it dropped with one (§3.3).
-    pub fn remove_given_up_annotations(&self, fidelity: &mut SourceFidelity) {
-        fidelity.annotations.remove(&self.removed);
+    /// The document, the read's report, and `sidecar`, the source fidelity
+    /// of a decode sidecar that matches the text read, reconciled with the
+    /// read (§3.3): without the annotations of each record the read gave up
+    /// and of each record it dropped with one, and with the retained text of
+    /// each part the read gave up under the id of its stub, where `sidecar`
+    /// retains no text under that id.
+    ///
+    /// # Errors
+    ///
+    /// A retained text the sidecar refuses.
+    pub fn with_sidecar(
+        self,
+        mut sidecar: SourceFidelity,
+    ) -> Result<(CadIr, Vec<LossNote>, SourceFidelity), NativeConvertError> {
+        let Self {
+            document,
+            report,
+            fidelity,
+            removed,
+        } = self;
+        if !sidecar.annotations.is_empty() {
+            sidecar.annotations.remove(&removed.after(&document));
+        }
+        let (_, retained) = fidelity.into_parts();
+        for (id, record) in retained {
+            if sidecar.retained_record(id.as_str()).is_none() {
+                sidecar.insert_retained_record(id, record)?;
+            }
+        }
+        Ok((document, report, sidecar))
     }
 }
 
@@ -375,9 +400,22 @@ impl Reader<'_, '_> {
         }
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
-        let before = Removed::before(document);
         let released = crate::give_up::release_lost(self.ctx, document, &ids);
-        self.removed = before.after(ids.iter().cloned(), document);
+        let releases = released.as_deref().unwrap_or_default();
+        self.removed = Removed::of_records(
+            ids.iter()
+                .chain(releases.iter().flat_map(|(_, release)| &release.dropped))
+                .cloned(),
+            releases
+                .iter()
+                .flat_map(|(_, release)| &release.states)
+                .flat_map(|((_, state), delta)| {
+                    delta
+                        .dropped
+                        .iter()
+                        .map(|record| (state.clone(), record.clone()))
+                }),
+        );
         let released = match released {
             Ok(released) => released,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),

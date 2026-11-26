@@ -1054,7 +1054,7 @@ mod tests {
             representation: &'a UfrxRepresentationRecord,
         }
 
-        let representation = serde_json::json!({
+        let representation = cadmpeg_core::json!({
             "prefix": 0, "design_views": [{"name": "Master", "kind": "LOD"}],
             "secondary_active_lod_state": [0, 0],
             "active_design_view": "Primary", "active_design_view_state": [0, 0]
@@ -1067,13 +1067,13 @@ mod tests {
         };
         assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "representation": representation}),
+            cadmpeg_core::json!({"id": record.id, "representation": representation}),
         );
     }
 
     #[test]
     fn ufrx_model_state_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "inventor:ufrx:model-state#0", "ordinal": 0, "prefix": 0,
             "name": "Primary", "state": [0, 0], "prefix_count": 0,
             "parameters": [], "suffix_len": 77, "suffix_sha256": "a".repeat(64)
@@ -1085,7 +1085,7 @@ mod tests {
 
     #[test]
     fn ufrx_external_reference_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
             "path": "part.ipt", "library_id": 0, "library_name": "",
             "display_name": "", "state_groups": [], "state": [0, 0],
@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn ufrx_embedded_reference_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "inventor:ufrx:embedded-reference#0", "ordinal": 0,
             "value_0": 0, "filetime": 0, "value_1": 0, "extended_value": null,
             "value_2": 0, "path": "", "library_id": 0,
@@ -1114,7 +1114,7 @@ mod tests {
 
     #[test]
     fn ufrx_occurrence_streams_once_with_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "inventor:ufrx:occurrence#0", "ordinal": 0,
             "reference_id": 0, "occurrence_id": 1,
             "occurrence_key": 1, "header_value": 0, "title": null,
@@ -1190,7 +1190,7 @@ mod tests {
 
     #[test]
     fn external_reference_database_identity_and_ordinal_are_checked() {
-        let valid = serde_json::json!({
+        let valid = cadmpeg_core::json!({
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
             "path": "part.ipt", "library_id": 0, "library_name": "", "display_name": "",
             "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
@@ -1201,7 +1201,7 @@ mod tests {
         assert_eq!(json::to_value(record).expect("record"), valid);
         for database_id in ["", "not-hex", "0001", "g0000000000000000000000000000000"] {
             let mut wire = valid.clone();
-            wire["database_id"] = serde_json::json!(database_id);
+            wire["database_id"] = cadmpeg_core::json!(database_id);
             assert!(json::from_value::<ExternalReferenceRecord>(wire).is_err());
         }
         for id in [
@@ -1211,17 +1211,17 @@ mod tests {
             "inventor:ufrx:external-reference#+0",
         ] {
             let mut wire = valid.clone();
-            wire["id"] = serde_json::json!(id);
+            wire["id"] = cadmpeg_core::json!(id);
             assert!(json::from_value::<ExternalReferenceRecord>(wire).is_err());
         }
         let mut wrong_ordinal = valid;
-        wrong_ordinal["ordinal"] = serde_json::json!(7);
+        wrong_ordinal["ordinal"] = cadmpeg_core::json!(7);
         assert!(json::from_value::<ExternalReferenceRecord>(wrong_ordinal).is_err());
     }
 
     #[test]
     fn external_reference_requires_path_or_nonzero_document_id() {
-        let valid = serde_json::json!({
+        let valid = cadmpeg_core::json!({
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0, "path": "part.ipt", "library_id": 0,
             "library_name": "", "display_name": "", "state_groups": [], "state": [0,0],
             "document_id": "0".repeat(32), "database_id": "0".repeat(32), "reference_id": 1,
@@ -1241,8 +1241,8 @@ mod tests {
             ("", "00000000000000000000000000000000", false),
         ] {
             let mut wire = valid.clone();
-            wire["path"] = serde_json::json!(path);
-            wire["document_id"] = serde_json::json!(document_id);
+            wire["path"] = cadmpeg_core::json!(path);
+            wire["document_id"] = cadmpeg_core::json!(document_id);
             let record = json::from_value::<ExternalReferenceRecord>(wire.clone());
             if accepted {
                 if document_id.chars().all(|character| character == '0') {
@@ -1266,13 +1266,13 @@ mod tests {
 
     #[test]
     fn reference_framing_admission_rejects_invalid_wire_values() {
-        let occurrence = serde_json::json!({
+        let occurrence = cadmpeg_core::json!({
             "id": "occurrence", "ordinal": 0, "reference_id": 0,
             "occurrence_id": 1, "occurrence_key": 1, "header_value": 0,
             "title": null, "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
-        let embedded = serde_json::json!({
+        let embedded = cadmpeg_core::json!({
             "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
             "value_1": 0, "extended_value": null, "value_2": 0, "path": "",
             "library_id": 0, "library_name": "", "state": 0, "display_name": "",
@@ -1292,10 +1292,10 @@ mod tests {
             embedded
         );
         for (field, value) in [
-            ("record_len", serde_json::json!(0)),
-            ("record_sha256", serde_json::json!("a".repeat(63))),
-            ("record_sha256", serde_json::json!("g".repeat(64))),
-            ("record_sha256", serde_json::json!("A".repeat(64))),
+            ("record_len", cadmpeg_core::json!(0)),
+            ("record_sha256", cadmpeg_core::json!("a".repeat(63))),
+            ("record_sha256", cadmpeg_core::json!("g".repeat(64))),
+            ("record_sha256", cadmpeg_core::json!("A".repeat(64))),
         ] {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
@@ -1311,7 +1311,7 @@ mod tests {
                 .contains(field));
         }
         let mut wire = occurrence;
-        wire["header_padding_words"] = serde_json::json!(9);
+        wire["header_padding_words"] = cadmpeg_core::json!(9);
         assert!(json::from_value::<UfrxOccurrenceRecord>(wire)
             .expect_err("invalid native record fixture")
             .to_string()
@@ -1320,7 +1320,7 @@ mod tests {
 
     #[test]
     fn representation_admission_rejects_empty_names() {
-        let valid = serde_json::json!({
+        let valid = cadmpeg_core::json!({
             "prefix": 0, "design_views": [{"name": "Master", "kind": "LOD"}],
             "secondary_active_lod_state": [0, 0],
             "active_design_view": "Primary", "active_design_view_state": [0, 0]
@@ -1332,14 +1332,14 @@ mod tests {
             valid
         );
         let mut wire = valid.clone();
-        wire["active_design_view"] = serde_json::json!("");
+        wire["active_design_view"] = cadmpeg_core::json!("");
         assert!(json::from_value::<UfrxRepresentationRecord>(wire)
             .expect_err("invalid native record fixture")
             .to_string()
             .contains("active_design_view"));
         for field in ["name", "kind"] {
             let mut wire = valid.clone();
-            wire["design_views"][0][field] = serde_json::json!("");
+            wire["design_views"][0][field] = cadmpeg_core::json!("");
             assert!(json::from_value::<UfrxRepresentationRecord>(wire)
                 .expect_err("invalid native record fixture")
                 .to_string()
@@ -1352,7 +1352,7 @@ mod tests {
 
     #[test]
     fn model_state_admission_rejects_invalid_framing() {
-        let valid = serde_json::json!({
+        let valid = cadmpeg_core::json!({
             "id": "state", "ordinal": 0, "prefix": 0, "name": "Primary",
             "state": [0, 0], "prefix_count": 0, "parameters": [],
             "suffix_len": 77, "suffix_sha256": "a".repeat(64)
@@ -1364,11 +1364,11 @@ mod tests {
             valid
         );
         for (field, value) in [
-            ("name", serde_json::json!("")),
-            ("suffix_len", serde_json::json!(76)),
-            ("suffix_len", serde_json::json!(78)),
-            ("suffix_sha256", serde_json::json!("a".repeat(63))),
-            ("suffix_sha256", serde_json::json!("g".repeat(64))),
+            ("name", cadmpeg_core::json!("")),
+            ("suffix_len", cadmpeg_core::json!(76)),
+            ("suffix_len", cadmpeg_core::json!(78)),
+            ("suffix_sha256", cadmpeg_core::json!("a".repeat(63))),
+            ("suffix_sha256", cadmpeg_core::json!("g".repeat(64))),
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
@@ -1420,7 +1420,7 @@ mod tests {
             .arena_as::<serde_json::Value>("ufrx")
             .expect("valid test fixture");
         assert_eq!(wire[0]["model_state_count"], 1);
-        wire[0]["model_state_count"] = serde_json::json!(0);
+        wire[0]["model_state_count"] = cadmpeg_core::json!(0);
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
             .expect("valid test fixture");
@@ -1470,7 +1470,7 @@ mod tests {
             let mut wire = namespace
                 .arena_as::<serde_json::Value>("ufrx")
                 .expect("valid test fixture");
-            wire[0]["caption"] = serde_json::json!("orphan");
+            wire[0]["caption"] = cadmpeg_core::json!("orphan");
             namespace
                 .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
                 .expect("valid test fixture");

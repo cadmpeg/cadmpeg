@@ -1,6 +1,6 @@
 use super::super::tsplines::{InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn subtransform_admission_requires_nonempty_programs_and_nonnegative_indices() {

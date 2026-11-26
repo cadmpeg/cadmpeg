@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     println!(
         "{}",
-        serde_json::json!({
+        cadmpeg_core::json!({
             "bodies": bodies.len(),
             "counts": counts,
             "disagree": disagree,

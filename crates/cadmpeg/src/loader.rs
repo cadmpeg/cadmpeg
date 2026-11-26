@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, CadirRead, DecodeSidecar, ReadFailure, ReadOptions};
+use cadmpeg_ir::{CadIr, DecodeSidecar, ReadFailure, ReadOptions};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
@@ -171,25 +171,11 @@ fn load(
             }
             SidecarLoad::Matching(sidecar) => {
                 let DecodeSidecar {
-                    report,
-                    mut fidelity,
-                    ..
+                    report, fidelity, ..
                 } = *sidecar;
-                read.remove_given_up_annotations(&mut fidelity);
-                let CadirRead {
-                    document,
-                    report: read_report,
-                    fidelity: read,
-                    ..
-                } = read;
-                let (_, retained) = read.into_parts();
-                for (id, record) in retained {
-                    if fidelity.retained_record(id.as_str()).is_none() {
-                        fidelity
-                            .insert_retained_record(id, record)
-                            .map_err(|error| anyhow!("{}: {error}", path.display()))?;
-                    }
-                }
+                let (document, read_report, fidelity) = read
+                    .with_sidecar(fidelity)
+                    .map_err(|error| anyhow!("{}: {error}", path.display()))?;
                 LoadedDocument::restored(document, report, fidelity, input_bytes)
                     .with_read_report(read_report)
             }
@@ -255,7 +241,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},
@@ -309,10 +295,10 @@ mod tests {
         let given_up = ir.geometry.points[0].id.as_str();
         let kept = ir.geometry.points[1].id.as_str();
         let mut value = json::to_value(&ir).unwrap();
-        value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
+        value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
         let text = value.to_string();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},
@@ -324,8 +310,18 @@ mod tests {
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        annotations.note(given_up, &stream, 0, None);
-        annotations.note(kept, &stream, 0, None);
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(given_up).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(kept).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
         let mut fidelity =
             SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
         fidelity.annotations = annotations.build();

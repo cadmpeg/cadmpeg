@@ -578,7 +578,7 @@ fn every_command_that_loads_a_cadir_document_names_its_stale_sidecar() {
     let check_report = dir.path().join("check.json");
     fs::write(
         &check_report,
-        json::to_vec(&serde_json::json!({
+        json::to_vec(&cadmpeg_core::json!({
             "ir_version": cadmpeg_ir::document::IR_VERSION,
             "command": "check",
             "input_path": cadir,

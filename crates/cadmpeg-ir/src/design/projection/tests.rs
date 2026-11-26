@@ -259,10 +259,12 @@ fn restated_with(
     let ir = restated_document();
     let mut annotations = crate::AnnotationBuilder::new();
     for (id, exactness) in entities {
-        annotations.exactness(id, *exactness);
+        annotations.exactness(*id, *exactness);
     }
     for (id, field, exactness) in marks {
-        annotations.field_exactness(id, *field, *exactness).unwrap();
+        annotations
+            .field_exactness(*id, *field, *exactness)
+            .unwrap();
     }
     super::restate_exactness(&ir, &mut annotations, restatement).unwrap();
     let annotations = annotations.build();

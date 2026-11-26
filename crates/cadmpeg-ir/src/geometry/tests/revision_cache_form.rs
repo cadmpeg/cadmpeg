@@ -2,9 +2,9 @@
 use crate::geometry::legacy_cache::FitTolerance;
 use crate::geometry::revision_forms::{RevisionCacheForm, RevisionSurfaceParameterization};
 use crate::geometry::surface_curves::CacheFirstCurveParameterization;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct SurfaceCacheWire {
