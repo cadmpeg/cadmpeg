@@ -182,7 +182,7 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         "writes these active configurations inactive: the Design stream holds one DesignConfigurationRoot record, which names another row",
         inactive,
     ));
-    let mut root = first.and_then(|row| root_of(row, documents, &mut losses));
+    let mut root = first.and_then(|row| root(row, documents, &mut losses));
     let mut holds_rows = Vec::new();
     let mut displaced = Vec::new();
     let mut unread = Vec::new();
@@ -258,7 +258,7 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
 /// table id (f3d.md §1.2), so a table id that another document holds is
 /// written unique. A row id whose cut names another row of the table is
 /// written unique.
-fn root_of(
+fn root(
     row: Candidate<'_>,
     documents: &[DesignConfiguration],
     losses: &mut Vec<LossNote>,
