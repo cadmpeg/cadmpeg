@@ -167,6 +167,7 @@ impl Failure {
 }
 
 /// The document the generator writes, and the losses taken to reach it.
+#[derive(Clone)]
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
@@ -182,6 +183,9 @@ pub(super) struct Reduction<'a> {
     /// The open edges written over one arc of a curve that passes a vertex
     /// twice, charged at [`Self::finish`] for the edges still written.
     assumed_arcs: Vec<(EdgeId, LossNote)>,
+    /// The reduction before the first held state, which the writer takes
+    /// again where it no longer writes the held items.
+    unheld: Option<Box<Reduction<'a>>>,
 }
 
 impl<'a> Reduction<'a> {
@@ -195,6 +199,7 @@ impl<'a> Reduction<'a> {
             fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
+            unheld: None,
         }
     }
 
@@ -1410,10 +1415,14 @@ impl<'a> Reduction<'a> {
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design()
+        let dropped = self.writes_neutral_design()
             && self
                 .fallback
-                .drop_next(&self.ir, self.missing_states, reason)
+                .drop_next(&self.ir, self.missing_states, reason);
+        if dropped && self.fallback.drops_items() {
+            self.unhold();
+        }
+        dropped
     }
 
     /// Drop the records `culprit` names, and each record that needs them.
@@ -1430,7 +1439,9 @@ impl<'a> Reduction<'a> {
         {
             return Ok(false);
         }
-        if let Some(held) =
+        if self.fallback.drops_items() {
+            self.unhold();
+        } else if let Some(held) =
             super::design::held_state(&self.ir, self.missing_states, &earlier, &self.fallback)
         {
             self.hold(held)?;
@@ -1441,6 +1452,9 @@ impl<'a> Reduction<'a> {
     /// Write `held` as the current state: the bodies outside it are not
     /// written.
     fn hold(&mut self, held: super::design::HeldState) -> Result<(), CodecError> {
+        if self.unheld.is_none() {
+            self.unheld = Some(Box::new(self.clone()));
+        }
         let reason = format!(
             "the history-true design writes the state of the items before {} at its timeline marker",
             held.before
@@ -1459,18 +1473,20 @@ impl<'a> Reduction<'a> {
             .iter()
             .map(|body| body.as_str().to_owned())
             .collect::<Vec<_>>();
-        if let Some(scope) = self
-            .ir
-            .to_mut()
-            .design
-            .scopes
-            .iter_mut()
-            .find(|scope| scope.definition == held.scope)
-        {
-            scope.current = vec![held.state];
-        }
+        self.ir.to_mut().design.scopes[held.scope].current = vec![held.state];
         let kept = kept.iter().map(String::as_str).collect();
         self.retain_reporting_bodies(&kept, &dropped, &reason)
+    }
+
+    /// Take again the reduction before the first held state, with the
+    /// current fallback: the design no longer writes the held items, so
+    /// every body the hold removed is written.
+    fn unhold(&mut self) {
+        if let Some(unheld) = self.unheld.take() {
+            let fallback = std::mem::take(&mut self.fallback);
+            *self = *unheld;
+            self.fallback = fallback;
+        }
     }
 
     /// Write no design scope: every design scope, container, feature and
@@ -1480,6 +1496,7 @@ impl<'a> Reduction<'a> {
         if !self.writes_neutral_design() {
             return false;
         }
+        self.unhold();
         self.neutral_dropped = true;
         self.losses
             .extend(super::design::dropped_records(&self.ir, reason));

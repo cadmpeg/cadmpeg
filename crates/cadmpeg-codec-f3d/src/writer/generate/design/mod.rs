@@ -61,7 +61,7 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
 
@@ -310,6 +310,11 @@ impl Fallback {
             .iter()
             .find(|(dropped, _)| *dropped == part)
             .map(|(_, reason)| reason.as_str())
+    }
+
+    /// Whether the geometry items written with their states are dropped.
+    pub(super) fn drops_items(&self) -> bool {
+        self.reason(Part::Item).is_some()
     }
 
     /// Why the geometry items are dropped, and the feature the failure
@@ -979,8 +984,8 @@ pub(in crate::writer::generate) fn state_at_marker(
 /// The state the history-true form writes at its timeline marker where a
 /// failure ends the run at an item: the state after the items before it.
 pub(super) struct HeldState {
-    /// The definition of the root scope.
-    pub(super) scope: ProductDefinitionId,
+    /// The position of the root scope among the document's scopes.
+    pub(super) scope: usize,
     /// The state, as the scope's current state.
     pub(super) state: CurrentState,
     /// The feature the timeline marker stands before.
@@ -1004,7 +1009,8 @@ pub(super) fn held_state(
         .ends
         .keys()
         .find(|feature| !earlier.ends.contains_key(*feature))?;
-    let scope = root_scope(target)?;
+    let at = root_scope_at(target)?;
+    let scope = &target.design.scopes[at];
     let [current] = scope.current.as_slice() else {
         return None;
     };
@@ -1019,7 +1025,7 @@ pub(super) fn held_state(
         .collect::<Vec<_>>();
     let after = kept.last()?.feature();
     Some(HeldState {
-        scope: scope.definition.clone(),
+        scope: at,
         state: CurrentState {
             at: Position::After(Member::Feature(after.clone())),
             bodies: kept
@@ -1027,7 +1033,7 @@ pub(super) fn held_state(
                 .filter_map(|item| item.body().cloned())
                 .collect(),
             poses: current.poses.clone(),
-            status: EvaluationStatus::Current,
+            status: current.status,
             native_ref: None,
         },
         before: before.clone(),
@@ -1199,9 +1205,14 @@ fn sketch_plan<'a>(
 /// The design scope of the root definition: the document's one scope, or
 /// the scope whose definition no occurrence places.
 pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
+    root_scope_at(target).map(|at| &target.design.scopes[at])
+}
+
+/// The position of [`root_scope`] among the document's scopes.
+fn root_scope_at(target: &CadIr) -> Option<usize> {
     match target.design.scopes.as_slice() {
         [] => None,
-        [scope] => Some(scope),
+        [_] => Some(0),
         scopes => {
             let placed = target
                 .model
@@ -1211,7 +1222,7 @@ pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
                 .collect::<BTreeSet<_>>();
             scopes
                 .iter()
-                .find(|scope| !placed.contains(&scope.definition))
+                .position(|scope| !placed.contains(&scope.definition))
         }
     }
 }
