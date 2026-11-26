@@ -9,10 +9,13 @@ use crate::features::selections::DistinctMembers;
 use crate::features::{
     Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
+use crate::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use crate::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-use crate::ids::HistoryBodyId;
+use crate::ids::{HistoryBodyId, PcurveId};
+use crate::math::Point2;
 use crate::report::check::{Check, Finding};
 use crate::schema::rewrite::typed::IdentityMap;
+use crate::topology::PcurveUse;
 use crate::validate::{validate_neutral, Severity};
 
 /// Move an identity into the history-body scope.
@@ -89,7 +92,14 @@ fn findings(ir: &CadIr) -> Vec<Finding> {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::build(ir);
     let mut findings = Vec::new();
-    super::check_history_bodies(&ctx, ir, &index, &mut findings).expect("validation runs");
+    super::check_history_bodies(
+        &ctx,
+        ir,
+        &index,
+        super::super::ALL_NEST_RULES,
+        &mut findings,
+    )
+    .expect("validation runs");
     findings
 }
 
@@ -119,6 +129,244 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
         report.findings
     );
     assert_eq!(report.entity_counts["history_bodies"], 1);
+}
+
+#[test]
+fn a_nest_is_checked_at_its_documents_tolerances() {
+    // The nest's corner at the origin lies 0.05 below the start of its three
+    // edges: past the coincidence allowance at the default tolerances, and
+    // within it at a linear tolerance of 0.1.
+    let gaps = |tolerances: crate::units::Tolerances| {
+        let mut ir = crate::examples::unit_cube().expect("cube");
+        ir.tolerances = tolerances;
+        ir.model.features.push(feature("test:model:feature#base"));
+        let mut nest = scoped(cube_nest());
+        let corner = nest
+            .points
+            .iter_mut()
+            .find(|point| point.position().get() == crate::math::Point3::new(0.0, 0.0, 0.0))
+            .expect("corner at the origin");
+        corner.set_position(
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, -0.05))
+                .expect("finite"),
+        );
+        let mut body = history_body("0", nest);
+        body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+        ir.model.history_bodies.push(body);
+        findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.message.contains("miss the edge's vertex positions"))
+            .count()
+    };
+    assert!(gaps(crate::units::Tolerances::default()) > 0);
+    let loose =
+        crate::units::Tolerances::new(0.1, crate::units::Tolerances::default().angular.get())
+            .expect("positive finite tolerances");
+    assert_eq!(gaps(loose), 0);
+}
+
+/// The cube nest with a pcurve on the line v = 5 on a face of the unit cube,
+/// which maps away from its edge.
+fn off_face_pcurve_nest() -> BodyTopology {
+    let mut nest = cube_nest();
+    let pcurve = PcurveId::mint("test:model:pcurve#off-face").expect("identity");
+    nest.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 5.0), Point2::new(1.0, 0.0)).expect("a line"),
+        ),
+        metadata: PcurveMetadata::default(),
+        native_ref: None,
+    });
+    nest.coedges[0].pcurves.push(PcurveUse {
+        pcurve,
+        isoparametric: None,
+        parameter_range: None,
+    });
+    scoped(nest)
+}
+
+const PCURVE_MISS: &str = "geometry_consistency.pcurve-mapped-through-face-surface-misses";
+
+/// The cube with a history body over `nest` that a feature produces.
+fn document_with(nest: BodyTopology) -> CadIr {
+    let mut ir = crate::examples::unit_cube().expect("cube");
+    crate::examples::add_document_root(&mut ir);
+    ir.model.features.push(feature("test:model:feature#base"));
+    let mut body = history_body("0", nest);
+    body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
+    ir.model.history_bodies.push(body);
+    ir
+}
+
+fn admitted(ir: &CadIr, route: &crate::Admission) -> bool {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    crate::admit(&ctx, ir, route, Vec::new())
+        .expect("admission runs")
+        .is_ok()
+}
+
+#[test]
+fn a_nest_pcurve_miss_is_reported_and_gives_up_no_history_body() {
+    let ir = document_with(off_face_pcurve_nest());
+    assert!(
+        findings(&ir)
+            .iter()
+            .any(|finding| finding.rule.as_str() == PCURVE_MISS),
+        "{:?}",
+        findings(&ir)
+    );
+    assert!(admitted(&ir, crate::HISTORY_BODY_ADMISSION));
+    assert!(!admitted(&ir, crate::DRAFT_CORE));
+}
+
+/// The findings of the nest rules of history-body admission on `nest`.
+fn admission_findings(nest: &BodyTopology) -> Vec<Finding> {
+    use super::super::topology::nested::{check, NestRules};
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let document = CadIr::empty();
+    check(
+        &ctx,
+        crate::native::view::NativeView::new(&document, None),
+        nest.to_topology(),
+        Some(&std::collections::BTreeSet::new()),
+        NestRules::Admission,
+    )
+    .expect("validation runs")
+}
+
+/// A defect of a nest that one check of history-body admission reports.
+struct Defect {
+    /// The rule that reports the defect.
+    rule: &'static str,
+    /// The checks whose findings the defect causes.
+    checks: &'static [Check],
+    /// Whether the finding gives the history body up.
+    gives_up: bool,
+    apply: fn(&mut BodyTopology),
+}
+
+fn defects() -> [Defect; 7] {
+    [
+        Defect {
+            rule: "identity_order.entity-id-not-globally-unique",
+            checks: &[Check::Identity, Check::ArenaOrder],
+            gives_up: true,
+            apply: |nest| {
+                let point = nest.points[0].clone();
+                nest.points.push(point);
+            },
+        },
+        Defect {
+            rule: "topology.references-missing",
+            checks: &[Check::ReferentialIntegrity],
+            gives_up: true,
+            apply: |nest| {
+                nest.surfaces.remove(0);
+            },
+        },
+        Defect {
+            rule: "topology.radial-ring-does-not-close",
+            checks: &[Check::CoedgePairing],
+            gives_up: true,
+            apply: |nest| {
+                nest.coedges[0].radial_next = nest.coedges[0].id.clone();
+            },
+        },
+        Defect {
+            rule: "topology.shell-faces-disconnected-through-shared-edges",
+            checks: &[Check::ShellTopology],
+            gives_up: true,
+            apply: |nest| {
+                // The bottom and top faces share no edge or vertex.
+                let mut sides = nest.shells[0].clone();
+                sides.id =
+                    crate::ids::ShellId::mint(format!("{}-sides", sides.id.as_str())).unwrap();
+                let mut moved = 0;
+                for face in &mut nest.faces {
+                    let id = face.id.as_str();
+                    if !id.ends_with("#bottom") && !id.ends_with("#top") {
+                        face.shell = sides.id.clone();
+                        moved += 1;
+                    }
+                }
+                assert_eq!(moved, 4);
+                nest.shells.push(sides);
+            },
+        },
+        Defect {
+            rule: "topology.wire-edge-also-referenced-coedge",
+            checks: &[Check::WireTopology],
+            gives_up: true,
+            apply: |nest| {
+                let edge = nest.edges[0].id.clone();
+                nest.shells[0]
+                    .members
+                    .push(crate::topology::ShellMember::WireEdge { id: edge });
+            },
+        },
+        Defect {
+            rule: "geometry_consistency.edge-curve-endpoints-miss-edge-vertex",
+            checks: &[Check::GeometricConsistency],
+            gives_up: true,
+            apply: |nest| {
+                let corner = nest
+                    .points
+                    .iter_mut()
+                    .find(|point| point.position().get() == crate::math::Point3::new(0.0, 0.0, 0.0))
+                    .expect("corner at the origin");
+                corner.set_position(
+                    crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
+                        0.0, 0.0, -0.05,
+                    ))
+                    .expect("finite"),
+                );
+            },
+        },
+        Defect {
+            rule: "topology.topology-tolerance-outside-sane-canonical-range",
+            checks: &[Check::Tolerances],
+            gives_up: false,
+            apply: |nest| {
+                nest.vertices[0].tolerance = crate::scalar::PositiveLength::new(2.0e6);
+            },
+        },
+    ]
+}
+
+#[test]
+fn history_body_admission_reports_each_defect_by_its_check_and_gives_up_on_an_error() {
+    let cube = scoped(cube_nest());
+    assert_eq!(admission_findings(&cube), Vec::new());
+    assert!(admitted(
+        &document_with(cube),
+        crate::HISTORY_BODY_ADMISSION
+    ));
+    for defect in defects() {
+        let mut nest = scoped(cube_nest());
+        (defect.apply)(&mut nest);
+        let found = admission_findings(&nest);
+        assert!(
+            found
+                .iter()
+                .any(|finding| finding.rule.as_str() == defect.rule),
+            "{}: {found:?}",
+            defect.rule
+        );
+        assert!(
+            found
+                .iter()
+                .all(|finding| defect.checks.contains(&finding.check)),
+            "{}: {found:?}",
+            defect.rule
+        );
+        assert_eq!(
+            admitted(&document_with(nest), crate::HISTORY_BODY_ADMISSION),
+            !defect.gives_up,
+            "{}",
+            defect.rule
+        );
+    }
 }
 
 #[test]
