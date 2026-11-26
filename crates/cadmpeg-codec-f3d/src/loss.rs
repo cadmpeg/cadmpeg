@@ -345,6 +345,8 @@ pub(crate) enum F3dLossCode {
     FeatureMeshBodySelectionAssumed,
     FeatureMeshImportPlacementCombined,
     FeatureMeshRemovedStateUnresolved,
+    FeatureMeshConvertedStateAssumed,
+    FeatureMeshGeometryStateUnjoined,
     FeatureMeshOperationSourceUnresolved,
     FeatureMeshOperationScopeUnparsed,
     FeatureMeshOperationSelectorUnruled,
@@ -1645,6 +1647,8 @@ impl F3dLossCode {
         Self::FeatureMeshBodySelectionAssumed,
         Self::FeatureMeshImportPlacementCombined,
         Self::FeatureMeshRemovedStateUnresolved,
+        Self::FeatureMeshConvertedStateAssumed,
+        Self::FeatureMeshGeometryStateUnjoined,
         Self::FeatureMeshOperationSourceUnresolved,
         Self::FeatureMeshOperationScopeUnparsed,
         Self::FeatureMeshOperationSelectorUnruled,
@@ -2700,6 +2704,8 @@ impl F3dLossCode {
             Self::FeatureMeshBodySelectionAssumed => "feature.mesh-body-selection-assumed",
             Self::FeatureMeshImportPlacementCombined => "feature.mesh-import-placement-combined",
             Self::FeatureMeshRemovedStateUnresolved => "feature.mesh-removed-state-unresolved",
+            Self::FeatureMeshConvertedStateAssumed => "feature.mesh-converted-state-assumed",
+            Self::FeatureMeshGeometryStateUnjoined => "feature.mesh-geometry-state-unjoined",
             Self::FeatureMeshOperationSourceUnresolved => {
                 "feature.mesh-operation-source-unresolved"
             }
@@ -3878,6 +3884,8 @@ impl F3dLossCode {
             | Self::FeatureMeshBodySelectionAssumed
             | Self::FeatureMeshImportPlacementCombined
             | Self::FeatureMeshRemovedStateUnresolved
+            | Self::FeatureMeshConvertedStateAssumed
+            | Self::FeatureMeshGeometryStateUnjoined
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -4671,6 +4679,8 @@ impl F3dLossCode {
             | Self::FeatureMeshBodySelectionAssumed
             | Self::FeatureMeshImportPlacementCombined
             | Self::FeatureMeshRemovedStateUnresolved
+            | Self::FeatureMeshConvertedStateAssumed
+            | Self::FeatureMeshGeometryStateUnjoined
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -5548,6 +5558,8 @@ mod tests {
                 "feature.mesh-body-selection-assumed",
                 "feature.mesh-import-placement-combined",
                 "feature.mesh-removed-state-unresolved",
+                "feature.mesh-converted-state-assumed",
+                "feature.mesh-geometry-state-unjoined",
                 "feature.mesh-operation-source-unresolved",
                 "feature.mesh-operation-scope-unparsed",
                 "feature.mesh-operation-selector-unruled",

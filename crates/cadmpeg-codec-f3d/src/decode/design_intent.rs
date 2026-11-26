@@ -1304,6 +1304,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &mut model.features,
         &design.design_parameter_scopes,
+        geometry.mesh_projection,
         &mut losses,
     )?;
     super::mesh_operations::combine::bind_features(

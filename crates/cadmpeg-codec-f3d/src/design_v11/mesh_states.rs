@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The states of the mesh bodies that a `MeshRemove` removes.
+//! The states of the mesh bodies that a `MeshRemove` removes or a
+//! `Convert Mesh` consumes.
 //!
 //! The collection of a removed mesh body no longer lists it, and its stored
 //! mesh holds the state at the input of the `MeshRemove` that removes it
@@ -11,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position, StateRef};
 use cadmpeg_ir::document::Design;
+use cadmpeg_ir::features::mesh::MeshSelection;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -25,8 +27,8 @@ use crate::records::mesh::DesignMeshFeature;
 const MESH_FEATURES: &str = "design_mesh_features";
 
 /// State each removed mesh body at the input of the `MeshRemove` that
-/// removes it. A removed body without one such state keeps its geometry as
-/// an unresolved mesh.
+/// removes it or the `Convert Mesh` that consumes it. A removed body without
+/// one such state keeps its geometry as an unresolved mesh.
 pub(super) fn bind(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -46,21 +48,38 @@ pub(super) fn bind(
             .model
             .features
             .iter()
-            .filter(|feature| removes(feature, &tessellation))
-            .map(|feature| &feature.id)
+            .filter(|feature| removes(feature, &tessellation) || converts(feature, &tessellation))
             .collect::<Vec<_>>();
         let state = match removers.as_slice() {
-            [remover] => input_state(&ir.design, remover).ok_or_else(|| {
-                format!("its MeshRemove {remover} has no built position in an ordered timeline")
-            }),
-            [] => Err("no MeshRemove removes it".to_owned()),
-            _ => Err("several MeshRemove features remove it".to_owned()),
+            [remover] => input_state(&ir.design, &remover.id)
+                .map(|state| {
+                    (
+                        state,
+                        converts(remover, &tessellation).then_some(&remover.id),
+                    )
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "its consumer {} has no built position in an ordered timeline",
+                        remover.id
+                    )
+                }),
+            [] => Err("no MeshRemove or Convert Mesh consumes it".to_owned()),
+            _ => Err("several MeshRemove or Convert Mesh features consume it".to_owned()),
         };
         states.insert(tessellation, state);
     }
     for mesh in &mut ir.model.tessellations {
         match states.remove(mesh.id.as_str()) {
-            Some(Ok(state)) => mesh.state = Some(state),
+            Some(Ok((state, conversion))) => {
+                mesh.state = Some(state);
+                if let Some(conversion) = conversion {
+                    losses.push(F3dLossCode::FeatureMeshConvertedStateAssumed.note(format!(
+                        "Mesh body {} that Convert Mesh {conversion} consumes stores the mesh of the state at the input of that conversion.",
+                        mesh.id.as_str()
+                    )));
+                }
+            }
             Some(Err(reason)) => {
                 mesh.of = Meshed::Unresolved;
                 mesh.state = None;
@@ -84,6 +103,21 @@ fn removes(feature: &cadmpeg_ir::features::Feature, tessellation: &str) -> bool 
                 bodies: BodySelection::Local { bodies, .. },
                 ..
             }) if bodies.iter().any(|body| body == tessellation)
+        )
+}
+
+/// Whether `feature` is a `Convert Mesh` with an input that selects
+/// `tessellation`.
+fn converts(feature: &cadmpeg_ir::features::Feature, tessellation: &str) -> bool {
+    feature.source_tag.as_deref() == Some("Convert Mesh")
+        && matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::MeshConvert(conversion))
+                if conversion.sources.iter().any(|source| matches!(
+                    source,
+                    MeshSelection::Tessellations(members)
+                        if members.iter().any(|member| member.as_str() == tessellation)
+                ))
         )
 }
 
@@ -117,4 +151,48 @@ fn input_state(design: &Design, feature: &FeatureId) -> Option<StateRef> {
             of: Evaluated::State(position),
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::mesh::{MeshConversion, MeshSelection};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::tessellation::TessellationId;
+
+    fn conversion(tag: &str, sources: Vec<MeshSelection>) -> Feature {
+        Feature {
+            product_definition: None,
+            id: FeatureId::mint("f3d:test:feature#convert").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some(tag.into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::MeshConvert(MeshConversion::new(sources, None)),
+            )),
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn a_convert_mesh_consumes_the_tessellations_its_inputs_select() {
+        let joined = MeshSelection::Tessellations(
+            vec![TessellationId::mint("f3d:test:mesh-body#1").unwrap()]
+                .try_into()
+                .unwrap(),
+        );
+        let feature = conversion("Convert Mesh", vec![joined.clone()]);
+        assert!(super::converts(&feature, "f3d:test:mesh-body#1"));
+        assert!(!super::converts(&feature, "f3d:test:mesh-body#2"));
+        assert!(!super::removes(&feature, "f3d:test:mesh-body#1"));
+        assert!(!super::converts(
+            &conversion("MeshReduce", vec![joined]),
+            "f3d:test:mesh-body#1"
+        ));
+    }
 }

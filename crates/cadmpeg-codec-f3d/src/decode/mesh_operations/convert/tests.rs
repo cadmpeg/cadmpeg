@@ -123,6 +123,17 @@ fn fixture(scope_version: u32, input_version: u32) -> (Vec<u8>, Vec<u8>) {
 }
 
 fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Vec<String>) {
+    project_joined(stream, metadata, scoped, &[])
+}
+
+/// [`project`] with the mesh bodies `joined` of the fixture stream joined to
+/// the tessellations they name.
+fn project_joined(
+    stream: &[u8],
+    metadata: Option<&[u8]>,
+    scoped: bool,
+    joined: &[(u32, &str)],
+) -> (Feature, Vec<String>) {
     let scope_id = format!("f3d:{ENTRY}:design-parameter-scope#0");
     let scope = DesignParameterScope::empty(
         &scope_id,
@@ -163,6 +174,24 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
         zip.write_all(metadata).unwrap();
     }
     let archive = zip.finish().unwrap().into_inner();
+    let mesh_stream = crate::ids::native_stream(&scope.id).unwrap().to_owned();
+    let projection = MeshProjection {
+        count: joined.len(),
+        unjoined: 0,
+        tessellations_by_scope: Default::default(),
+        tessellations_by_body: joined
+            .iter()
+            .map(|(body, tessellation)| {
+                (
+                    (mesh_stream.clone(), *body),
+                    Some(crate::decode::MeshBodyTessellation {
+                        tessellation: (*tessellation).to_owned(),
+                        scope_record_index: None,
+                    }),
+                )
+            })
+            .collect(),
+    };
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
@@ -171,6 +200,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
                 scan,
                 std::slice::from_mut(&mut feature),
                 &[scope],
+                &projection,
                 &mut losses,
             )
         })
@@ -395,4 +425,35 @@ fn conversion_keeps_an_output_prefix_and_later_output_when_its_body_reference_is
         "51"
     );
     assert!(codes.contains(&"feature.mesh-conversion-output-unresolved".to_owned()));
+}
+
+#[test]
+fn conversion_input_of_a_joined_mesh_body_selects_its_tessellation() {
+    let (stream, meta) = fixture(4, 1);
+    let (feature, codes) =
+        project_joined(&stream, Some(&meta), true, &[(32, "f3d:test:mesh-body#32")]);
+    let [MeshSelection::Tessellations(joined), MeshSelection::Native {
+        members: Some(members),
+        ..
+    }] = sources(&feature)
+    else {
+        panic!("a joined input and a native input: {:?}", sources(&feature));
+    };
+    assert_eq!(
+        joined
+            .iter()
+            .map(TessellationId::as_str)
+            .collect::<Vec<_>>(),
+        ["f3d:test:mesh-body#32"]
+    );
+    assert_eq!(members.as_slice(), ["31"]);
+    assert_eq!(feature.source_properties["mesh-conversion-body:0:0"], "32");
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| code.as_str() == "feature.mesh-conversion-source-unresolved")
+            .count(),
+        1,
+        "only the unjoined input stays unresolved: {codes:?}"
+    );
 }

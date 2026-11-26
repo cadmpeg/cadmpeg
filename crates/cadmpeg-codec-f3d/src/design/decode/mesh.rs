@@ -2306,6 +2306,75 @@ where
         feature.operation_bodies = operation_bodies;
         features.push(feature);
     }
+    for index in mesh_operation_geometry_states(bytes, meta)? {
+        if used_guids.contains(&index) {
+            continue;
+        }
+        if let Some(guid) = guids.get(&index).filter(|guid| {
+            entry_names
+                .get(&guid.entry_name_record_index)
+                .is_some_and(|entry| entry.guid_record_index == index)
+        }) {
+            used_guids.insert(index);
+            used_entries.insert(guid.entry_name_record_index);
+        }
+    }
+    let tessellate_scopes = {
+        use crate::design::decode::mesh_operations::tessellate;
+        typed_primary_frames(
+            bytes,
+            meta,
+            tessellate::SCOPE_TYPE_GUID,
+            "mesh-tessellate-scope",
+        )?
+        .into_iter()
+        .filter(|frame| {
+            validate_mesh_registration(
+                *frame,
+                tessellate::SCOPE_TYPE_VERSION,
+                tessellate::SCOPE_BASE_TYPE_GUID,
+                FUSION_MODULE,
+                "mesh-tessellate-scope",
+            )
+            .is_ok()
+        })
+        .filter_map(|frame| u32::try_from(frame.entity_id).ok())
+        .collect::<HashSet<_>>()
+    };
+    let mut consumed = bodies
+        .iter()
+        .filter(|(_, body)| {
+            body.scope_record_index
+                .is_some_and(|scope| tessellate_scopes.contains(&scope))
+        })
+        .map(|(index, _)| *index)
+        .collect::<Vec<_>>();
+    consumed.sort_unstable();
+    for index in consumed {
+        let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
+        let body = bodies
+            .remove(&index)
+            .ok_or_else(|| stream_error("each consumed produced body is unique"))?;
+        wrappers
+            .remove(&body.wrapper_record_index)
+            .filter(|wrapper| wrapper.body_record_index == index)
+            .ok_or_else(|| {
+                stream_error("each consumed produced body has one unused reciprocal wrapper")
+            })?;
+        let entry = guids
+            .get(&body.guid_record_index)
+            .map(|guid| guid.entry_name_record_index)
+            .filter(|entry| {
+                entry_names
+                    .get(entry)
+                    .is_some_and(|entry| entry.guid_record_index == body.guid_record_index)
+            })
+            .ok_or_else(|| {
+                stream_error("each consumed produced body has a GUID with a reciprocal entry name")
+            })?;
+        used_guids.insert(body.guid_record_index);
+        used_entries.insert(entry);
+    }
     scopes.retain(|_, scope| !scope.body_records.is_empty());
     entry_names.retain(|index, _| !used_entries.contains(index));
     guids.retain(|index, _| !used_guids.contains(index));
@@ -2324,6 +2393,47 @@ where
         )));
     }
     Ok(features)
+}
+
+/// The Design GUID records that the geometry tails of the mesh operation
+/// scopes name as input or output geometry states.
+fn mesh_operation_geometry_states(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<u32>, CodecError> {
+    use crate::design::decode::mesh_operations::{
+        read_scope, MeshOperationKind, GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID,
+    };
+    let mut states = Vec::new();
+    for kind in MeshOperationKind::GEOMETRY_TAIL {
+        let (type_guid, version) = kind.registration();
+        for frame in typed_primary_frames(bytes, meta, type_guid, "mesh-operation-scope")? {
+            if validate_mesh_registration(
+                frame,
+                version,
+                GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID,
+                FUSION_MODULE,
+                "mesh-operation-scope",
+            )
+            .is_err()
+            {
+                continue;
+            }
+            let Some(record) = bytes.get(frame.start..frame.end) else {
+                continue;
+            };
+            let Ok(scope) = read_scope(kind, record) else {
+                continue;
+            };
+            states.extend(scope.output_geometry);
+            if scope.input_geometry != 0 {
+                states.push(scope.input_geometry);
+            }
+        }
+    }
+    states.sort_unstable();
+    states.dedup();
+    Ok(states)
 }
 
 fn decode_mesh_design_records(
@@ -2680,6 +2790,7 @@ mod tests {
     mod losses;
     mod owner;
     mod placement;
+    mod unlisted_states;
     mod validation;
     use super::{
         parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,

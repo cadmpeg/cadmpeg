@@ -271,9 +271,9 @@ fn body_selection(selection: MeshSelection) -> BodySelection {
     }
 }
 
-/// The tessellations of the mesh bodies that a `MeshRemove` source selects,
-/// when every selected body joins one.
-fn removed_tessellations(
+/// The tessellations of the mesh bodies that a mesh operation source
+/// selects, when every selected body joins one.
+fn body_tessellations(
     source: &MeshSelection,
     stream: Option<&str>,
     projection: Option<&super::MeshProjection>,
@@ -655,6 +655,17 @@ pub(super) fn bind_features(
                     None => Err(MeshOperationFraming("source metadata")),
                 };
                 let source = source_selection(&operation, bodies, &mut notes)?;
+                if let (Some(_), Some(tessellations)) = (
+                    operation.output_geometry,
+                    body_tessellations(&source, stream, inputs.mesh_bodies),
+                ) {
+                    notes.losses.push(F3dLossCode::FeatureMeshGeometryStateUnjoined.note(format!(
+                        "Mesh operation {source_id} changes the geometry of mesh bodies {tessellations:?}; their tessellations store the geometry after it, and its input geometry state {} joins no tessellation.",
+                        operation.input_geometry,
+                        source_id = notes.source,
+                        tessellations = tessellations.as_slice(),
+                    )));
+                }
                 match operation.fields {
                     MeshOperationFields::Section { .. } => FeatureOperation::MeshSection {
                         source,
@@ -673,7 +684,7 @@ pub(super) fn bind_features(
                         source: body_selection(source),
                     },
                     MeshOperationFields::Remove => FeatureOperation::DeleteBody {
-                        bodies: match removed_tessellations(&source, stream, inputs.mesh_bodies) {
+                        bodies: match body_tessellations(&source, stream, inputs.mesh_bodies) {
                             Some(bodies) => {
                                 notes.losses.retain(|loss| {
                                     loss.code
