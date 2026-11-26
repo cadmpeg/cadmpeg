@@ -141,8 +141,14 @@ fn inherit_without_native_image_synthesizes_the_envelope() {
     let ir = sourced_ir("sldprt:unknown");
     let plan = Encoder::plan(&SldprtCodec, EncodeInput::new(&ir, None))
         .expect("a missing source image leaves the envelope to synthesis");
-    assert!(plan.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&cadmpeg_ir::report::export::SynthesisCause::PatchDeclined {
+            reason: "the encode holds no source fidelity".to_owned(),
+        })
+    );
+    assert!(plan.report().losses.iter().all(|loss| {
+        loss.code != crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
     }));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();

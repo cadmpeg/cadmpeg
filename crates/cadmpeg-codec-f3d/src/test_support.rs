@@ -83,13 +83,51 @@ pub(crate) fn plan_inherited_write(
 /// Write `ir` under a request that names no target, with `fidelity` or
 /// source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
-/// code is `code` (`namespace/code`). The loss message or the synthesis cause
-/// holds `fragment`.
+/// code is `code` (`namespace/code`) and whose message holds `fragment`.
 pub(crate) fn assert_written_with_loss(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
     code: &str,
     fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let report = written_and_decoded(ir, fidelity);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(fragment)),
+        "expected a {code} loss naming {fragment:?}: {:#?}",
+        report.losses
+    );
+    report
+}
+
+/// Writes `ir` with `fidelity` as a synthesis whose cause states that the
+/// patch declined for a reason that contains `fragment`, and decodes the
+/// file back.
+pub(crate) fn assert_patch_declined(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let report = written_and_decoded(ir, fidelity);
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        report.synthesis_cause()
+    else {
+        panic!(
+            "the write states no synthesis cause: {:#?}",
+            report.write_path()
+        );
+    };
+    assert!(reason.contains(fragment), "{reason:?} names {fragment:?}");
+    report
+}
+
+/// The report of writing `ir` with `fidelity`, where the written file
+/// decodes back ([`assert_decodes_back`]).
+fn written_and_decoded(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
 ) -> cadmpeg_ir::report::export::ExportReport {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = Vec::new();
@@ -101,16 +139,6 @@ pub(crate) fn assert_written_with_loss(
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .expect("the written file decodes");
     assert_decodes_back(&report, decoded.report());
-    let cause = report
-        .synthesis_cause()
-        .map(ToString::to_string)
-        .unwrap_or_default();
-    assert!(
-        report.losses.iter().any(|loss| loss.code.to_string() == code
-            && (loss.message.contains(fragment) || cause.contains(fragment))),
-        "expected a {code} loss naming {fragment:?}, or the synthesis cause naming it: {cause:?} {:#?}",
-        report.losses
-    );
     report
 }
 

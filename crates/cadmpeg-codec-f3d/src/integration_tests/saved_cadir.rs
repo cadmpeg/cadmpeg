@@ -171,13 +171,17 @@ fn a_design_edit_the_history_cannot_state_is_named() {
         "{:?}",
         report.notes
     );
+    assert!(
+        report.synthesis_cause().is_some(),
+        "{:#?}",
+        report.write_path()
+    );
     assert_eq!(
-        charged(&report, F3dLossCode::WriterPatchDeclined).len(),
+        charged(&report, F3dLossCode::WriterHistoryUnrestored).len(),
         1,
         "{:#?}",
         report.losses
     );
-    assert!(charged(&report, F3dLossCode::WriterHistoryUnrestored).is_empty());
 }
 
 /// The only catalog row. `SOURCE` is of this dialect, so a write to it
@@ -257,8 +261,8 @@ fn three_millimetres() -> ParameterValue {
 }
 
 /// A saved design whose retained archive does not decode is written from its
-/// `design` records. The patch of that archive charges the failure where the
-/// target patches it, and the restore charges it on a catalog row.
+/// `design` records, and the restore charges the failure once, where the
+/// target patches the archive and on a catalog row.
 #[test]
 fn a_retained_archive_that_does_not_decode_is_charged_once() {
     let decoded = decode(SOURCE);
@@ -267,13 +271,17 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
         &undecodable(&decoded),
         TargetRequest::Unnamed,
     );
+    assert!(
+        report.synthesis_cause().is_some(),
+        "{:#?}",
+        report.write_path()
+    );
     assert_eq!(
-        charged(&report, F3dLossCode::WriterPatchDeclined).len(),
+        charged(&report, F3dLossCode::WriterHistoryUnrestored).len(),
         1,
         "{:#?}",
         report.losses
     );
-    assert!(charged(&report, F3dLossCode::WriterHistoryUnrestored).is_empty());
     assert_eq!(d1(&bytes), Some(three_millimetres()));
 
     let decoded = decode(&off_catalog_source());
@@ -289,7 +297,6 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
         "{:#?}",
         report.losses
     );
-    assert!(charged(&report, F3dLossCode::WriterPatchDeclined).is_empty());
     assert_eq!(d1(&bytes), Some(three_millimetres()));
 }
 
@@ -316,7 +323,6 @@ fn a_design_edit_the_history_cannot_state_is_charged_on_a_catalog_row() {
     let unrestored = charged(&report, F3dLossCode::WriterHistoryUnrestored);
     assert_eq!(unrestored.len(), 1, "{:#?}", report.losses);
     assert!(unrestored[0].contains(&comment), "{unrestored:?}");
-    assert!(charged(&report, F3dLossCode::WriterPatchDeclined).is_empty());
 }
 
 /// A saved design written to a catalog row other than its source's dialect

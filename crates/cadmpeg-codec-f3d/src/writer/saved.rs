@@ -23,10 +23,8 @@ use crate::{ids, F3dCodec};
 /// its retained archive, where it was read from CADIR JSON and `target` does
 /// not replay it unedited. A restore that the design edits refuse, or that
 /// fails for a reason other than a limit, leaves the document as read, which
-/// the generator writes from its `design` records, and adds the reason to
-/// `notes`. Where `target` does not replay the archive, the restore also
-/// charges the reason as `f3d:writer.history-unrestored` to `losses`; where it
-/// does, the patch of the same archive charges it.
+/// the generator writes from its `design` records, adds the reason to
+/// `notes`, and charges it as `f3d:writer.history-unrestored` to `losses`.
 pub(crate) fn restore(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
@@ -61,26 +59,23 @@ pub(crate) fn restore(
                  design edits: {}",
                 restored.unwritten.join("; ")
             );
-            unrestored(reason, replays, notes, losses);
+            unrestored(reason, notes, losses);
             Ok(None)
         }
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
         Err(error) => {
-            unrestored(error.to_string(), replays, notes, losses);
+            unrestored(error.to_string(), notes, losses);
             Ok(None)
         }
     }
 }
 
-/// Records why the history arenas were not restored, and charges it where
-/// the target does not replay the retained archive.
-fn unrestored(reason: String, replays: bool, notes: &mut Vec<String>, losses: &mut Vec<LossNote>) {
-    if !replays {
-        losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
-            "the history arenas were not restored from the retained F3D archive ({reason}); \
-             the file is written from the design records"
-        )));
-    }
+/// Records and charges why the history arenas were not restored.
+fn unrestored(reason: String, notes: &mut Vec<String>, losses: &mut Vec<LossNote>) {
+    losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
+        "the history arenas were not restored from the retained F3D archive ({reason}); \
+         the file is written from the design records"
+    )));
     notes.push(reason);
 }
 

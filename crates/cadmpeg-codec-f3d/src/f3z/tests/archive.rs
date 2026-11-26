@@ -140,10 +140,12 @@ fn f3z_archive_merges_identity_occurrences() {
         .to_string(),
         "f3d:f3z-multi-document",
     );
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()));
+    assert_eq!(
+        report.synthesis_cause(),
+        Some(&cadmpeg_ir::report::export::SynthesisCause::PatchDeclined {
+            reason: "the source fidelity holds no F3D source image".to_owned(),
+        })
+    );
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             &report,

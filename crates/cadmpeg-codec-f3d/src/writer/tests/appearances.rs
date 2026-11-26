@@ -192,14 +192,7 @@ fn generated_f3d_regenerates_on_material_assignment_divergence() {
             .value = "PrismMaterial-019".into();
     });
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -216,14 +209,7 @@ fn generated_f3d_regenerates_on_partial_material_assignment_identity_edit() {
                 .expect("valid entity ID");
     });
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -240,12 +226,9 @@ fn generated_f3d_regenerates_on_invalid_or_structural_protein_property_edits() {
         cadmpeg_core::nonblank_literal!("refraction_index"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &invalid,
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "refraction_index",
     );
 
@@ -254,12 +237,9 @@ fn generated_f3d_regenerates_on_invalid_or_structural_protein_property_edits() {
         cadmpeg_core::nonblank_literal!("unserialized_property"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &structural,
         Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "unchanged property set",
     );
 }

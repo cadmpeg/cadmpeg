@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
     ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
-use cadmpeg_ir::report::export::SynthesisCause;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -81,8 +80,8 @@ fn synthesized_body(
     version: crate::IgesVersion,
     cause: Synthesis,
 ) -> Result<ExportBody, CodecError> {
-    let (consumption, loss, synthesis_cause) = cause.into_fidelity();
-    let mut losses = loss.into_iter().collect::<Vec<_>>();
+    let consumption = cause.consumption();
+    let mut losses = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, ctx)?;
     let (synthesis, native) = synthesis_and_dispositions(ctx, &recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
@@ -98,7 +97,7 @@ fn synthesized_body(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
-    let mut body = super::body(
+    Ok(super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(super::SYNTHESIS_COVERAGE),
@@ -106,9 +105,7 @@ fn synthesized_body(
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,
-    );
-    body.synthesis_cause = synthesis_cause;
-    Ok(body)
+    ))
 }
 
 /// The file synthesized from `document`, and what it does with each native
@@ -137,35 +134,17 @@ impl Synthesis {
         }
     }
 
-    /// How fidelity was consumed, the loss the writer charges, and the cause
-    /// the report records for a same-format source.
-    fn into_fidelity(
-        self,
-    ) -> (
-        Consumption,
-        Option<cadmpeg_ir::report::loss::LossNote>,
-        Option<SynthesisCause>,
-    ) {
+    /// How fidelity was consumed. The export wrapper takes the reason of a
+    /// degraded consumption as the synthesis cause of a same-format source.
+    fn consumption(self) -> Consumption {
         match self {
-            Self::Fresh => (Consumption::NotConsumed, None, None),
-            Self::ReplayDeclined(DeclineReason::SourceImageUnavailable) => (
-                Consumption::Degraded {
-                    reason: "preserved IGES source image is unavailable".into(),
-                },
-                Some(IgesLossCode::PreservedSourceUnavailable.note(
-                    "preserved IGES source image is unavailable; semantic regeneration is required",
-                )),
-                Some(SynthesisCause::PatchDeclined {
-                    reason: "the source fidelity holds no IGES source image".into(),
-                }),
-            ),
-            Self::ReplayDeclined(DeclineReason::Rejected(reason)) => (
-                Consumption::Degraded {
-                    reason: reason.clone(),
-                },
-                None,
-                Some(SynthesisCause::PatchDeclined { reason }),
-            ),
+            Self::Fresh => Consumption::NotConsumed,
+            Self::ReplayDeclined(DeclineReason::SourceImageUnavailable) => Consumption::Degraded {
+                reason: "the source fidelity holds no IGES source image".into(),
+            },
+            Self::ReplayDeclined(DeclineReason::Rejected(reason)) => {
+                Consumption::Degraded { reason }
+            }
         }
     }
 }

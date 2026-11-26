@@ -20,13 +20,13 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
-/// Reads the degradation reason from `plan`, or panics with the resolution.
-fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
-        plan.report().write_path(),
-        "fidelity",
-    ) {
-        FidelityResolution::Degraded { reason } => reason.clone(),
+/// Reads the reason of the declined patch from `plan`, or panics with the
+/// cause.
+fn declined_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
+    match plan.report().synthesis_cause() {
+        Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) => {
+            reason.clone()
+        }
         other => panic!("{context}: {other:?}"),
     }
 }
@@ -243,7 +243,7 @@ fn an_unrepresented_source_replays_and_is_reported() {
 }
 
 #[test]
-fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
+fn encode_reports_a_digest_mismatch_as_a_declined_patch() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -268,6 +268,6 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    let reason = degraded_reason(&plan, "an edited model must degrade");
+    let reason = declined_reason(&plan, "an edited model must decline the patch");
     assert!(reason.contains("digest"), "{reason}");
 }

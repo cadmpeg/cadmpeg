@@ -4,7 +4,6 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use crate::loss::IgesLossCode;
 use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
@@ -106,11 +105,12 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind()));
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&cadmpeg_ir::report::export::SynthesisCause::PatchDeclined {
+            reason: "the encode holds no source fidelity".to_owned(),
+        })
+    );
 }
 
 /// A dialect this codec reads but cannot write is written as the catalog
@@ -220,11 +220,6 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
             cadmpeg_ir::loss_namespace!("iges"),
             SOURCE_DIALECT_DISPLACED
         )));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
 /// The catalog is the five Fixed ASCII rows the semantic writer emits, each

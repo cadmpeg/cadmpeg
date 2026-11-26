@@ -29,12 +29,9 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
             Ok(())
         })
         .expect("admitted cage vertex edit");
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &unsupported,
         Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "unchanged cage geometry and topology",
     );
 

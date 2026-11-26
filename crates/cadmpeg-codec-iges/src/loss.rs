@@ -127,8 +127,6 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
-    /// Preserved source image required for a byte-exact write was unavailable.
-    PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
     ProceduralReduced => "geometry.procedural-reduced",
     /// Different coedge pcurves were compared at discrete parameters.
@@ -186,9 +184,7 @@ impl IgesLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
-                Severity::Blocking
-            }
+            Self::GlobalLengthUnitUnresolved => Severity::Blocking,
             Self::ProceduralReduced | Self::VertexToleranceWidened => Severity::Info,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 Severity::Warning
@@ -310,7 +306,6 @@ impl IgesLossCode {
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
@@ -425,7 +420,6 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
-                "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",

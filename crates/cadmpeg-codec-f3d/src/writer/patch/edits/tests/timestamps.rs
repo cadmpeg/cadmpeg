@@ -73,12 +73,9 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
     );
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &unordered,
         Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "unchanged timestamp-id set",
     );
     let mut patched = Vec::new();

@@ -127,7 +127,11 @@ fn write(
         .filter(|_| preserves)
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
         .and_then(|record| record.data());
-    let declined = format!("the patch of the document {reason}");
+    let declined = if preserves {
+        format!("the write onto the retained source {reason}")
+    } else {
+        format!("the write with the SolidWorks history {reason}")
+    };
     let synthesis = match synthesize(ctx, input, digests, preserves) {
         Ok((Written::Semantic { dialect, .. }, _)) if stored.is_some() && dialect != *target => {
             format!("lands on dialect {dialect}")
@@ -139,10 +143,7 @@ fn write(
     let Some(image) = stored else {
         return first;
     };
-    let why = format!(
-        "the patch of the edited document {reason}, and its synthesis without the SolidWorks \
-         history {synthesis}"
-    );
+    let why = format!("{declined}, and the synthesis without the SolidWorks history {synthesis}");
     let losses = stored_losses(input.ir, image, &why, *ctx.policy());
     Ok((Written::Stored { losses }, image.to_vec(), None))
 }
@@ -355,16 +356,13 @@ fn finish(
     let write_path = written.path();
     let mut losses: Vec<_> = written
         .replay_skipped()
-        .filter(|(_, reason)| *reason == ReplaySkipped::ImageMissing)
-        .map(|(path, _)| {
-            SldprtLossCode::SourcePreservedImageUnavailable.note(match path {
-                SemanticPath::Patched => {
-                    "preserved SLDPRT source image is unavailable; wrote from retained source records with semantic patches"
-                }
-                SemanticPath::Synthesized => {
-                    "preserved SLDPRT source image is unavailable; regenerated from IR"
-                }
-            })
+        .filter(|(path, reason)| {
+            *path == SemanticPath::Patched && *reason == ReplaySkipped::ImageMissing
+        })
+        .map(|_| {
+            SldprtLossCode::SourcePreservedImageUnavailable.note(
+                "preserved SLDPRT source image is unavailable; wrote from retained source records with semantic patches",
+            )
         })
         .into_iter()
         .collect();

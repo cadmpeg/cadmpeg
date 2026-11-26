@@ -201,12 +201,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 
     let mut root_edit = decoded.ir().clone();
     set_active_row(&mut root_edit, "medium");
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &root_edit,
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "changes the Design root record",
     );
 
@@ -378,14 +375,7 @@ fn generated_f3d_replays_byte_exactly_and_regenerates_on_semantic_edits() {
 
     let (mut modified, _, fidelity) = decoded.into_parts();
     modified.geometry.bodies[0].name = Some("edited".into());
-    crate::test_support::assert_written_with_loss(
-        &modified,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&modified, Some(&fidelity), "");
 }
 
 #[test]
@@ -1414,12 +1404,9 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
             )
             .unwrap(),
         ));
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         round_trip.ir(),
         Some(round_trip.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "does not support edits to curve",
     );
 }

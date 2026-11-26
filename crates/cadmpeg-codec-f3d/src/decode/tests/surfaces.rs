@@ -78,12 +78,9 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let mut edited = result.ir().clone();
     f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(result.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "edits beyond supported",
     );
 

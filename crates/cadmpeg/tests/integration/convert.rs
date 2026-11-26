@@ -1037,7 +1037,6 @@ fn a_write_to_another_format_names_the_solidworks_application_element() {
 #[cfg(all(feature = "f3d", feature = "sldprt"))]
 #[test]
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
-    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
         let native = dir.path().join(format!("source.{format}"));
@@ -1110,16 +1109,11 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 "--reject-lossy",
             ])
             .assert();
-        // Without its retained part, a SolidWorks document writes a lossy
-        // native skeleton, which `--reject-lossy` refuses before the write.
-        refused_command.failure().stderr(
-            predicate::str::contains("Preserved")
-                .or(predicate::str::contains("source image is unavailable"))
-                .or(predicate::str::contains("read from CADIR"))
-                .or(predicate::str::contains(
-                    "the write's strictness refuses sldprt/writer.native-skeleton-unlaid-runs",
-                )),
-        );
+        // Without its sidecar, each document writes a lossy synthesis, which
+        // `--reject-lossy` refuses before the write.
+        refused_command
+            .failure()
+            .stderr(predicate::str::contains("the write's strictness refuses"));
         assert!(!refused.exists());
     }
 }
