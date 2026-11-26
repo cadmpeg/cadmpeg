@@ -1191,8 +1191,11 @@ impl<'ir> Writer<'ir> {
         let mut prims = Vec::new();
         let tessellations = self.tessellations(&body.id);
         let faces = self.body_faces(body);
+        let mut meshed_faces = brep::FaceMeshes::new();
         if !faces.is_empty() && self.exact_brep {
-            if let Some(packed) = self.brep_packed(body) {
+            let (packed, meshes) = self.brep_packed(body);
+            meshed_faces = meshes;
+            if let Some(packed) = packed {
                 prims.push(Geometry::Brep(packed));
             }
         }
@@ -1219,7 +1222,8 @@ impl<'ir> Writer<'ir> {
             if !meshed.is_empty() {
                 self.tessellator
                     .set_options(brep::mesh_options(&self.index, body));
-                let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
+                let (mesh, unmeshed) =
+                    brep::mesh(body, &meshed, &mut self.tessellator, meshed_faces);
                 self.unwritten.unmeshed.extend(unmeshed);
                 if let Some((mesh, faces)) = mesh {
                     if !exact {
