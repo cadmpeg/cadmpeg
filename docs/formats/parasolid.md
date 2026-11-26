@@ -162,3 +162,12 @@ Bytes, characters, logicals, short strings, and edit-program operations have
 the same form in both encodings. The terminator is node type `1` and the null
 index. A node of one encoding has the same fields, in the same order, as the
 node of the other encoding.
+
+## 5. Colour attributes
+
+An ATTRIBUTE node (type `81`) whose definition (type `80`) names the identifier
+`SDL/TYSA_COLOUR` states a colour. Its `fields` list names one REAL_VALUES node
+(type `83`) of three reals: red, green, and blue, each in `0` to `1`. The
+attribute's `owner` is the coloured entity, and the attribute lies in the
+`attributes_features` chain of that entity, linked by `next`. A FACE node whose
+chain holds a colour attribute has that colour.

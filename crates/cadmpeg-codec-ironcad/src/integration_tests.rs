@@ -376,3 +376,19 @@ fn part_properties_mass_and_scene_units_are_transferred() {
     assert_eq!(units.angle, cadmpeg_ir::design::units::UnitSymbol::Deg);
     assert_eq!(units.mass, Some(cadmpeg_ir::design::units::UnitSymbol::Kg));
 }
+
+#[test]
+fn every_face_carries_its_kernel_colour() {
+    let result = decode(SCENE);
+    let faces = &result.ir().geometry.faces;
+    assert!(faces.iter().all(|face| face.color.is_some()));
+    let beige = cadmpeg_ir::topology::Color::new(230.0 / 255.0, 211.0 / 255.0, 198.0 / 255.0, 1.0);
+    let parasolid_faces = faces
+        .iter()
+        .filter(|face| face.id.as_str().contains("/brep:face#"))
+        .count();
+    assert_eq!(
+        faces.iter().filter(|face| face.color == beige).count(),
+        parasolid_faces
+    );
+}
