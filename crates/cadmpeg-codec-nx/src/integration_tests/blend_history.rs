@@ -4,6 +4,7 @@ use crate::test_support::blend_history::primary_partition;
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
@@ -163,7 +164,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
     assert!(arenas
         .get("feature_body_write_group_partition_uses")
         .is_none_or(Vec::is_empty));
-    let integers = serde_json::to_value(&arenas["parasolid_entity_52_integer_records"]).unwrap();
+    let integers = json::to_value(&arenas["parasolid_entity_52_integer_records"]).unwrap();
     for key in [709, 624, 464, 565] {
         assert!(integers
             .as_array()
@@ -171,7 +172,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
             .iter()
             .any(|record| record["values"] == serde_json::json!([key])));
     }
-    let entities = serde_json::to_value(&arenas["parasolid_entity_51_records"]).unwrap();
+    let entities = json::to_value(&arenas["parasolid_entity_51_records"]).unwrap();
     assert!(entities
         .as_array()
         .unwrap()

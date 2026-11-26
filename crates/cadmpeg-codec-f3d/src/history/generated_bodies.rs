@@ -604,13 +604,10 @@ fn combine_side_binding(
                 history.id
             )
         })?;
-    let mut natives = side.natives.iter();
-    let native = natives.next().ok_or("the operand has no native member")?;
-    if natives.any(|other| other != native) {
-        return Err(
-            "its native members name several records, and a generated selection keeps one".into(),
-        );
-    }
+    let native = side
+        .natives
+        .first()
+        .ok_or("the operand has no native member")?;
     let refs = producers
         .iter()
         .zip(&side.slots)
@@ -619,14 +616,27 @@ fn combine_side_binding(
         })
         .collect::<Option<Vec<_>>>()
         .ok_or("a generated body identity is malformed")?;
-    let selection = BodySelection::generated(refs, native.clone())
-        .map_err(|error| format!("the generated bodies form no body set: {error}"))?;
+    let selection = if side.natives.iter().all(|other| other == native) {
+        BodySelection::generated(refs, native.clone())
+            .map_err(|error| format!("the generated bodies form no body set: {error}"))?
+    } else {
+        let rows = refs
+            .into_iter()
+            .zip(natives(side.slots.len()))
+            .map(|(body, native)| super::face_resolution::body_member(body, native))
+            .collect::<Option<Vec<_>>>()
+            .ok_or("a native member is blank")?;
+        BodySelection::GeneratedSet {
+            members: BodyMembers::try_from_rows(rows)
+                .map_err(|error| format!("the generated bodies form no body set: {error}"))?,
+        }
+    };
     Ok((selection, producers, Vec::new(), assumed))
 }
 
 /// The body slots that a transition after the result state of `scope`
 /// updates or deletes in `history`.
-fn later_body_changes(
+pub(super) fn later_body_changes(
     history: &AsmHistory,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Option<HashSet<i64>> {

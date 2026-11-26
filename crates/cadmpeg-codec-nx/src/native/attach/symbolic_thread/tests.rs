@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{definitions, nominal_diameter};
 use crate::native::features::holes::FeatureSymbolicThread;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::selections::FaceSelection;
@@ -16,7 +17,7 @@ use cadmpeg_ir::topology::{
 };
 
 fn thread() -> FeatureSymbolicThread {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id":"thread","operation_label":"operation","operation_record":"record","source_offset":0,
         "text_frames":[{"id":"profile","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"M Profile","source_offset":10},{"id":"designation","symbolic_thread":"thread","ordinal":1,"marker":3,"value":"M3_x_0.5","source_offset":22}],
         "construction":{"parameter_class_index":3,"coordinates":[{"value":0.0,"raw":"00"},{"value":0.0,"raw":"00"},{"value":0.1,"raw":"2fb999999999999a"}],"tail_references":[{"object_index":0,"raw_object_index":"f000"},{"object_index":255,"raw_object_index":"f0ff"},{"object_index":256,"raw_object_index":"f10100"}],"tail_sentinel":true,"source_offset":100,"byte_len":30}

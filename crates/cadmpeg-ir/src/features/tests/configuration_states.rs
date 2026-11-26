@@ -4,6 +4,7 @@ use crate::features::selections::DistinctMembers;
 use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use crate::ids::BodyId;
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn configuration_output_members_are_distinct_and_empty_active_states_remain_valid() {
@@ -19,9 +20,9 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
                 .unwrap(),
         },
     ] {
-        let wire = serde_json::to_value(&evaluation).unwrap();
+        let wire = json::to_value(&evaluation).unwrap();
         assert_eq!(
-            serde_json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
+            json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
             evaluation
         );
     }
@@ -29,10 +30,10 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
         outputs: DistinctMembers::default(),
     };
     assert_eq!(
-        serde_json::to_value(empty).unwrap(),
+        json::to_value(empty).unwrap(),
         serde_json::json!({"kind":"active", "outputs":[]})
     );
-    let error = serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+    let error = json::from_value::<ConfigurationEvaluation>(serde_json::json!({
         "kind":"active", "outputs":[body, body]
     }))
     .unwrap_err();
@@ -53,15 +54,15 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
             construction: None,
         }),
     };
-    let mut wire = serde_json::to_value(&state).unwrap();
+    let mut wire = json::to_value(&state).unwrap();
     assert_eq!(
-        serde_json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap(),
+        json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap(),
         state
     );
     wire["dependencies"] = serde_json::json!([earlier, earlier]);
-    let error = serde_json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap_err();
+    let error = json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap_err();
     assert!(error.to_string().contains("dependencies"));
     wire.as_object_mut().unwrap().remove("dependencies");
-    let error = serde_json::from_value::<ConfigurationFeatureState>(wire).unwrap_err();
+    let error = json::from_value::<ConfigurationFeatureState>(wire).unwrap_err();
     assert!(error.to_string().contains("missing field `dependencies`"));
 }

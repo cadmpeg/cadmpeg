@@ -1,31 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Open shells restated as unjoined trimmed surfaces for an IGES version that
-//! defines no open shell.
+//! Open shells, and solids where the version defines no solid, restated as
+//! unjoined trimmed surfaces for an IGES version that defines no open shell.
 
 use super::{has_brep_topology, is_decoder_free_geometry_body};
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::ids::{BodyId, EdgeId, RegionId, ShellId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::{BodyKind, Region, Shell};
+use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The document with each sheet body of more than one face restated as one
+/// The document with each sheet body of more than one face, and each solid
+/// body where `version` defines no solid (Type 186), restated as one sheet
 /// body per face, with a copy of each edge for each further use, and a
-/// `writer.open-shell-unjoined` note per restated body. `None` when `version`
-/// defines the open shell (Type 514 Form 2), or when the document needs no
-/// restatement or has no trimmed-surface form.
+/// `writer.open-shell-unjoined` or `writer.solid-unjoined` note per restated
+/// body. `None` when `version` defines the open shell (Type 514 Form 2), or
+/// when the document needs no restatement or has no trimmed-surface form.
 pub(super) fn unjoined_open_shells(
     ir: &CadIr,
     version: crate::IgesVersion,
 ) -> Option<(CadIr, Vec<LossNote>)> {
     let geometry = &ir.geometry;
+    let restated_kind = |body: &Body| {
+        !is_decoder_free_geometry_body(body)
+            && (body.kind == BodyKind::Sheet
+                || (body.kind == BodyKind::Solid && !version.defines_solids()))
+    };
     if version.defines_open_shells()
         || !has_brep_topology(ir)
         || geometry
             .bodies
             .iter()
-            .any(|body| !is_decoder_free_geometry_body(body) && body.kind == BodyKind::Solid)
+            .any(|body| body.kind == BodyKind::Solid && !restated_kind(body))
         || geometry
             .loops
             .iter()
@@ -43,11 +49,15 @@ pub(super) fn unjoined_open_shells(
     }
     let mut unjoined = ir.clone();
     let mut split_bodies = BTreeMap::new();
-    for body in geometry
+    for body in unjoined
+        .geometry
         .bodies
-        .iter()
-        .filter(|body| !is_decoder_free_geometry_body(body) && body.kind == BodyKind::Sheet)
+        .iter_mut()
+        .filter(|body| restated_kind(body))
     {
+        body.kind = BodyKind::Sheet;
+    }
+    for body in geometry.bodies.iter().filter(|body| restated_kind(body)) {
         let regions = geometry.stated_body_regions(&body.id).collect::<Vec<_>>();
         let shells = regions
             .iter()
@@ -107,6 +117,7 @@ pub(super) fn unjoined_open_shells(
             let shell_id = ShellId::try_from(format!("{kept_shell}:unjoined.{ordinal}")).ok()?;
             let mut split = body.clone();
             split.id = body_id.clone();
+            split.kind = BodyKind::Sheet;
             unjoined.geometry.bodies.push(split);
             unjoined.geometry.regions.push(Region::new(
                 region_id.clone(),
@@ -152,6 +163,23 @@ pub(super) fn unjoined_open_shells(
     let mut losses = Vec::new();
     for body in &geometry.bodies {
         let split = split_bodies.get(body.id.as_str());
+        if body.kind == BodyKind::Solid && restated_kind(body) {
+            let faces = split.map_or_else(
+                || "its face is written as a trimmed surface".to_owned(),
+                |(faces, bodies)| {
+                    format!(
+                        "it is written as {faces} unjoined trimmed surfaces, in it and in bodies {}",
+                        bodies.join(", ")
+                    )
+                },
+            );
+            losses.push(IgesLossCode::WriterSolidUnjoined.note(format!(
+                "IGES {} defines no manifold solid B-rep (Type 186) for body {}: {faces}, the edges its faces share are not joined, and the bounded volume is not stated",
+                version.name(),
+                body.id
+            )));
+            continue;
+        }
         if split.is_none() && !shared.contains(body.id.as_str()) {
             continue;
         }

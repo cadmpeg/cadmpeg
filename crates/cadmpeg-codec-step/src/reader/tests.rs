@@ -795,10 +795,7 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1;1"));
     assert!(losses[0].message.contains("4;3 grammar"));
-    assert_eq!(
-        losses[0].code.strict_floor(),
-        Some(cadmpeg_ir::report::Severity::Warning)
-    );
+    assert_eq!(losses[0].code.strict_floor(), None);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
     assert_eq!(
         provenance.offset,
@@ -808,20 +805,18 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
 }
 
 #[test]
-fn strict_decode_rejects_an_unverified_implementation_level() {
+fn a_pinned_decode_admits_an_unverified_implementation_level() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let error = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("strict mode rejects a guessed implementation grammar");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
-    assert!(error
-        .to_string()
-        .contains("parse.implementation-level-unverified"));
+        .expect("a guessed implementation grammar pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ImplementationLevelUnverified.kind()));
 }
 
 #[test]

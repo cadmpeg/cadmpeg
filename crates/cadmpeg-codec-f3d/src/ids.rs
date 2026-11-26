@@ -1161,6 +1161,7 @@ mod tests {
     use crate::records::{
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn sheet_metal_rule_ids_preserve_owner_stream_and_record_identity() {
@@ -1337,8 +1338,8 @@ mod tests {
             "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         );
         assert_eq!(
-            serde_json::to_string(&guid).unwrap(),
-            serde_json::to_string(text).unwrap()
+            json::to_string(&guid).unwrap(),
+            json::to_string(text).unwrap()
         );
         let token_text = format!("{text}_Post2015_Post2015");
         let token: crate::records::references::DesignVisualToken =
@@ -1348,8 +1349,8 @@ mod tests {
             format!("f3d:design:appearance#{token_text}")
         );
         assert_eq!(
-            serde_json::to_string(&token).unwrap(),
-            serde_json::to_string(&token_text).unwrap()
+            json::to_string(&token).unwrap(),
+            json::to_string(&token_text).unwrap()
         );
         assert!(crate::records::mesh::DesignRelaxedGuidText::try_from(String::new()).is_err());
         assert!(crate::records::references::DesignVisualToken::try_from(String::new()).is_err());

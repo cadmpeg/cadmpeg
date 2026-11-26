@@ -98,6 +98,7 @@ impl<'de> Deserialize<'de> for StateTaggedValue {
 #[cfg(test)]
 mod tests {
     use super::StateTaggedValue;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn tagged_wire_preserves_width_marker_and_value() {
@@ -108,7 +109,7 @@ mod tests {
             r#"{"value_marker":255,"value":4294967295,"raw_value":"ffffffffff"}"#,
         ] {
             let value: StateTaggedValue = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(json::to_string(&value).unwrap(), json);
         }
     }
 

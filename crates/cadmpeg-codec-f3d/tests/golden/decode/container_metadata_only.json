@@ -281,8 +281,7 @@
           "value": {
             "namespace": "f3d",
             "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "strict_floor": "warning"
+            "kind": "geometry_not_transferred"
           }
         },
         "severity": "blocking",
@@ -294,8 +293,7 @@
           "value": {
             "namespace": "f3d",
             "code": "topology.not-transferred",
-            "kind": "topology_not_transferred",
-            "strict_floor": "warning"
+            "kind": "topology_not_transferred"
           }
         },
         "severity": "blocking",

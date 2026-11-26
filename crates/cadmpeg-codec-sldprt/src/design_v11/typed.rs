@@ -66,6 +66,9 @@ pub(super) struct Typed {
     /// The note of the typed revolves whose sketch's closed regions the
     /// check did not compare with the stored profile.
     pub(super) revolve_profile_unchecked: Option<LossNote>,
+    /// The note of the revolves whose decoded axis carries the turn sense
+    /// their record stores and whose solid depends on it.
+    pub(super) revolve_sense_assumed: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -150,6 +153,7 @@ pub(super) fn project(
         &revolves.derived,
     );
     let revolve_boolean_unstated = boolean_unstated(&revolves.boolean_unstated);
+    let revolve_sense_assumed = sense_assumed(&revolves.sense_assumed);
     let revolve_profile_differs = profile_differs(
         SldprtLossCode::DesignRevolveProfileDiffers,
         "revolves",
@@ -197,6 +201,7 @@ pub(super) fn project(
         revolve_boolean_unstated,
         revolve_profile_differs,
         revolve_profile_unchecked,
+        revolve_sense_assumed,
     }
 }
 
@@ -364,6 +369,25 @@ fn boolean_unstated(revolves: &[(FeatureId, Option<String>, &'static str)]) -> O
     )))
 }
 
+/// One note naming each revolve whose solid depends on the turn sense, whose
+/// decoded axis turns about the axis direction its record stores, reversed
+/// where its reverse byte is `1` (open item EV-25).
+fn sense_assumed(revolves: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
+    if revolves.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignRevolveSenseAssumed.note(format!(
+        "{} partial or two-sided revolves turn about the axis direction their record \
+         stores, the other way where the record's reverse byte is 1 (EV-25): {}",
+        revolves.len(),
+        listed(
+            revolves
+                .iter()
+                .map(|(feature, name)| named(feature, name.as_deref()))
+        ),
+    )))
+}
+
 /// A feature's id, and its name where it has one.
 fn named(feature: &FeatureId, name: Option<&str>) -> String {
     match name {
@@ -482,13 +506,13 @@ fn loss(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::features::FeatureId;
 
     #[test]
     fn the_unresolved_note_names_every_reason_however_many_features_it_lists() {
         let id = |index: usize| -> FeatureId {
-            serde_json::from_value(serde_json::json!(format!("sldprt:model:feature#{index}")))
-                .unwrap()
+            json::from_value(serde_json::json!(format!("sldprt:model:feature#{index}"))).unwrap()
         };
         let extrudes = (0..12)
             .map(|index| {

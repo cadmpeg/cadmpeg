@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity admission for the three legacy parameter packet forms.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::CadIr;
 
 fn legacy_values() -> crate::native::CatiaNative {
@@ -128,7 +129,7 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
 #[test]
 fn legacy_types_follow_unique_selector_chains() {
     let descriptor = |entity_id: u32, value: serde_json::Value| {
-        serde_json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(serde_json::json!({
+        json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(serde_json::json!({
             "byte_offset": 0,
             "entity_id": entity_id,
             "value": value,

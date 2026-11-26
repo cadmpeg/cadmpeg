@@ -4,6 +4,7 @@
 //! document.
 
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -194,9 +195,9 @@ fn the_operation_arms_take_the_adjacent_tag() {
 fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     let mut scope = root::design_scopes().remove(0);
     scope.occurrences.clear();
-    let text = serde_json::to_string(&scope).unwrap();
+    let text = json::to_string(&scope).unwrap();
     assert!(text.contains("\"occurrences\":{}"), "{text}");
-    let text = serde_json::to_string(&root::design_scopes().remove(0)).unwrap();
+    let text = json::to_string(&root::design_scopes().remove(0)).unwrap();
     let entry = r#""test:design:occurrence#9":{"arrangements":[],"parameters":{}}"#;
     let repeated = text.replace(
         "\"occurrences\":{",
@@ -226,7 +227,7 @@ fn optional_fields_lists_and_unknown_keys() {
     refuses::<OccurrenceDesign>(r#"{"parameters": {}}"#);
     refuses::<crate::design::container::Rollback>(r#"{"kind": "end", "value": null, "extra": 1}"#);
     assert_eq!(
-        serde_json::to_string(&OccurrenceOverride::default()).unwrap(),
+        json::to_string(&OccurrenceOverride::default()).unwrap(),
         r#"{"nested":[]}"#
     );
     assert_eq!(
@@ -298,14 +299,14 @@ fn a_neutral_program_writes_its_statements_as_canonical_text() {
     assert!(statement["value"]["text"].is_string(), "{statement}");
     assert!(statement["value"]["refs"].is_array() && statement["value"]["measures"].is_array());
     let program: ParameterProgram =
-        read_desktop(&serde_json::to_string(&root::programs().remove(0)).unwrap()).unwrap();
+        read_desktop(&json::to_string(&root::programs().remove(0)).unwrap()).unwrap();
     assert!(matches!(program.body, ProgramBody::Neutral(_)));
 }
 
 /// §5: the design root's keys, in the order the document states them.
 #[test]
 fn the_design_root_writes_every_arena_in_order() {
-    let text = serde_json::to_string(&Design::default()).unwrap();
+    let text = json::to_string(&Design::default()).unwrap();
     assert_eq!(
         text,
         r#"{"scopes":[],"containers":[],"features":[],"sketches":[],"sketch_entities":[],"sketch_constraints":[],"spatial_sketches":[],"spatial_sketch_entities":[],"spatial_sketch_constraints":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
@@ -319,39 +320,36 @@ fn the_design_root_writes_every_arena_in_order() {
 #[test]
 fn a_document_with_an_empty_design_writes_and_reads() {
     let ir = CadIr::empty();
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = json::to_string(&ir).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["design"], to_value(&Design::default()));
     let back = CadIr::from_json(&text).unwrap();
     assert_eq!(back, ir);
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(json::to_string(&back).unwrap(), text);
     let full = {
         let mut ir = CadIr::empty();
         ir.design = root::designs().remove(1);
         ir
     };
-    let text = serde_json::to_string(&full).unwrap();
+    let text = json::to_string(&full).unwrap();
     assert_eq!(CadIr::from_json(&text).unwrap(), full);
 }
 
-/// A design record under a scope that excludes the design class is refused,
-/// naming the arena by its home.
+/// A design record under a scope that excludes the design class is kept,
+/// written, and read back, and the breach names the arena by its home.
 #[test]
-fn a_design_record_outside_the_scope_is_refused() {
+fn a_design_record_outside_the_scope_is_kept_and_named() {
     let mut ir = CadIr::empty();
     ir.design.features = root::features();
-    let violation = ScopeViolation {
-        class: ArenaClass::Design,
-        arena: ArenaName::parse("design.features"),
-    };
-    assert!(violation.arena.is_some());
-    assert_eq!(ir.set_scope(ContentScope::geometry()), Err(violation));
-    ir.design.features.clear();
-    ir.set_scope(ContentScope::geometry()).unwrap();
-    let mut value = to_value(&ir);
-    value["design"]["features"] = to_value(&root::features());
-    let error = CadIr::from_json(&value.to_string()).unwrap_err();
-    assert!(error.to_string().contains("design.features"), "{error}");
+    ir.set_scope(ContentScope::geometry());
+    assert_eq!(ir.scope(), ContentScope::geometry());
+    let breach = [ScopeViolation::Populated {
+        arena: ArenaName::parse("design.features").unwrap(),
+    }];
+    assert_eq!(ir.scope_violations(), breach);
+    let back = CadIr::from_json(&json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(back.scope(), ContentScope::geometry());
+    assert_eq!(back.scope_violations(), breach);
 }
 
 #[test]
@@ -439,7 +437,7 @@ fn statements_nest_to_the_document_depth_bound_on_a_default_thread() {
             then: vec![statement],
             otherwise: Vec::new(),
         });
-        serde_json::to_string(&statement).unwrap()
+        json::to_string(&statement).unwrap()
     }
     let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read_desktop::<Statement>(&nested(depth)).is_err())
@@ -458,7 +456,7 @@ fn statements_nest_to_the_document_depth_bound_on_a_default_thread() {
         let deepest = deepest.clone();
         move || {
             let read = read_desktop::<Statement>(&deepest).unwrap();
-            let printed = serde_json::to_string(&read).unwrap();
+            let printed = json::to_string(&read).unwrap();
             let cloned = read.clone();
             assert_eq!(cloned, read);
             drop(cloned);

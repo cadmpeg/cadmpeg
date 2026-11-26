@@ -2,6 +2,7 @@
 //! The give-up of a record: the part it leaves, the records it drops, and
 //! the records it states in a partial form.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -161,7 +162,7 @@ fn a_given_up_point_leaves_its_part_and_drops_each_record_that_needs_it() {
         .expect("the retained record");
     assert_eq!(retained.stream(), outcome.path);
     assert_eq!(retained.offset(), 0);
-    let text = crate::hash::finite_json::to_canonical_json_string(&point).unwrap();
+    let text = crate::hash::finite_json::to_compact_canonical_json_string(&point).unwrap();
     assert_eq!(retained.data(), Some(text.as_bytes()));
     let classes: BTreeSet<_> = Arena::home("geometry", "points")
         .unwrap()
@@ -253,7 +254,7 @@ fn feature(name: &str, operation: serde_json::Value) -> Feature {
         name: None,
         suppressed: None,
         definition: FeatureDefinition {
-            operation: serde_json::from_value(operation).unwrap(),
+            operation: json::from_value(operation).unwrap(),
             assembly: None,
             refine: None,
             fuzzy_tolerance: None,
@@ -461,8 +462,7 @@ fn a_pick_of_a_lost_record_with_a_native_name_states_its_target_native() {
         BTreeSet::from([plane.id.as_str().to_owned()])
     );
     let native =
-        serde_json::to_value(crate::design::selection::PickTarget::Native { within: None })
-            .unwrap();
+        json::to_value(crate::design::selection::PickTarget::Native { within: None }).unwrap();
     assert_eq!(
         plane_picks(&ir.design.features[0]),
         json!([{"target": native, "native": native_name("Plane1")}])
@@ -476,7 +476,7 @@ fn an_unordered_selection_loses_only_the_pick_of_a_lost_record() {
     let base = unresolved("base");
     let other = unresolved("other");
     let picks: Vec<crate::design::selection::Picked> =
-        serde_json::from_value(json!([datum_pick(&base), datum_pick(&other)])).unwrap();
+        json::from_value(json!([datum_pick(&base), datum_pick(&other)])).unwrap();
     let picks =
         crate::design::selection::Members::<_, crate::design::selection::Unordered>::new(picks)
             .unwrap();
@@ -512,7 +512,7 @@ fn an_expression_that_names_a_lost_parameter_states_it_source() {
     use crate::design::expr::{Expression, ExpressionDialect};
     use crate::design::parameter::{DesignParameter, ParameterDefinition};
     let parameter = |name: &str, definition: serde_json::Value| -> DesignParameter {
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "id": format!("test:design:parameter#{name}"),
             "scope": "test:model:definition#part",
             "kind": {"kind": "integer"},
@@ -552,7 +552,7 @@ fn an_expression_that_names_a_lost_parameter_states_it_source() {
 fn a_procedural_curve_on_a_lost_surface_states_its_definition_unknown() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let surface = ir.geometry.surfaces[0].id.as_str().to_owned();
-    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
+    let spine: crate::geometry::ProceduralCurve = json::from_value(json!({
         "id": "test:geometry:procedural-curve#spine",
         "definition": {"kind": "blend_spine", "blend_surface": surface}
     }))
@@ -589,7 +589,7 @@ fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
     ir.design.features = vec![base.clone()];
     let generated =
         json!({"kind": "generated", "value": {"kind": "face", "feature": base.id.as_str()}});
-    ir.design.names = serde_json::from_value(json!([
+    ir.design.names = json::from_value(json!([
         [{"kind": "face", "value": "test:geometry:face#1"},
          {"name": generated, "native": native_name("Face1")}],
         [{"kind": "face", "value": "test:geometry:face#2"}, {"name": generated}]
@@ -658,7 +658,7 @@ fn the_schema_states_each_definition_a_partial_form_keys_on() {
 #[test]
 fn a_construction_goes_with_the_carrier_that_owns_it() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
+    let spine: crate::geometry::ProceduralCurve = json::from_value(json!({
         "id": "test:geometry:procedural-curve#spine",
         "definition": {"kind": "unknown"}
     }))
@@ -677,6 +677,113 @@ fn a_construction_goes_with_the_carrier_that_owns_it() {
     assert!(outcome.dropped.contains(spine.id.as_str()));
     assert!(ir.geometry.procedural_curves.is_empty());
     assert_closed(&ir, &owner, &outcome);
+}
+
+/// A carrier that names a given-up construction is stated in the form that
+/// holds only what was read (§3.3): its retained cache where it holds one,
+/// and `Unknown` otherwise. It keeps its place: the edge on it stays.
+#[test]
+fn a_carrier_on_a_lost_construction_states_its_retained_cache() {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    for retained in [true, false] {
+        let mut ir = crate::examples::unit_cube().unwrap();
+        let spine: crate::geometry::ProceduralCurve = json::from_value(json!({
+            "id": "test:geometry:procedural-curve#spine",
+            "definition": {"kind": "unknown"}
+        }))
+        .unwrap();
+        let owner = ir.geometry.curves.last_mut().unwrap();
+        let CurveGeometry::Solved(solved) = owner.geometry.clone() else {
+            panic!("the unit cube's curves are solved");
+        };
+        owner.geometry = CurveGeometry::Procedural {
+            construction: spine.id.clone(),
+            cache: retained.then(|| solved.clone()),
+        };
+        let owner = owner.id.clone();
+        ir.geometry.procedural_curves.push(spine.clone());
+        let curves = ir.geometry.curves.len();
+        let edges = ir.geometry.edges.len();
+        let (outcome, _) = run(
+            &mut ir,
+            seed("geometry", "procedural_curves", spine.id.as_str()),
+        );
+        assert!(outcome.marked.contains(owner.as_str()), "{outcome:?}");
+        assert!(outcome.dropped.is_empty(), "{outcome:?}");
+        assert_eq!(ir.geometry.curves.len(), curves);
+        assert_eq!(ir.geometry.edges.len(), edges);
+        let stated = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == owner)
+            .unwrap();
+        let expected = if retained {
+            solved
+        } else {
+            SolvedCurveGeometry::Unknown { record: None }
+        };
+        assert_eq!(stated.geometry, CurveGeometry::Solved(expected));
+        assert_closed(&ir, spine.id.as_str(), &outcome);
+    }
+}
+
+/// A carrier whose construction stays and whose cache alone names a
+/// given-up record loses only its cache (§3.3).
+#[test]
+fn a_cache_that_names_a_lost_record_is_cleared_and_the_construction_stays() {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let native = "test:native:curve#1";
+    let record =
+        crate::NativeRecord::new(Identity::new(native).unwrap(), serde_json::Map::new()).unwrap();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("curves", vec![record])
+        .unwrap();
+    let spine: crate::geometry::ProceduralCurve = json::from_value(json!({
+        "id": "test:geometry:procedural-curve#spine",
+        "definition": {"kind": "unknown"}
+    }))
+    .unwrap();
+    let owner = ir.geometry.curves.last_mut().unwrap();
+    owner.geometry = CurveGeometry::Procedural {
+        construction: spine.id.clone(),
+        cache: Some(SolvedCurveGeometry::Unknown {
+            record: Some(crate::ids::UnknownId::mint(native).unwrap()),
+        }),
+    };
+    let owner = owner.id.clone();
+    ir.geometry.procedural_curves.push(spine.clone());
+    let (outcome, _) = run(
+        &mut ir,
+        Seed {
+            arena: Arena::Native {
+                codec: "test".to_owned(),
+                arena: "curves".to_owned(),
+            },
+            id: native.to_owned(),
+        },
+    );
+    assert!(outcome.marked.contains(owner.as_str()), "{outcome:?}");
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    assert_eq!(ir.geometry.procedural_curves, std::slice::from_ref(&spine));
+    let stated = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id == owner)
+        .unwrap();
+    assert_eq!(
+        stated.geometry,
+        CurveGeometry::Procedural {
+            construction: spine.id,
+            cache: None,
+        }
+    );
+    assert_closed(&ir, native, &outcome);
 }
 
 /// Each Error finding of `ir`, by rule and record.

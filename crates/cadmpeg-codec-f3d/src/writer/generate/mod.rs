@@ -226,8 +226,11 @@ fn attempt<W: Write + Seek>(
     };
     let (smbh, history_notes) = match neutral.as_ref().filter(|_| stamped) {
         Some(neutral) => {
-            design::history::with_insertion_history(&smbh, &neutral.history_states(target))
-                .map_err(Failure::neutral_design)?
+            let states = neutral
+                .history_states(target)
+                .map_err(|missing| Failure::history(missing.error, Some(missing.feature)))?;
+            design::history::with_insertion_history(&smbh, &states)
+                .map_err(|error| Failure::history(error, None))?
         }
         None => (smbh, Vec::new()),
     };
@@ -269,7 +272,7 @@ fn attempt<W: Write + Seek>(
                 target,
                 snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
             )
-            .map_err(Failure::neutral_design)?;
+            .map_err(Failure::records)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
         let mut coverage = coverage(

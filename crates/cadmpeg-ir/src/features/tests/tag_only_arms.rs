@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -13,8 +14,8 @@ where
     T: Serialize + DeserializeOwned + std::fmt::Debug,
 {
     let bare = serde_json::json!({ "kind": kind });
-    let read: T = serde_json::from_value(bare.clone()).expect("the bare tag reads");
-    assert_eq!(serde_json::to_value(read).unwrap(), bare);
+    let read: T = json::from_value(bare.clone()).expect("the bare tag reads");
+    assert_eq!(json::to_value(read).unwrap(), bare);
 
     for (key, value) in [
         ("zz_bogus", serde_json::json!(1)),
@@ -23,7 +24,7 @@ where
     ] {
         let mut stated = bare.clone();
         stated[key] = value;
-        let error = serde_json::from_value::<T>(stated.clone())
+        let error = json::from_value::<T>(stated.clone())
             .expect_err("a key beside the tag is refused")
             .to_string();
         assert!(

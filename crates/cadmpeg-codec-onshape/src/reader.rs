@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part Studio history projection.
+//! Part Studio history and assembly projection.
 
 use crate::archive;
+use cadmpeg_core::serde_erase::json;
+mod assembly;
 pub(super) mod expression;
 mod features;
+mod intersection;
 mod planes;
 pub(super) mod query;
 mod regions;
@@ -83,7 +86,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        serde_json::from_value(row)
+        json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -119,6 +122,12 @@ fn mapping_loss_code(
         OnshapeLossCode::SweepNotSupported
     } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
         planes::loss_code(feature, reason)
+    } else if valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("shell")
+        && features::shell_record_valid(feature)
+        && reason.starts_with(features::SHELL_REFUSAL)
+    {
+        OnshapeLossCode::ShellNotSupported
     } else {
         OnshapeLossCode::HistoryNotSupported
     }
@@ -178,11 +187,21 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
             .product_definitions
             .iter()
             .filter(|d| Some(&d.id) != owner_id.as_ref())
-            .any(|d| !placed.contains(d.id.as_str()))
+            .any(|d| {
+                // A part body is an embedded leaf definition, active, with no own
+                // occurrences, instance bodies or representations; anything else is a
+                // real insertion and keeps its occurrence.
+                !placed.contains(d.id.as_str())
+                    || !matches!(d.storage, cadmpeg_ir::products::Storage::Embedded)
+                    || !d.occurrences.is_empty()
+                    || !d.instance_bodies.is_empty()
+                    || !d.representations.is_empty()
+                    || d.active == Some(false)
+            })
     {
         return;
     }
-    let Ok(text) = serde_json::to_string(&model.ir) else {
+    let Ok(text) = json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -223,10 +242,8 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         })
         .collect();
     for body in &mut model.ir.geometry.bodies {
-        if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) {
-            if let Some(name) = names.get(body.id.as_str()) {
-                body.name = Some(name.clone());
-            }
+        if let Some(name) = names.get(body.id.as_str()) {
+            body.name = Some(name.clone());
         }
     }
 }
@@ -412,19 +429,46 @@ pub(super) fn read(
     report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
-    if elements.len() != 1
-        || elements
+    let mut model = if elements.len() == 1
+        && elements
             .first()
             .and_then(|e| e.get("type"))
             .and_then(Value::as_str)
-            != Some("PARTSTUDIO")
+            == Some("PARTSTUDIO")
     {
-        return Err(Error::Decode("Onshape bundles with assemblies or multiple elements are not supported yet; fetch one Part Studio".into()));
-    }
-    let element = elements
-        .first()
-        .ok_or_else(|| Error::Decode("Onshape bundle has no Part Studio".into()))?;
-    let eid = text(element, "id").map_err(Error::Decode)?;
+        studio(
+            ctx,
+            root,
+            step_decoder,
+            report,
+            &bundle,
+            &mid,
+            text(
+                elements
+                    .first()
+                    .ok_or_else(|| Error::Decode("element missing".into()))?,
+                "id",
+            )
+            .map_err(Error::Decode)?,
+        )?
+    } else {
+        assembly::read(ctx, root, step_decoder, report, &bundle, &mid, manifest)?
+    };
+    report
+        .notes
+        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    Ok(model)
+}
+
+fn studio(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    step_decoder: crate::StepDecoder,
+    report: &mut Report,
+    bundle: &Bundle<'_>,
+    mid: &str,
+    eid: &str,
+) -> Result<Model, Error> {
     if !eid
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
@@ -459,7 +503,7 @@ pub(super) fn read(
             (&[][..], RollbackBar::default())
         }
     };
-    let inputs = topology::Inputs::new(&bundle, &prefix, &mid, features, report);
+    let inputs = topology::Inputs::new(bundle, &prefix, mid, features, report);
     let step_path = format!("{prefix}/export.step");
     let step = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
@@ -515,9 +559,6 @@ pub(super) fn read(
         part_studio_bodies(&mut model);
     }
     if ctx.depth() == cadmpeg_core::decode::DecodeDepth::Geometry {
-        report
-            .notes
-            .extend(bundle.retain_assets(ctx, &mut model.ir)?);
         return Ok(model);
     }
     let creators: Vec<usize> = features
@@ -651,7 +692,7 @@ pub(super) fn read(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
@@ -836,10 +877,6 @@ pub(super) fn read(
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
     annotate(&mut model, features)?;
-    report
-        .notes
-        .extend(bundle.retain_assets(ctx, &mut model.ir)?);
-    model.ir.finalize();
     Ok(model)
 }
 

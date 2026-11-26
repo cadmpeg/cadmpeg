@@ -8,6 +8,7 @@ use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData, DESIGN_MODULE
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
 use crate::records::references::DesignClassTag;
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashSet;
 
 fn source_frame() -> Vec<u8> {
@@ -202,8 +203,8 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     assert_eq!(result.offset, 40);
     let mut bound_scope = scope.clone();
     bound_scope.derived_base_owner = Some(binding);
-    let wire = serde_json::to_value(&bound_scope).unwrap();
-    let decoded: DesignParameterScope = serde_json::from_value(wire).unwrap();
+    let wire = json::to_value(&bound_scope).unwrap();
+    let decoded: DesignParameterScope = json::from_value(wire).unwrap();
     assert_eq!(decoded.derived_base_owner, Some(binding));
     let mut missing_result = bytes;
     missing_result[39] = 0;

@@ -136,6 +136,7 @@ pub(crate) mod assembly_wire {
 #[cfg(test)]
 mod tests {
     use super::CompactMatrix;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn masks_select_explicit_positive_zero_and_negative_cells() {
@@ -147,16 +148,16 @@ mod tests {
         .expect("matrix fixture agrees with its masks");
         assert_eq!(indices, [0]);
         assert_eq!(matrix.rows()[0], [2.5, 1.0, 0.0, -1.0]);
-        let wire = serde_json::to_value(matrix).expect("matrix fixture agrees with its masks");
+        let wire = json::to_value(matrix).expect("matrix fixture agrees with its masks");
         assert_eq!(
-            serde_json::from_value::<CompactMatrix>(wire.clone())
+            json::from_value::<CompactMatrix>(wire.clone())
                 .expect("matrix fixture agrees with its masks"),
             matrix
         );
         for column in 1..4 {
             let mut invalid = wire.clone();
             invalid["matrix"][0][column] = serde_json::json!(3.0);
-            assert!(serde_json::from_value::<CompactMatrix>(invalid).is_err());
+            assert!(json::from_value::<CompactMatrix>(invalid).is_err());
         }
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(CompactMatrix::try_from_rows(0, 0, [[value; 4]; 4]).is_err());

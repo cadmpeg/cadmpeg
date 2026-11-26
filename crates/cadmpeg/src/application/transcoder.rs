@@ -140,16 +140,15 @@ impl TargetSelection {
 
     /// Builds the encoder request.
     ///
-    /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
-    /// resolves to is the encoder's answer, not the command line's:
+    /// Flag absence is [`TargetRequest::Unnamed`]. What that resolves to is
+    /// the encoder's answer, not the command line's:
     /// [`Encoder::plan`](cadmpeg_ir::codec::write::Encoder::plan) preserves the source
-    /// dialect within one format and selects the catalog default when there is
-    /// nothing to inherit: no source or a source of another format. Deciding
-    /// the cross-format default here as well would write the same rule twice.
+    /// dialect within one format and takes the catalog default, without a
+    /// loss, when the source is of another format or absent.
     fn request(&self) -> TargetRequest<'_> {
         match self.request.as_deref() {
             Some(id) => TargetRequest::Explicit(id),
-            None => TargetRequest::Inherit,
+            None => TargetRequest::Unnamed,
         }
     }
 }
@@ -617,7 +616,7 @@ pub(crate) fn emit_export_plan(
     let needs_sidecar = format == Format::Cadir
         && matches!(
             origin,
-            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. }
+            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. } | LoadOrigin::Read { .. }
         );
     if let ResolvedDestination::File(path) = destination {
         let (report, cadir_sha256) = artifact_store::write_plan_atomic(path, plan)?;

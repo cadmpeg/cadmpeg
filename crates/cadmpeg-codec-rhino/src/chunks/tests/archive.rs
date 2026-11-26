@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::wire;
@@ -281,8 +282,8 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
             .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).expect("required invariant"),
-        serde_json::to_vec(second.report()).expect("required invariant")
+        json::to_vec(first.report()).expect("required invariant"),
+        json::to_vec(second.report()).expect("required invariant")
     );
 }
 

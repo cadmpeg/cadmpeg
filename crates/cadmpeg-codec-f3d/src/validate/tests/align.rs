@@ -3,6 +3,7 @@
 use crate::design::decode::scopes::align::{align_envelope_links_hold, decode_align_envelope};
 use crate::records::feature::align::DesignAlignForm;
 use crate::test_support::align::align_prefix_fixture;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn align_validator_checks_both_forms_references_and_locations() {
@@ -144,19 +145,19 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
         assert!(!valid(&changed), "field {field}");
     }
     let envelope = scope.align_envelope().unwrap();
-    let scope_wire = serde_json::to_value(&scope).unwrap();
+    let scope_wire = json::to_value(&scope).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(
             scope_wire.clone()
         )
         .unwrap(),
         scope
     );
     assert!(scope_wire.get("move_operation").is_none());
-    let wire = serde_json::to_value(envelope).unwrap();
+    let wire = json::to_value(envelope).unwrap();
     assert_eq!(wire["motion"]["form"], 4);
     assert_eq!(
-        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(wire.clone())
+        json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(wire.clone())
             .unwrap(),
         *envelope
     );
@@ -168,7 +169,7 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
             _ => changed["motion"]["prefix"]["leading"]["scalar"] = serde_json::Value::Null,
         }
         assert!(
-            serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(changed)
+            json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(changed)
                 .is_err(),
             "field {field}"
         );
@@ -176,7 +177,7 @@ fn align_motion_validator_checks_form_links_leading_fields_and_omitted_identity(
     let mut legacy = wire;
     legacy.as_object_mut().unwrap().remove("motion");
     assert!(
-        serde_json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(legacy)
+        json::from_value::<crate::records::feature::align::DesignAlignEnvelope>(legacy)
             .unwrap()
             .motion
             .is_none()

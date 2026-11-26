@@ -11,6 +11,7 @@ use crate::records::feature::path_features::{
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 const REVOLVE_TYPE_GUID: &str = "E3849A15-2FC6-42A0-AF3A-2F1D7273B406";
 const SCOPE: u32 = 70;
@@ -187,7 +188,7 @@ impl Fixture {
         .unwrap()
         .expect("Revolve scope");
         scope.id = format!("{STREAM}:design-parameter-scope#0");
-        let owner: DesignParameterOwner = serde_json::from_value(serde_json::json!({
+        let owner: DesignParameterOwner = json::from_value(serde_json::json!({
             "id": format!("{STREAM}:design-parameter-owner#{ANGLE}"),
             "byte_offset": 2000,
             "frame_length": 104,

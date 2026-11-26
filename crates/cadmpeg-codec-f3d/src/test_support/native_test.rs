@@ -2,6 +2,7 @@
 //! Typed F3D native-namespace helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -30,7 +31,7 @@ pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
 
     // The stored text is the record's only retained charge, so a ceiling one
     // byte below its length refuses the record.
-    let text = serde_json::to_string(&stored.arenas()[arena_name][0]).unwrap();
+    let text = json::to_string(&stored.arenas()[arena_name][0]).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(text.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -65,7 +66,7 @@ impl TestEncode for F3dCodec {
     {
         self.plan(
             cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(output)
     }
@@ -129,13 +130,13 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     record: T,
     alternatives: &[&str],
 ) {
-    let wire = serde_json::to_value(record).unwrap();
-    let restored: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+    let wire = json::to_value(record).unwrap();
+    let restored: T = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(restored).unwrap(), wire);
     for id in alternatives {
         let mut invalid = wire.clone();
         invalid["id"] = serde_json::json!(id);
-        let error = serde_json::from_value::<T>(invalid).expect_err("invalid id");
+        let error = json::from_value::<T>(invalid).expect_err("invalid id");
         assert!(error.to_string().contains("id"), "{error}");
     }
 }

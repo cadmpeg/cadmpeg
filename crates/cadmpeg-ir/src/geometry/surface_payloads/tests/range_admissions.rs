@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::assert_positive_revision_lane;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
@@ -172,7 +173,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         [Some(3.0), None]
     );
     let definition = ProceduralSurfaceDefinition::VariableBlend(admitted_variable);
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/construction/revision");
     let first_side = &wire["construction"]["sides"][0];
     assert_eq!(
@@ -196,7 +197,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         serde_json::json!([5.0])
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     assert!(variable_wire(admitted).is_ok());
@@ -209,10 +210,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
     assert!(blend_new(admitted).is_ok());
     assert!(blend_wire(admitted).is_ok());
     let blend = ProceduralSurfaceDefinition::Blend(blend_new(admitted).unwrap());
-    assert_positive_revision_lane(
-        &serde_json::to_value(&blend).unwrap(),
-        "/cache/form/revision",
-    );
+    assert_positive_revision_lane(&json::to_value(&blend).unwrap(), "/cache/form/revision");
 
     let blend_with_native_ranges = |u_range, v_range| {
         let CacheContract::Revision { mut form } = rolling(admitted) else {
@@ -243,8 +241,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         [None, Some(2.0)]
     );
     assert_eq!(
-        serde_json::from_value::<BlendSurfacePayload>(serde_json::to_value(&ordered).unwrap())
-            .unwrap(),
+        json::from_value::<BlendSurfacePayload>(json::to_value(&ordered).unwrap()).unwrap(),
         ordered
     );
     assert!(blend_with_native_ranges([Some(2.0), Some(1.0)], [None, None]).is_err());

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve-construction ownership transitions.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
     use crate::features::revolve::{RevolutionAxis, RevolveConstruction};
@@ -9,7 +11,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
     });
-    let mut construction: RevolveConstruction = serde_json::from_value(serde_json::json!({
+    let mut construction: RevolveConstruction = json::from_value(serde_json::json!({
         "kind": "unresolved",
         "value": {
             "kind": "axis",
@@ -21,10 +23,10 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
     }))
     .unwrap();
     construction.set_axis(Some(
-        serde_json::from_value::<RevolutionAxis>(axis.clone()).unwrap(),
+        json::from_value::<RevolutionAxis>(axis.clone()).unwrap(),
     ));
     assert_eq!(
-        serde_json::to_value(construction).unwrap(),
+        json::to_value(construction).unwrap(),
         serde_json::json!({
             "kind": "resolved",
             "value": {
@@ -46,7 +48,7 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
 
     for kind in ["one_sided", "symmetric"] {
         for angle in [-PI, 0.0] {
-            assert!(serde_json::from_value::<RevolveExtent>(json!({
+            assert!(json::from_value::<RevolveExtent>(json!({
                 "kind": kind, "termination": {"kind": "angle", "angle": angle}
             }))
             .is_err());
@@ -58,7 +60,7 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             (TAU + 1.0e-9, false),
             (TAU + PI, false),
         ] {
-            let extent: RevolveExtent = serde_json::from_value(json!({
+            let extent: RevolveExtent = json::from_value(json!({
                 "kind": kind, "termination": {"kind": "angle", "angle": angle}
             }))
             .unwrap();
@@ -71,7 +73,7 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
         (PI + 7.0e-15, PI + 7.0e-15, true),
         (TAU, PI, false),
     ] {
-        let extent: RevolveExtent = serde_json::from_value(json!({
+        let extent: RevolveExtent = json::from_value(json!({
             "kind": "two_sided",
             "first": {"kind": "angle", "angle": first},
             "second": {"kind": "angle", "angle": second}
@@ -86,6 +88,6 @@ fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
             "second": {"kind": "angle", "angle": PI}
         });
         extent[side]["angle"] = json!(-PI);
-        assert!(serde_json::from_value::<RevolveExtent>(extent).is_err());
+        assert!(json::from_value::<RevolveExtent>(extent).is_err());
     }
 }

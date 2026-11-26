@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -1133,10 +1134,10 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("framed optional tables");
-            let canonical = serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model))
-                .expect("model");
-            let actual = serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model))
-                .expect("model");
+            let canonical =
+                json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+            let actual =
+                json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
             let expected_offset = expected.ir().geometry.points[0]
                 .id
                 .as_str()
@@ -1170,9 +1171,9 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("misplaced metadata is opaque");
         let canonical =
-            serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+            json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
         let actual =
-            serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
+            json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
         let expected_offset = expected.ir().geometry.points[0]
             .id
             .as_str()

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use super::{
@@ -265,13 +266,13 @@ fn mirror_options_have_exactly_nine_native_bytes() {
     use crate::feature::mirror::Property;
 
     for bytes in ["", "00", "0000000000000000", "00000000000000000000"] {
-        assert!(serde_json::from_value::<Property>(
+        assert!(json::from_value::<Property>(
             serde_json::json!({"kind": "options", "bytes": bytes})
         )
         .is_err());
     }
     assert_eq!(
-        serde_json::from_value::<Property>(
+        json::from_value::<Property>(
             serde_json::json!({"kind": "options", "bytes": "000000000000000000"})
         )
         .expect("nine bytes"),
@@ -466,9 +467,9 @@ fn validator_admits_each_measured_body_copy_outline() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     for outline in [3, 9, 15] {
         let (mut fixture, source) = new_body_form();
-        let mut node = serde_json::to_value(&fixture.generated_features[0]).expect("node");
+        let mut node = json::to_value(&fixture.generated_features[0]).expect("node");
         node["outline_value"] = serde_json::json!(outline);
-        fixture.generated_features[0] = serde_json::from_value(node).expect("outline form");
+        fixture.generated_features[0] = json::from_value(node).expect("outline form");
         let (feature, result) = fixture
             .index()
             .project(&ctx, &source, &fixture.label, |_| None, |_| {})
@@ -523,7 +524,7 @@ fn validator_checks_the_replacement_form_and_each_neighbouring_refusal() {
 }
 
 fn rse_record(token: &str, ordinal: u32, type_id: &str, payload_len: u64) -> RseRecordRecord {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": format!("record-{ordinal}"),
         "token": token,
         "ordinal": ordinal,

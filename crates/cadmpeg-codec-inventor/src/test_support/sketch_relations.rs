@@ -2,6 +2,7 @@
 
 use crate::pmdc::PmDcReference;
 use crate::sketch::PmDcSketchConstraint;
+use cadmpeg_core::serde_erase::json;
 
 pub(crate) fn entity_operand_cases() -> Vec<(PmDcSketchConstraint, Vec<u32>)> {
     let [r1, r2, r3, r4, r5] = [1, 2, 3, 4, 5].map(PmDcReference::from_packed);
@@ -125,14 +126,14 @@ pub(crate) fn entity_operand_cases() -> Vec<(PmDcSketchConstraint, Vec<u32>)> {
     cases
         .into_iter()
         .map(|(record_type, kind, operands)| {
-            let mut wire = serde_json::to_value(super::sketch_curves::spline_midpoint())
-                .expect("relation wire");
+            let mut wire =
+                json::to_value(super::sketch_curves::spline_midpoint()).expect("relation wire");
             wire["header"]["content"]["context"] = serde_json::json!(PmDcReference::from_packed(0));
             wire["header"]["group"] = serde_json::json!(PmDcReference::from_packed(0));
             wire["type_id"] = serde_json::json!(record_type);
             wire["kind"] = kind;
             (
-                serde_json::from_value(wire).expect("synthetic relation"),
+                json::from_value(wire).expect("synthetic relation"),
                 operands,
             )
         })

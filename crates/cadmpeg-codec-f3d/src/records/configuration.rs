@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and the configuration tables they hold.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -274,7 +275,7 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
 pub(crate) fn encode_configuration_payload(
     configuration: &DesignConfiguration,
 ) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(configuration.payload()).map_err(|error| {
+    json::to_vec(configuration.payload()).map_err(|error| {
         CodecError::malformed(format_args!(
             "cannot encode F3D configuration JSON {}: {error}",
             configuration.entry_name()

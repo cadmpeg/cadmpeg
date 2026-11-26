@@ -3121,6 +3121,7 @@ mod tests {
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -4376,7 +4377,7 @@ mod tests {
 
     #[test]
     fn brep_version_projection_emits_the_documented_keys_in_order() {
-        let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
+        let json = json::to_string(&BrepVersionField(3)).expect("brep version serialize");
         assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
 }

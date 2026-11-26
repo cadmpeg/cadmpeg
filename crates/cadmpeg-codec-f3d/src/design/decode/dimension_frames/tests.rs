@@ -7,6 +7,7 @@
 )]
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use super::{
     contiguous_i32_program, indexed_record_containing, parse_dimension_annotation_frame,
@@ -1121,11 +1122,10 @@ fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
         let reference = &mut references[0];
         assert_eq!(reference.token_integer, token_integer);
         assert_eq!(reference.design_reference, -73);
-        let wire = serde_json::to_value(&*reference).unwrap();
+        let wire = json::to_value(&*reference).unwrap();
         assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
         assert_eq!(
-            serde_json::from_value::<crate::records::dimensions::DesignRecipeReference>(wire)
-                .unwrap(),
+            json::from_value::<crate::records::dimensions::DesignRecipeReference>(wire).unwrap(),
             *reference
         );
         let face = FaceId::mint("test:model:face#pair").unwrap();
@@ -1139,10 +1139,10 @@ fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
             ordinal: 0,
         };
 
-        let wire = serde_json::to_value(&tag).unwrap();
+        let wire = json::to_value(&tag).unwrap();
         assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
         assert_eq!(
-            serde_json::from_value::<PersistentSubentityTag>(wire).unwrap(),
+            json::from_value::<PersistentSubentityTag>(wire).unwrap(),
             tag
         );
         let mut other_integer = tag.clone();

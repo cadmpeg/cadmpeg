@@ -408,6 +408,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -416,14 +417,14 @@ mod tests {
     /// A mirror whose stored record states its seeds while the decoder binds
     /// none, and whose plane is resolved: the plane a lane binds.
     fn unbound_mirror() -> (crate::records::Feature, cadmpeg_ir::features::Feature) {
-        let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
+        let record: crate::records::Feature = json::from_value(serde_json::json!({
             "id":"native", "parent":"history", "ordinal":0,
             "name":"Reflect", "kind":"Mirror", "xml_tag":"Mirror",
             "input_class":"moMirrorPattern_c", "parameters":{},
             "properties":{"PlaneOrigin":"5mm,0mm,0mm", "PlaneNormal":"1,0,0"}
         }))
         .expect("synthetic feature record");
-        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+        let history: crate::records::FeatureHistory = json::from_value(serde_json::json!({
             "id":"history", "features":[record.clone()]
         }))
         .expect("synthetic history");

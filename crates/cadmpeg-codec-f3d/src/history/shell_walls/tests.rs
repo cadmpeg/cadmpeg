@@ -6,6 +6,7 @@ use crate::history_records::{
     AsmHistoricalPlane, AsmHistoricalRowsDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::operation_settings::ShellMode;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureId;
@@ -325,7 +326,7 @@ fn bind_selection(
 
     let members: Vec<_> = (7..7 + member_count).collect();
     let offsets: Vec<_> = (0..member_count).map(|ordinal| ordinal * 11).collect();
-    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+    let group: DesignConstructionOperandGroup = json::from_value(serde_json::json!({
         "id": "f3d:test:group#43", "byte_offset": 0, "class_tag": "261",
         "record_index": 43, "scope_record_index": 42, "scope_reference_ordinal": 0,
         "members": members, "member_offsets": offsets, "role": 68_719_476_736_u64,

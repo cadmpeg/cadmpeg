@@ -2,6 +2,7 @@
 
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture, Layout, SectionFrame};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn pipe_source_binds_group_with_three_byte_flag_block() {
@@ -511,7 +512,7 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
     ];
     for (encoded, hollow, operation, operation_at) in controls {
         let raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>> =
-            serde_json::from_value(serde_json::json!(encoded)).unwrap();
+            json::from_value(serde_json::json!(encoded)).unwrap();
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&raw);
         let actual = super::exact_pipe_prefix(&bytes, 17).unwrap();

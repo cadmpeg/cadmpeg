@@ -47,16 +47,27 @@ include!("dialect/registry_ids.rs");
 /// Preservation is not listed here. [`crate::writer`] repacks the
 /// retained entry set and patches `Document.xml` in place, so it preserves every
 /// schema this codec reads — schema 2 included — while it regenerates none. The
-/// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
-/// for the retained document's own dialect instead, whatever that is.
+/// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`], and
+/// a request that names no target, ask for the retained document's own dialect
+/// instead, whatever that is.
 /// No row is a cross-format default because this writer cannot synthesize an
-/// `FCStd` document graph from another format.
+/// `FCStd` document graph from another format. Such a request with no
+/// recorded source dialect resolves to the newest row, and the writer writes
+/// the dialect the retained `Document.xml` declares.
 ///
 /// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::target::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.id(),
     aliases: &["4"],
 }];
+
+/// The rows this writer reaches only by patching a retained `Document.xml`
+/// that declares them.
+pub(crate) const REPLAY_ROWS: &[DialectId] = &[
+    FcstdDialect::Schema2.id(),
+    FcstdDialect::Schema3.id(),
+    FcstdDialect::Unknown.id(),
+];
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
 ///

@@ -6,6 +6,7 @@ use crate::history_records::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
 use cadmpeg_ir::features::operation_settings::ShellMode;
 use cadmpeg_ir::features::selections::FaceSelection;
@@ -142,7 +143,7 @@ fn group_in(id: &str, scope_record_index: u32, members: &[u32]) -> DesignConstru
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": id,
         "byte_offset": 0,
         "class_tag": "261",

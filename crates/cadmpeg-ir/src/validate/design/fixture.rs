@@ -152,7 +152,7 @@ pub(crate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
 pub(crate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.product_definitions.clear();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
         kind: Some(ProductDefinitionKind::Part),
@@ -237,7 +237,11 @@ pub(in crate::validate) fn family_findings(
 }
 
 pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    family_findings(ir, Check::Design, super::check_design)
+    family_findings(
+        ir,
+        Check::Design,
+        crate::validate::process::check_design_and_process,
+    )
 }
 
 #[track_caller]

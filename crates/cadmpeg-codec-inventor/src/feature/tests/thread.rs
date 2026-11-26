@@ -6,6 +6,7 @@ use crate::feature::{
     parse_face_collection, parse_face_item, project_thread, thread_face_collection,
     FeatureInventory, ProjectedSketches, FACE_COLLECTION_TYPE, FACE_ITEM_TYPE, THREAD_CLASS_ID,
 };
+use cadmpeg_core::serde_erase::json;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -373,19 +374,19 @@ fn thread_requires_type_two_lists_and_closed_edge_members() -> TestResult {
     assert!(admitted(&source, &properties));
     for position in [0, 1, 2, 3] {
         let mut candidate = properties.clone();
-        let mut wire = serde_json::to_value(&candidate[position])?;
+        let mut wire = json::to_value(&candidate[position])?;
         let list = if position == 1 {
             "index_references"
         } else {
             "items"
         };
         wire["kind"][list]["marker"] = serde_json::json!(3);
-        candidate[position] = serde_json::from_value(wire)?;
+        candidate[position] = json::from_value(wire)?;
         assert!(!admitted(&source, &candidate));
     }
-    let mut wire = serde_json::to_value(&source)?;
+    let mut wire = json::to_value(&source)?;
     wire["properties"]["marker"] = serde_json::json!(3);
-    let wrong_marker = serde_json::from_value(wire)?;
+    let wrong_marker = json::from_value(wire)?;
     assert!(!admitted(&wrong_marker, &properties));
     for members in [&[0][..], &[100][..], &[20][..]] {
         let mut candidate = properties.clone();
@@ -591,9 +592,9 @@ fn thread_projects_parsed_metric_and_inch_sizes_with_native_polarities() -> Test
             assert_eq!(pitch.get(), expected_pitch);
             assert!(extent.is_none());
             assert!(modeled.is_none());
-            let mut invalid = serde_json::to_value(&definitions[0])?;
+            let mut invalid = json::to_value(&definitions[0])?;
             invalid["controls"][1] = serde_json::json!(0xffff);
-            let invalid = [serde_json::from_value(invalid)?];
+            let invalid = [json::from_value(invalid)?];
             index.thread_definitions = &invalid;
             let fallback = project_thread(&ctx, &source, &label, &index)
                 .ok_or("missing native-sizing annotation")??;

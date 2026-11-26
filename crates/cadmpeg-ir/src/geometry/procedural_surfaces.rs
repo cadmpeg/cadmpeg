@@ -24,7 +24,14 @@ use serde::{Deserialize, Serialize};
 /// Parameter fields carried by exact and loft spline-surface constructions.
 // A source states raw scalars; a `LoftSurfacePayload` holds the admitted
 // fields, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -49,7 +56,14 @@ pub enum SplineSurfaceParameters<R = f64> {
 /// Mutually exclusive legacy and revision-gated exact-spline layouts.
 // A source states raw scalars; an `ExactSurfacePayload` holds the admitted
 // spline, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
@@ -590,7 +604,14 @@ pub(super) fn set_variable_blend_cache(
 /// Subtype-specific tail of a native taper spline surface.
 // A source states raw values; a `TaperSurfaceConstruction` holds the admitted
 // tail, whose scalars and draft vector are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

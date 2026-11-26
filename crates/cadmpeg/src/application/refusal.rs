@@ -721,6 +721,7 @@ impl std::error::Error for ConversionRefusal {}
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -741,7 +742,7 @@ mod tests {
     const IGES_CATALOG: TargetCatalog = TargetCatalog::new(IGES_TARGETS, Some(0));
 
     fn report_value(refusal: &ConversionRefusal) -> serde_json::Value {
-        serde_json::to_value(refusal.report()).expect("serialize refusal report")
+        json::to_value(refusal.report()).expect("serialize refusal report")
     }
 
     fn classify(failure: DecodeFailure) -> ApplicationError {
@@ -955,10 +956,7 @@ mod tests {
             refusal.code(),
             crate::application::refusal::RefusalCode::UnsupportedOutputFormat
         );
-        assert_eq!(
-            serde_json::to_value(refusal.report()).unwrap()["stage"],
-            "plan"
-        );
+        assert_eq!(json::to_value(refusal.report()).unwrap()["stage"], "plan");
         assert_eq!(refusal.exit_code(), 1);
     }
 

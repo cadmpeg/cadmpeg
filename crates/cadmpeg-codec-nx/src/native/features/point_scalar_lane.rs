@@ -141,16 +141,17 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 #[cfg(test)]
 mod tests {
     use super::{FeaturePointConstructionScalarLane, FeaturePointConstructionScalarLaneWire};
+    use cadmpeg_core::serde_erase::json;
 
     const WIRE: &str = r#"{"id":"nx:feature:point-scalar#0","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":["2ff0000000000000","3000000000000000","3008000000000000","3010000000000000","3014000000000000","3018000000000000"],"source_offsets":[100,110,118,126,134,142]}"#;
 
     #[test]
     fn point_scalar_borrowed_wire_preserves_bytes() {
         let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), WIRE.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
                 record.clone()
             ))
             .unwrap()
@@ -181,7 +182,7 @@ mod tests {
             invalid["source_offsets"][slot] =
                 serde_json::json!(wire["source_offsets"][slot].as_u64().unwrap() + 1);
             let error =
-                serde_json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
+                json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         for offsets in [
@@ -199,7 +200,7 @@ mod tests {
             let mut invalid = wire.clone();
             invalid["source_offsets"] = serde_json::json!(offsets);
             let error =
-                serde_json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
+                json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         let mut boundary = wire;
@@ -211,8 +212,7 @@ mod tests {
             u64::MAX - 35,
             u64::MAX - 27
         ]);
-        let lane: FeaturePointConstructionScalarLane =
-            serde_json::from_value(boundary.clone()).unwrap();
-        assert_eq!(serde_json::to_value(lane).unwrap(), boundary);
+        let lane: FeaturePointConstructionScalarLane = json::from_value(boundary.clone()).unwrap();
+        assert_eq!(json::to_value(lane).unwrap(), boundary);
     }
 }

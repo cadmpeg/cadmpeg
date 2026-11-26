@@ -199,8 +199,9 @@ pub(super) struct Run<'a, 'p> {
 /// The decision for the run's features in timeline order: every stateful
 /// feature of the run, each written as an item with its state, where each
 /// is of a family the writer writes as an item and each after the first
-/// makes a new body (f3d.md §3.1, "History states"). `failure` is the error
-/// of an earlier attempt to write the items. A written item whose parameter
+/// makes a new body (f3d.md §3.1, "History states"). `failure` is why an
+/// earlier attempt could not write the items, with the feature it concerns
+/// where it names one. A written item whose parameter
 /// binds a user parameter takes that parameter out of `parameters`; the
 /// items' parameters take the source ordinals from `ordinal`. The
 /// `BaseFeature` decision names the first typed feature, and the later
@@ -211,7 +212,7 @@ pub(super) fn plan<'a>(
     run: Run<'a, '_>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
-    failure: Option<&str>,
+    failure: Option<(String, Option<&FeatureId>)>,
     ordinal: u32,
 ) -> Decision<'a> {
     let features = run.features;
@@ -232,11 +233,9 @@ pub(super) fn plan<'a>(
         cause: cause.filter(|cause| *cause != feature),
         reason,
     };
-    if let Some(failure) = failure {
-        return base(
-            None,
-            format!("the writer cannot write its records ({failure})"),
-        );
+    if let Some((failure, cause)) = failure {
+        let cause = cause.and_then(|cause| features.iter().copied().find(|at| *at == cause));
+        return base(cause, failure);
     }
     let mut chain = Vec::with_capacity(stateful.len());
     for &(position, feature) in &stateful {
@@ -548,24 +547,7 @@ impl<'a, 'p> Rows<'a, 'p> {
     /// position in the plan and the number of written sketches before the
     /// feature.
     fn sketch(&self, selection: &ProfileRef) -> Result<(usize, usize), &'static str> {
-        const NOT_WRITTEN: &str = "its sketch is not written";
-        let Picks::Named(members) = &selection.picks else {
-            return Err(NOT_WRITTEN);
-        };
-        let [picked] = members.as_slice() else {
-            return Err(NOT_WRITTEN);
-        };
-        let PickTarget::Sketch(sketch) = &picked.target else {
-            return Err(NOT_WRITTEN);
-        };
-        let owner = self
-            .target
-            .design
-            .sketches
-            .iter()
-            .find(|record| &record.id == sketch)
-            .map(|record| &record.owner)
-            .ok_or(NOT_WRITTEN)?;
+        let owner = sketch_owner(self.target, selection).ok_or(SKETCH_NOT_WRITTEN)?;
         let position_of = |feature: &FeatureId| {
             self.features
                 .iter()
@@ -576,9 +558,9 @@ impl<'a, 'p> Rows<'a, 'p> {
             .items
             .iter()
             .position(|item| item.feature == owner)
-            .ok_or(NOT_WRITTEN)?;
+            .ok_or(SKETCH_NOT_WRITTEN)?;
         if position_of(owner).is_none_or(|at| at >= self.position) {
-            return Err(NOT_WRITTEN);
+            return Err(SKETCH_NOT_WRITTEN);
         }
         let after = self
             .sketches
@@ -588,6 +570,39 @@ impl<'a, 'p> Rows<'a, 'p> {
             .count();
         Ok((index, after))
     }
+}
+
+/// Why the writer writes no item of a feature whose profile is not on one
+/// written sketch.
+pub(super) const SKETCH_NOT_WRITTEN: &str = "its sketch is not written";
+
+/// The feature of the one sketch the profile `selection` picks.
+fn sketch_owner<'a>(target: &'a CadIr, selection: &ProfileRef) -> Option<&'a FeatureId> {
+    let Picks::Named(members) = &selection.picks else {
+        return None;
+    };
+    let [picked] = members.as_slice() else {
+        return None;
+    };
+    let PickTarget::Sketch(sketch) = &picked.target else {
+        return None;
+    };
+    target
+        .design
+        .sketches
+        .iter()
+        .find(|record| &record.id == sketch)
+        .map(|record| &record.owner)
+}
+
+/// The feature of the sketch the profile of `feature` lies on, where the
+/// writer writes items of its family.
+pub(super) fn profile_sketch<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a FeatureId> {
+    let selection = match typed(target, feature)? {
+        Typed::Extrude(extrude) => &extrude.profile,
+        Typed::Revolve(revolve) => &revolve.profile,
+    };
+    sketch_owner(target, selection)
 }
 
 /// Whether the state at `at` stands after every feature of `run`: after a

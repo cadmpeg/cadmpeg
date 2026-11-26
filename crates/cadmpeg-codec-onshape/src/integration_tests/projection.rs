@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 
 use serde_json::{json, Value};
@@ -58,7 +59,7 @@ pub(super) fn compact(value: &Value) -> String {
 pub(super) fn replace_query(query: &mut Value, value: &Value) {
     query["queryString"] = json!(format!(
         "query=qCompressed(1.0,{},id);",
-        serde_json::to_string(&format!("%{}", compact(value))).unwrap()
+        json::to_string(&format!("%{}", compact(value))).unwrap()
     ));
 }
 
@@ -423,7 +424,7 @@ fn zlib_cap_queries_refuse_unresolved_attachment_frames() {
             literal.len(),
             base64::engine::general_purpose::STANDARD.encode(encoder.finish().unwrap())
         );
-        face_sketch["parameters"][0]["queries"][0] = json!({"queryString":format!("query=qCompressed(1.0,{},id);", serde_json::to_string(&encoded).unwrap())});
+        face_sketch["parameters"][0]["queries"][0] = json!({"queryString":format!("query=qCompressed(1.0,{},id);", json::to_string(&encoded).unwrap())});
         response["features"]
             .as_array_mut()
             .unwrap()
@@ -458,7 +459,7 @@ pub(super) fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8>
             base64::engine::general_purpose::STANDARD.encode(encoder.finish().unwrap())
         );
         face_sketch["parameters"][0]["queries"][0] = json!({"deterministicIds":["side"],
-            "queryString":format!("query=qCompressed(1.0,{},id);", serde_json::to_string(&encoded).unwrap())});
+            "queryString":format!("query=qCompressed(1.0,{},id);", json::to_string(&encoded).unwrap())});
         response["features"]
             .as_array_mut()
             .unwrap()
@@ -490,9 +491,7 @@ pub(super) fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8>
             zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
-    output
-        .write_all(&serde_json::to_vec(&rollback).unwrap())
-        .unwrap();
+    output.write_all(&json::to_vec(&rollback).unwrap()).unwrap();
     output.finish().unwrap().into_inner()
 }
 
@@ -1184,17 +1183,17 @@ fn with_variables(
         let mut bytes = Vec::new();
         member.read_to_end(&mut bytes).unwrap();
         if name.ends_with("features.json") {
-            let mut response: Value = serde_json::from_slice(&bytes).unwrap();
+            let mut response: Value = json::from_slice(&bytes).unwrap();
             edit(&mut response);
             let rows = response["features"].as_array_mut().unwrap();
             for (at, row) in variables.iter().enumerate() {
                 rows.insert(at, row.clone());
             }
-            bytes = serde_json::to_vec(&response).unwrap();
+            bytes = json::to_vec(&response).unwrap();
         } else if name.ends_with("bodydetails/index.json") {
-            let indices: Vec<u64> = serde_json::from_slice(&bytes).unwrap();
+            let indices: Vec<u64> = json::from_slice(&bytes).unwrap();
             let moved: Vec<u64> = indices.iter().map(|i| i + shift).collect();
-            bytes = serde_json::to_vec(&moved).unwrap();
+            bytes = json::to_vec(&moved).unwrap();
         } else if let Some((folder, file)) = name.rsplit_once("bodydetails/") {
             let index: u64 = file.strip_suffix(".json").unwrap().parse().unwrap();
             name = format!("{folder}bodydetails/{}.json", index + shift);
@@ -1562,7 +1561,7 @@ fn a_missing_closed_hole_boundary_refuses_region_construction() {
     crate::test_support::review::validate(result);
 }
 
-fn stored_attachment() -> Vec<u8> {
+pub(super) fn stored_attachment() -> Vec<u8> {
     crate::test_support::review::edit(
         &face_sketch_bundle([0.0, 0.0, 1.0], true),
         |path, response| {

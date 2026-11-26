@@ -4,6 +4,7 @@ mod partial_operands;
 mod repeated_owners;
 
 use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::Feature;
@@ -1266,7 +1267,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     let scan = crate::container::scan(&ctx, bytes).unwrap();
     let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
     let archive = &session.archive;
-    let reference: XrefReference = serde_json::from_value(serde_json::json!({
+    let reference: XrefReference = json::from_value(serde_json::json!({
         "id":"f3d:xref:reference#0", "ordinal":0, "from":"root.f3d",
         "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":""
     }))

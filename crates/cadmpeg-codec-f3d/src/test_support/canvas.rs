@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 pub(crate) fn canvas_wire_fixture() -> serde_json::Value {
     let mut payload = [0; 77];
     payload[..4].copy_from_slice(&0.75_f32.to_le_bytes());
@@ -42,5 +44,5 @@ pub(crate) fn canvas_wire_fixture() -> serde_json::Value {
 pub(crate) fn canvas_image_fixture() -> crate::records::canvas::DesignCanvasImage {
     let mut wire = canvas_wire_fixture();
     wire["id"] = serde_json::json!("f3d:native:canvas#0");
-    serde_json::from_value(wire).unwrap()
+    json::from_value(wire).unwrap()
 }

@@ -10,6 +10,7 @@ use crate::test_support::carchive::{
     sldprt_with_archive_parameter, sldprt_with_stopped_archive_walk,
 };
 use crate::test_support::container::scan;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use std::sync::Arc;
@@ -93,7 +94,7 @@ fn archive_parameter_classes_serialize_as_snake_case() {
         (ArchiveParameterClass::Scaler, "\"scaler\""),
         (ArchiveParameterClass::Integer, "\"integer\""),
     ] {
-        assert_eq!(serde_json::to_string(&class).unwrap(), text);
+        assert_eq!(json::to_string(&class).unwrap(), text);
     }
 }
 

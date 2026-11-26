@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::ops::sketch::SketchRelation;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
@@ -124,7 +125,7 @@ fn rectangle_on_principal_plane_keeps_frame_and_construction_line() {
         );
     }
     ir.model.sketch_constraints.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "id":"inventor:design:constraint#horizontal", "sketch":sketch_id(),
             "definition":{"kind":"horizontal", "entity":entity_id("a")}
         }))
@@ -277,14 +278,13 @@ fn arc_circle_and_point_keep_geometry_and_sketch_point_datum() {
 #[test]
 fn spline_keeps_knots_poles_weights_and_periodicity() {
     let mut ir = fixture();
-    let geometry: cadmpeg_ir::sketches::SketchGeometry =
-        serde_json::from_value(serde_json::json!({
-            "kind":"nurbs", "curve": {"degree":1, "knots":[0.0,0.0,1.0,1.0],
-            "poles":{"kind":"rational", "points":[
-                {"point":{"u":2.0,"v":3.0},"weight":1.0},
-                {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false}
-        }))
-        .expect("spline");
+    let geometry: cadmpeg_ir::sketches::SketchGeometry = json::from_value(serde_json::json!({
+        "kind":"nurbs", "curve": {"degree":1, "knots":[0.0,0.0,1.0,1.0],
+        "poles":{"kind":"rational", "points":[
+            {"point":{"u":2.0,"v":3.0},"weight":1.0},
+            {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false}
+    }))
+    .expect("spline");
     ir.model
         .sketch_entities
         .push(cadmpeg_ir::sketches::SketchEntity::new(
@@ -298,7 +298,7 @@ fn spline_keeps_knots_poles_weights_and_periodicity() {
     else {
         panic!("spline")
     };
-    let wire = serde_json::to_value(curve).expect("wire");
+    let wire = json::to_value(curve).expect("wire");
     assert_eq!(
         wire,
         serde_json::json!({"degree":1, "knots":[0.0,0.0,1.0,1.0],

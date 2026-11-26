@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::feature::chamfer_set::DesignChamferSetList;
+use cadmpeg_core::serde_erase::json;
 
 fn wire(entry_count: u32, sets: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({"form": "current", "corner_type": "miter", "entry_count": entry_count, "sets": sets})
@@ -21,20 +22,16 @@ fn set() -> serde_json::Value {
 #[test]
 fn chamfer_set_list_round_trips_and_refuses_empty_runs_and_unknown_keys() {
     let value = wire(1, &serde_json::json!([set()]));
-    let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&list).unwrap(), value);
+    let list: DesignChamferSetList = json::from_value(value.clone()).unwrap();
+    assert_eq!(json::to_value(&list).unwrap(), value);
+    assert!(json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([]))).is_err());
     assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([]))).is_err()
-    );
-    assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(0, &serde_json::json!([set()])))
-            .is_err()
+        json::from_value::<DesignChamferSetList>(wire(0, &serde_json::json!([set()]))).is_err()
     );
     let mut extra = set();
     extra["distance"] = serde_json::json!(1.0);
     assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([extra])))
-            .is_err()
+        json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([extra]))).is_err()
     );
 }
 
@@ -46,8 +43,8 @@ fn distance_angle_reversal_round_trips_and_defaults_to_false() {
             value["distance_reversed"] = serde_json::json!(true);
         }
         let value = wire(1, &serde_json::json!([value]));
-        let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
+        let list: DesignChamferSetList = json::from_value(value.clone()).unwrap();
         assert_eq!(list.sets[0].distance_reversed, reversed);
-        assert_eq!(serde_json::to_value(&list).unwrap(), value);
+        assert_eq!(json::to_value(&list).unwrap(), value);
     }
 }

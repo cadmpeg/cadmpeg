@@ -174,8 +174,7 @@ fn validate_model_with_index<'ir>(
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
-    design::check_design(ctx, ir, ids, &mut findings)?;
-    process::check_process(ctx, ir, ids, &mut findings)?;
+    process::check_design_and_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -404,6 +403,7 @@ mod tests {
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     #[test]
@@ -580,7 +580,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                serde_json::from_slice(bytes).unwrap();
+                json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -810,13 +810,10 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = serde_json::to_value(&tool).expect("serialize tool");
-            assert_eq!(
-                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
-                tool
-            );
+            let wire = json::to_value(&tool).expect("serialize tool");
+            assert_eq!(json::from_value::<SplitBodyTool>(wire).expect("tool"), tool);
         }
-        assert!(serde_json::from_value::<SplitBodyTool>(
+        assert!(json::from_value::<SplitBodyTool>(
             serde_json::json!({"kind": "planes", "value": []})
         )
         .is_err());

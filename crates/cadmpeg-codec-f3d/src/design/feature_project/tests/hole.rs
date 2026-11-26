@@ -4,6 +4,7 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::hole::project_hole;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -135,7 +136,7 @@ fn set_carrier(
         });
     }
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        slot.point = Some(serde_json::from_value(construction).unwrap());
+        slot.point = Some(json::from_value(construction).unwrap());
     }
 }
 
@@ -827,7 +828,7 @@ fn extent_group(
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| 1026 + ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": "f3d:Design/BulkStream.dat:group#40",
         "scope_record_index": 32,
         "scope_reference_ordinal": 8,

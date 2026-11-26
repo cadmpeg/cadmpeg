@@ -3,6 +3,7 @@
 
 use super::super::{PmDcUnitDimension, PmDcUnitKind, PmDcUnitKindWire};
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference, PMDC_LIST_CLONE_COUNT};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::Serialize;
 
@@ -25,8 +26,8 @@ fn unit_definition_borrowed_wire_refuses_retained_limit_before_clone() {
     };
     let wire = PmDcUnitKindWire::from(unit.clone());
     assert_eq!(
-        serde_json::to_vec(&unit).expect("borrowed unit"),
-        serde_json::to_vec(&wire).expect("owned unit")
+        json::to_vec(&unit).expect("borrowed unit"),
+        json::to_vec(&wire).expect("owned unit")
     );
     let record = Record {
         id: "inventor:pmdc:unit-kind#1",
@@ -52,8 +53,8 @@ fn unit_base_borrowed_wire_preserves_symbol_bytes() {
     };
     let wire = PmDcUnitKindWire::from(unit.clone());
     assert_eq!(
-        serde_json::to_vec(&unit).expect("borrowed unit"),
-        serde_json::to_vec(&wire).expect("owned unit")
+        json::to_vec(&unit).expect("borrowed unit"),
+        json::to_vec(&wire).expect("owned unit")
     );
     let record = Record {
         id: "inventor:pmdc:unit-base#1",
