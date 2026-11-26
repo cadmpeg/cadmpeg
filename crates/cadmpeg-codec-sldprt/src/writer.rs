@@ -109,8 +109,9 @@ pub(crate) enum CachedNative {
     Loaded(Option<SldprtNative>),
 }
 
-/// The retained source image decoded again, and what depends on it alone:
-/// what every pass of a write compares the caller's document with.
+/// The retained source image decoded again, and what the writes of one
+/// source fidelity derive from it: what every pass of those writes compares
+/// the caller's document with.
 pub(crate) struct RetainedSource {
     pub(crate) decoded: cadmpeg_ir::codec::Decoded,
     pub(crate) native: Option<SldprtNative>,
