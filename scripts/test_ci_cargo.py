@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -12,14 +13,7 @@ from unittest.mock import patch
 
 from scripts import ci_cargo
 from scripts.ci_cargo import command, low_ram_rustc_wrapper, package_name, plan, run, test_binaries
-from scripts.ci_rustc_lock import (
-    EXCLUSIVE_CRATES,
-    EXCLUSIVE_TEST_CRATES,
-    MEDIUM_LIB_CRATES,
-    MEDIUM_TEST_CRATES,
-    classify,
-    crate_name,
-)
+from scripts.ci_rustc_lock import WORKSPACE, crate_name, peak_gib, slots
 
 # Answers `--list` like a libtest binary and runs the tests its arguments
 # select: `passes` passes, `fails` fails, `hangs` never finishes, and `slow`
@@ -80,22 +74,40 @@ class CommandTests(unittest.TestCase):
                 self.assertIn("--bins", args)
                 self.assertNotIn("--lib", args)
 
-    def test_rustc_lock_wrapper_classifies_heavy_crates(self):
+    def test_rustc_lock_wrapper_estimates_peak_memory(self):
         self.assertTrue(low_ram_rustc_wrapper().is_file())
         self.assertEqual(crate_name(["--crate-name", "cadmpeg_ir", "src/lib.rs"]), "cadmpeg_ir")
         self.assertEqual(crate_name(["--crate-name=cadmpeg_codec_f3d"]), "cadmpeg_codec_f3d")
         self.assertIsNone(crate_name(["-vV"]))
-        self.assertEqual(classify(["--crate-name", "cadmpeg_ir", "src/lib.rs"]), "exclusive")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_f3d", "--test"]), "exclusive")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_sldprt", "src/lib.rs"]), "medium")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_sldprt", "--test"]), "exclusive")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_catia", "src/lib.rs"]), "medium")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_catia", "--test"]), "exclusive")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_codec_inventor", "--test"]), "medium")
-        self.assertEqual(classify(["--crate-name", "cadmpeg_core", "src/lib.rs"]), "light")
-        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(EXCLUSIVE_TEST_CRATES))
-        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(MEDIUM_LIB_CRATES))
-        self.assertTrue(EXCLUSIVE_TEST_CRATES.isdisjoint(MEDIUM_TEST_CRATES))
+        crate = str(WORKSPACE / "crates/cadmpeg-asm")
+        self.assertGreater(peak_gib(["--crate-name", "cadmpeg_codec_f3d", "--test"], crate),
+                           peak_gib(["--crate-name", "cadmpeg_codec_usd", "--test"], crate))
+        self.assertGreater(peak_gib(["--crate-name", "cadmpeg_asm", "--test"], crate),
+                           peak_gib(["--crate-name", "cadmpeg_asm"], crate))
+        self.assertLess(peak_gib(["--crate-name", "serde"], "/registry/serde-1.0.0"),
+                        peak_gib(["--crate-name", "cadmpeg_asm"], crate))
+        self.assertEqual(slots(5.0, 4.5), 18)
+        self.assertEqual(slots(0.1, 4.5), 1)
+
+    def test_rustc_lock_wrapper_runs_claims_beyond_the_budget_one_at_a_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, CI_RUSTC_LOCK_FILE=f"{tmp}/budget", CI_RUSTC_MEMORY_GIB="10",
+                       CI_RUSTC_LOG=f"{tmp}/units.tsv")
+            env.pop("CARGO_MANIFEST_DIR", None)
+            # Each stand-in rustc records when it ran; the two largest claims
+            # cannot share a 10 GiB budget, a 0.5 GiB dependency fits beside one.
+            script = "import sys, time; open(sys.argv[-1], 'w').write(f'{time.time()} '); time.sleep(0.6); open(sys.argv[-1], 'a').write(f'{time.time()}')"
+            runs = [(name, Path(tmp) / name) for name in ("cadmpeg_codec_f3d", "cadmpeg_ir", "serde")]
+            procs = [subprocess.Popen([sys.executable, str(low_ram_rustc_wrapper()), sys.executable, "-c", script,
+                                       "--crate-name", name, *(["--test"] if name != "serde" else []), str(out)],
+                                      env=env)
+                     for name, out in runs]
+            self.assertEqual([proc.wait() for proc in procs], [0, 0, 0])
+            spans = {name: tuple(map(float, out.read_text().split())) for name, out in runs}
+            overlap = lambda a, b: spans[a][0] < spans[b][1] and spans[b][0] < spans[a][1]
+            self.assertFalse(overlap("cadmpeg_codec_f3d", "cadmpeg_ir"))
+            self.assertTrue(overlap("serde", "cadmpeg_codec_f3d") or overlap("serde", "cadmpeg_ir"))
+            self.assertEqual(len(Path(f"{tmp}/units.tsv").read_text().splitlines()), 3)
 
 
 class TestBinaryTests(unittest.TestCase):

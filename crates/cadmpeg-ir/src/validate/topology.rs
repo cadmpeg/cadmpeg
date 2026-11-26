@@ -268,6 +268,50 @@ fn validate_input_face_geometry(
     }
 }
 
+/// Body writers name bodies of their own input state, once per body, and
+/// features of the model.
+fn validate_input_body_writers<V>(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::evaluation::FeatureInputTopology,
+    features: &BorrowedIdentities<'_, V>,
+) {
+    if state.body_writers.is_empty() {
+        return;
+    }
+    let bodies = state
+        .bodies
+        .iter()
+        .map(crate::ids::HistoricalBodyId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut written = std::collections::HashSet::new();
+    for writer in &state.body_writers {
+        let body = writer.body.as_str();
+        if !bodies.contains(body) {
+            ref_error(findings, state.id.as_str(), "input-state body", body);
+        }
+        if !features.contains(writer.writer.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "body writer feature",
+                writer.writer.as_str(),
+            );
+        }
+        if !written.insert(body) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                crate::rule!(
+                    "topology.input-state-body-more-one-writer",
+                    "input-state body `{body}` has more than one writer entry"
+                ),
+            );
+        }
+    }
+}
+
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
     expression: &crate::geometry::laws::LawExpression<R, V, P>,
@@ -3130,6 +3174,7 @@ fn check_feature_references(
         validate_input_edge_geometry(findings, state);
         validate_input_face_owners(findings, state);
         validate_input_face_geometry(findings, state);
+        validate_input_body_writers(findings, state, &features);
     }
     let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {

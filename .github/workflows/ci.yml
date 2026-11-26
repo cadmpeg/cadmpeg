@@ -293,24 +293,24 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
-      - name: Limit broad test builds
-        # A one-codec build peaks near 10 GB at four jobs. Broader builds
-        # swap at three or four jobs on the 16 GB runner, so they keep two.
-        shell: bash
-        run: |
-          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
-          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-          fi
-
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation. The
         # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
-          python3 scripts/ci_cargo.py run-tests
+          (while sleep 30; do free -m | awk 'NR==2 {m=$3} NR==3 {print "memory used " m " MiB, swap used " $3 " MiB"}'; done) &
+          python3 scripts/ci_cargo.py run-tests --timings
+
+      - name: Upload build timings
+        # Cargo's per-unit compile report: which crates sit on the critical
+        # path and how many units ran at once.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timing-linux
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -546,7 +546,15 @@ jobs:
       # than being cancelled, and the report and cache steps run.
       - name: Build tests
         timeout-minutes: 75
-        run: python3 scripts/ci_cargo.py test --no-run --bins --tests
+        run: python3 scripts/ci_cargo.py test --no-run --bins --tests --timings
+
+      - name: Upload build timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timing-${{ runner.os }}
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Unit and integration tests
         timeout-minutes: 40
