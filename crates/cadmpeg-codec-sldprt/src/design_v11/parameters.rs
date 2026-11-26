@@ -56,6 +56,7 @@ use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::configuration::ParameterOverride;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
@@ -1296,6 +1297,75 @@ fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
         decided: false,
         unvalued: None,
     }
+}
+
+/// The override of `parameter` in a configuration that stores `stored` for
+/// it, where that value differs from the parameter's at [`LITERAL_DIGITS`]
+/// significant digits (§5.11). A parameter whose expression is one literal
+/// has the stored value as a literal in the same unit; any other expression
+/// keeps its text, and the override states the value alone, a cache.
+pub(super) fn configuration_override(
+    parameter: &DesignParameter,
+    stored: cadmpeg_ir::features::parameters::ParameterValue,
+) -> Option<ParameterOverride> {
+    let ParameterDefinition::Expression(expression) = &parameter.definition else {
+        return None;
+    };
+    let value = typed_cache(&parameter.kind, stored)?;
+    if parameter
+        .value
+        .as_ref()
+        .is_some_and(|base| same_value(base, &value))
+    {
+        return None;
+    }
+    let expression =
+        literal_like(expression, &value).map(|node| Expression::Neutral(Neutral(node)));
+    Some(ParameterOverride {
+        expression,
+        value: Some(value),
+    })
+}
+
+/// Whether two caches are one value at [`LITERAL_DIGITS`] significant
+/// digits.
+fn same_value(left: &ParameterValue, right: &ParameterValue) -> bool {
+    match (left, right) {
+        (ParameterValue::Number(left), ParameterValue::Number(right)) => {
+            significant(left.get()) == significant(right.get())
+        }
+        _ => left == right,
+    }
+}
+
+/// The literal of the canonical `value` in the unit of `expression`, where
+/// that expression is one signed number literal.
+fn literal_like(expression: &Expression, value: &ParameterValue) -> Option<Node<ParameterRef>> {
+    let Expression::Neutral(Neutral(node)) = expression else {
+        return None;
+    };
+    let node = match node {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand,
+        } => operand.as_ref(),
+        node => node,
+    };
+    let Node::Number { unit, .. } = node else {
+        return None;
+    };
+    let symbol = match unit.0.as_slice() {
+        [] => None,
+        [UnitFactor { symbol, power }] if power.get() == 1 => Some(*symbol),
+        _ => return None,
+    };
+    let (number, scale) = match (value, symbol) {
+        (ParameterValue::Number(number), Some(symbol)) => (number.get(), canonical(symbol)?.1),
+        (ParameterValue::Number(number), None) => (number.get(), 1.0),
+        (ParameterValue::Integer(integer), None) => (exact_integer_f64(*integer)?, 1.0),
+        _ => return None,
+    };
+    number_node(significant(number / scale)?, symbol)
 }
 
 /// The literal of the canonical `value` of a parameter of kind `kind` that

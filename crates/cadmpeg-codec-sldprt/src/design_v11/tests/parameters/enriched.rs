@@ -5,36 +5,12 @@
 
 use super::*;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 
+use crate::test_support::cadir::round_trip;
 use crate::test_support::pmi::pmi_semantic_payload;
-
-/// The `arena.omitted` messages of a CADIR write of `ir`, and the document
-/// that reading the written bytes gives.
-pub(super) fn cadir_round_trip(ir: &CadIr) -> (Vec<String>, CadIr) {
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
-        .unwrap();
-    let omitted = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "arena.omitted")
-        .map(|loss| loss.message.clone())
-        .collect();
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
-    let (read, _, _) = CadIr::read(
-        bytes.as_slice(),
-        &cadmpeg_ir::document::read::ReadOptions::default(),
-    )
-    .unwrap()
-    .without_sidecar();
-    (omitted, read)
-}
 
 /// A sketch whose history names no dimension, and a PMI dimension record
 /// that states `D1@Sketch1` as 25 mm.
@@ -103,7 +79,7 @@ fn a_dimension_only_a_pmi_record_states_is_a_parameter_of_its_feature() {
     }
     assert_no_design_findings(&ir);
 
-    let (omitted, read) = cadir_round_trip(&ir);
+    let (omitted, read) = round_trip(&ir);
     assert!(
         !omitted
             .iter()

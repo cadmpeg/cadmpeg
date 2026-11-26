@@ -113,7 +113,8 @@ pub(crate) struct Projection {
 /// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
 /// whose literal is a rounded display, and a dimension whose bare-number text
 /// has no value add their reasons to `losses`. A part whose timeline is empty
-/// states no design, and its equation-manager lines go to `losses`.
+/// states its configurations in a scope with no root container, whose bodies
+/// are unproduced (§5.5), and its equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -136,12 +137,32 @@ pub(crate) fn project(
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
+    let definition = root_definition();
     if timeline.features.is_empty() {
         losses.extend(equations::without_design(&managers, active));
-        return Ok(Projection::default());
+        let configurations =
+            configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
+        if configurations.records.is_empty() {
+            return Ok(Projection::default());
+        }
+        let added = 2 + configurations.records.len();
+        push_root(ir, definition.clone(), length, bodies.clone());
+        ir.design.scopes.push(DesignScope {
+            definition,
+            roots: Vec::new(),
+            active_configuration: configurations.active,
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+            unproduced: bodies.into_iter().collect(),
+        });
+        ir.design.configurations.extend(configurations.records);
+        return Ok(Projection {
+            added,
+            retired: BTreeMap::new(),
+        });
     }
     losses.extend(order::regeneration_order(&mut timeline, &ir.model));
-    let definition = root_definition();
     let entries = parameters::Entries::new(histories, parameter_histories, &timeline)?;
     losses.extend(entries.outside(&ir.model.parameters));
     let typed = typed::project(
@@ -213,8 +234,9 @@ pub(crate) fn project(
         &ir.tolerances,
     ));
     losses.extend(equations::link(&mut parameters, &linking));
-    let configurations =
-        configurations::configurations(histories, ir.source.as_ref(), &definition)?;
+    let mut configurations =
+        configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
+    configurations::parameter_overrides(&mut configurations, &ir.model.configurations, &parameters);
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
     let (rollback, at) = match stated(&timeline.features, rollback) {
@@ -280,16 +302,7 @@ pub(crate) fn project(
         + table.len()
         + states.evaluations.len()
         + states.records;
-    let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
-    root.kind = Some(ProductDefinitionKind::Part);
-    root.units = length.map(|length| UnitSystem {
-        length,
-        angle: UnitSymbol::Deg,
-        mass: None,
-        time: None,
-    });
-    root.bodies = bodies;
-    ir.model.product_definitions.push(root);
+    push_root(ir, definition.clone(), length, bodies);
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![container.id().clone()],
@@ -395,6 +408,25 @@ fn built_through(id: &ContainerId, members: &[Member], built: usize) -> (Rollbac
 }
 
 /// The root definition: the part file itself, which no occurrence places.
+/// Adds the part's root definition, which owns `bodies`, to the model.
+fn push_root(
+    ir: &mut CadIr,
+    definition: ProductDefinitionId,
+    length: Option<UnitSymbol>,
+    bodies: Vec<BodyId>,
+) {
+    let mut root = ProductDefinition::root(definition, ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Part);
+    root.units = length.map(|length| UnitSystem {
+        length,
+        angle: UnitSymbol::Deg,
+        mass: None,
+        time: None,
+    });
+    root.bodies = bodies;
+    ir.model.product_definitions.push(root);
+}
+
 fn root_definition() -> ProductDefinitionId {
     ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
