@@ -28,6 +28,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             SolidEdgeLossCode::ContainerNoncanonical.note(deviation.description())
         }),
     );
+    let mut stored_resolutions = Vec::new();
     if !ctx.container_only() {
         let mut found = false;
         let mut kernels = Vec::new();
@@ -62,7 +63,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 }
                 let stream = u32::try_from(ordinal)
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
-                let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
+                let (mut candidate, resolutions) =
+                    brep::project(ctx, &records, stream, &mut partition_losses)?;
                 candidate.finalize();
                 // A partition is admitted as a document of its own; the decoded
                 // document states one root over the bodies of every partition.
@@ -94,18 +96,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     cadmpeg_core::decode::u64_from_index(candidate.geometry.entity_count()),
                     "admit Solid Edge partition entities",
                 )?;
-                if !candidate.geometry.bodies.is_empty()
-                    && (ir.geometry.bodies.is_empty()
-                        || candidate.tolerances.linear > ir.tolerances.linear)
-                {
-                    ir.tolerances.linear = candidate.tolerances.linear;
-                }
+                let has_bodies = !candidate.geometry.bodies.is_empty();
                 ir.try_append(
                     candidate.geometry,
                     candidate.model,
                     candidate.native,
                     |_| Ok(Ok::<_, CodecError>(())),
                 )??;
+                if has_bodies {
+                    stored_resolutions.extend(resolutions);
+                }
                 Ok::<_, CodecError>(())
             })();
             match result {
@@ -154,6 +154,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .note("feature records and assembly placements remain undecoded"),
         );
     }
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(stored_resolutions);
     body.transfer = DecodeTransfer::at(ctx.depth(), !ir.geometry.bodies.is_empty());
     Ok(Decoded {
         ir,

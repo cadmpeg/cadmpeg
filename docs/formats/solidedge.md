@@ -72,7 +72,9 @@ the partition. Topology ownership and carrier fields use the Parasolid
 schema named in the binary header. Kernel model-space lengths are in metres.
 Direction vectors are dimensionless. A line's distance
 parameter has the model-space length unit. A body's `res_linear` field is
-its positive linear resolution in metres.
+its positive linear resolution in metres. The part's linear and angular
+tolerances follow [`parasolid.md`](parasolid.md) §4 over
+the bodies of every primary partition.
 
 A REGION node has a `type` character, `S` for a solid region or `V` for a
 void region, a `body` pointer, and a `shell` pointer that heads the region's

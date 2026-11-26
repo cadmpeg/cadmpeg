@@ -10,6 +10,10 @@ use crate::{test_support, SolidEdgeCodec};
 
 const EPS_SPHERE_RADIUS_MM: f64 = 1.0e-12;
 const EPS_RESOLUTION_MM: f64 = 1.0e-15;
+/// The Parasolid modeller default linear precision (`parasolid.md` §4).
+const MODELLER_DEFAULT_LINEAR_MM: f64 = 1.0e-5;
+/// The Parasolid modeller angular precision (`parasolid.md` §4).
+const MODELLER_ANGULAR_RADIANS: f64 = 1.0e-11;
 const EPS_RING_VERTEX_MM: f64 = 1.0e-9;
 /// The null real of the kernel's binary encoding.
 const NULL_REAL: f64 = -3.14158e13;
@@ -620,7 +624,67 @@ fn body_resolution_sets_document_linear_tolerance_in_millimetres() {
         .unwrap();
     let expected_mm = 4.0e-5;
     assert!((result.ir().tolerances.linear.get() - expected_mm).abs() < EPS_RESOLUTION_MM);
+    assert_eq!(
+        result.ir().tolerances.angular.get(),
+        MODELLER_ANGULAR_RADIANS
+    );
     assert_geometry_valid(result.ir());
+}
+
+/// A sphere partition whose BODY stores `resolution` metres as `res_linear`.
+fn sphere_partition_with_resolution(resolution: f64) -> Vec<u8> {
+    let mut partition = test_support::sphere_partition();
+    let range = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap()
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+        .unwrap()
+        .field_range("res_linear")
+        .unwrap();
+    partition[range].copy_from_slice(&resolution.to_be_bytes());
+    partition
+}
+
+#[test]
+fn an_invalid_body_resolution_leaves_the_largest_stored_resolution() {
+    let partitions = [
+        sphere_partition_with_resolution(1.0e-12),
+        sphere_partition_with_resolution(0.0),
+    ];
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&partitions)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert!((result.ir().tolerances.linear.get() - 1.0e-9).abs() < EPS_RESOLUTION_MM);
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn a_container_decode_states_the_modeller_precision() {
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&[
+                test_support::sphere_partition(),
+            ])),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert_eq!(
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
+    );
+    assert_eq!(
+        result.ir().tolerances.angular.get(),
+        MODELLER_ANGULAR_RADIANS
+    );
 }
 
 #[test]
@@ -644,8 +708,8 @@ fn invalid_body_resolution_keeps_geometry_and_reports_a_loss() {
         .unwrap();
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().tolerances.linear,
-        cadmpeg_ir::CadIr::empty().tolerances.linear
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
     );
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::SolidEdgeLossCode::BodyResolutionInvalid

@@ -294,12 +294,14 @@ struct FaceRead {
     loops: Vec<(u32, LoopShape)>,
 }
 
+/// The document of one partition, and the `res_linear` values (metres) that
+/// its bodies store.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &PrimaryRecords<'_>,
     stream: u32,
     losses: &mut Vec<LossNote>,
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, Vec<f64>), CodecError> {
     let mut nodes = BTreeMap::new();
     for node in records.nodes() {
         if nodes.insert(node.index(), node).is_some() {
@@ -308,7 +310,7 @@ pub(crate) fn project(
     }
     let mut ir = CadIr::empty();
     let mut selected_shells = BTreeMap::new();
-    let mut linear: Option<PositiveLength> = None;
+    let mut stored_resolutions = Vec::new();
     for body in nodes
         .values()
         .copied()
@@ -316,12 +318,9 @@ pub(crate) fn project(
     {
         if let Some(value) = body
             .real("res_linear")
-            .and_then(|value| PositiveLength::new(value * MM_PER_METRE))
+            .filter(|value| PositiveLength::new(value * MM_PER_METRE).is_some())
         {
-            linear = Some(linear.map_or(
-                value,
-                |current| if current > value { current } else { value },
-            ));
+            stored_resolutions.push(value);
         } else {
             losses.push(
                 SolidEdgeLossCode::BodyResolutionInvalid
@@ -475,9 +474,8 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
-    if let Some(linear) = linear {
-        ir.tolerances.linear = linear;
-    }
+    ir.tolerances =
+        cadmpeg_parasolid::precision::part_tolerances(stored_resolutions.iter().copied());
     let document_linear = ir.tolerances.linear.get();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
@@ -1038,7 +1036,7 @@ pub(crate) fn project(
         });
     }
     trim_edges(ctx, &mut ir, &fit_tolerances, document_linear, losses)?;
-    Ok(ir)
+    Ok((ir, stored_resolutions))
 }
 
 /// A `SWEPT_SURF` with a null scale as the linear sweep of its section curve
