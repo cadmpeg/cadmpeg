@@ -630,7 +630,7 @@ fn a_field_path_of_a_design_record_is_checked_against_that_record() {
 /// CADIR wire carries the design record alone: a field path names a field of
 /// the design record.
 #[test]
-fn a_design_record_takes_its_field_paths_from_the_model_record_it_restates() {
+fn a_design_record_takes_no_field_path_from_the_model_record_it_restates() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let (mut ir, _) = design_with_process_state();
     ir.model.features.push(Feature {
