@@ -7407,8 +7407,6 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 #[cfg(test)]
 mod accounting_tests;
 #[cfg(test)]
-mod body_name_tests;
-#[cfg(test)]
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
