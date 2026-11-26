@@ -725,6 +725,18 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
         .iter()
         .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
         .collect();
+    // Edge uses of each face, collected once: scanning every coedge for every solid body was
+    // quadratic in the size of the model.
+    let mut face_edges: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for coedge in &geometry.coedges {
+        if let Some(&face) = loop_faces.get(coedge.owner_loop.as_str()) {
+            face_edges
+                .entry(face)
+                .or_default()
+                .push(coedge.edge.as_str());
+        }
+    }
     let edges: std::collections::HashMap<&str, &crate::topology::Edge> = geometry
         .edges
         .iter()
@@ -768,12 +780,9 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
             continue;
         }
         let mut uses: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
-        for coedge in &geometry.coedges {
-            if loop_faces
-                .get(coedge.owner_loop.as_str())
-                .is_some_and(|face| faces.contains(face))
-            {
-                *uses.entry(coedge.edge.as_str()).or_default() += 1;
+        for face in &faces {
+            for edge in face_edges.get(face).into_iter().flatten() {
+                *uses.entry(edge).or_default() += 1;
             }
         }
         for (edge, count) in uses {

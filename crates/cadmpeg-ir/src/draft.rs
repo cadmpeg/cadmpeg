@@ -2,8 +2,10 @@
 //! Atomic staging for neutral entity transfer.
 
 use std::borrow::BorrowMut;
-use std::collections::{BTreeMap, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::BTreeMap;
+
+type HashMap<K, V> = std::collections::HashMap<K, V, crate::index::identities::FastBuildHasher>;
+use std::hash::BuildHasher;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -152,9 +154,7 @@ struct IdentitySlot {
 type IdentityIndex = HashMap<u64, Vec<IdentitySlot>>;
 
 fn identity_hash(identity: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    identity.hash(&mut hasher);
-    hasher.finish()
+    crate::index::identities::FastBuildHasher::default().hash_one(identity)
 }
 
 fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
@@ -162,7 +162,7 @@ fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
 }
 
 fn index_model_identities(staged: &CadIr) -> Result<IdentityIndex, &str> {
-    let mut identity_index = IdentityIndex::new();
+    let mut identity_index = IdentityIndex::default();
     macro_rules! index_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in staged.$home.$field.iter().enumerate() {
@@ -251,7 +251,7 @@ impl Default for ModelDraft {
     fn default() -> Self {
         Self {
             staged: CadIr::empty(),
-            insertion_index: Some(IdentityIndex::new()),
+            insertion_index: Some(IdentityIndex::default()),
             accounting: (),
         }
     }
@@ -636,8 +636,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         if let Some(admission) = &mut self.state.admission {
             admission.rewind(self.state.base.borrow(), checkpoint)?;
         }
-        self.state.identities = None;
-        self.state.unindexed_start = None;
+        self.state.forget_appended(checkpoint);
         Ok(self.state.base.borrow_mut())
     }
 
@@ -1002,7 +1001,7 @@ fn index_committed_identities(
     unknowns: &[crate::unknown::UnknownRecord],
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
-    let mut identities = CommittedIdentityIndex::new();
+    let mut identities = CommittedIdentityIndex::default();
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.$home.$field.iter().enumerate() {
@@ -1100,7 +1099,7 @@ fn stage_committed_identities(
     native: Option<&crate::native::Native>,
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
-    let mut staged = CommittedIdentityIndex::new();
+    let mut staged = CommittedIdentityIndex::default();
     let candidate = crate::document::Arenas {
         geometry,
         model,
@@ -1161,6 +1160,43 @@ fn stage_committed_identities(
 }
 
 impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
+    /// Drop the cached positions of the entities appended after `checkpoint` and mark
+    /// them for re-indexing, keeping the cache of the unchanged prefix. Rebuilding the
+    /// whole cache on every edit made repeated suffix edits quadratic in the model size.
+    fn forget_appended(&mut self, checkpoint: &ModelCheckpoint) {
+        let Some(identities) = self.identities.as_mut() else {
+            self.unindexed_start = None;
+            return;
+        };
+        let document = self.base.borrow();
+        let pending = self.unindexed_start.take();
+        let mut starts = checkpoint.lengths;
+        macro_rules! forget_arenas {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                {
+                    let kind = <$ty as EntitySchema>::KIND;
+                    let arena = &document.$home.$field;
+                    let from = checkpoint.lengths[kind.index()];
+                    let indexed_end = pending.map_or(arena.len(), |p| p[kind.index()]).min(arena.len());
+                    for index in from..indexed_end {
+                        let hash = identity_hash(arena[index].identity());
+                        if let Some(slots) = identities.get_mut(&hash) {
+                            slots.retain(|owner| !matches!(owner, CommittedIdentity::Neutral(slot) if slot.kind == kind && slot.index == index));
+                            if slots.is_empty() {
+                                identities.remove(&hash);
+                            }
+                        }
+                    }
+                    if let Some(p) = pending {
+                        starts[kind.index()] = from.min(p[kind.index()]);
+                    }
+                }
+            )*};
+        }
+        crate::document::arena_registry!(forget_arenas);
+        self.unindexed_start = Some(starts);
+    }
+
     fn lookup(&mut self, identity: &str) -> Result<bool, CodecError> {
         self.ensure_identities()?;
         match &self.identities {
@@ -1551,6 +1587,41 @@ mod tests {
 
         drop(session);
         assert_eq!(session_ir, sequential_ir);
+    }
+
+    #[test]
+    fn editing_the_appended_suffix_keeps_the_prefix_index() {
+        let (prefix, suffix) = ("test:model:point#prefix", "test:model:point#suffix");
+        let mut ir = CadIr::empty();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
+        session
+            .commit_model(point_draft(prefix))
+            .unwrap()
+            .expect("prefix commit");
+        assert!(session.contains(prefix).unwrap());
+        let checkpoint = ModelCheckpoint::capture(session.document());
+        session
+            .commit_model(point_draft(suffix))
+            .unwrap()
+            .expect("suffix commit");
+
+        // Rolling the suffix back through an edit must forget exactly the suffix.
+        let document = session.edit_appended_model(&checkpoint).unwrap();
+        checkpoint.discard_appended(document).unwrap();
+        assert!(session.contains(prefix).unwrap());
+        assert!(!session.contains(suffix).unwrap());
+        assert_eq!(
+            session.commit_model(point_draft(prefix)).unwrap(),
+            Err(DraftError::IdentityCollision(prefix.into()))
+        );
+        session
+            .commit_model(point_draft(suffix))
+            .unwrap()
+            .expect("the discarded suffix identity is free again");
+        assert!(session.contains(suffix).unwrap());
+        drop(session);
+        assert_eq!(ir.geometry.points.len(), 2);
     }
 
     #[test]

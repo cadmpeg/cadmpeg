@@ -28,7 +28,11 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+
+/// Identity text to whether a native record owns it. Hashed: an ordered map compared the long
+/// shared prefixes of identities (`rhino:object:…#uuid.slot-N`) on every lookup.
+type Ids = std::collections::HashMap<String, bool, crate::index::identities::FastBuildHasher>;
 
 pub(crate) enum CandidateScope {
     Appended,
@@ -40,7 +44,7 @@ pub(crate) enum CandidateScope {
 /// the same validators on the appended records and their native dependencies.
 #[derive(Debug)]
 pub(crate) struct AdmittedState {
-    identities: BTreeMap<String, bool>,
+    identities: Ids,
     pub(crate) lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     pub(crate) annotations_admitted: bool,
     dirty_unknowns: BTreeSet<usize>,
@@ -49,7 +53,7 @@ pub(crate) struct AdmittedState {
 impl AdmittedState {
     pub(crate) fn build(ir: &CadIr, format: &str, unknowns: &[UnknownRecord]) -> Self {
         let mut state = Self {
-            identities: BTreeMap::new(),
+            identities: Ids::default(),
             lengths: lengths(ir),
             annotations_admitted: true,
             dirty_unknowns: BTreeSet::new(),
@@ -91,7 +95,7 @@ impl AdmittedState {
         (starts, scope): ([usize; crate::document::MODEL_ARENA_COUNT], CandidateScope),
     ) -> Result<Option<Result<ValidationReport, NativeConvertError>>, CodecError> {
         let mut selected = (|| {
-            let mut selected = BTreeMap::new();
+            let mut selected = Ids::default();
             macro_rules! add_selected {
                 ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     let start = starts[<$ty as EntitySchema>::KIND.index()];
@@ -156,7 +160,10 @@ impl AdmittedState {
         candidate.tolerances = ir.tolerances;
         (|| {
             let mut dependencies = Vec::new();
-            for (id, native) in &selected {
+            // Sorted: the native dependency records of the candidate keep a deterministic order.
+            let mut ordered: Vec<_> = selected.iter().collect();
+            ordered.sort_unstable_by(|left, right| left.0.cmp(right.0));
+            for (id, native) in ordered {
                 if *native {
                     let id = crate::ids::Identity::new(id.to_owned())
                         .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -247,11 +254,11 @@ fn lengths(ir: &CadIr) -> [usize; crate::document::MODEL_ARENA_COUNT] {
     crate::document::arena_registry!(lengths)
 }
 
-fn lookup(ids: &BTreeMap<String, bool>, id: &str) -> Option<bool> {
+fn lookup(ids: &Ids, id: &str) -> Option<bool> {
     ids.get(id).copied()
 }
 
-fn insert(ids: &mut BTreeMap<String, bool>, id: &str, native: bool) {
+fn insert(ids: &mut Ids, id: &str, native: bool) {
     if !ids.contains_key(id) {
         ids.insert(id.to_owned(), native);
     }

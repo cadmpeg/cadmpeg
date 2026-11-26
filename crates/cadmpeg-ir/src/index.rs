@@ -3,7 +3,10 @@
 
 pub(crate) mod identities;
 
-use std::collections::HashMap;
+use std::collections::HashMap as StdHashMap;
+
+/// Identity maps hash short strings on hot validation paths; see [`identities::FastBuildHasher`].
+type HashMap<K, V> = StdHashMap<K, V, identities::FastBuildHasher>;
 use std::sync::OnceLock;
 
 use crate::appearance::Appearance;
@@ -22,7 +25,7 @@ struct BorrowedIdentityIndex<'ir, V> {
 impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     fn new() -> Self {
         Self {
-            slots: HashMap::new(),
+            slots: HashMap::default(),
         }
     }
 
@@ -77,7 +80,8 @@ pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T 
 }
 
 fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {
-    let mut index = HashMap::with_capacity(entities.len());
+    let mut index =
+        HashMap::with_capacity_and_hasher(entities.len(), identities::FastBuildHasher::default());
     for (slot, entity) in entities.iter().enumerate() {
         index.insert(entity.identity(), slot);
     }
@@ -259,7 +263,7 @@ macro_rules! define_model_index {
                     procedural_surface_by_surface,
                     procedural_surfaces_by_id,
                     procedural_curves_by_curve,
-                    identities: BorrowedIdentityIndex { slots: HashMap::new() },
+                    identities: BorrowedIdentityIndex { slots: HashMap::default() },
                     entity_identities_distinct: false,
                     include_native,
                     additional_native_identities,
@@ -272,7 +276,7 @@ macro_rules! define_model_index {
             /// Parameter hull of the edges and coedge uses on this carrier.
             pub fn curve_use_hull(&self, curve: &str) -> Option<[f64; 2]> {
                 self.curve_use_hulls.get_or_init(|| {
-                    let mut hulls = HashMap::new();
+                    let mut hulls = HashMap::default();
                     for edge in &self.ir.geometry.edges {
                         if let Some(curve) = edge.curve() {
                             let range = edge.param_range().map(crate::units::FiniteVector::get);
@@ -300,7 +304,7 @@ macro_rules! define_model_index {
                     self.native_view().for_each(|_, _, records| slots += records.len());
                     slots += self.additional_native_identities.len();
                 }
-                let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
+                let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity_and_hasher(slots, identities::FastBuildHasher::default()) };
                 $(for entity in &self.ir.$home.$field {
                     let declared = IdentityOwner::neutral(entity);
                     let owner = identities.entry(entity.identity(), || declared);

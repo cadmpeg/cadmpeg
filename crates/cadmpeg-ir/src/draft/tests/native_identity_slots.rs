@@ -111,14 +111,15 @@ fn committed_native_cache_checks_identity_after_path_hash_matches() {
                 NativeRecord::new(Identity::new(stored).unwrap(), serde_json::Map::new()).unwrap(),
             ],
         );
-    let index = std::collections::HashMap::from([(
+    let mut index = crate::draft::CommittedIdentityIndex::default();
+    index.insert(
         crate::draft::identity_hash(missing),
         vec![crate::draft::CommittedIdentity::Native {
             namespace_hash: crate::draft::identity_hash("native"),
             arena_hash: crate::draft::identity_hash("records"),
             record: 0,
         }],
-    )]);
+    );
     assert!(!crate::draft::committed_identity_contains(
         &ir,
         &[],
