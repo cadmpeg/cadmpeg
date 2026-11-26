@@ -345,7 +345,7 @@ fn dropped_items_after_a_held_state_write_every_current_body() {
     assert!(!reduction.drops_neutral_design());
     assert_eq!(reduction.ir().geometry.bodies.len(), 2);
     let reason = held_reason(&second);
-    let losses = reduction.finish();
+    let (losses, _) = reduction.finish();
     assert!(
         !losses.iter().any(|loss| loss.message.contains(&reason)),
         "{losses:#?}"
