@@ -922,13 +922,13 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         (24, 0.0),
         (32, 0.0),
         (40, 1.0),
-        (57, -0.0),
+        (49, -0.0125),
+        (57, 0.002),
         (65, -0.003),
         (73, 1.0),
     ] {
         minimal[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    minimal[56] = 0x80;
     let (payload, root) = payload_for("moDefaultRefPlnData_c", &minimal);
     assert_eq!(
         constraint_reference_plane_frame(&payload, root, "moDefaultRefPlnData_c"),
@@ -1382,85 +1382,3 @@ fn ranges_overlap_orders_ends_past_usize_max_beyond_every_offset() {
 mod coordinate_systems;
 mod offset_planes;
 mod plane_frames;
-
-fn class_payload(class: &str, frame: &[u8]) -> (Vec<u8>, usize) {
-    let root = 7;
-    let mut payload = vec![0xaa; root];
-    payload.extend(CLASS_MARKER);
-    payload.extend(u16::try_from(class.len()).unwrap().to_le_bytes());
-    payload.extend(class.as_bytes());
-    payload.extend_from_slice(frame);
-    (payload, root)
-}
-
-#[test]
-fn line_perpendicular_and_line_point_plane_data_read_a_matrix_frame() {
-    let mut matrix = [0; matrix_plane::LEN];
-    for (offset, value) in [(0, 0.0125_f64), (24, 1.0), (65, 1.0), (73, 1.0), (105, 1.0)] {
-        matrix[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    matrix[48] = 1;
-    for class in [
-        "moConstraintCoincLinePerpPlaneRefplaneData_c",
-        "moPerLinePtRefPlnData_c",
-    ] {
-        let (payload, root) = class_payload(class, &matrix);
-        assert_eq!(
-            constraint_reference_plane_frame(&payload, root, class),
-            Some((
-                Point3::new(12.5, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            )),
-            "{class}"
-        );
-    }
-}
-
-fn translation_frame(origin: [f64; 3], normal: [f64; 3], translation: [f64; 3]) -> [u8; 81] {
-    let mut frame = [0; 81];
-    for (index, value) in origin.into_iter().chain(normal).enumerate() {
-        frame[8 * index..8 * index + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    for (index, value) in translation.into_iter().chain([1.0]).enumerate() {
-        frame[49 + 8 * index..57 + 8 * index].copy_from_slice(&value.to_le_bytes());
-    }
-    frame
-}
-
-#[test]
-fn a_line_point_plane_reads_its_translation_frame() {
-    let class = "moPerLinePtRefPlnData_c";
-    let origin = [-0.75, 0.35, -0.250_000_000_000_000_06];
-    let negated = origin.map(|value: f64| -value);
-    let read = |frame: &[u8]| {
-        let (payload, root) = class_payload(class, frame);
-        constraint_reference_plane_frame(&payload, root, class)
-    };
-    assert_eq!(
-        read(&translation_frame(origin, [0.0, 0.0, 1.0], negated)),
-        Some((
-            Point3::new(origin[0] * 1000.0, origin[1] * 1000.0, origin[2] * 1000.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ))
-    );
-    assert_eq!(
-        read(&translation_frame(origin, [0.0, 1.0, 0.0], negated)),
-        None
-    );
-    assert_eq!(
-        read(&translation_frame(
-            origin,
-            [0.0, 0.0, 1.0],
-            [-0.0, -0.0, negated[2]]
-        )),
-        None
-    );
-    let mut scaled = translation_frame(origin, [0.0, 0.0, 1.0], negated);
-    scaled[73..81].copy_from_slice(&2.0_f64.to_le_bytes());
-    assert_eq!(read(&scaled), None);
-    let mut marked = translation_frame(origin, [0.0, 0.0, 1.0], negated);
-    marked[48] = 1;
-    assert_eq!(read(&marked), None);
-}

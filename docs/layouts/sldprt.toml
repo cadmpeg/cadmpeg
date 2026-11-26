@@ -10568,35 +10568,35 @@ source = "spec"
 anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order"
 
 [[record]]
-name = "constructed_reference_plane_translation_frame"
+name = "constructed_reference_plane_minimal_frame"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
-anchor = "or an 81-byte translation frame immediately after the class name"
+anchor = "The 81-byte frame has byte `0` at `+48`"
 size = 81
 endianness = "little"
-note = "Offsets begin immediately after the `moPerLinePtRefPlnData_c` class name."
+note = "Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name."
 
 [[record.field]]
 name = "origin"
 offset = 0
 type = "f64[3]"
 source = "spec"
-anchor = "The translation frame stores the origin at `+0`"
+anchor = "Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres"
 
 [[record.field]]
 name = "normal"
 offset = 24
 type = "f64[3]"
 source = "spec"
-anchor = "the unit normal `(0, 0, 1)` at `+24`"
+anchor = "Three f64 values at `+24`, `+32`, and `+40` store the unit normal"
 
 [[record.field]]
 name = "frame_marker"
 offset = 48
 type = "u8"
 source = "spec"
-anchor = "byte `0` at `+48`"
+anchor = "The 81-byte frame has byte `0` at `+48`"
 
 [[record.field]]
 name = "translation"
