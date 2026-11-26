@@ -224,7 +224,7 @@ fn an_unbound_fallback_body_has_a_stored_frame_definition() {
 /// A history-only body-map pair at `offset` whose body has the entity suffix
 /// `suffix`, as the wire form states one: no body and no owner.
 fn history_only(offset: u64, suffix: u64) -> crate::records::bodies::DesignBodyBinding {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("{}:design-body-binding#{offset}", super::STREAM),
         "stream": "Design/BulkStream.dat",
         "pair_count": 1,

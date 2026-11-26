@@ -203,10 +203,13 @@ struct Plan {
     stop: Option<Stop>,
 }
 
-/// The state after the last item of each of `count` histories that
-/// `entries` bind, with that item.
-fn last_items<'e>(entries: &'e [Entry<'e>], count: usize) -> Vec<Option<(i64, &'e FeatureId)>> {
-    let mut last = vec![None; count];
+/// The state after the last item of each of `histories` that
+/// `entries` bind, by index, with that item.
+fn last_items<'e, H>(
+    entries: &'e [Entry<'e>],
+    histories: &[H],
+) -> Vec<Option<(i64, &'e FeatureId)>> {
+    let mut last = vec![None; histories.len()];
     for entry in entries {
         if let Kind::Bound { history, state, .. } = entry.kind {
             last[history] = Some((state, entry.feature));
@@ -219,7 +222,7 @@ fn last_items<'e>(entries: &'e [Entry<'e>], count: usize) -> Vec<Option<(i64, &'
 /// `names` from the state after the last item of each, or from its head in
 /// `heads` where no item stores one of its states.
 fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
-    let mut at = last_items(entries, heads.len())
+    let mut at = last_items(entries, heads)
         .into_iter()
         .zip(heads)
         .map(|(last, head)| last.map(|(state, _)| state).or(*head))
@@ -451,7 +454,7 @@ fn tails_assumed(
 ) -> Vec<LossNote> {
     histories
         .iter()
-        .zip(last_items(entries, histories.len()))
+        .zip(last_items(entries, histories))
         .filter_map(|(history, last)| {
             let (state, feature) = last?;
             let later = history
