@@ -92,14 +92,16 @@ header product string names `IronCAD`. Lengths are centimetres (`asm.md` §4).
 
 ## 4. Units
 
-The `Document Data` stream stores unit entries in this order: a length unit,
-an angle unit, a second length unit, and a mass unit. An entry is an f64 scale
-to the SI unit, the unit name, the unit abbreviation, and a precision string.
-The strings use the record-name form of §5. A scene in millimetres stores
-`0.001`, `Millimeters`, and `mm`, then `π/180`, `Degrees`, and `deg`, then
-`Centimeters`, then `Kilograms`. The first length entry is the scene length
-unit: a scene in inches stores `Inches` there, and its second length entry
-stays `Centimeters`. Parasolid kernel lengths are in metres.
+The `Document Data` stream stores the scene path, then four unit entries in
+this order: a length entry, an angle entry, a second length entry, and a mass
+entry. An entry is an f64 directly followed by three adjacent strings: the unit
+name, the unit abbreviation, and a precision string. The strings use the
+record-name form of §5. The first length entry, the angle entry, and the mass
+entry state the scene units, and their f64 is the scale of the unit to the SI
+unit. A scene in millimetres stores `0.001`, `Millimeters`, and `mm`, then
+`π/180`, `Degrees`, and `deg`, then the second length entry, then `1.0` and
+`Kilograms`. A scene in inches stores `0.0254` and `Inches` in the first length
+entry. Parasolid kernel lengths are in metres.
 
 ## 5. Scene records
 

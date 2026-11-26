@@ -46,7 +46,7 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 
 **Question.** What does the second length entry of `Document Data` select?
 
-**Known.** `Document Data` stores a length entry, an angle entry, a second length entry, and a mass entry (`ironcad.md` §4). The first length entry is the scene length unit. The second length entry names `Centimeters` in a millimetre scene and in an inch scene. ACIS kernel lengths are centimetres (`ironcad.md` §3.2).
+**Known.** `Document Data` stores a length entry, an angle entry, a second length entry, and a mass entry (`ironcad.md` §4). The first length entry is the scene length unit. The second length entry stores the f64 `1.0` and the name `Centimeters` in a millimetre scene and in an inch scene; the SI scale of a centimetre is `0.01`. ACIS kernel lengths are centimetres (`ironcad.md` §3.2).
 
 **Need.** Change each length unit setting of the scene that does not change the first entry, save after each change, and compare the second length entry of `Document Data`.
 

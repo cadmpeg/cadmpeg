@@ -47,7 +47,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             bodies = classify(ctx, &records, &mut layers, &mut losses)?;
         }
         scene.records = scene_records(ctx, &snapshot, &mut losses)?;
-        scene.units = document_units(ctx, &snapshot)?;
+        scene.units = document_units(ctx, &snapshot, &mut losses)?;
         scene_streams(&snapshot, &mut losses);
     }
     let mut ir = CadIr::empty();
@@ -731,6 +731,7 @@ fn mass_properties(
 fn document_units(
     ctx: &DecodeContext<'_>,
     snapshot: &CompoundSnapshot<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<UnitSystem>, CodecError> {
     let Some(entry) = snapshot.stream(DOCUMENT_DATA) else {
         return Ok(None);
@@ -740,7 +741,11 @@ fn document_units(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(units::scene_units(stream.window()))
+    let scene = units::scene_units(stream.window());
+    for note in scene.unrecognized {
+        losses.push(IronCadLossCode::UnitsUnrecognized.note(format!("`{DOCUMENT_DATA}`: {note}")));
+    }
+    Ok(scene.units)
 }
 
 /// Retains the kernel bytes of `record` as a native record.

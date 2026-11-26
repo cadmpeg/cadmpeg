@@ -13,23 +13,57 @@ fn name(text: &str) -> Vec<u8> {
     out
 }
 
-#[test]
-fn the_first_unit_of_each_quantity_is_the_scene_unit() {
-    let payload = [
-        name("Millimeters"),
-        name("mm"),
-        name("Degrees"),
-        name("Centimeters"),
-        name("Kilograms"),
+/// One unit entry: two separator bytes, the f64, and three adjacent strings.
+fn entry(scale: f64, unit: &str, abbreviation: &str) -> Vec<u8> {
+    [
+        vec![0, 0],
+        scale.to_le_bytes().to_vec(),
+        name(unit),
+        name(abbreviation),
+        name("2,5"),
     ]
-    .concat();
-    let units = scene_units(&payload).unwrap();
-    assert_eq!(units.length, UnitSymbol::Mm);
-    assert_eq!(units.angle, UnitSymbol::Deg);
-    assert_eq!(units.mass, Some(UnitSymbol::Kg));
+    .concat()
+}
+
+/// A `Document Data` prefix: the scene path, then the four unit entries.
+fn document(length: Vec<u8>) -> Vec<u8> {
+    [
+        name("scene.ics"),
+        length,
+        entry(std::f64::consts::PI / 180.0, "Degrees", "deg"),
+        entry(1.0, "Centimeters", "cm"),
+        entry(1.0, "Kilograms", "kg"),
+    ]
+    .concat()
 }
 
 #[test]
-fn a_stream_without_a_length_unit_states_no_unit_system() {
-    assert!(scene_units(&name("Degrees")).is_none());
+fn the_first_length_entry_is_the_scene_length_unit() {
+    let scene = scene_units(&document(entry(0.0254, "Inches", "in")));
+    let units = scene.units.unwrap();
+    assert_eq!(units.length, UnitSymbol::In);
+    assert_eq!(units.angle, UnitSymbol::Deg);
+    assert_eq!(units.mass, Some(UnitSymbol::Kg));
+    assert!(scene.unrecognized.is_empty());
+}
+
+#[test]
+fn an_unlisted_length_name_is_selected_by_its_si_scale() {
+    let scene = scene_units(&document(entry(0.001, "Millimetres", "mm")));
+    assert_eq!(scene.units.unwrap().length, UnitSymbol::Mm);
+    assert_eq!(scene.unrecognized.len(), 1);
+}
+
+#[test]
+fn an_unlisted_length_entry_never_takes_the_second_length_entry() {
+    let scene = scene_units(&document(entry(0.1, "Decimeters", "dm")));
+    assert!(scene.units.is_none());
+    assert_eq!(scene.unrecognized.len(), 1);
+}
+
+#[test]
+fn a_stream_without_unit_entries_states_no_unit_system() {
+    let scene = scene_units(&name("Degrees"));
+    assert!(scene.units.is_none());
+    assert!(scene.unrecognized.is_empty());
 }
