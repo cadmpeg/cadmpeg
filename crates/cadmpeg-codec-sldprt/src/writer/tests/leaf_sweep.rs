@@ -281,6 +281,12 @@ fn run(
     Ok(outcome)
 }
 
+/// The write session of NIST specimen `part`, which its unedited baseline
+/// writes in as well.
+fn specimen_session(part: &DecodeResult) -> &'static SldprtWriteSession<'static> {
+    crate::test_support::nist::session(part.source_fidelity()).expect("a NIST specimen")
+}
+
 /// Runs every job of `part` on a few threads and returns the wrong saves and
 /// the count of each outcome.
 fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
@@ -288,7 +294,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
     let part_doc =
         crate::history::write::read_back::document::Document::of(part.ir()).expect("part doc");
     let (baseline, unedited_bytes) = readback::baseline_with_bytes(part);
-    let session = SldprtWriteSession::new(Some(part.source_fidelity()));
+    let session = specimen_session(part);
     let next = AtomicUsize::new(0);
     let results = Mutex::new((Vec::new(), [0_usize; 3]));
     let workers = std::thread::available_parallelism().map_or(4, |count| count.get().min(6));
@@ -300,7 +306,7 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
                     break;
                 };
                 let result = run(
-                    &session,
+                    session,
                     part,
                     &part_doc,
                     &baseline,
@@ -377,9 +383,9 @@ fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
     let job = job(part, "Boss-Extrude1", |pointer| {
         pointer.ends_with("/length") && !pointer.contains("second")
     });
-    let session = SldprtWriteSession::new(Some(part.source_fidelity()));
+    let session = specimen_session(part);
     let outcome = run(
-        &session,
+        session,
         part,
         &part_doc,
         &baseline,
@@ -406,9 +412,9 @@ fn a_linear_pattern_first_direction_edit_is_carried() {
     let job = job(part, "LPattern1", |pointer| {
         pointer.ends_with("/pattern/direction/y")
     });
-    let session = SldprtWriteSession::new(Some(part.source_fidelity()));
+    let session = specimen_session(part);
     let outcome = run(
-        &session,
+        session,
         part,
         &part_doc,
         &baseline,
