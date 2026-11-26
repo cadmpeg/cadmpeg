@@ -2,6 +2,7 @@
 //! Stable type identities of parameter-scope families.
 
 use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
+use crate::records::feature::derived_base;
 use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
@@ -287,9 +288,25 @@ pub(super) fn paste_scope_prefix(
     }
 }
 
+/// Families that have no typed kind, by type GUID: the scope takes the family name.
+const NATIVE_FAMILIES: &[(&str, &str)] = &[
+    (super::super::position::TYPE_GUID, "Position"),
+    (derived_base::TYPE_GUID, derived_base::FAMILY),
+    ("BE693D4C-741E-4794-A93E-5BFED71E9E13", "MeshReduce"),
+    ("828DDA62-2750-447D-8728-06C9B7C2B117", "MeshRemesh"),
+    ("68691143-5EE3-428E-9CD3-F728E4718559", "MeshRepair"),
+    ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", "MeshReverseNormals"),
+    ("8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB", "MeshSection"),
+    ("1514CDB8-BB81-4895-A953-7B12F4504F99", "MeshShell"),
+    ("F84CD988-9696-458D-8AF3-795D12E6B9EF", "MeshSmooth"),
+];
+
 pub(crate) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
-    if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
-        return Some(DesignFeatureKind::native("Position"));
+    if let Some((_, family)) = NATIVE_FAMILIES
+        .iter()
+        .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))
+    {
+        return Some(DesignFeatureKind::native(family));
     }
     FAMILIES
         .iter()

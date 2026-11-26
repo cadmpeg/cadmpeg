@@ -121,12 +121,15 @@ impl DesignDerivedBaseOwner {
 /// reference.
 pub(crate) const REPEAT_FROM_END: usize = 12;
 
+/// The type GUID of a `Derived Base Feature` scope.
+pub(crate) const TYPE_GUID: &str = "B1E5B971-C007-48C9-8FF5-F4CCD91F87A4";
+
+/// The family a `Derived Base Feature` scope takes from its type GUID.
+pub(crate) const FAMILY: &str = "Derived Base Feature";
+
 /// Whether `scope` is a `Derived Base Feature` scope.
 pub(crate) fn is_derived_base(scope: &super::scope::DesignParameterScope) -> bool {
-    matches!(
-        scope.kind_name(),
-        "Derived Base Feature" | "DerivedBaseFeature"
-    )
+    matches!(scope.kind_name(), FAMILY | "DerivedBaseFeature")
 }
 
 rewrite_native_record!(DesignDerivedBaseOwner, []; {record_index, repeat_offset, result_body});
