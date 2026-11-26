@@ -484,10 +484,25 @@ impl<'a> State<'a> {
                 None => base.remove(id),
             };
         }
-        (
-            topology(base.into_values()),
-            topology(self.records.values().copied()),
-        )
+        (topology(base.into_values()), self.topology())
+    }
+
+    /// The state's records of the region of the changed records, as a
+    /// `Topology` with its records in id order.
+    pub(super) fn region_topology(
+        &self,
+        ctx: &DecodeContext<'_>,
+        applied: &Applied<'a>,
+    ) -> Result<Topology, CodecError> {
+        let region = self.region(ctx, applied)?;
+        Ok(topology(
+            region.iter().filter_map(|id| self.records.get(id).copied()),
+        ))
+    }
+
+    /// The state as a `Topology` with its records in id order.
+    pub(super) fn topology(&self) -> Topology {
+        topology(self.records.values().copied())
     }
 }
 

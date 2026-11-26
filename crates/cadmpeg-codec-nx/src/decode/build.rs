@@ -96,7 +96,7 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
 /// their length and digest.
 pub(super) fn give_up_record(
     ctx: &DecodeContext<'_>,
-    (si, stream): (usize, &str),
+    (si, stream): (usize, &cadmpeg_ir::StreamName),
     node: &Node,
     why: &LossNote,
 ) -> Result<GivenUpPart, CodecError> {
@@ -105,8 +105,6 @@ pub(super) fn give_up_record(
         crate::RETAINED_PARASOLID_STREAM_ID_PREFIX
     ))
     .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let stream =
-        cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?;
     ctx.give_up_part(
         Part::at(
             "nx",
@@ -115,7 +113,7 @@ pub(super) fn give_up_record(
             node.bytes(),
             [ArenaClass::Model],
         )
-        .in_stream(stream)
+        .in_stream(stream.clone())
         .contained_in(cadmpeg_ir::ids::Identity::from(holder))
         .digest_only(),
         CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
@@ -357,7 +355,11 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
             unresolved_controls,
         } = parsed.parse_nurbs(si);
-        let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
+        let stream_name = cadmpeg_ir::StreamName::try_from(format!(
+            "nx:parasolid#{si}:{}",
+            stream.kind().label()
+        ))
+        .map_err(CodecError::malformed)?;
         let view = parsed.stream(si);
         let refused = nurbs_refusals
             .iter()
@@ -383,9 +385,7 @@ pub(super) fn try_decode_geometry(
             }
             carrier_refusals.push(note);
         }
-        let source_stream = StreamHandle::new(
-            cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
-        );
+        let source_stream = StreamHandle::new(stream_name);
 
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;

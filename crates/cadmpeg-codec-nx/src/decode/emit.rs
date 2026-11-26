@@ -276,7 +276,7 @@ pub(super) fn emit_topology(
             ));
             let part = super::build::give_up_record(
                 ctx,
-                (stream_index, source_stream.as_str()),
+                (stream_index, source_stream.name()),
                 shell,
                 &withheld,
             )?;
@@ -428,7 +428,7 @@ pub(super) fn emit_topology(
             } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
                 given_up.push(super::build::give_up_record(
                     ctx,
-                    (stream_index, source_stream.as_str()),
+                    (stream_index, source_stream.name()),
                     node,
                     &withheld,
                 )?);

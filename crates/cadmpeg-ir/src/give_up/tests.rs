@@ -11,7 +11,7 @@ use cadmpeg_core::json;
 use super::{give_up, Arena, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::document::CadIr;
-use crate::ids::Identity;
+use crate::ids::{FaceId, Identity};
 use crate::report::loss::LossNote;
 use crate::source_fidelity::SourceFidelity;
 use crate::topology::{FaceLoops, RegionUnstated, Shell, Unstated};
@@ -1049,8 +1049,8 @@ fn a_given_up_record_and_its_delta_records_take_their_annotations() {
     let evaluation = after_extrude(&ir).id.clone();
     let dangling = "test:design:face#missing";
     let qualified = [
-        AnnotationKey::in_delta(&evaluation, &face),
-        AnnotationKey::in_delta(&evaluation, &own),
+        AnnotationKey::in_delta(&evaluation, &FaceId::mint(face.as_str()).unwrap()),
+        AnnotationKey::in_delta(&evaluation, &FaceId::mint(own.as_str()).unwrap()),
     ];
     let stream = StreamHandle::new(crate::stream_name!("test:source"));
     let mut builder = crate::AnnotationBuilder::new();

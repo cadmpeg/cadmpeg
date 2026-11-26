@@ -114,6 +114,23 @@ impl Removed {
         )
     }
 
+    /// What the CADIR text of `ir` leaves out of `ir` itself: each record
+    /// of an arena the wire omits whose id no written record has (§3.4).
+    pub(crate) fn omitted_by_the_wire(ir: &CadIr) -> Self {
+        let mut omitted = ir.arenas().wire_omitted_ids();
+        if omitted.is_empty() {
+            return Self::default();
+        }
+        let written = ir.arenas().written_among(&omitted);
+        omitted.retain(|id| !written.contains(id));
+        for namespace in ir.native.0.values() {
+            for record in namespace.arenas().values().flatten() {
+                omitted.remove(record.id());
+            }
+        }
+        Self::of_records(omitted.into_iter().map(str::to_owned), [])
+    }
+
     /// The records `entities` and the delta records `deltas`, each a
     /// `(qualifier, record)` pair, as a removal that took them out.
     pub(crate) fn of_records(

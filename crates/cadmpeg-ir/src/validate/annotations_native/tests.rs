@@ -456,13 +456,13 @@ fn annotation_findings(
 #[test]
 fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
-    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, &vertex);
+    let vertex = &ir.geometry.vertices[0].id;
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, vertex);
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.note(&key, &stream, 0, None);
     annotations.derived(&key, "point").unwrap();
-    annotations.derived(&vertex, "point").unwrap();
+    annotations.derived(vertex, "point").unwrap();
     let findings = annotation_findings(&ir, annotations.build());
     assert!(findings.is_empty(), "{findings:?}");
 }
@@ -492,7 +492,7 @@ fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
         }),
         feature: None,
     });
-    let key = crate::annotations::AnnotationKey::in_delta(&state, edge.id.as_str());
+    let key = crate::annotations::AnnotationKey::in_delta(&state, &edge.id);
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.note(&key, &stream, 0, None);
@@ -504,12 +504,12 @@ fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
 #[test]
 fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str();
-    let edge = ir.geometry.edges[0].id.as_str();
+    let vertex = &ir.geometry.vertices[0].id;
     let other = crate::design::ids::EvaluationId::mint("test:design:evaluation#2").unwrap();
     let keys = [
         crate::annotations::AnnotationKey::in_delta(&other, vertex).to_string(),
-        crate::annotations::AnnotationKey::in_delta(&evaluation, edge).to_string(),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &ir.geometry.edges[0].id)
+            .to_string(),
         format!("{}  {vertex}", evaluation.as_str()),
         format!(" {vertex}"),
         format!("{} ", evaluation.as_str()),
@@ -542,8 +542,7 @@ fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
 #[test]
 fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str();
-    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, vertex);
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, &ir.geometry.vertices[0].id);
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.derived(&key, "not_a_serialized_field").unwrap();
     let findings = annotation_findings(&ir, annotations.build());

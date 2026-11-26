@@ -13,6 +13,7 @@
 //! no history the decoder reads, states no design.
 
 mod configurations;
+mod datum;
 mod equations;
 mod extrude;
 mod names;
@@ -147,6 +148,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     losses.extend(typed.loss);
@@ -162,6 +164,7 @@ pub(crate) fn project(
     losses.extend(typed.revolve_profile_differs);
     losses.extend(typed.revolve_profile_unchecked);
     losses.extend(typed.revolve_sense_assumed);
+    losses.extend(typed.datums);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,

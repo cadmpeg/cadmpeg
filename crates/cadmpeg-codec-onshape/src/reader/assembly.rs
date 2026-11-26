@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bundle product structure projection.
 
-use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, ROWS};
+use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, Session, ROWS};
 use crate::archive::Bundle;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
@@ -41,12 +41,12 @@ fn split_rows<'v>(row: &'v Value, field: &str) -> Rows<'v> {
 const MATE_NOTES_PER_LEVEL: usize = 16;
 const MATE_NOTE_LIMIT: usize = 256;
 
-pub(super) fn read(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
+pub(super) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
     step_decoder: crate::StepDecoder,
     report: &mut Report,
-    bundle: &Bundle<'_>,
+    bundle: &Bundle<'a>,
     mid: &str,
     manifest: &Value,
 ) -> Result<Model, Error> {
@@ -60,6 +60,13 @@ pub(super) fn read(
             declared.entry(eid).or_insert(position);
         }
     }
+    let mut session = Session {
+        ctx,
+        bundle,
+        root,
+        step_decoder,
+        studios: BTreeMap::new(),
+    };
     for (position, element) in elements.iter().enumerate() {
         if let Some(eid) = element.get("id").and_then(Value::as_str) {
             if let Some(&first) = declared.get(eid).filter(|&&first| first != position) {
@@ -116,28 +123,27 @@ pub(super) fn read(
             );
             continue;
         }
-        let part = match ctx.run_part(|| {
-            studio(ctx, root, step_decoder, report, bundle, mid, eid).map_err(Into::into)
-        })? {
-            Ok(part) => part,
-            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
-                report.push_coded(
-                    eid,
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
-                    error.to_string(),
-                );
-                continue;
-            }
-            Err(error) => {
-                report.give_up_as(
-                    &format!("partstudios/{eid}"),
-                    eid,
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
-                    error.to_string(),
-                );
-                continue;
-            }
-        };
+        let part =
+            match ctx.run_part(|| studio(&mut session, report, mid, eid).map_err(Into::into))? {
+                Ok(part) => part,
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
+                    report.push_coded(
+                        eid,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                        error.to_string(),
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    report.give_up_as(
+                        &format!("partstudios/{eid}"),
+                        eid,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                        error.to_string(),
+                    );
+                    continue;
+                }
+            };
         let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(format!(
             "/{}",
             cadmpeg_ir::ids::IdentityKey::encode_key_text(eid)

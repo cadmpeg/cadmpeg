@@ -57,7 +57,7 @@ impl<'a> Bundle<'a> {
         let manifest_text = std::str::from_utf8(manifest_view.window())
             .map_err(|e| failure(format!("manifest.json: {e}")))?;
         let manifest = ctx.parse_json_value(manifest_text, "Onshape manifest")?;
-        let prefixes: Vec<String> = manifest
+        let mut prefixes: Vec<String> = manifest
             .get("elements")
             .and_then(Value::as_array)
             .filter(|elements| elements.len() <= super::reader::ROWS)
@@ -66,13 +66,21 @@ impl<'a> Bundle<'a> {
             .filter_map(|element| element.get("id").and_then(Value::as_str))
             .map(|id| format!("partstudios/{id}/"))
             .collect();
+        if let Some(root) = studio_prefix("", &manifest) {
+            if !prefixes.contains(&root) {
+                prefixes.push(root);
+            }
+        }
         let mut members = BTreeMap::new();
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
         let mut losses = Vec::new();
         let mut given_up = Vec::new();
         let mut first_stored = BTreeMap::<&str, Option<(ZipCompression, &[u8])>>::new();
-        for entry in snapshot.entries() {
+        // Captured manifests come first so that each one names the responses it owns.
+        let mut entries: Vec<_> = snapshot.entries().iter().collect();
+        entries.sort_by_key(|entry| !reference_manifest(&entry.name));
+        for entry in entries {
             let name = &entry.name;
             let stored = entry_view(root, entry).map(|view| (entry.compression, view.window()));
             // `Some(true)` marks a later copy whose stored bytes agree with the first copy.
@@ -167,7 +175,9 @@ impl<'a> Bundle<'a> {
                 give_up_entry(ctx, root, entry, note, true, &mut losses, &mut given_up)?;
                 continue;
             }
-            if prefixes.iter().any(|prefix| schema_response(name, prefix))
+            let captured = reference_manifest(name);
+            if captured
+                || prefixes.iter().any(|prefix| schema_response(name, prefix))
                 || (name.starts_with("assemblies/")
                     && (name.ends_with("/definition.json") || name.ends_with("/features.json")))
             {
@@ -191,6 +201,10 @@ impl<'a> Bundle<'a> {
                 };
                 match parsed {
                     Ok(value) => {
+                        if captured {
+                            let folder = name.strip_suffix("manifest.json").unwrap_or_default();
+                            prefixes.extend(studio_prefix(folder, &value));
+                        }
                         json.insert(name.clone(), value);
                     }
                     Err((error, bound)) => {
@@ -232,11 +246,66 @@ impl<'a> Bundle<'a> {
         expected: &str,
         report: &mut Report,
     ) -> Result<(), Error> {
+        // A captured studio has its own pin. The nearest enclosing manifest owns each
+        // member; a referenced response is never checked against the host pin.
+        let pins: BTreeMap<String, String> = self
+            .json
+            .iter()
+            .filter_map(|(path, value)| {
+                let folder = path.strip_suffix("manifest.json")?;
+                let mid = value.get("document")?.get("microversion")?.as_str()?;
+                Some((folder.to_owned(), mid.to_owned()))
+            })
+            .collect();
+        // The owning folder is the one whose studio prefix `{folder}partstudios/{id}/`
+        // is the longest prefix of the member path. An element id can itself end in
+        // `partstudios`, so the path is never split at the last `partstudios/`.
+        let studios: Vec<(String, &str)> = self
+            .json
+            .iter()
+            .filter_map(|(path, value)| {
+                let folder = path.strip_suffix("manifest.json")?;
+                Some((studio_prefix(folder, value)?, folder))
+            })
+            .collect();
         let mut omitted = Vec::new();
         for (path, value) in &self.json {
-            if path == "manifest.json" {
+            if path.strip_suffix("manifest.json").is_some() {
                 continue;
             }
+            let owner = studios
+                .iter()
+                .filter(|(prefix, _)| path.starts_with(prefix.as_str()))
+                .max_by_key(|(prefix, _)| prefix.len())
+                .map(|(_, folder)| *folder);
+            let expected = match owner {
+                Some("") | None => expected,
+                Some(folder) => match pins.get(folder) {
+                    Some(mid) => mid.as_str(),
+                    None => {
+                        let note = OnshapeLossCode::MemberUnreadable.note(format!(
+                            "{path}: the referenced studio microversion is missing; omitted the member"
+                        ));
+                        if let Some(entry) = self.snapshot.entry(path) {
+                            give_up_entry(
+                                ctx,
+                                self.root,
+                                entry,
+                                note,
+                                false,
+                                &mut report.notes,
+                                &mut report.parts,
+                            )?;
+                        } else {
+                            report
+                                .notes
+                                .extend(record_given_up(source_record(path), note));
+                        }
+                        omitted.push(path.clone());
+                        continue;
+                    }
+                },
+            };
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
                     let note = OnshapeLossCode::MemberUnreadable
@@ -485,6 +554,47 @@ pub(super) fn manifest(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Value,
     Ok(ctx.parse_json_value(text, "Onshape manifest")?)
 }
 
+/// The member folder of the responses a manifest selects.
+fn studio_prefix(folder: &str, manifest: &Value) -> Option<String> {
+    let element = manifest
+        .get("root_element")
+        .or_else(|| manifest.pointer("/elements/0/id"))?
+        .as_str()?;
+    (!element.is_empty()
+        && element
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+    .then(|| format!("{folder}partstudios/{element}/"))
+}
+
+/// A captured referenced studio manifest at `references/<document>/<version>/<element>/`,
+/// nested at most seven levels deep.
+fn reference_manifest(name: &str) -> bool {
+    let mut remaining = name;
+    for _ in 0..crate::reader::MAX_REFERENCE_DEPTH {
+        let Some(path) = remaining.strip_prefix("references/") else {
+            return false;
+        };
+        let mut parts = path.splitn(4, '/');
+        for _ in 0..3 {
+            if !parts
+                .next()
+                .is_some_and(|id| id.len() == 24 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return false;
+            }
+        }
+        let Some(tail) = parts.next() else {
+            return false;
+        };
+        if tail == "manifest.json" {
+            return true;
+        }
+        remaining = tail;
+    }
+    false
+}
+
 fn has_extension(name: &str, suffix: &str) -> bool {
     name.rsplit_once('.')
         .is_some_and(|(_, extension)| extension == suffix)
@@ -513,3 +623,6 @@ fn schema_response(name: &str, prefix: &str) -> bool {
                 && ordinal.bytes().all(|b| b.is_ascii_digit())
         })
 }
+
+#[cfg(test)]
+mod tests;
