@@ -158,12 +158,22 @@ fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// The occurrence of the assembly being decoded with `name`: a subassembly
+/// can place a component of the same name, whose occurrence is not wanted.
 pub(super) fn named<'a>(ir: &'a CadIr, name: &str) -> &'a Occurrence {
+    let root = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .expect("a root definition");
     ir.model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.name.as_deref() == Some(name))
-        .unwrap_or_else(|| panic!("no occurrence {name}"))
+        .find(|occurrence| {
+            occurrence.name.as_deref() == Some(name) && root.occurrences.contains(&occurrence.id)
+        })
+        .unwrap_or_else(|| panic!("no occurrence {name} in the root definition"))
 }
 
 pub(super) fn definition<'a>(ir: &'a CadIr, occurrence: &Occurrence) -> &'a ProductDefinition {
