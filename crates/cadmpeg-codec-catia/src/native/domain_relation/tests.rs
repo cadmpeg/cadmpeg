@@ -41,6 +41,15 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
         json::from_value::<CatiaConsolidatedDomainRelation>(wire.clone()).expect("load relation"),
         *relation
     );
+    let mut equivalent_zero = wire.clone();
+    equivalent_zero["data"]["source"]["offset"] = cadmpeg_core::json!(-0.0);
+    let normalized = json::from_value::<CatiaConsolidatedDomainRelation>(equivalent_zero)
+        .expect("equivalent zero follows the IR zero rule");
+    assert_eq!(
+        normalized.definition.frame().payload,
+        relation.definition.frame().payload
+    );
+    assert_eq!(json::to_value(normalized).expect("canonical wire"), wire);
     let mut contradictory = wire.clone();
     contradictory["data"]["source"]["offset"] = cadmpeg_core::json!(1.0);
     assert!(json::from_value::<CatiaConsolidatedDomainRelation>(contradictory).is_err());

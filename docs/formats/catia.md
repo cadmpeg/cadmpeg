@@ -1217,7 +1217,10 @@ forward from the end of their frame's allocation. Width-coded and compact
 backward references count backward from its start. A reference must select
 an allocation start.
 
-A governing sheet root belongs to its complete logical record source. Its allocation header and payload can span physical extents. Allocation counts include the full header width, including four-byte allocation headers. Source-local root and face ordinals remain distinct from physical byte positions.
+A governing sheet root belongs to its complete logical record source. Its allocation header and payload can span physical extents. Allocation counts include the full header width, including four-byte allocation headers. Source-local root and face ordinals remain distinct from physical byte positions. A governing roster selects its listed members from that source; additional
+face allocations can remain outside its member list. Member supports can precede
+the group within the retained allocation run. Support address-origin selection
+is tracked in [GS-01](catia-open-items.md#gs-01-governing-sheet-support-address-origin).
 
 A backward sheet group has payload
 `81 <shell-distance> 05 01 <bounds:f32le[6]> <tail>`.

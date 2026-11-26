@@ -555,3 +555,21 @@ different, independently constrained orientation route.
 **Conflict.** The extended controls previously failed the row-prefix gate. No decoded rational NURBS surface validates these extended readings.
 
 **Note.** The legacy symmetric and flat-grid forms retain their established readings.
+
+### GS-01. Governing sheet support address origin
+
+**Question.** Which stored control selects allocation-start or allocation-end
+addressing for supports and loop operands of a governing forward sheet roster?
+
+**Known.** A flag-`13` class-`5b` group has forward references to class-`61`
+rosters. Those rosters select class-`5f` faces. A face stores its support
+reference after its count byte and then its loop references. Its support can
+precede the group in the complete contiguous allocation run. With unequal
+allocation widths, a backward distance measured from the frame start and the
+same distance measured from its end can select different targets. Uniform
+one-slot allocations give the same target under both origins.
+
+**Need.** Save a part with shared plane and spline supports, separate sheet
+bodies, and unequal allocation widths. Reorder the bodies, save again, and
+compare the selected group, face support, loop references, and allocation
+headers to identify the address-origin control.
