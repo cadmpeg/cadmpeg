@@ -51,6 +51,29 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
     bytes
 }
 
+/// The `(offset, length)` of each part of stream 0 that `decoded` gives up.
+fn given_up_spans(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<(usize, usize)> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| {
+            loss.message.starts_with("part ") && loss.message.contains(" stream=\"nx:parasolid#0:")
+        })
+        .filter_map(|loss| {
+            let field = |name: &str| -> Option<usize> {
+                let (_, rest) = loss.message.split_once(&format!(" {name}="))?;
+                rest.split(|c: char| !c.is_ascii_digit())
+                    .next()?
+                    .parse()
+                    .ok()
+            };
+            Some((field("offset")?, field("length")?))
+        })
+        .collect()
+}
+
 /// A first-use base-schema BODY: `highest_node_id`, then pointers, reals,
 /// and bytes.
 fn body(xmt: u32, highest_node_id: u32) -> Vec<u8> {
@@ -219,6 +242,7 @@ fn primary_edge_complete_prefix_survives_a_later_stop() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = header(13006, false);
     bytes.extend(edge(false, 11, 73, 0.0));
+    let stop = bytes.len();
     bytes.extend([0, 0]);
     bytes.extend(edge(false, 12, 74, 0.0));
     with_decode_context(|_ctx| {
@@ -241,6 +265,7 @@ fn primary_edge_complete_prefix_survives_a_later_stop() {
             .count(),
         1
     );
+    assert_eq!(given_up_spans(&decoded), [(stop, bytes.len() - stop)]);
 }
 
 #[test]
@@ -278,7 +303,14 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
     bytes.extend(edge(false, 11, 74, f64::NAN));
     bytes.extend(END);
     with_decode_context(|_ctx| {
-        assert_eq!(parse(&bytes).primary_edge_refusals(), [first, second]);
+        assert_eq!(
+            parse(&bytes)
+                .primary_edge_refusals()
+                .iter()
+                .map(|range| range.start)
+                .collect::<Vec<_>>(),
+            [first, second]
+        );
     });
     let file = crate::test_support::test_prt::prt_with_partition(&bytes);
     let decoded = crate::NxCodec
@@ -293,6 +325,11 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
             .filter(|loss| loss.code == code)
             .count(),
         2
+    );
+    let end = bytes.len() - END.len();
+    assert_eq!(
+        given_up_spans(&decoded),
+        [(first, second - first), (second, end - second)]
     );
 }
 
@@ -402,7 +439,14 @@ fn terminated_edge_with_an_inserted_base_field_is_refused() {
         bytes.extend(END);
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Edge), 0);
-        assert_eq!(graph.primary_edge_refusals(), [start]);
+        assert_eq!(
+            graph
+                .primary_edge_refusals()
+                .iter()
+                .map(|range| range.start)
+                .collect::<Vec<_>>(),
+            [start]
+        );
     });
 }
 
@@ -451,7 +495,14 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
         with_decode_context(|_ctx| {
             let graph = parse(&bytes);
             assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
-            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Vertex, start)]);
+            assert_eq!(
+                graph
+                    .primary_node_refusals()
+                    .iter()
+                    .map(|(kind, range)| (*kind, range.start))
+                    .collect::<Vec<_>>(),
+                [(NodeKind::Vertex, start)]
+            );
         });
         let file = crate::test_support::test_prt::prt_with_partition(&bytes);
         let decoded = crate::NxCodec
@@ -466,6 +517,10 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
                 .filter(|loss| loss.code == code)
                 .count(),
             1
+        );
+        assert_eq!(
+            given_up_spans(&decoded),
+            [(start, bytes.len() - END.len() - start)]
         );
     }
 }
@@ -482,7 +537,11 @@ fn terminated_vertices_that_share_an_identity_are_both_refused() {
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
         assert_eq!(
-            graph.primary_node_refusals(),
+            graph
+                .primary_node_refusals()
+                .iter()
+                .map(|(kind, range)| (*kind, range.start))
+                .collect::<Vec<_>>(),
             [(NodeKind::Vertex, first), (NodeKind::Vertex, second)]
         );
     });
@@ -533,7 +592,14 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
         with_decode_context(|_ctx| {
             let graph = parse(&bytes);
             assert_eq!(graph.kind_count(NodeKind::Fin), 0, "{references:?}");
-            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Fin, start)]);
+            assert_eq!(
+                graph
+                    .primary_node_refusals()
+                    .iter()
+                    .map(|(kind, range)| (*kind, range.start))
+                    .collect::<Vec<_>>(),
+                [(NodeKind::Fin, start)]
+            );
         });
         let file = crate::test_support::test_prt::prt_with_partition(&bytes);
         let decoded = crate::NxCodec

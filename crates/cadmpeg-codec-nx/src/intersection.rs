@@ -276,7 +276,6 @@ pub(crate) struct UnchartedIntersection {
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
     pub(crate) missing_support: usize,
-    pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
     /// The start term-use reference did not resolve.
@@ -291,7 +290,6 @@ impl RejectionCounts {
     /// Total rejected construction count.
     pub(crate) fn total(self) -> usize {
         self.missing_support
-            + self.duplicate_identity
             + self.missing_chart
             + self.missing_start_term
             + self.missing_end_term
@@ -301,7 +299,6 @@ impl RejectionCounts {
     fn add(&mut self, rejection: Rejection) {
         match rejection {
             Rejection::MissingSupport => self.missing_support += 1,
-            Rejection::DuplicateIdentity => self.duplicate_identity += 1,
             Rejection::MissingChart => self.missing_chart += 1,
             Rejection::MissingStartTerm => self.missing_start_term += 1,
             Rejection::MissingEndTerm => self.missing_end_term += 1,
@@ -312,7 +309,6 @@ impl RejectionCounts {
     /// Add another stream's rejection census.
     pub(crate) fn extend(&mut self, other: Self) {
         self.missing_support += other.missing_support;
-        self.duplicate_identity += other.duplicate_identity;
         self.missing_chart += other.missing_chart;
         self.missing_start_term += other.missing_start_term;
         self.missing_end_term += other.missing_end_term;
@@ -333,12 +329,14 @@ pub(crate) struct CurveScan {
     pub(crate) uncharted: Vec<UnchartedIntersection>,
     /// Exact rejection census for the remaining parsed constructions.
     pub(crate) rejected: RejectionCounts,
+    /// Every construction whose identity another construction of the stream
+    /// also carries.
+    pub(crate) duplicates: Vec<CompositeCurve>,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     MissingSupport,
-    DuplicateIdentity,
     MissingChart,
     MissingStartTerm,
     MissingEndTerm,
@@ -435,15 +433,10 @@ fn scan_with_auxiliaries(
     for construction in &constructions {
         *counts.entry(construction.xmt).or_default() += 1;
     }
-    let mut constructions = constructions;
-    constructions.retain(|construction| {
-        if counts[&construction.xmt] == 1 {
-            true
-        } else {
-            result.rejected.add(Rejection::DuplicateIdentity);
-            false
-        }
-    });
+    let (constructions, duplicates): (Vec<_>, Vec<_>) = constructions
+        .into_iter()
+        .partition(|construction| counts[&construction.xmt] == 1);
+    result.duplicates = duplicates;
     for construction in constructions.iter().copied() {
         match enrich(construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {

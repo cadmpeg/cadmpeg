@@ -67,21 +67,21 @@ impl Graph {
                 let mut graph = selection.materialize(stream);
                 graph.primary_node_refusals = supported
                     .into_iter()
-                    .filter(|&(kind, start)| {
+                    .filter(|(kind, range)| {
                         graph
                             .by_pos
-                            .get(&start)
-                            .is_none_or(|(selected, _)| *selected != kind)
+                            .get(&range.start)
+                            .is_none_or(|(selected, _)| selected != kind)
                     })
                     .collect();
                 let refusals = frames
                     .edges
                     .iter()
-                    .map(|frame| frame.range.start)
-                    .filter(|start| {
+                    .map(|frame| frame.range.clone())
+                    .filter(|range| {
                         graph
                             .by_pos
-                            .get(start)
+                            .get(&range.start)
                             .is_none_or(|(kind, _)| *kind != NodeKind::Edge)
                     })
                     .collect();
@@ -94,7 +94,7 @@ impl Graph {
                     .edges
                     .iter()
                     .filter(|frame| Self::primary_edge_candidate(stream, frame).is_none())
-                    .map(|frame| frame.range.start)
+                    .map(|frame| frame.range.clone())
                     .collect();
                 graph
             }
@@ -118,11 +118,11 @@ impl Graph {
             })
     }
 
-    pub(crate) fn primary_edge_refusals(&self) -> &[usize] {
+    pub(crate) fn primary_edge_refusals(&self) -> &[std::ops::Range<usize>] {
         &self.primary_edge_refusals
     }
 
-    pub(crate) fn primary_node_refusals(&self) -> &[(NodeKind, usize)] {
+    pub(crate) fn primary_node_refusals(&self) -> &[(NodeKind, std::ops::Range<usize>)] {
         &self.primary_node_refusals
     }
 
@@ -163,7 +163,10 @@ impl Graph {
 fn node_selection(
     stream: &[u8],
     primary: &PrimaryRecords<'_>,
-) -> (FixedRecordSelection, Vec<(NodeKind, usize)>) {
+) -> (
+    FixedRecordSelection,
+    Vec<(NodeKind, std::ops::Range<usize>)>,
+) {
     let mut typed = Vec::new();
     let mut ownership = Vec::new();
     let mut supported = Vec::new();
@@ -176,7 +179,7 @@ fn node_selection(
         };
         let range = node.range();
         if kind != NodeKind::Edge {
-            supported.push((kind, range.start));
+            supported.push((kind, range.clone()));
         }
         if !node.has_base_layout() {
             continue;

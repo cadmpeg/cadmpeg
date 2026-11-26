@@ -77,6 +77,9 @@ loss_codes! {
     PrimaryNodeUnresolved => ("topology.primary-node-unresolved", Warning, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
+    /// Two or more surface-intersection records of a stream share one
+    /// identity, and each is withheld.
+    IntersectionIdentityDuplicated => ("intersection.identity-duplicated", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
     IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
@@ -163,6 +166,9 @@ loss_codes! {
     TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
     /// A shell with no admitted face, or a body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
+    /// A topology record names a record that does not resolve, or a region
+    /// that another body owns: it is withheld with the records that need it.
+    TopologyRecordUnresolved => ("topology.record-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
     /// A record search reached its local work bound and skipped the records
@@ -230,6 +236,7 @@ mod tests {
                 "topology.primary-edge-unresolved",
                 "topology.primary-node-unresolved",
                 "intersection.records-opaque",
+                "intersection.identity-duplicated",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",
@@ -269,6 +276,7 @@ mod tests {
                 "topology.vertex-loop-unresolved",
                 "topology.face-boundary-unstated",
                 "topology.shell-withheld",
+                "topology.record-unresolved",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
                 "native.record-identity-bounded",
