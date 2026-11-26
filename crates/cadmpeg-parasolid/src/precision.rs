@@ -15,7 +15,9 @@ const DEFAULT_LINEAR_PRECISION_MM: PositiveLength = match PositiveLength::new(1.
 };
 
 /// The modeller's angular precision in radians.
-const ANGULAR_PRECISION_RADIANS: PositiveAngle = match PositiveAngle::new(1.0e-11) {
+const ANGULAR_PRECISION: f64 = 1.0e-11;
+
+const ANGULAR_PRECISION_RADIANS: PositiveAngle = match PositiveAngle::new(ANGULAR_PRECISION) {
     Some(value) => value,
     None => panic!("the angular precision must be positive and finite"),
 };
