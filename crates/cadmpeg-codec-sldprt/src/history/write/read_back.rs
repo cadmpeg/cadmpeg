@@ -474,12 +474,12 @@ impl<'a> Judge<'a> {
         }
         if self.source.is_none() {
             self.source = match &self.baseline_key {
-                Some(key) => cached_document(&(key.clone(), 0, self.limits), source),
+                Some(key) => cached_document(&DocumentKey::Source(key.clone()), source),
                 None => Document::of(source).map(std::sync::Arc::new),
             };
         }
         let read = match written_key {
-            Some(key) => cached_document(key, written),
+            Some(key) => cached_document(&DocumentKey::ReadBack(key.clone()), written),
             None => Document::of(written).map(std::sync::Arc::new),
         };
         let (Some(stated), Some(source_records), Some(read)) = (
@@ -758,11 +758,16 @@ fn settled_by_solid(
         .collect()
 }
 
-fn cached_document(
-    key: &crate::decode::ReadBackKey,
-    ir: &CadIr,
-) -> Option<std::sync::Arc<Document>> {
-    type CachedDoc = (crate::decode::ReadBackKey, std::sync::Arc<Document>);
+/// What a cached [`Document`] was built from: the decoded source, by its
+/// content digest, or a written part decoded again, by its read-back key.
+#[derive(Clone, PartialEq)]
+enum DocumentKey {
+    Source(cadmpeg_ir::hash::digest::Sha256Digest),
+    ReadBack(crate::decode::ReadBackKey),
+}
+
+fn cached_document(key: &DocumentKey, ir: &CadIr) -> Option<std::sync::Arc<Document>> {
+    type CachedDoc = (DocumentKey, std::sync::Arc<Document>);
     static DOCUMENT_CACHE: std::sync::Mutex<Vec<CachedDoc>> = std::sync::Mutex::new(Vec::new());
 
     if let Ok(mut guard) = DOCUMENT_CACHE.lock() {
@@ -845,7 +850,7 @@ fn baseline_of(
     else {
         return Vec::new();
     };
-    let Some(read) = cached_document(&key, decoded.ir()) else {
+    let Some(read) = cached_document(&DocumentKey::ReadBack(key), decoded.ir()) else {
         return Vec::new();
     };
     let pairing = document::pair(stated, &read);
