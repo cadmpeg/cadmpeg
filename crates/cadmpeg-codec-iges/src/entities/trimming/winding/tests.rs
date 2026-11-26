@@ -698,12 +698,14 @@ const SHAPE_SAMPLE_AGREEMENT: f64 = 1.0e-5;
 /// Bound on the rounding of a stated extreme against an evaluated point.
 const SHAPE_ROUNDING: f64 = 1.0e-12;
 
-/// A row of the knot-shape table: its name, degree, knots, `v` poles at
-/// `u` = 0, 1, 2, …, positive weights, and range.
-type KnotShape = (&'static str, u32, Vec<f64>, Vec<f64>, Vec<f64>, [f64; 2]);
-
-/// Each row of the table is a parameter curve over its range, checked once
-/// without weights and once with the weights of the row. The rows are of
+/// For each row of a table of knot shapes, without and with weights, the
+/// stated interval of the lowest `v` contains the lowest evaluated point of
+/// the curve over its range, and the stated interval of the highest `v` the
+/// highest. Both ends of each interval are checked, as `strip_windings`
+/// reads both. Where the degree is two or less both ends are the exact
+/// extreme.
+///
+/// Each row of the table is a parameter curve over its range. The rows are of
 /// degree two: clamped; unclamped at the end, at the start, and at both
 /// ends; with an interior knot above the degree; with both range ends on
 /// knots, one of them interior; with both range ends inside one span. The
@@ -711,8 +713,12 @@ type KnotShape = (&'static str, u32, Vec<f64>, Vec<f64>, Vec<f64>, [f64; 2]);
 /// three are unclamped at both ends; with an interior knot above the
 /// degree, where the curve is continuous; with one range end on an interior
 /// knot and the other inside a span.
-fn knot_shapes() -> Vec<KnotShape> {
-    vec![
+#[test]
+fn the_extremes_of_each_knot_shape_with_and_without_weights_contain_the_curve() {
+    /// A row: its name, degree, knots, `v` poles at `u` = 0, 1, 2, …,
+    /// positive weights, and range.
+    type KnotShape = (&'static str, u32, Vec<f64>, Vec<f64>, Vec<f64>, [f64; 2]);
+    let shapes: Vec<KnotShape> = vec![
         (
             "clamped",
             2,
@@ -801,36 +807,8 @@ fn knot_shapes() -> Vec<KnotShape> {
             vec![1.0, 0.5, 2.0, 1.0, 3.0, 0.5, 1.0],
             [1.0, 2.5],
         ),
-    ]
-}
-
-/// The lowest and the highest `v` of [`SHAPE_SAMPLES`] + 1 evaluated points
-/// of `shape` at equal steps of its range.
-fn sampled_v_extremes(shape: &(PcurveGeometry, [f64; 2])) -> [f64; 2] {
-    let range = shape.1;
-    with_service_context(b"", |ctx| {
-        (0..=SHAPE_SAMPLES).fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], step| {
-            let parameter =
-                (range[1] - range[0]).mul_add(f64::from(step) / f64::from(SHAPE_SAMPLES), range[0]);
-            let point = cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &shape.0, parameter),
-            )
-            .expect("the curve evaluates")
-            .expect("the point is finite");
-            [low.min(point.v), high.max(point.v)]
-        })
-    })
-}
-
-/// For each row of [`knot_shapes`], without and with weights, the stated
-/// interval of the lowest `v` contains the lowest evaluated point of the
-/// curve over its range, and the stated interval of the highest `v` the
-/// highest. Both ends of each interval are checked, as `strip_windings`
-/// reads both. Where the degree is two or less both ends are the exact
-/// extreme.
-#[test]
-fn the_extremes_of_each_knot_shape_with_and_without_weights_contain_the_curve() {
-    for (name, degree, knots, v, weights, range) in knot_shapes() {
+    ];
+    for (name, degree, knots, v, weights, range) in shapes {
         let vertices = v
             .iter()
             .enumerate()
@@ -838,7 +816,18 @@ fn the_extremes_of_each_knot_shape_with_and_without_weights_contain_the_curve() 
             .collect::<Vec<_>>();
         for (form, weights) in [("polynomial", None), ("rational", Some(weights))] {
             let shape = curve(degree, knots.clone(), &vertices, weights, range);
-            let [low, high] = sampled_v_extremes(&shape);
+            let [low, high] = with_service_context(b"", |ctx| {
+                (0..=SHAPE_SAMPLES).fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], step| {
+                    let parameter = (range[1] - range[0])
+                        .mul_add(f64::from(step) / f64::from(SHAPE_SAMPLES), range[0]);
+                    let point = cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::pcurve_uv(ctx, &shape.0, parameter),
+                    )
+                    .expect("the curve evaluates")
+                    .expect("the point is finite");
+                    [low.min(point.v), high.max(point.v)]
+                })
+            });
             let extremes = extremes_of(&shape, 1);
             let context =
                 format!("{name}, {form}: {extremes:?} against the sampled [{low}, {high}]");
