@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use super::{
-    encode_asset_header, encode_design_asset, encode_top_level, generated_design_asset,
-    parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16, resolve_design_folder,
-    AssetKind, DesignAssetFolder, DESIGN_ASSET_TYPE, GENERATED_DESIGN_ASSET_BASE,
-    GENERATED_DOCUMENT_ASSET_GUID, GENERATED_DOCUMENT_GUID, TOP_LEVEL_MANIFEST_VERSION,
+    encode_asset_header, encode_design_asset, encode_design_asset_with_subtype, encode_top_level,
+    generated_design_asset, parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16,
+    resolve_design_folder, AssetKind, DesignAssetFolder, DESIGN_ASSET_TYPE,
+    GENERATED_DESIGN_ASSET_BASE, GENERATED_DOCUMENT_ASSET_GUID, GENERATED_DOCUMENT_GUID,
+    TOP_LEVEL_MANIFEST_VERSION,
 };
 use cadmpeg_core::CodecError;
 
@@ -159,13 +160,14 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
 
 /// Resolve the Design folder of a document whose listed bases are Fusion
 /// assets with the given subtypes; an empty subtype is the plain Design asset.
+/// A `PCBAssetSubType` asset carries the Design manifest tail after its subtype.
 fn resolve_fusion_assets(assets: &[(&str, &str, &str)]) -> Result<DesignAssetFolder, CodecError> {
     let bases = assets.iter().map(|(base, _, _)| *base).collect::<Vec<_>>();
     let manifest = parse_top_level(&encode_top_level(OTHER_GUID, &bases).unwrap()).unwrap();
     let mut entries = BTreeMap::new();
     for (base, guid, subtype) in assets {
-        let bytes = if subtype.is_empty() {
-            encode_design_asset(base, guid).unwrap()
+        let bytes = if subtype.is_empty() || *subtype == "PCBAssetSubType" {
+            encode_design_asset_with_subtype(base, guid, subtype).unwrap()
         } else {
             encode_fusion_subtype_asset(base, guid, subtype).unwrap()
         };

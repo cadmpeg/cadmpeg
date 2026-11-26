@@ -887,6 +887,15 @@ pub(crate) fn encode_design_asset(
     base_name: &str,
     primary_guid: &str,
 ) -> Result<Vec<u8>, CodecError> {
+    encode_design_asset_with_subtype(base_name, primary_guid, "")
+}
+
+/// Encode a Design per-asset manifest whose subtype field holds `subtype`.
+pub(crate) fn encode_design_asset_with_subtype(
+    base_name: &str,
+    primary_guid: &str,
+    subtype: &str,
+) -> Result<Vec<u8>, CodecError> {
     let mut out = encode_asset_header(
         base_name,
         primary_guid,
@@ -907,7 +916,7 @@ pub(crate) fn encode_design_asset(
     }
     push_ascii(&mut out, "Neutron3DAssetType")?;
     out.push(0);
-    push_ascii(&mut out, "")?;
+    push_ascii(&mut out, subtype)?;
     push_u32(&mut out, 1);
     push_ascii(&mut out, "physicalChangeGuid")?;
     push_utf16(&mut out, GENERATED_PHYSICAL_CHANGE_GUID)?;
