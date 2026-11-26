@@ -273,9 +273,11 @@ fn history_member_with_another_root_is_unread() {
     assert!(message.contains(r#"its root element "Other""#), "{message}");
 }
 
+/// The parse of one tag with 2^14 attributes compares more attribute pairs
+/// than the per-expansion allowance of this input admits.
 #[test]
 fn history_whose_xml_is_refused_is_unread() {
-    let attributes = (0..257).fold(String::new(), |mut text, index| {
+    let attributes = (0..1 << 14).fold(String::new(), |mut text, index| {
         write!(text, " a{index}=\"{index}\"").unwrap();
         text
     });

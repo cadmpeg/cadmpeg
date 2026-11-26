@@ -106,24 +106,24 @@ impl DecodeContext<'_> {
     /// Parses XML with DTD processing disabled and charges its node depth.
     /// The scan bounds the storage that roxmltree reserves and copies and the
     /// name comparisons it makes, one byte each, and the rest of the
-    /// per-expansion allowance limits its nodes. Each attribute, a namespace
-    /// declaration included, and each distinct namespace prefix is an
-    /// admitted entity of the session.
+    /// per-expansion allowance limits its nodes.
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
         operation: &'static str,
     ) -> Result<roxmltree::Document<'input>, CodecError> {
-        self.parse_xml_within(text, operation)
+        self.parse_xml_within(text, operation, |_| Ok(()))
             .map_err(XmlRefusal::into_error)
     }
 
     /// Parses XML text that the session reads from memory, as a decoder reads
     /// a companion file: the text's length is charged as input bytes, and the
-    /// text is then parsed as [`Self::parse_xml`] parses it. Where
-    /// [`Self::parse_xml`] gives [`CodecError::NotImplemented`] for a parse
-    /// past the per-expansion allowance, this refuses with `ResourceLimit` in
-    /// the decompressed-bytes dimension. Its `limit` is the allowance, and
+    /// text is then parsed as [`Self::parse_xml`] parses it. Each attribute,
+    /// a namespace declaration included, and each distinct namespace prefix
+    /// of the text is an entity that the session admits before the parse.
+    /// Where [`Self::parse_xml`] gives [`CodecError::NotImplemented`] for a
+    /// parse past the per-expansion allowance, this refuses with
+    /// `ResourceLimit` in the decompressed-bytes dimension. Its `limit` is the allowance, and
     /// its `additional` is the storage and comparisons the scan bounds,
     /// `u64::MAX` where that bound passes `u64`.
     pub fn parse_input_xml<'input>(
@@ -133,29 +133,34 @@ impl DecodeContext<'_> {
     ) -> Result<roxmltree::Document<'input>, CodecError> {
         self.budget
             .charge_input(u64_from_index(text.len()), operation)?;
-        self.parse_xml_within(text, operation)
-            .map_err(|refusal| match refusal {
-                XmlRefusal::Allowance {
-                    allowance, needed, ..
-                } => self
-                    .budget
-                    .refuse_limit(
-                        ResourceDimension::DecompressedBytes,
-                        ResourceFailure::BudgetExceeded,
-                        allowance,
-                        0,
-                        needed.saturated_bytes(),
-                        operation,
-                    )
-                    .into(),
-                XmlRefusal::Error(error) => error,
-            })
+        self.parse_xml_within(text, operation, |entities| {
+            self.charge_entities(entities, operation)
+        })
+        .map_err(|refusal| match refusal {
+            XmlRefusal::Allowance {
+                allowance, needed, ..
+            } => self
+                .budget
+                .refuse_limit(
+                    ResourceDimension::DecompressedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    allowance,
+                    0,
+                    needed.saturated_bytes(),
+                    operation,
+                )
+                .into(),
+            XmlRefusal::Error(error) => error,
+        })
     }
 
+    /// Parses `text` after `admit` accepts its attributes and distinct
+    /// namespace prefixes.
     fn parse_xml_within<'input>(
         &self,
         text: &'input str,
         operation: &'static str,
+        admit: impl FnOnce(u64) -> Result<(), CodecError>,
     ) -> Result<roxmltree::Document<'input>, XmlRefusal> {
         let allowance = self.per_expand_allowance();
         let shape = xml_shape_checked(
@@ -179,8 +184,7 @@ impl DecodeContext<'_> {
                 Some((bytes, xml_nodes_limit(rest, shape.less_than)?))
             })
             .ok_or_else(|| XmlRefusal::tree(allowance, need, operation))?;
-        self.charge_entities(shape.attributes + prefixes, operation)
-            .map_err(XmlRefusal::Error)?;
+        admit(shape.attributes + prefixes).map_err(XmlRefusal::Error)?;
         // roxmltree node ids are `u32`; a larger limit leaves the parser's own.
         let mut options = roxmltree::ParsingOptions::default();
         if let Ok(limit) = u32::try_from(nodes_limit) {
@@ -1403,38 +1407,30 @@ mod tests {
     }
 
     #[test]
-    fn xml_attributes_and_prefixes_are_admitted_entities() {
+    fn input_xml_admits_its_attributes_and_prefixes_as_entities() {
         // Four attributes, two of them declarations, and two prefixes.
         let text = "<r xmlns:p='u' a='1'><p:c xmlns:q='v' b='2'/></r>";
-        for input in [false, true] {
-            with_session(
-                |policy| policy.limits.max_entities = 6,
-                |ctx| {
-                    let parse = |ctx: &DecodeContext<'_>| {
-                        if input {
-                            ctx.parse_input_xml(text, "XML")
-                        } else {
-                            ctx.parse_xml(text, "XML")
-                        }
-                    };
-                    assert!(parse(ctx).is_ok());
-                    let Err(CodecError::ResourceLimit(limit)) = parse(ctx) else {
-                        panic!("the second parse passes the entity ceiling");
-                    };
-                    assert_eq!(
-                        (
-                            limit.dimension,
-                            limit.scope,
-                            limit.limit,
-                            limit.used,
-                            limit.additional
-                        ),
-                        (ResourceDimension::Entities, LimitScope::Session, 6, 6, 6)
-                    );
-                    assert_eq!(ctx.resource_refusal(), Some(limit));
-                },
-            );
-        }
+        with_session(
+            |policy| policy.limits.max_entities = 6,
+            |ctx| {
+                assert!(ctx.parse_xml(text, "XML").is_ok());
+                assert!(ctx.parse_input_xml(text, "XML").is_ok());
+                let Err(CodecError::ResourceLimit(limit)) = ctx.parse_input_xml(text, "XML") else {
+                    panic!("the second input parse passes the entity ceiling");
+                };
+                assert_eq!(
+                    (
+                        limit.dimension,
+                        limit.scope,
+                        limit.limit,
+                        limit.used,
+                        limit.additional
+                    ),
+                    (ResourceDimension::Entities, LimitScope::Session, 6, 6, 6)
+                );
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            },
+        );
     }
 
     #[test]

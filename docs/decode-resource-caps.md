@@ -144,10 +144,11 @@ tag, and the namespaces. The allowance also bounds the name comparisons
 that roxmltree makes, one byte each: each attribute with the earlier
 attributes of its tag, and the name of each tag and prefixed attribute with
 the namespaces in scope. The rest of the allowance becomes roxmltree's node
-limit. Each attribute, a namespace declaration included, and each distinct
-namespace prefix is an entity charged to the session before roxmltree
-parses. The depth is charged before roxmltree parses, because roxmltree
-recurses once per element level. A JSON tree is estimated from its
+limit. For a text that `parse_input_xml` reads, each attribute, a
+namespace declaration included, and each distinct namespace prefix is an
+entity charged to the session before roxmltree parses. The depth is
+charged before roxmltree parses, because roxmltree recurses once per
+element level. A JSON tree is estimated from its
 delimiter counts as a `serde_json::Value` tree, also for typed parses. A
 tree that could exceed the allowance is `NotImplemented` and does not set
 the fuse.
