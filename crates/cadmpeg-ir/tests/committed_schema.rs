@@ -10,6 +10,7 @@
 
 use std::path::Path;
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::Value;
 
 const REGENERATE: &str =
@@ -36,13 +37,13 @@ fn committed_json_schemas_equal_the_derived_schemas() {
         if !cfg!(feature = "schema-order") {
             let committed: Value = serde_json::from_str(committed).unwrap();
             assert!(
-                committed == cadmpeg_core::serde_erase::json::to_value(&derived).unwrap(),
+                committed == json::to_value(&derived).unwrap(),
                 "{} differs from the derived schema. Run `{REGENERATE}` and commit the file.",
                 path.display()
             );
             continue;
         }
-        let derived = cadmpeg_core::serde_erase::json::to_string_pretty(&derived).unwrap() + "\n";
+        let derived = json::to_string_pretty(&derived).unwrap() + "\n";
         if update {
             std::fs::write(&path, &derived).unwrap();
             continue;

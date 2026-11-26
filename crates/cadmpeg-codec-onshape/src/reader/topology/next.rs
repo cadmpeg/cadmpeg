@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
 use serde_json::{json, Value};
 
@@ -170,8 +171,7 @@ pub(super) fn prove(
         .iter()
         .find(|sketch| sketch.id.as_str() == sketch_id)
         .ok_or("source sketch is missing")?;
-    let wire = cadmpeg_core::serde_erase::json::to_value(sketch)
-        .map_err(|_| "source sketch is unreadable")?;
+    let wire = json::to_value(sketch).map_err(|_| "source sketch is unreadable")?;
     let frame = wire
         .pointer("/placement/frame")
         .ok_or("source frame is missing")?;
@@ -198,8 +198,7 @@ pub(super) fn prove(
         .iter()
         .filter(|entity| entity.sketch.as_str() == sketch_id && !entity.construction)
     {
-        let wire = cadmpeg_core::serde_erase::json::to_value(entity)
-            .map_err(|_| "source curve is unreadable")?;
+        let wire = json::to_value(entity).map_err(|_| "source curve is unreadable")?;
         let geometry = wire.get("geometry").ok_or("source geometry is missing")?;
         if text(geometry, "kind")? != "line" {
             return Err("needs stored straight source edges".into());

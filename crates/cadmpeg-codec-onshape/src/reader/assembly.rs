@@ -6,6 +6,7 @@ use crate::archive::Bundle;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointOperand, Occurrence, ProductDefinition,
@@ -382,7 +383,7 @@ fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
     }
     let mut value = cadmpeg_ir::schema::structural::project(ctx, home, "Onshape home projection")?;
     visit(ctx, &mut value, rehome)?;
-    cadmpeg_core::serde_erase::json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
+    json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
 }
 
 fn merge_design(target: &mut cadmpeg_ir::document::Design, source: cadmpeg_ir::document::Design) {
@@ -448,7 +449,7 @@ fn element_id(eid: &str) -> bool {
 }
 
 fn key(path: &[String]) -> String {
-    cadmpeg_core::serde_erase::json::to_string(path).unwrap_or_default()
+    json::to_string(path).unwrap_or_default()
 }
 fn product_id(native: &str) -> Result<ProductDefinitionId, Error> {
     id("product", native)

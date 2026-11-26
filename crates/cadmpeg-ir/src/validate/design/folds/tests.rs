@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A `Fold` input's edges in the fixture cube's current state.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
@@ -26,7 +27,7 @@ fn folded(edges: [usize; 4]) -> CadIr {
         .enumerate()
         .map(|(key, edge)| edge_pick(&ir, key, *edge))
         .collect();
-    ir.design.features[0].definition.operation = cadmpeg_core::serde_erase::json::from_value(json!({"kind": "datum", "value": {
+    ir.design.features[0].definition.operation = json::from_value(json!({"kind": "datum", "value": {
         "element": {"kind": "frame", "value": {
             "inputs": [{
                 "role": {"subject": "whole", "relation": {"kind": "fold"}},

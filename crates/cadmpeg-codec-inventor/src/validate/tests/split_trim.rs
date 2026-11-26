@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::{
     FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
 };
@@ -135,7 +136,7 @@ fn surface_trim_validation_requires_the_bounded_operands_and_native_side() -> Te
             .map(|identity| (identity.record_ordinal, identity.type_id.as_str()))
             .chain(std::iter::once((2, "00000000000000000000000000000000")))
         {
-            data.records.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            data.records.push(json::from_value(serde_json::json!({
                 "id":format!("inventor:rse:record#generated-{ordinal}"), "token":"generated", "ordinal":ordinal, "selector":0, "type_index":0,
                 "type_id":type_id, "payload_offset":0, "payload_len":0, "payload_sha256":"", "trailing_payload_len":0, "trailer_len":0, "trailer_sha256":""
             }))?);

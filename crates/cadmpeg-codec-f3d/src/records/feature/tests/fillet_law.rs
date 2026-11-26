@@ -2,6 +2,7 @@ use crate::records::feature::fixed_parameters::{
     DesignFixedFilletGroup, DesignFixedFilletIntermediate, DesignFixedFilletLaw,
     DesignFixedFilletScalar,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn scalar(value: f64) -> DesignFixedFilletScalar {
     DesignFixedFilletScalar {
@@ -80,12 +81,8 @@ fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
         "intermediate_parameters": [0.0, 0.5],
         "intermediate_parameter_record_indexes": [5, 6], "intermediate_parameter_offsets": [72, 80],
     });
-    let group: DesignFixedFilletGroup =
-        cadmpeg_core::serde_erase::json::from_value(input.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(group).unwrap(),
-        input
-    );
+    let group: DesignFixedFilletGroup = json::from_value(input.clone()).unwrap();
+    assert_eq!(json::to_value(group).unwrap(), input);
     for (field, value) in [
         ("radii", serde_json::json!([-1.0, 0.0, 1.0, 0.0])),
         ("radii", serde_json::json!([0.0, 0.0, 0.0, 0.0])),
@@ -99,11 +96,9 @@ fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
     ] {
         let mut invalid = input.clone();
         invalid[field] = value;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedFilletGroup>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(json::from_value::<DesignFixedFilletGroup>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
 }

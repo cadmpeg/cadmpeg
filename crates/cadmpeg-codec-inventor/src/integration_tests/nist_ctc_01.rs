@@ -2,6 +2,7 @@
 //! NIST CTC-01 dimension and hole-note expectations from the CTC definitions
 //! workbook.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -70,8 +71,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     let result = InventorCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode Inventor specimen");
-    let topology = cadmpeg_core::serde_erase::json::to_value(&result.ir().geometry)
-        .expect("serialize geometry");
+    let topology = json::to_value(&result.ir().geometry).expect("serialize geometry");
     let half_degree = 0.5_f64.to_radians();
     let expected = [
         (

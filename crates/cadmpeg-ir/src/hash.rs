@@ -838,6 +838,7 @@ mod tests {
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     /// The document digest counts the arenas the wire omits where they differ
@@ -929,10 +930,7 @@ mod tests {
         ] {
             let hex = super::LowerHex(bytes);
             assert_eq!(hex.to_string(), expected);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(&hex).unwrap(),
-                serde_json::json!(expected)
-            );
+            assert_eq!(json::to_value(&hex).unwrap(), serde_json::json!(expected));
         }
     }
 
@@ -1025,10 +1023,7 @@ mod tests {
   "gamma": 9007199254740993,
   "zeta": null
 }"#;
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_record()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_record()).unwrap(), expected);
     }
 
     /// Same record indented inside namespace and arena, as hashing sees it.
@@ -1065,10 +1060,7 @@ mod tests {
     ]
   }
 }"#;
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_native()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_native()).unwrap(), expected);
     }
 
     /// Digest over the arena above; formatting drift under
@@ -1754,7 +1746,7 @@ mod tests {
             }),
         ];
         for sample in &samples {
-            let compact = cadmpeg_core::serde_erase::json::to_string(sample).unwrap();
+            let compact = json::to_string(sample).unwrap();
             let mut formatted = String::new();
             let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
             assert!(max_depth >= 2);

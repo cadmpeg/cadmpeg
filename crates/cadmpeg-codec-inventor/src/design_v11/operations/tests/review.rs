@@ -260,10 +260,10 @@ fn native_draft_operands_validate_after_canonical_zero_round_trip() {
 }
 
 #[test]
-fn native_body_motion_operands_validate_after_canonical_zero_round_trip() {
+fn native_body_scale_operands_validate_after_canonical_zero_round_trip() {
     assert_canonical_native_round_trip(&legacy(
-        "move_body",
-        json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[-0.0,1.0,2.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+        "scale",
+        json!({"bodies":native_selection(),"center":{"kind":"point","value":[-0.0,1.0,2.0]},"factors":{"kind":"uniform","factor":2.0}}),
     ));
 }
 

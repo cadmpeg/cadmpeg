@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::patterns::PatternSeed;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
 use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
@@ -63,9 +64,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             .find(|f| f.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
     };
-    let operation = |name: &str| {
-        cadmpeg_core::serde_erase::json::to_value(operation_definition(feature(name))).unwrap()
-    };
+    let operation = |name: &str| json::to_value(operation_definition(feature(name))).unwrap();
     let native_properties = decoded
         .ir()
         .native

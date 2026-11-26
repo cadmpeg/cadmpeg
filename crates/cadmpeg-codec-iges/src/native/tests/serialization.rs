@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::native_serialization::assert_native_limit;
 
 #[test]
@@ -32,7 +33,7 @@ fn quarantined_record_id_serializes_its_section_and_sequence() {
         },
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&record).unwrap(),
+        json::to_value(&record).unwrap(),
         serde_json::json!({"id": "iges:quarantine:directory#3"})
     );
 }

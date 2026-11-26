@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::test_support::test_fixtures::parse as with_view;
+use cadmpeg_core::serde_erase::json;
 
 /// Raw words between the option and the transition form.
 fn raw_words(count: u32) -> Vec<u32> {
@@ -58,9 +59,9 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
         for end in 0..required {
             assert!(with_view(&bytes[..end], |ctx, view| parse(ctx, view, version)).is_err());
         }
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).expect("serialize");
+        let wire = json::to_value(&value).expect("serialize");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<StylePayload>(wire).expect("deserialize"),
+            json::from_value::<StylePayload>(wire).expect("deserialize"),
             value
         );
     }

@@ -852,7 +852,7 @@ fn decode_projects_surface_sweep_reference_curve_path() {
     };
     *path = Some(PathRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(&changed_profile, decoded.source_fidelity());
     assert!(
         unwritten

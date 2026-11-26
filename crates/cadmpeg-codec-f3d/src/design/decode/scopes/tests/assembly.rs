@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::test_support::assembly_operand_frame_fixture;
@@ -1120,9 +1121,9 @@ fn as_built_378_alignment_reads_wide_locators() {
         assert_eq!(alignment.angle(), 0.25);
         assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
         assert_eq!(alignment.owners.len(), 4);
-        let serialized = cadmpeg_core::serde_erase::json::to_value(&alignment).unwrap();
+        let serialized = json::to_value(&alignment).unwrap();
         let restored: crate::records::feature::assembly::DesignAssemblyAlignment =
-            cadmpeg_core::serde_erase::json::from_value(serialized).unwrap();
+            json::from_value(serialized).unwrap();
         assert_eq!(restored, alignment);
         let frames = alignment.operand_frames().expect("wide locator frames");
         assert!(frames

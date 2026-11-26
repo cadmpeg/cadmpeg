@@ -1664,6 +1664,55 @@ def workspace_packages() -> dict[str, str]:
     return {key: dependency_package(key, value, {}) for key, value in table.items()}
 
 
+# A typed JSON read compiles the type's whole read tree once per deserializer
+# type. Every typed read goes through serde_json's `StrRead` deserializer
+# (`serde_json::from_str`, or `cadmpeg_core::serde_erase::json`, which writes a
+# `Value` or checks bytes as text first), so each type compiles its read once.
+SECOND_DESERIALIZER = re.compile(
+    r"\bserde_json\s*::\s*(?:value\s*::\s*)?from_(?:value|slice)\b"
+    r"|\bserde_json\s*::\s*\{[^}]*\bfrom_(?:value|slice)\b"
+    r"|\bDeserializer\s*::\s*from_slice\b"
+)
+# The wire types whose read tree is the IR's own: reading one through a
+# `serde_json::Value` (or any deserializer but the one its reader is given)
+# compiles that tree again.
+HUB_WIRE_READ = re.compile(
+    r"\b(?:CadIr|Annotations|AsmBrep|Topology|Model|Design|Process)\s*::\s*deserialize\s*\(\s*"
+    r"(?!deserializer\b)"
+)
+
+
+# Tests whose subject is a reader's agreement across deserializer types, with
+# the reason each is outside the rule.
+JSON_READ_EXEMPT_FILES = {
+    "crates/cadmpeg-core/src/tagged/tests.rs":
+        "checks that the tagged reader agrees with serde's reader on a Value",
+    "crates/cadmpeg-derive/tests/deserialize_name.rs":
+        "checks that the derived name reader reads a Value",
+}
+
+
+def scan_json_reads(sources: dict[Path, str]) -> list[Finding]:
+    """Report a typed JSON read through a deserializer other than `StrRead`."""
+    findings: list[Finding] = []
+    for path, source in sources.items():
+        if relative_path(path) in JSON_READ_EXEMPT_FILES:
+            continue
+        if "serde_json" not in source and "deserialize" not in source:
+            continue
+        code = mask_rust_non_code(source)
+        for pattern in (SECOND_DESERIALIZER, HUB_WIRE_READ):
+            for match in pattern.finditer(code):
+                findings.append(Finding(
+                    "json_second_deserializer",
+                    relative_path(path),
+                    code.count("\n", 0, match.start()) + 1,
+                    "Read typed JSON with serde_json::from_str or cadmpeg_core::serde_erase::json "
+                    "(from_value, from_slice); another deserializer type compiles the type's read tree again.",
+                ))
+    return findings
+
+
 def scan_measurement_dependency() -> list[Finding]:
     """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS,
     and one the writer crate renames, which `measurement_use` would not see."""
@@ -2426,6 +2475,7 @@ SOURCE_SCANS = {
     "authoring_paths": lambda sources: scan_authoring_paths(),
     "measurement_dependency": lambda sources: scan_measurement_dependency(),
     "script_tests": lambda sources: scan_script_tests(),
+    "json_reads": lambda sources: scan_json_reads(sources),
 }
 _TASK_SOURCES: dict[Path, str] = {}
 

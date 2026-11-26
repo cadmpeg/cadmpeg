@@ -9,6 +9,7 @@ use crate::test_support::test_dump::{
     anonymous_chunk, crc_chunk, crc_chunk_excluding, utf16_bytes, uuid_bytes,
 };
 use crate::wire::Uuid;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
@@ -183,8 +184,7 @@ fn viewport_plot_weight_keeps_the_exact_unset_sentinel() {
         Some(settings::LayerPlotWeight::Unset)
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(values[0].plot_weight_mm)
-            .expect("serialized plot weight"),
+        json::to_value(values[0].plot_weight_mm).expect("serialized plot weight"),
         serde_json::json!(-1.0)
     );
 }

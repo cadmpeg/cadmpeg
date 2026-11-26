@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use crate::geometry::blends::VertexBlendTwists;
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
@@ -20,12 +21,9 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
             serde_json::json!({ "kind": "two", "twists": [point, point] }),
         ),
     ] {
+        assert_eq!(json::to_value(&value).unwrap(), expected);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
-            expected
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<VertexBlendTwists>(expected).unwrap(),
+            json::from_value::<VertexBlendTwists>(expected).unwrap(),
             value
         );
     }
@@ -41,7 +39,7 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
         serde_json::json!({ "kind": 2, "twists": [point, point] }),
         serde_json::json!({ "kind": 1, "twists": [point] }),
     ] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<VertexBlendTwists>(invalid).is_err());
+        assert!(json::from_value::<VertexBlendTwists>(invalid).is_err());
     }
 }
 
@@ -56,16 +54,9 @@ fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
         "parameters": [0.0, 1.0],
         "sense": true,
     });
-    let definition: VertexBlendBoundaryGeometry =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(definition).unwrap(),
-        wire
-    );
+    let definition: VertexBlendBoundaryGeometry = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(definition).unwrap(), wire);
     let mut invalid = wire;
     invalid["twists"]["kind"] = serde_json::json!("two");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<VertexBlendBoundaryGeometry>(invalid)
-            .is_err()
-    );
+    assert!(json::from_value::<VertexBlendBoundaryGeometry>(invalid).is_err());
 }

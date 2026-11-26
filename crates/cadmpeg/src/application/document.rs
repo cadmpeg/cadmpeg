@@ -71,6 +71,7 @@ impl LoadedDocument {
             document,
             report,
             fidelity,
+            ..
         } = read;
         let mut loaded = Self::neutral(document, input_bytes);
         if !fidelity.retained_records().is_empty() {
