@@ -401,7 +401,7 @@ impl Serialize for DigestNativeArena<'_, '_> {
 
         const PARALLEL_THRESHOLD: usize = 512;
         const CHUNK_RECORDS: usize = 512;
-        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let workers = cadmpeg_core::parallelism();
         if self.records.len() < PARALLEL_THRESHOLD || workers <= 1 {
             let mut seq = serializer.serialize_seq(Some(self.records.len()))?;
             for &record in &self.records {
