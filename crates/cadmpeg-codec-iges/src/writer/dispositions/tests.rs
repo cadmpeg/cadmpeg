@@ -723,6 +723,16 @@ fn an_edited_colour_is_written_as_the_shortest_percentages_that_read_back() {
     assert_eq!(percents(&output), [[Some(29.0), Some(57.0), Some(58.0)]]);
 }
 
+/// No double divided by 100 is `15 / 255`. Its percentage is `15 / 255 * 100`,
+/// which reads back within one unit in the last place.
+#[test]
+fn a_component_that_no_percentage_reads_back_as_is_written_times_100() {
+    let component = 15.0 / 255.0;
+    let percent = crate::writer::color_percent(component);
+    assert_eq!(percent, component * 100.0);
+    assert!((percent / 100.0 - component).abs() <= f64::EPSILON * component);
+}
+
 /// A Type 314 states a level that the writer writes as 0. The one charge of
 /// its display attribute record names the level field group, with the colour
 /// number where the writer writes 0 in place of it.

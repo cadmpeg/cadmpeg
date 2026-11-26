@@ -487,7 +487,9 @@ fn source_color(ir: &CadIr, appearance: &str, color: Color) -> Option<SourceColo
 /// The percentage a Type 314 states for a colour component, which the reader
 /// divides by 100: the shortest decimal it reads back as `component`, so a
 /// component read from a percentage such as 29 writes that percentage and not
-/// `0.29 * 100`, 28.999999999999996.
+/// `0.29 * 100`, 28.999999999999996. Where no percentage reads back as
+/// `component`, it is `component * 100`, which reads back within one unit in
+/// the last place.
 fn color_percent(component: f64) -> f64 {
     let scaled = component * 100.0;
     (0..17)
