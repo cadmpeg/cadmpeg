@@ -4,7 +4,7 @@
 //! resolves to that geometry, and an offset plane is a datum offset from its
 //! reference plane by its distance.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::design::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, ConstructionKind,
@@ -19,11 +19,22 @@ use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
+use cadmpeg_ir::math::portable::Portable;
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 
 use super::swept::{self, Context};
+use crate::classification::{classify, FeatureClass};
 use crate::history::literals::parse_angle_rad;
-use crate::records::{CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY};
+use crate::records::{
+    FeatureHistory, FeatureInputLane, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
+    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+};
+use crate::resolved_features::scalars::FeatureObjectNames;
+
+/// The plane-data classes of a reference plane whose frame is written in
+/// place with no references (`sldprt.md` §2).
+const FIXED_PLANE_DATA_CLASSES: [&str; 2] = ["moFixedRefPlnData_c", "moAbsoluteRefPlnData_c"];
 
 /// A datum's id and its name where it has one.
 pub(super) type Named = (FeatureId, Option<String>);
@@ -44,9 +55,27 @@ pub(super) struct Projected {
     pub(super) configured: Vec<Named>,
 }
 
+/// What a datum's element is read with: the history records of the
+/// reference planes whose plane data is fixed, and the document's angular
+/// tolerance.
+struct Reading {
+    fixed: HashSet<String>,
+    angular: f64,
+}
+
 /// Type each unresolved datum of `features` whose decoded definition states
-/// its geometry or its offset from a reference plane.
-pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Projected {
+/// its geometry or its offset from a reference plane. `angular` is the
+/// document's angular tolerance.
+pub(super) fn project(
+    features: &mut [Feature],
+    context: &Context<'_>,
+    lanes: &[FeatureInputLane],
+    angular: f64,
+) -> Projected {
+    let reading = Reading {
+        fixed: fixed_reference_planes(context.histories, lanes),
+        angular,
+    };
     let mut projected = Projected::default();
     swept::walk(features, OperationFamily::Datum, |feature, _| {
         let named = (feature.id.clone(), feature.name.clone());
@@ -60,7 +89,11 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Projec
             return;
         };
         let definition = source.evaluation.definition();
-        let Some(element) = element(definition) else {
+        let fixed = source
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| reading.fixed.contains(native));
+        let Some(element) = element(definition, fixed, &reading) else {
             projected.unresolved.push(named);
             return;
         };
@@ -77,11 +110,13 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Projec
             }
         }
         if context.model.configurations.iter().any(|configuration| {
-            configuration
-                .feature_states
-                .get(&feature.id)
-                .and_then(|state| self::element(&state.definition))
-                .is_some_and(|other| other != element)
+            !configuration.active
+                && configuration
+                    .feature_states
+                    .get(&feature.id)
+                    .is_some_and(|state| {
+                        self::element(&state.definition, fixed, &reading).as_ref() != Some(&element)
+                    })
         }) {
             projected.configured.push(named);
         }
@@ -109,16 +144,64 @@ fn angular_d1(source: &v10::Feature, context: &Context<'_>) -> bool {
         .is_some_and(|text| parse_angle_rad(text).is_some())
 }
 
+/// The ids of the history reference planes whose objects declare
+/// plane-data classes, every one of them a fixed class.
+fn fixed_reference_planes(
+    histories: &[FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> HashSet<String> {
+    let mut declared = HashMap::<&str, Vec<&str>>::new();
+    for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
+        let mut starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| Some((names.of(feature)?.offset, feature)))
+            .collect::<Vec<_>>();
+        starts.sort_by_key(|(offset, _)| *offset);
+        for (index, &(start, feature)) in starts.iter().enumerate() {
+            if classify(feature) != Some(FeatureClass::ReferencePlane) {
+                continue;
+            }
+            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            declared.entry(feature.id.as_str()).or_default().extend(
+                lane.classes
+                    .iter()
+                    .filter(|class| (start..end).contains(&class.offset))
+                    .map(|class| class.name.as_str())
+                    .filter(|name| {
+                        name.ends_with("RefPlnData_c") || name.ends_with("RefplaneData_c")
+                    }),
+            );
+        }
+    }
+    declared
+        .into_iter()
+        .filter(|(_, classes)| {
+            !classes.is_empty()
+                && classes
+                    .iter()
+                    .all(|class| FIXED_PLANE_DATA_CLASSES.contains(class))
+        })
+        .map(|(id, _)| id.to_owned())
+        .collect()
+}
+
 /// The datum element of a decoded definition that states its geometry or its
-/// offset from a reference plane.
-fn element(definition: &FeatureDefinition) -> Option<DatumElement> {
+/// offset from a reference plane. A plane whose plane data is `fixed` states
+/// its frame as its definition; every other element states its geometry as
+/// the cache of the references it follows, which the decoder does not read.
+fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Option<DatumElement> {
     let FeatureDefinition::Operation(operation) = definition else {
         return None;
     };
     Some(match operation {
+        v10::FeatureOperation::DatumPlane { frame } if fixed => {
+            DatumElement::Plane(resolved(plane(*frame, reading.angular)?))
+        }
         v10::FeatureOperation::DatumPlane { frame }
         | v10::FeatureOperation::DatumThreePointPlane { frame, .. } => {
-            DatumElement::Plane(resolved(plane(*frame)?))
+            DatumElement::Plane(following(plane(*frame, reading.angular)?))
         }
         v10::FeatureOperation::DatumOffsetPlane {
             reference: Some(reference),
@@ -137,21 +220,22 @@ fn element(definition: &FeatureDefinition) -> Option<DatumElement> {
         }),
         v10::FeatureOperation::DatumAxis { axis } => {
             let (origin, direction) = axis.geometry()?;
-            DatumElement::Axis(resolved(AxisValue {
+            DatumElement::Axis(following(AxisValue {
                 origin: *origin,
                 direction: unit(*direction)?,
             }))
         }
         v10::FeatureOperation::DatumPoint { position, .. } => {
-            DatumElement::Points(vec![resolved::<kinds::Point>(*position)])
+            DatumElement::Points(vec![following::<kinds::Point>(*position)])
         }
         v10::FeatureOperation::DatumCoordinateSystem { frame } => {
-            DatumElement::Frame(resolved(FrameValue {
+            let value = FrameValue {
                 origin: frame.origin(),
                 x_axis: frame.x_axis(),
                 y_axis: frame.y_axis(),
                 z_axis: frame.z_axis(),
-            }))
+            };
+            DatumElement::Frame(following(orthonormal(value, reading.angular)?))
         }
         _ => return None,
     })
@@ -190,17 +274,58 @@ fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
     })
 }
 
-/// The plane of `frame`: its origin, its unit normal and its unit u axis.
-fn plane(frame: FeatureDatumPlaneFrame) -> Option<PlaneValue> {
-    Some(PlaneValue {
+/// The plane of `frame`: its origin, its unit normal and its unit u axis,
+/// perpendicular to the normal within the angular tolerance `angular`.
+fn plane(frame: FeatureDatumPlaneFrame, angular: f64) -> Option<PlaneValue> {
+    let value = PlaneValue {
         origin: frame.origin(),
         normal: unit(frame.normal())?,
         x_axis: unit(frame.u_axis())?,
-    })
+    };
+    (Vector3::from(value.x_axis)
+        .dot(Vector3::from(value.normal))
+        .abs()
+        <= angular.portable_sin())
+    .then_some(value)
+}
+
+/// `frame` where its axes are orthonormal and right-handed within the
+/// angular tolerance `angular`.
+fn orthonormal(frame: FrameValue, angular: f64) -> Option<FrameValue> {
+    let (x, y, z) = (
+        Vector3::from(frame.x_axis),
+        Vector3::from(frame.y_axis),
+        Vector3::from(frame.z_axis),
+    );
+    let tolerance = angular.portable_sin();
+    (x.dot(y).abs() <= tolerance
+        && y.dot(z).abs() <= tolerance
+        && z.dot(x).abs() <= tolerance
+        && x.cross(y).dot(z) >= 1.0 - tolerance)
+        .then_some(frame)
 }
 
 fn unit(direction: FeatureDirection3) -> Option<UnitVector3> {
     UnitVector3::normalized_nonzero(direction.into())
+}
+
+/// A construction that follows references the decoder does not read, and
+/// resolves to `value` (`cadir-v11.md` §5.9, Unread roles).
+fn following<K: ConstructionKind>(value: K::Value) -> Construction<K> {
+    Construction {
+        inputs: vec![ConstructionInput {
+            role: None,
+            reference: Some(InputReference::Picks(Selection {
+                at: Anchor::Input,
+                picks: Picks::Unread,
+                native: None,
+            })),
+            value: None,
+            reversed: None,
+        }],
+        resolved: Some(value),
+        ..resolved_none()
+    }
 }
 
 /// A construction with no inputs that resolves to `value`.

@@ -82,6 +82,8 @@ pub(super) struct Scope<'a> {
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
     /// The surfaces of the current geometry.
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    /// The document's angular tolerance.
+    pub(super) angular: f64,
 }
 
 /// Type the sketches, then the extrudes and the revolves, of `timeline`.
@@ -117,7 +119,7 @@ pub(super) fn project(
         sketches: &stated,
         entities: &sketches.entities,
     };
-    let datums = datum::project(&mut timeline.features, &context);
+    let datums = datum::project(&mut timeline.features, &context, lanes, scope.angular);
     let extrudes = extrude::project(&mut timeline.features, &context);
     let revolves = revolve::project(&mut timeline.features, &context);
     pattern::project(&mut timeline.features, &context);
@@ -407,8 +409,8 @@ fn datum_notes(projected: &datum::Projected) -> Vec<LossNote> {
         ),
         (
             SldprtLossCode::DesignDatumPlaneAxisConstructed,
-            "reference planes state an origin and x axis the decoder constructs: their record \
-             stores the plane's normal and distance only",
+            "reference planes state an origin and x axis the decoder constructs from their \
+             mid-plane constraint",
             &projected.constructed_axis,
         ),
         (

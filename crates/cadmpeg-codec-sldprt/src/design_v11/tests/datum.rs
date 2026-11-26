@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_ir::design::construction::{
-    AxisValue, FrameValue, InputReference, PlaneValue, Relation, ScalarDimension,
+    AxisValue, ConstructionInput, FrameValue, InputReference, PlaneValue, Relation, ScalarDimension,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks, Selection};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::datums::{DatumAxis, DatumPlaneReference};
 use cadmpeg_ir::features::geometry::{
@@ -26,7 +26,9 @@ use cadmpeg_ir::units::UnitVector3;
 use super::{assert_no_design_findings, part_with_history, timeline_feature, typed_timeline};
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
-use crate::records::{CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY};
+use crate::records::{
+    FeatureInputClass, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+};
 
 /// The decoded plane through (0, 0, `z`) mm with normal 2·+Z and u axis +X.
 fn plane_at(z: f64) -> FeatureDefinition {
@@ -143,6 +145,113 @@ fn element<'a>(timeline: &'a super::super::tree::Timeline, name: &str) -> &'a Da
     &datum.element
 }
 
+/// Asserts that `inputs` are one input whose role is unread and whose
+/// reference is an unread selection.
+fn assert_unread(inputs: &[ConstructionInput]) {
+    let [input] = inputs else {
+        panic!("one input: {inputs:?}");
+    };
+    assert_eq!(input.role, None, "{input:?}");
+    assert!(
+        matches!(
+            &input.reference,
+            Some(InputReference::Picks(Selection {
+                at: Anchor::Input,
+                picks: Picks::Unread,
+                native: None,
+            }))
+        ),
+        "{input:?}"
+    );
+}
+
+/// Declares the plane-data class `class` in the object of the reference
+/// plane `plane` in the feature-input lane that names it.
+fn declare(native: &mut SldprtNative, plane: &str, class: &str) {
+    let lane = native
+        .feature_input_lanes
+        .iter_mut()
+        .find(|lane| lane.names.iter().any(|name| name.value == plane))
+        .unwrap();
+    let offset = lane
+        .names
+        .iter()
+        .find(|name| name.value == plane)
+        .unwrap()
+        .offset
+        + 1;
+    lane.classes.push(FeatureInputClass {
+        id: format!("test:class:{offset}"),
+        parent: lane.id.clone(),
+        ordinal: 0,
+        offset,
+        name: class.to_owned(),
+    });
+}
+
+/// The timeline and typed records of `ir`, typed with the feature-input
+/// lanes of `native`.
+fn typed_with_lanes(
+    ir: &CadIr,
+    native: &SldprtNative,
+) -> (super::super::tree::Timeline, super::super::typed::Typed) {
+    let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
+    let entries =
+        super::super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+        &mut timeline,
+        &entries,
+        &super::super::typed::Scope {
+            definition: &ir.design.scopes[0].definition,
+            outside_profile: &HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
+        },
+    );
+    (timeline, typed)
+}
+
+/// Gives `name` the definition `definition` in a configuration that is not
+/// active.
+fn configure(ir: &mut CadIr, name: &str, definition: FeatureDefinition) {
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap()
+        .id
+        .clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("sldprt:model:configuration#9:1").unwrap(),
+        ordinal: 1,
+        active: false,
+        source_index: Some(1),
+        name: None,
+        material: None,
+        properties: BTreeMap::default(),
+        parameter_overrides: BTreeMap::default(),
+        bodies: None,
+        parameter_values: BTreeMap::default(),
+        feature_states: [(
+            feature,
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Active {
+                    outputs: DistinctMembers::default(),
+                },
+                dependencies: DistinctMembers::default(),
+                definition,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        native_ref: None,
+    });
+}
+
 /// The note of `code` among the typed datum notes.
 fn note(typed: &super::super::typed::Typed, code: SldprtLossCode) -> String {
     typed
@@ -179,6 +288,8 @@ fn a_decoded_reference_plane_and_axis_are_typed_datums() {
             direction: UnitVector3::normalized(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
         })
     );
+    assert_unread(&plane.inputs);
+    assert_unread(&axis.inputs);
     let definition = ir.design.scopes[0].definition.clone();
     let (parameters, _, _) = entries.parameters(
         &definition,
@@ -261,6 +372,8 @@ fn a_decoded_point_and_coordinate_system_are_typed_datums() {
             z_axis: UnitVector3::normalized(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         })
     );
+    assert_unread(&points[0].inputs);
+    assert_unread(&frame.inputs);
 }
 
 #[test]
@@ -313,41 +426,109 @@ fn a_datum_whose_geometry_differs_in_a_configuration_is_named() {
         .datums
         .iter()
         .all(|note| note.code != SldprtLossCode::DesignDatumConfigurationDropped.kind()));
-    let plane1 = ir
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Plane1"))
-        .unwrap()
-        .id
-        .clone();
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("sldprt:model:configuration#9:1").unwrap(),
-        ordinal: 1,
-        active: false,
-        source_index: Some(1),
-        name: None,
-        material: None,
-        properties: BTreeMap::default(),
-        parameter_overrides: BTreeMap::default(),
-        bodies: None,
-        parameter_values: BTreeMap::default(),
-        feature_states: [(
-            plane1,
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Active {
-                    outputs: DistinctMembers::default(),
-                },
-                dependencies: DistinctMembers::default(),
-                definition: plane_at(10.0),
-            },
-        )]
-        .into_iter()
-        .collect(),
-        native_ref: None,
-    });
+    configure(&mut ir, "Plane1", plane_at(10.0));
     let (_, _, typed) = typed_timeline(&ir, &native);
     let message = note(&typed, SldprtLossCode::DesignDatumConfigurationDropped);
     assert!(message.contains("\"Plane1\""), "{message}");
     assert!(!message.contains("\"Plane5\""), "{message}");
+}
+
+#[test]
+fn a_datum_with_no_typed_geometry_in_a_configuration_is_named() {
+    let (mut ir, native) = part();
+    let undecoded = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Plane2"))
+        .unwrap()
+        .evaluation
+        .definition()
+        .clone();
+    configure(&mut ir, "Plane1", undecoded);
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    let message = note(&typed, SldprtLossCode::DesignDatumConfigurationDropped);
+    assert!(message.contains("\"Plane1\""), "{message}");
+    assert!(!message.contains("\"Plane5\""), "{message}");
+}
+
+#[test]
+fn a_plane_whose_plane_data_is_fixed_states_its_frame_with_no_inputs() {
+    let (ir, mut native) = part();
+    declare(&mut native, "Plane1", "moFixedRefPlnData_c");
+    declare(&mut native, "Plane5", "moAbsoluteRefPlnData_c");
+    declare(&mut native, "Plane4", "moFixedRefPlnData_c");
+    declare(&mut native, "Plane4", "moConstraintMidPlaneRefplaneData_c");
+    let (timeline, _) = typed_with_lanes(&ir, &native);
+    for name in ["Plane1", "Plane5"] {
+        let DatumElement::Plane(plane) = element(&timeline, name) else {
+            panic!("{name} is a plane datum");
+        };
+        assert!(plane.inputs.is_empty(), "{name}: {:?}", plane.inputs);
+        assert!(plane.resolved.is_some(), "{name}");
+    }
+    let DatumElement::Plane(plane) = element(&timeline, "Plane4") else {
+        panic!("Plane4 is a plane datum");
+    };
+    assert_unread(&plane.inputs);
+}
+
+#[test]
+fn a_plane_whose_plane_data_follows_references_states_an_unread_input() {
+    let (ir, mut native) = part();
+    declare(
+        &mut native,
+        "Plane1",
+        "moConstraintCoincPlaneRefplaneData_c",
+    );
+    let (timeline, _) = typed_with_lanes(&ir, &native);
+    for name in ["Plane1", "Plane5"] {
+        let DatumElement::Plane(plane) = element(&timeline, name) else {
+            panic!("{name} is a plane datum");
+        };
+        assert_unread(&plane.inputs);
+        assert!(plane.resolved.is_some(), "{name}");
+    }
+}
+
+#[test]
+fn a_plane_or_frame_off_square_beyond_the_angular_tolerance_stays_unresolved() {
+    let (mut ir, native) = part();
+    let skew = 5e-10;
+    assert!(ir.tolerances.angular.get() < skew);
+    for feature in &mut ir.model.features {
+        let definition = match feature.name.as_deref() {
+            Some("Plane1") => FeatureDefinition::Operation(V10Operation::DatumPlane {
+                frame: FeatureDatumPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, skew),
+                )
+                .unwrap(),
+            }),
+            Some("Csys1") => FeatureDefinition::Operation(V10Operation::DatumCoordinateSystem {
+                frame: FeatureCoordinateFrame::new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(skew, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            }),
+            _ => continue,
+        };
+        feature.evaluation.edit(|current, _| *current = definition);
+    }
+    let (timeline, _, typed) = typed_timeline(&ir, &native);
+    let message = note(&typed, SldprtLossCode::DesignDatumUnresolved);
+    for name in ["Plane1", "Csys1"] {
+        assert_eq!(
+            timeline_feature(&timeline, name).definition.operation,
+            FeatureOperation::Unresolved {
+                family: OperationFamily::Datum
+            },
+            "{name}"
+        );
+        assert!(message.contains(&format!("\"{name}\"")), "{message}");
+    }
 }

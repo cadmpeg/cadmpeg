@@ -633,8 +633,8 @@ pub(crate) enum SldprtLossCode {
     /// direction their record stores, reversed where their record's reverse
     /// byte is `1`.
     DesignRevolveSenseAssumed,
-    /// Typed reference planes whose record stores the plane's normal and
-    /// distance only: their origin and x axis are a frame the decoder
+    /// Typed reference planes whose frame comes from their mid-plane
+    /// constraint: their origin and x axis are a frame the decoder
     /// constructs on the plane.
     DesignDatumPlaneAxisConstructed,
     /// Typed reference planes with an angular `D1` whose x axis is the

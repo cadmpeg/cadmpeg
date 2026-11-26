@@ -148,6 +148,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     losses.extend(typed.loss);
