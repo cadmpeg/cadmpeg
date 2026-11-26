@@ -2185,6 +2185,11 @@
           "offset": 0,
           "stream": "f3d:FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
           "tag": "GenericSchema"
+        },
+        "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@800": {
+          "offset": 0,
+          "stream": "f3d:native",
+          "tag": "sketch"
         }
       }
     },
