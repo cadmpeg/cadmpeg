@@ -473,22 +473,34 @@ pub(crate) fn write_history_over_stale_solid(
     Ok(report)
 }
 
-/// Runs the semantic writer over an authored native envelope and returns what
-/// it reports.
+/// Runs the semantic writer over an authored native envelope in a write
+/// session under `limits` and returns what it reports.
 pub(crate) fn write_in_native_envelope(
     ir: &CadIr,
     fidelity: &SourceFidelity,
+    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<crate::writer::SemanticOutput, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy { limits };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,
         &fidelity.codec_digests,
         &records,
-        &[],
-        &[],
+        crate::writer::SemanticWriteControls {
+            withheld: &[],
+            shaped: &[],
+            ctx: &ctx,
+        },
+        &mut crate::writer::SemanticWriteCache::default(),
         writer,
     )
 }

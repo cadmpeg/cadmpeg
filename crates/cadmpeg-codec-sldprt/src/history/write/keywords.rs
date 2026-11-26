@@ -536,16 +536,47 @@ mod tests {
         )
     }
 
+    /// The decode of a written block admits 16 MiB and 256 bytes for each
+    /// byte of the block. A 64 MiB text of `<a/>` elements deflates to less
+    /// than 192 KiB, so its read-back is refused; a 240 kB one reads back.
     #[test]
     fn the_read_back_allows_what_the_decode_of_the_written_block_allows() {
         assert!(written(&wide(60_000), Source::Stored(0)).ends_with(b"</Keywords>"));
-        let (member, message) = refused(Ok(wide(300_000)), Source::Member(SOURCE));
+        let (member, message) = refused(Ok(wide(1 << 24)), Source::Member(SOURCE));
         assert_eq!(member.as_deref(), Some(SOURCE));
         assert!(
-            message.contains(
-                "does not read back: the Keywords text: the XML tree could need more than the"
-            ) && message.contains("per-expansion allowance"),
+            message.contains("does not read back: the ")
+                && message.contains("-byte member expands past the")
+                && message.contains("per-expansion allowance of its"),
             "{message}"
         );
+    }
+
+    /// The parse of the read-back charges the caller's ceiling on the bytes
+    /// expanded in all, and a refusal there refuses the write.
+    #[test]
+    fn a_read_back_past_the_expanded_bytes_ceiling_refuses_the_write() {
+        let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+        limits.max_decompressed_bytes_total = 1 << 10;
+        let mut losses = Vec::new();
+        let refused = checked_member(
+            "Contents/Keywords",
+            Ok(wide(1 << 10)),
+            Source::Member(SOURCE),
+            &mut losses,
+            limits,
+        );
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
+            panic!("expected a resource refusal: {refused:?}");
+        };
+        assert_eq!(
+            (limit.dimension, limit.scope, limit.limit),
+            (
+                cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
+                cadmpeg_core::decode::LimitScope::Session,
+                1 << 10
+            )
+        );
+        assert!(losses.is_empty(), "{losses:?}");
     }
 }

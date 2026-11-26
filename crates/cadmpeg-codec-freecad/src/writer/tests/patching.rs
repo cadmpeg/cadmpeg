@@ -456,21 +456,11 @@ fn retained_value_attributes_count_against_the_entity_ceiling() {
         tag
     });
     let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
-    let values: usize = native_arena::<PropertyRecord>(&edited, "properties")
-        .iter()
-        .map(|property| {
-            if let crate::native::PropertyBody::Persisted { values, .. } = &property.body {
-                values.len()
-            } else {
-                0
-            }
-        })
-        .sum();
     let mut probe = ResourceLimits::desktop();
     probe.max_entities = u64::MAX;
     // Each retained value parse is one charge; the wide one holds `value`
     // and the 257 added attributes.
-    let found = (0..values)
+    let found = (0..persisted_values(&edited))
         .map(|skip| {
             at_charge(
                 ResourceDimension::Entities,
@@ -483,6 +473,59 @@ fn retained_value_attributes_count_against_the_entity_ceiling() {
         .expect("the wide value is charged");
     let mut limits = ResourceLimits::desktop();
     limits.max_entities = found.used + found.additional - 1;
+    assert_eq!(write_refusal(&edited, limits), found);
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None).with_limits(ResourceLimits::desktop()))
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("the desktop ceiling writes the wide value");
+}
+
+/// The values that the properties of `ir` persist, one retained value parse
+/// each.
+fn persisted_values(ir: &cadmpeg_ir::CadIr) -> usize {
+    native_arena::<PropertyRecord>(ir, "properties")
+        .iter()
+        .map(|property| {
+            if let crate::native::PropertyBody::Persisted { values, .. } = &property.body {
+                values.len()
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+/// The parse of retained value XML charges its tree storage and its name
+/// comparisons to the write's session as expanded bytes. Its one tag with
+/// `value` and 2^13 added attributes compares 2^25 + 2^12 attribute pairs.
+/// A ceiling on the bytes expanded in all one below the session's count at
+/// the wide value refuses the write, and the desktop ceiling writes it.
+#[test]
+fn retained_value_attribute_comparisons_count_against_the_expanded_bytes_ceiling() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimits};
+    use std::fmt::Write as _;
+
+    let attributes = (0..1 << 13).fold(String::new(), |mut tag, index| {
+        write!(tag, r#" a{index}="""#).expect("write attribute");
+        tag
+    });
+    let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
+    let mut probe = ResourceLimits::desktop();
+    probe.max_decompressed_bytes_total = u64::MAX;
+    let found = (0..persisted_values(&edited))
+        .map(|skip| {
+            at_charge(
+                ResourceDimension::DecompressedBytes,
+                "FreeCAD retained property value XML",
+                skip,
+                || write_refusal(&edited, probe),
+            )
+        })
+        .find(|limit| limit.additional > (1 << 25) + (1 << 12))
+        .expect("the wide value is charged");
+    let mut limits = ResourceLimits::desktop();
+    limits.max_decompressed_bytes_total = found.used + found.additional - 1;
     assert_eq!(write_refusal(&edited, limits), found);
     FcstdCodec
         .plan(EncodeInput::new(&edited, None).with_limits(ResourceLimits::desktop()))

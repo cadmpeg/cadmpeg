@@ -125,31 +125,41 @@ chokepoints are:
 
 Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
-storage are not retained bytes; per-input bounds, entity charges, and local
-work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy. A native record's text may be
+storage are not retained bytes; the expanded-bytes charge of an XML parse,
+per-input bounds, entity charges, and local work caps bound them. A new
+copy of bytes that the decoded document keeps must call `retain_bytes`
+before the copy. A native record's text may be
 counted twice toward retained bytes, once by the codec before attach and
 once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
 JSON copies), so the retained ceiling is conservative by at most that
 text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
-parse it, charge its depth to the session, and bound the tree's storage by
-the per-expansion allowance. For XML, the scan counts what roxmltree 0.21.1
-allocates: the node and attribute slots that it reserves for every `<` and
-`=` in the text, the texts and attribute values that it copies (those with
-references, carriage returns, CDATA, tabs or line breaks), the merged text
-pieces, the per-level parser state, the temporary attributes of the widest
-tag, and the namespaces. The allowance also bounds the name comparisons
+parse it and charge its depth to the session. The depth is charged before
+the parser runs, because roxmltree recurses once per element level.
+
+For XML, the scan counts what roxmltree 0.21.1 allocates: the node and
+attribute slots that it reserves for every `<` and `=` in the text, the
+texts and attribute values that it copies (those with references, carriage
+returns, CDATA, tabs or line breaks), the merged text pieces, the per-level
+parser state, the temporary attributes of the widest tag, the namespaces,
+and three node slots for each node it can make: the root, one for each
+`<`, and one text node after each `<`. It also counts the name comparisons
 that roxmltree makes, one byte each: each attribute with the earlier
 attributes of its tag, and the name of each tag and prefixed attribute with
-the namespaces in scope. The rest of the allowance becomes roxmltree's node
-limit. For a text that `parse_input_xml` reads, each attribute, a
-namespace declaration included, and each distinct namespace prefix is an
-entity charged to the session before roxmltree parses. The depth is
-charged before roxmltree parses, because roxmltree recurses once per
-element level. A JSON tree is estimated from its
-delimiter counts as a `serde_json::Value` tree, also for typed parses. A
+the namespaces in scope. The session charges that count to the
+decompressed-bytes dimension before roxmltree parses, against the caller's
+`max_decompressed_bytes_total` with no allowance that scales with the
+input, and adds it to the other expanded bytes of the session. The
+scan's set of namespace prefixes is admitted against the same ceiling as it
+grows. A refusal is `ResourceLimit` of `scope: Session` whose `additional`
+is the count, `u64::MAX` where the count passes `u64`, and it sets the
+fuse. For a text that `parse_input_xml` reads, each attribute, a namespace
+declaration included, and each distinct namespace prefix is an entity
+charged to the session before roxmltree parses.
+
+A JSON tree is estimated from its delimiter counts as a `serde_json::Value`
+tree, also for typed parses, and bounded by the per-expansion allowance. A
 tree that could exceed the allowance is `NotImplemented` and does not set
 the fuse.
 
