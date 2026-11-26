@@ -25,8 +25,10 @@
 //! scope's current position for the last of them. The current position has
 //! no evaluation. An item that stores no state id holds members and poses
 //! that the walk does not read: it has no evaluation, and a loss names it.
-//! The walk stops at the first item whose state it does not place, and a
-//! loss names each feature whose state it leaves unstated.
+//! An item whose state the walk does not place has no evaluation, and a
+//! loss names it and the assumption that it commits no state. The walk
+//! stops where the stored states of the items of one history do not meet,
+//! and a loss names each feature whose state it leaves unstated.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -173,7 +175,7 @@ struct Entry<'a> {
 impl Entry<'_> {
     /// The item has an evaluation of the state after it.
     fn evaluated(&self) -> bool {
-        !self.stateless && !self.current && self.kind != Kind::NoState
+        !self.stateless && !self.current && matches!(self.kind, Kind::Bound { .. })
     }
 
     /// The item changes a state that the walk does not read.
@@ -269,26 +271,7 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
                 at[*history] = *previous;
                 set[*history] = planned.len();
             }
-            Kind::NoState => {}
-            Kind::Unresolved(_) if entry.stateless => {}
-            Kind::Unresolved(reason) => {
-                let features = entry
-                    .evaluated()
-                    .then(|| entry.feature.clone())
-                    .into_iter()
-                    .chain(earlier)
-                    .collect::<Vec<_>>();
-                return Plan {
-                    planned,
-                    stop: (!features.is_empty()).then(|| Stop {
-                        reason: format!(
-                            "the state of feature {} is not placed: {reason}",
-                            entry.feature
-                        ),
-                        features,
-                    }),
-                };
-            }
+            Kind::NoState | Kind::Unresolved(_) => {}
         }
     }
     Plan {
@@ -442,6 +425,23 @@ fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<L
             join(features)
         ))
     })
+}
+
+/// One loss for each item of `entries` whose state the walk does not place.
+/// The walk takes such an item to commit no state, and the check between
+/// the items of each history stops it where their stored states disagree.
+fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<LossNote> {
+    entries
+        .iter()
+        .filter(|entry| !entry.stateless && !entry.current)
+        .filter_map(|entry| match &entry.kind {
+            Kind::Unresolved(reason) => Some(F3dLossCode::HistoryStateUnread.note(format!(
+                "scope {definition}: the state after feature {} is not stated: {reason}. The item is taken to commit no history state, and the states of the other items are their own stored states.",
+                entry.feature
+            ))),
+            Kind::Bound { .. } | Kind::NoState => None,
+        })
+        .collect()
 }
 
 /// The loss of the states that each of `histories` stores after the state
@@ -756,6 +756,7 @@ impl<'r> Reader<'r, '_> {
             .map(|history| history.blob.stream)
             .collect::<Vec<_>>();
         self.losses.extend(unstated(&scope.definition, &entries));
+        self.losses.extend(unresolved(&scope.definition, &entries));
         let Plan { planned, stop } = plan(&entries, &heads, &names);
         self.losses.extend(
             stop.as_ref()

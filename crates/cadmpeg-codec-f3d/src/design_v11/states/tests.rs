@@ -37,8 +37,8 @@ use crate::test_support::zip_test::f3d_with_smbh;
 
 use super::{
     bind, held, history_owners, inherited_bodies, marked, omitted, plan, project, step, stopped,
-    tails_assumed, unstated, wants, Chain, Consumed, Entry, History, Kind, Marks, Plan, Planned,
-    Reader, Rule, Scope, Tail, Tails,
+    tails_assumed, unresolved, unstated, wants, Chain, Consumed, Entry, History, Kind, Marks, Plan,
+    Planned, Reader, Rule, Scope, Tail, Tails,
 };
 
 fn point(name: &str, x: f64) -> Point {
@@ -423,6 +423,7 @@ fn run(
     let definition = &design.scope.definition;
     let mut losses = unstated(definition, &entries)
         .into_iter()
+        .chain(unresolved(definition, &entries))
         .chain(stop.as_ref().and_then(|stop| stopped(definition, stop)))
         .collect::<Vec<_>>();
     if !planned.is_empty() {
@@ -750,7 +751,7 @@ fn a_state_that_several_histories_store_lies_in_the_history_its_scope_binds() {
 }
 
 #[test]
-fn an_item_whose_state_is_not_placed_ends_the_states_and_names_each_earlier_feature() {
+fn an_item_whose_state_is_not_placed_has_no_evaluation_and_the_walk_goes_on() {
     let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
     let entries = entries(
         &design,
@@ -763,25 +764,51 @@ fn an_item_whose_state_is_not_placed_ends_the_states_and_names_each_earlier_feat
         ],
     );
     let Plan { planned, stop } = plan(&entries, &[Some(4)], &["BREP.x"]);
+    assert_eq!(stop, None);
+    assert_eq!(
+        planned
+            .iter()
+            .map(|planned| (planned.entry, planned.targets.clone()))
+            .collect::<Vec<_>>(),
+        [(3, vec![Some(3)]), (1, vec![Some(2)]), (0, vec![Some(1)])]
+    );
+    let [loss] = unresolved(&design.scope.definition, &entries)
+        .try_into()
+        .expect("one loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        loss.message.contains(&format!(
+            "the state after feature {} is not stated: the file stores no state 9",
+            feature_id("u")
+        )) && !loss.message.contains(feature_id("a").as_str()),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
+    let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            Kind::Unresolved("the file stores no state 3".to_owned()),
+            bound(0, 4, Some(3)),
+            bound(0, 5, Some(4)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(5)], &["BREP.x"]);
     assert_eq!(
         planned,
         [Planned {
             entry: 3,
-            targets: vec![Some(3)],
+            targets: vec![Some(4)],
         }]
     );
-    let loss = stopped(&design.scope.definition, &stop.expect("a stop")).expect("a loss");
-    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
-    assert!(
-        loss.message.contains(&format!(
-            "features {}, {}, {} are not stated",
-            feature_id("a"),
-            feature_id("c"),
-            feature_id("u")
-        )),
-        "{}",
-        loss.message
-    );
+    let stop = stop.expect("a stop");
+    assert_eq!(stop.features, [feature_id("a"), feature_id("c")]);
 }
 
 #[test]
