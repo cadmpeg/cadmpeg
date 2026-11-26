@@ -241,7 +241,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},
@@ -295,10 +295,10 @@ mod tests {
         let given_up = ir.geometry.points[0].id.as_str();
         let kept = ir.geometry.points[1].id.as_str();
         let mut value = json::to_value(&ir).unwrap();
-        value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
+        value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
         let text = value.to_string();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},

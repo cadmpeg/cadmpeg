@@ -8,7 +8,7 @@ use cadmpeg_core::serde_erase::json;
 fn parameter_real_admission_preserves_finite_signed_wire_values() {
     for value in [-f64::MAX, -1.0, -0.0, 0.0, 1.0, f64::MAX] {
         let parameter = ParameterValue::Real(FiniteReal::new(value).unwrap());
-        let wire = serde_json::json!({"kind": "real", "value": value});
+        let wire = cadmpeg_core::json!({"kind": "real", "value": value});
         assert_eq!(json::to_value(&parameter).unwrap(), wire);
         assert_eq!(json::from_value::<ParameterValue>(wire).unwrap(), parameter);
     }
@@ -33,16 +33,16 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     dependencies.clear();
     assert!(dependencies.is_empty());
 
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id":"test:test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
         "dependencies":[second, first], "properties": {}
     });
     let parameter: DesignParameter = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(parameter).unwrap(), wire);
-    wire["dependencies"] = serde_json::json!([first, first]);
+    wire["dependencies"] = cadmpeg_core::json!([first, first]);
     let error = json::from_value::<DesignParameter>(wire.clone()).unwrap_err();
     assert!(error.to_string().contains("dependencies"));
-    wire["dependencies"] = serde_json::json!([]);
+    wire["dependencies"] = cadmpeg_core::json!([]);
     let parameter: DesignParameter = json::from_value(wire.clone()).unwrap();
     assert!(parameter.dependencies.is_empty());
     assert_eq!(json::to_value(parameter).unwrap(), wire);

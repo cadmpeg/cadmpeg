@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(state.identifier, 0x1234_5678);
         assert_eq!(
             json::to_value(state).unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "xmt": 2, "preceding": 1, "first_following": 3,
                 "next_sibling": 4, "prev_sibling": 1,
                 "n_new_nodes": 0, "n_del_nodes": 1, "n_copy_mod_nodes": 2,
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn wire_preserves_null_links_and_rejects_zero_or_null_identity() {
-        let value = serde_json::json!({
+        let value = cadmpeg_core::json!({
             "xmt": 2, "preceding": 1, "first_following": 1,
             "next_sibling": 1, "prev_sibling": 1,
             "n_new_nodes": 0, "n_del_nodes": 0, "n_copy_mod_nodes": 0,

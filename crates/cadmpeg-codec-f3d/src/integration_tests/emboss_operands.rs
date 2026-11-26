@@ -15,7 +15,7 @@ fn scope(stream: &str) -> DesignParameterScope {
         DesignFeatureKind::Emboss,
         40,
     );
-    let construction = json::from_value(serde_json::json!({
+    let construction = json::from_value(cadmpeg_core::json!({
         "control_words": [7, 9], "native_pair": [17, 23],
         "depth_owner": {"value": 60, "offset": 29},
         "auxiliary_group": {"value": 72, "offset": 40},

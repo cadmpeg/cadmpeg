@@ -5,7 +5,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::super::fixture::{design_findings, document};
 use super::super::selections::Stored;

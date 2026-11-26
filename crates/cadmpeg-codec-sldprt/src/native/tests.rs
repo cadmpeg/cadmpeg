@@ -857,7 +857,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
         let mut wire = json::to_value(original).unwrap();
         let record = wire[arena].as_array_mut().unwrap().first_mut().unwrap();
         let ordinal = record["ordinal"].as_u64().unwrap();
-        record["ordinal"] = serde_json::json!(ordinal + 100);
+        record["ordinal"] = cadmpeg_core::json!(ordinal + 100);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
         let error = crate::native::SldprtNative::load(
             &namespace,
@@ -868,7 +868,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     }
     let mut wire = json::to_value(original).unwrap();
     assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
-    wire["sketch_input_entities"] = serde_json::json!([]);
+    wire["sketch_input_entities"] = cadmpeg_core::json!([]);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
     let error = crate::native::SldprtNative::load(
         &namespace,
@@ -901,7 +901,7 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
     let mut object_id_edit = original;
     let current_object_id = object_id_edit["feature_input_names"][0]["object_id"].as_u64();
     let forged_object_id = if current_object_id == Some(1) { 2 } else { 1 };
-    object_id_edit["feature_input_names"][0]["object_id"] = serde_json::json!(forged_object_id);
+    object_id_edit["feature_input_names"][0]["object_id"] = cadmpeg_core::json!(forged_object_id);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(object_id_edit).unwrap();
     let error = crate::native::SldprtNative::load(
         &namespace,
@@ -944,7 +944,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let offset = scalar_edit["feature_input_scalars"][0]["offset"]
         .as_u64()
         .expect("a scalar states its payload offset");
-    scalar_edit["feature_input_scalars"][0]["offset"] = serde_json::json!(offset + 7);
+    scalar_edit["feature_input_scalars"][0]["offset"] = cadmpeg_core::json!(offset + 7);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(scalar_edit).unwrap();
     let error = crate::native::SldprtNative::load(
         &namespace,
@@ -959,7 +959,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let mut object_id_edit = original.clone();
     let current = object_id_edit["feature_input_names"][0]["object_id"].as_u64();
     object_id_edit["feature_input_names"][0]["object_id"] =
-        serde_json::json!(if current == Some(1) { 2 } else { 1 });
+        cadmpeg_core::json!(if current == Some(1) { 2 } else { 1 });
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(object_id_edit).unwrap();
     let error = crate::native::SldprtNative::load(
         &namespace,
@@ -975,7 +975,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     assert_ne!(same_length, stated);
     for forged in [same_length, format!("{stated}-longer")] {
         let mut value_edit = original.clone();
-        value_edit["feature_input_names"][0]["value"] = serde_json::json!(forged);
+        value_edit["feature_input_names"][0]["value"] = cadmpeg_core::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(value_edit).unwrap();
         let error = crate::native::SldprtNative::load(
             &namespace,
@@ -1006,22 +1006,22 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
     for (field, value, message) in [
         (
             "ordinal",
-            serde_json::json!(3),
+            cadmpeg_core::json!(3),
             "SolidWorks feature-input lane expects entity ordinal",
         ),
         (
             "offset",
-            serde_json::json!(u64::MAX),
+            cadmpeg_core::json!(u64::MAX),
             "sketch entity offset is not a marker in native_payload",
         ),
         (
             "object_index",
-            serde_json::json!(77),
+            cadmpeg_core::json!(77),
             "SolidWorks feature-input object index does not match its native payload",
         ),
         (
             "local_id",
-            serde_json::json!(77),
+            cadmpeg_core::json!(77),
             "SolidWorks feature-input local object id does not match its native payload",
         ),
     ] {
@@ -1074,7 +1074,7 @@ fn native_load_rejects_duplicate_history_ordinals_from_json() {
         let records = wire[arena].as_array_mut().unwrap();
         let mut duplicate = records[0].clone();
         duplicate["id"] =
-            serde_json::json!(format!("{}-duplicate", records[0]["id"].as_str().unwrap()));
+            cadmpeg_core::json!(format!("{}-duplicate", records[0]["id"].as_str().unwrap()));
         records.push(duplicate);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
         let error = crate::native::SldprtNative::load(
@@ -1169,7 +1169,7 @@ fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_
     assert!(shorter.encode_utf16().count() < stated.encode_utf16().count());
     for forged in [same_length, format!("{stated}-longer"), shorter] {
         let mut edit = original.clone();
-        edit["feature_input_names"][0]["value"] = serde_json::json!(forged);
+        edit["feature_input_names"][0]["value"] = cadmpeg_core::json!(forged);
         assert_eq!(
             edit["feature_input_scalars"], scalars,
             "the value edit moved the scalar arena"
@@ -1210,7 +1210,7 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         cadmpeg_core::decode::u64_from_index(payload_length) + 1,
     ] {
         let mut edit = original.clone();
-        edit["feature_input_names"][0]["offset"] = serde_json::json!(forged);
+        edit["feature_input_names"][0]["offset"] = cadmpeg_core::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(edit).unwrap();
         let error = crate::native::SldprtNative::load(
             &namespace,

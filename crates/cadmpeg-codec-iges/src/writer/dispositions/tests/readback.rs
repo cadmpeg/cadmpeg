@@ -156,7 +156,7 @@ pub(super) struct Facts {
 
 impl Facts {
     pub(super) fn of(ir: &CadIr, removed: &[&'static str]) -> Self {
-        let geometry = serde_json::to_value(&ir.geometry).unwrap();
+        let geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry).unwrap();
         let mut records = BTreeMap::new();
         for (arena, values) in geometry.as_object().unwrap() {
             for record in values.as_array().into_iter().flatten() {

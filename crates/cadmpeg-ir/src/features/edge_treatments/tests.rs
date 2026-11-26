@@ -4,8 +4,8 @@ use crate::{
     features::edge_treatments::{ChamferSpec, RadiusSpec, VariableRadii, VariableRadius},
     scalar::Length,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn point(parameter: f64, radius: f64) -> VariableRadius {
     VariableRadius {

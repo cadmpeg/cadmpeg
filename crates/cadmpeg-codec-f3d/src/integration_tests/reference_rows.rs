@@ -6,8 +6,9 @@ use crate::test_support::assembly_test::{
     f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
     f3z_archive_with_design_description, redirections_json,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 #[test]
 fn derived_dependency_keeps_xref_merge_without_its_target() {

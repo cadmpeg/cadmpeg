@@ -3,8 +3,8 @@
 
 use super::DesignEntitySelectionOperand;
 use crate::records::topology::test_support::rejects_changed_fields;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn entity_selection_wire_for_borrowed() -> serde_json::Value {
     json!({
@@ -138,9 +138,9 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
     }
     let base: serde_json::Value = serde_json::from_str(&format!("{prefix}{suffix}")).unwrap();
     for (field, value) in [
-        ("owner_scope_record_index", serde_json::json!(13)),
-        ("repeated_opaque_index", serde_json::json!(2)),
-        ("flags", serde_json::json!("0001")),
+        ("owner_scope_record_index", cadmpeg_core::json!(13)),
+        ("repeated_opaque_index", cadmpeg_core::json!(2)),
+        ("flags", cadmpeg_core::json!("0001")),
     ] {
         let mut invalid = base.clone();
         invalid[field] = value;

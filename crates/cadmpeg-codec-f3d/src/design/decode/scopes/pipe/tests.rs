@@ -512,7 +512,7 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
     ];
     for (encoded, hollow, operation, operation_at) in controls {
         let raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>> =
-            json::from_value(serde_json::json!(encoded)).unwrap();
+            json::from_value(cadmpeg_core::json!(encoded)).unwrap();
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&raw);
         let actual = super::exact_pipe_prefix(&bytes, 17).unwrap();

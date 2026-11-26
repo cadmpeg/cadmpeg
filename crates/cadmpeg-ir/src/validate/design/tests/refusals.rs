@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::design::evaluation::{EvaluationStatus, StateContent, StateDelta};
 use crate::design::names::NameEntry;

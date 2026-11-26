@@ -61,7 +61,7 @@ fn placement_wire_reads_the_one_zero_written_for_a_negative_zero_atom() {
     raw[MAGIC_VALUE.len() + 1] = 0x80;
     let parsed = parse_frame(View::over_retained(&raw)).unwrap();
     assert_eq!(parsed.matrix[1].to_bits(), (-0.0_f64).to_bits());
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id":"nx:assembly:placement#123", "raw_frame":NativeBytes::new(raw.as_slice()),
         "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
@@ -70,14 +70,14 @@ fn placement_wire_reads_the_one_zero_written_for_a_negative_zero_atom() {
     let record: AssemblyPlacement = json::from_value(wire.clone()).unwrap();
     assert_eq!(record.raw_frame.as_ref(), raw.as_slice());
     let mut moved = wire;
-    moved["matrix"][1] = serde_json::json!(0.5);
+    moved["matrix"][1] = cadmpeg_core::json!(0.5);
     assert!(json::from_value::<AssemblyPlacement>(moved).is_err());
 }
 
 #[test]
 fn placement_wire_rejects_derived_field_and_source_identity_changes() {
     let raw = frame();
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id":"nx:assembly:placement#123", "raw_frame":NativeBytes::new(raw.as_slice()),
         "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
@@ -89,15 +89,15 @@ fn placement_wire_rejects_derived_field_and_source_identity_changes() {
     null_reference["object_record"] = serde_json::Value::Null;
     assert!(json::from_value::<AssemblyPlacement>(null_reference).is_err());
     for (field, value) in [
-        ("id", serde_json::json!("nx:assembly:placement#124")),
+        ("id", cadmpeg_core::json!("nx:assembly:placement#124")),
         (
             "source_entry",
-            serde_json::json!("/Root/FastLoad/Structure"),
+            cadmpeg_core::json!("/Root/FastLoad/Structure"),
         ),
-        ("label", serde_json::json!("B")),
+        ("label", cadmpeg_core::json!("B")),
         (
             "uuid",
-            serde_json::json!("11234567-89ab-cdef-0123-456789abcdef"),
+            cadmpeg_core::json!("11234567-89ab-cdef-0123-456789abcdef"),
         ),
     ] {
         let mut changed = wire.clone();
@@ -105,7 +105,7 @@ fn placement_wire_rejects_derived_field_and_source_identity_changes() {
         assert!(json::from_value::<AssemblyPlacement>(changed).is_err());
     }
     let mut changed = wire;
-    changed["matrix"][3] = serde_json::json!(1.0);
+    changed["matrix"][3] = cadmpeg_core::json!(1.0);
     assert!(json::from_value::<AssemblyPlacement>(changed).is_err());
 }
 
@@ -113,7 +113,7 @@ fn placement_wire_rejects_derived_field_and_source_identity_changes() {
 fn placement_object_binding_requires_one_complete_record_at_the_frame_start() {
     let raw = frame();
     let placement = |offset: u64| -> AssemblyPlacement {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id":format!("nx:assembly:placement#{offset}"), "raw_frame":NativeBytes::new(raw.as_slice()),
             "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
             "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
@@ -121,7 +121,7 @@ fn placement_object_binding_requires_one_complete_record_at_the_frame_start() {
         })).unwrap()
     };
     let object = |id: &str, offset: u64, length: usize| -> ObjectRecord {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id":id, "object_id":17, "object_id_source_offset":16,
             "section_ordinal":0, "record_ordinal":0, "section_offset":0,
             "byte_len":length, "sha256":"0000000000000000000000000000000000000000000000000000000000000000",

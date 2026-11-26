@@ -146,7 +146,7 @@ fn a_cage_member_round_trips_through_json() {
     let json = json::to_value(&member).unwrap();
     assert_eq!(
         json,
-        serde_json::json!({"kind": "subd", "id": "test:model:subd#0"})
+        cadmpeg_core::json!({"kind": "subd", "id": "test:model:subd#0"})
     );
     assert_eq!(json::from_value::<ShellMember>(json).unwrap(), member);
 }

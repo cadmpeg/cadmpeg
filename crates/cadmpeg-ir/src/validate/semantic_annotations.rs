@@ -144,7 +144,7 @@ mod tests {
             "test:model:semantic-annotation#second",
         ] {
             ir.model.semantic_annotations.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "text",
                     "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
                     "text": [], "references": {}, "reference_anchors": [], "text_style": {},

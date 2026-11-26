@@ -100,7 +100,7 @@ fn parameter(owner: u32, kind: &str, value: f64, unit: &str) -> DesignParameter 
 }
 
 fn owner(index: u32, value: f64) -> DesignParameterOwner {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:design-parameter-owner#{index}"),
         "byte_offset": 2000,
         "frame_length": 104,
@@ -472,7 +472,7 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
             "profile_group",
         ] {
             let mut changed = source.clone();
-            changed["emboss_construction"][field]["offset"] = serde_json::json!(1);
+            changed["emboss_construction"][field]["offset"] = cadmpeg_core::json!(1);
             assert!(json::from_value::<DesignParameterScope>(changed).is_err());
         }
         for field in ["native_pair", "additional_native_pairs"] {
@@ -486,7 +486,7 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
         let mut changed = source.clone();
         changed["emboss_construction"]["additional_native_pairs"] = serde_json::Value::Array(
             (0..=pair_count)
-                .map(|_| serde_json::json!([31, 37]))
+                .map(|_| cadmpeg_core::json!([31, 37]))
                 .collect(),
         );
         assert!(json::from_value::<DesignParameterScope>(changed).is_err());

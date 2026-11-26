@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn saved_toggle_stream_rejects_noncanonical_entry_sequences() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:saved-toggle:stream#0", "version": 1, "raw_count": "02000000",
             "entries": ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#1"],
             "trailer": "00000000", "source_offset": 0, "trailer_source_offset": 79
@@ -556,7 +556,7 @@ mod tests {
             ["nx:saved-toggle:entry#00", "nx:saved-toggle:entry#1"],
         ] {
             let mut invalid = wire.clone();
-            invalid["entries"] = serde_json::json!(entries);
+            invalid["entries"] = cadmpeg_core::json!(entries);
             assert!(json::from_value::<super::SavedToggleStream>(invalid).is_err());
         }
     }
@@ -591,10 +591,10 @@ mod tests {
             parsed.entries[0]
         );
         for (field, invalid) in [
-            ("id", serde_json::json!("other")),
-            ("id", serde_json::json!("nx:saved-toggle:entry#00")),
-            ("raw_byte_len", serde_json::json!("2300")),
-            ("value_source_offset", serde_json::json!(108)),
+            ("id", cadmpeg_core::json!("other")),
+            ("id", cadmpeg_core::json!("nx:saved-toggle:entry#00")),
+            ("raw_byte_len", cadmpeg_core::json!("2300")),
+            ("value_source_offset", cadmpeg_core::json!(108)),
         ] {
             let mut wire = entry_wire.clone();
             wire[field] = invalid;
@@ -606,9 +606,9 @@ mod tests {
             parsed.stream
         );
         for (field, invalid) in [
-            ("id", serde_json::json!("other")),
-            ("version", serde_json::json!(2)),
-            ("raw_count", serde_json::json!("02000000")),
+            ("id", cadmpeg_core::json!("other")),
+            ("version", cadmpeg_core::json!(2)),
+            ("raw_count", cadmpeg_core::json!("02000000")),
         ] {
             let mut wire = stream_wire.clone();
             wire[field] = invalid;

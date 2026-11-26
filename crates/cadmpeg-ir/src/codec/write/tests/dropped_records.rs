@@ -335,7 +335,7 @@ fn the_cadir_writer_copies_the_base_owner_of_a_delta_construction() {
         ProceduralCurveDefinition::Exact { cache: None },
     );
     ir.geometry.procedural_curves.push(base.clone());
-    let replacement: ProceduralCurve = json::from_value(serde_json::json!({
+    let replacement: ProceduralCurve = json::from_value(cadmpeg_core::json!({
         "id": REPLACED,
         "definition": {"kind": "unknown"}
     }))
@@ -462,7 +462,7 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
 fn state_document_fields(ir: &mut CadIr) {
     ir.fragment = true;
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -546,7 +546,7 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     state_document_fields(&mut ir);
     ir.design.parameters.push(negated_parameter("kept", 1));
     let mut value = json::to_value(&ir).unwrap();
-    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
     let read = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
@@ -620,7 +620,7 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
         )
         .unwrap();
     let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
-    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
     let read = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),

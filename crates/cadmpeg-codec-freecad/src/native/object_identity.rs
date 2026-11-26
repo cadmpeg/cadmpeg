@@ -48,7 +48,7 @@ mod tests {
         }
         for id in ["", "fcstd:native:object#B", "fcstd:native:joint#A"] {
             assert!(ObjectIdentity::try_new(id.to_owned(), "A".to_owned()).is_err());
-            let wire = serde_json::json!({"id": id, "name": "A", "type_name": "App::Feature", "persistent_id": null, "view_type": null, "attributes": {}, "dependencies": [], "dependency_allow_partial": null, "order": 0, "raw_xml": null, "byte_start": null, "byte_end": null});
+            let wire = cadmpeg_core::json!({"id": id, "name": "A", "type_name": "App::Feature", "persistent_id": null, "view_type": null, "attributes": {}, "dependencies": [], "dependency_allow_partial": null, "order": 0, "raw_xml": null, "byte_start": null, "byte_end": null});
             assert!(json::from_value::<crate::native::ObjectRecord>(wire).is_err());
         }
     }

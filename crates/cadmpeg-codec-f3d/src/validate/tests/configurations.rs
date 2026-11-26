@@ -59,7 +59,7 @@ fn configuration_documents_with_rows_in_two_tables_have_no_single_order() {
 
 fn scoped_document(scope: &str, name: &str, rows: bool) -> DesignConfiguration {
     let mut value = json::to_value(document(name, rows)).unwrap();
-    value["id"] = serde_json::json!(format!(
+    value["id"] = cadmpeg_core::json!(format!(
         "f3d:role-{scope}/reference-0/occurrence-0@configuration:entry#{name}"
     ));
     json::from_value(value).unwrap()
