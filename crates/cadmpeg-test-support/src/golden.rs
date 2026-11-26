@@ -307,10 +307,7 @@ impl Harness {
             !branches.is_empty(),
             "no golden branches; the harness would pass vacuously"
         );
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(4)
-            .min(inputs.len().max(1));
+        let workers = cadmpeg_core::parallelism().min(4).min(inputs.len().max(1));
         if workers <= 1 {
             for (name, bytes) in inputs {
                 for branch in branches {
@@ -415,10 +412,7 @@ impl Harness {
                 Some(failure)
             }
         };
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(4)
-            .min(inputs.len().max(1));
+        let workers = cadmpeg_core::parallelism().min(4).min(inputs.len().max(1));
         let mut failures: Vec<String> = if workers <= 1 {
             inputs
                 .iter()
