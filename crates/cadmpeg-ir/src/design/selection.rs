@@ -71,7 +71,7 @@ pub trait Keyed {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
+    bound(deserialize = "T: ::serde::de::DeserializeOwned + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,

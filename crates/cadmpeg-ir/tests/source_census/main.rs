@@ -972,15 +972,7 @@ enum WriteSpelling {
 /// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
 /// list names `Serialize`.
 fn derive_list_names_serialize(attribute: &syn::Attribute) -> bool {
-    if !attribute.path().is_ident("derive") && !attribute.path().is_ident("cfg_attr") {
-        return false;
-    }
-    let Ok(list) = attribute.meta.require_list() else {
-        return false;
-    };
-    let mut flat = Vec::new();
-    flatten_tokens(&list.tokens, &mut flat);
-    flat.iter().any(|token| token == "Serialize")
+    derive_list_names(attribute, "Serialize")
 }
 
 /// The count of readable types visited, and every `file:line` where one of
@@ -1159,6 +1151,18 @@ fn routes_through_a_wire(attribute: &syn::Attribute) -> bool {
 /// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
 /// list names `Deserialize`.
 fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
+    derive_list_names(attribute, "Deserialize")
+}
+
+/// Whether this attribute derives `DeserializeTagged`, the reader of a
+/// tagged enum that reads each variant through serde.
+fn derive_list_names_tagged_reader(attribute: &syn::Attribute) -> bool {
+    derive_list_names(attribute, "DeserializeTagged")
+}
+
+/// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
+/// list names `derived`.
+fn derive_list_names(attribute: &syn::Attribute, derived: &str) -> bool {
     if !attribute.path().is_ident("derive") && !attribute.path().is_ident("cfg_attr") {
         return false;
     }
@@ -1167,7 +1171,7 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
     };
     let mut flat = Vec::new();
     flatten_tokens(&list.tokens, &mut flat);
-    flat.iter().any(|token| token == "Deserialize")
+    flat.iter().any(|token| token == derived)
 }
 
 /// The `deserialize_with` helpers that refuse an explicit `null` at their key.
