@@ -31,6 +31,13 @@ impl<'a> Stored<'a> {
             Self::Process(state) => state.content.as_ref().map(|content| &content.delta),
         }
     }
+
+    pub(super) fn id(self) -> &'a str {
+        match self {
+            Self::Evaluation(evaluation) => evaluation.id.as_str(),
+            Self::Process(state) => state.id.as_str(),
+        }
+    }
 }
 
 /// The state a chain of bases ends on.
@@ -185,6 +192,18 @@ impl<'a> Forest<'a> {
             checked,
             parents,
         }
+    }
+
+    /// The records that the chain of bases below the record `at` passes,
+    /// nearest first.
+    pub(super) fn bases(&self, at: usize) -> impl Iterator<Item = Stored<'a>> + '_ {
+        let parent = |at: usize| match self.parents.get(at).copied().flatten() {
+            Some(Parent::Record(base)) => Some(base),
+            _ => None,
+        };
+        std::iter::successors(parent(at), move |&base| parent(base))
+            .take(self.records.len())
+            .map(|base| self.records[base])
     }
 
     fn is_checked(&self, at: usize) -> bool {

@@ -128,8 +128,9 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
             .losses
             .iter()
             .any(|loss| loss.message.starts_with(&format!(
-                "the IGES write omits {colors} native record(s) of `iges` arena `colors` which \
-                 the semantic writer does not encode:"
+                "the IGES write omits {colors} native record(s) of `iges` arena `colors` that \
+                 are colour definitions whose Directory colour number the semantic writer \
+                 writes as 0:"
             ))),
         "{:?}",
         plan.report().losses

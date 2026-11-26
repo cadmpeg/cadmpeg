@@ -21,7 +21,7 @@ use super::profile_check::{Difference, Unchecked};
 use super::revolve::AxisPick;
 use super::sketch::{DimensionCircle, Sketches};
 use super::tree::Timeline;
-use super::{extrude, pattern, revolve, sketch, swept};
+use super::{datum, extrude, pattern, revolve, sketch, swept};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
@@ -69,6 +69,9 @@ pub(super) struct Typed {
     /// The note of the revolves whose decoded axis carries the turn sense
     /// their record stores and whose solid depends on it.
     pub(super) revolve_sense_assumed: Option<LossNote>,
+    /// The notes of the unresolved user datums and of the typed datums that
+    /// state an assumed value.
+    pub(super) datums: Vec<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -79,6 +82,8 @@ pub(super) struct Scope<'a> {
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
     /// The surfaces of the current geometry.
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    /// The document's angular tolerance.
+    pub(super) angular: f64,
 }
 
 /// Type the sketches, then the extrudes and the revolves, of `timeline`.
@@ -114,6 +119,7 @@ pub(super) fn project(
         sketches: &stated,
         entities: &sketches.entities,
     };
+    let datums = datum::project(&mut timeline.features, &context, lanes, scope.angular);
     let extrudes = extrude::project(&mut timeline.features, &context);
     let revolves = revolve::project(&mut timeline.features, &context);
     pattern::project(&mut timeline.features, &context);
@@ -155,6 +161,7 @@ pub(super) fn project(
     );
     let revolve_boolean_unstated = boolean_unstated(&revolves.boolean_unstated);
     let revolve_sense_assumed = sense_assumed(&revolves.sense_assumed);
+    let datums = datum_notes(&datums);
     let revolve_profile_differs = profile_differs(
         SldprtLossCode::DesignRevolveProfileDiffers,
         "revolves",
@@ -203,6 +210,7 @@ pub(super) fn project(
         revolve_profile_differs,
         revolve_profile_unchecked,
         revolve_sense_assumed,
+        datums,
     }
 }
 
@@ -387,6 +395,51 @@ fn sense_assumed(revolves: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
                 .map(|(feature, name)| named(feature, name.as_deref()))
         ),
     )))
+}
+
+/// The notes naming the user datums [`datum::project`] leaves unresolved and
+/// the typed datums that state an assumed value.
+fn datum_notes(projected: &datum::Projected) -> Vec<LossNote> {
+    [
+        (
+            SldprtLossCode::DesignDatumUnresolved,
+            "user datums stay unresolved: the design types no construction for their decoded \
+             definition",
+            &projected.unresolved,
+        ),
+        (
+            SldprtLossCode::DesignDatumPlaneAxisConstructed,
+            "reference planes state an origin and x axis the decoder constructs from their \
+             mid-plane constraint",
+            &projected.constructed_axis,
+        ),
+        (
+            SldprtLossCode::DesignDatumPlaneAxisAngled,
+            "reference planes with an angular D1 take the u-axis of their angular frame as their \
+             x axis; offset planes on them can store another u-axis for it",
+            &projected.angled_axis,
+        ),
+        (
+            SldprtLossCode::DesignDatumConfigurationDropped,
+            "datums state the active configuration's geometry; their geometry decodes \
+             differently in another configuration",
+            &projected.configured,
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, _, datums)| !datums.is_empty())
+    .map(|(code, text, datums)| {
+        code.note(format!(
+            "{} {text}: {}",
+            datums.len(),
+            listed(
+                datums
+                    .iter()
+                    .map(|(feature, name)| named(feature, name.as_deref()))
+            ),
+        ))
+    })
+    .collect()
 }
 
 /// A feature's id, and its name where it has one.

@@ -1082,7 +1082,10 @@ mod tests {
     fn the_sidecar_reader_round_trips_a_key_qualified_by_an_evaluation() {
         let evaluation =
             crate::design::ids::EvaluationId::mint("synthetic:design:evaluation#1").unwrap();
-        let key = crate::annotations::AnnotationKey::in_delta(&evaluation, "synthetic:face#2");
+        let key = crate::annotations::AnnotationKey::in_delta(
+            &evaluation,
+            &crate::ids::FaceId::mint("synthetic:brep:face#2").unwrap(),
+        );
         let mut builder = crate::AnnotationBuilder::new();
         let stream = crate::annotations::StreamHandle::new(crate::stream_name!("source"));
         builder.note(&key, &stream, 5, None);
@@ -1097,7 +1100,7 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
-            json.contains(r#""synthetic:design:evaluation#1 synthetic:face#2""#),
+            json.contains(r#""synthetic:design:evaluation#1 synthetic:brep:face#2""#),
             "{json}"
         );
         let parsed = DecodeSidecar::from_json(&json).expect("parse sidecar");
@@ -1108,7 +1111,7 @@ mod tests {
             read.target(),
             crate::annotations::AnnotationTarget::Delta {
                 qualifier: "synthetic:design:evaluation#1",
-                record: "synthetic:face#2",
+                record: "synthetic:brep:face#2",
             }
         );
         assert_eq!(

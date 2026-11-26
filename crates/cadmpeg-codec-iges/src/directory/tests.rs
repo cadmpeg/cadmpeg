@@ -146,19 +146,22 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
             .unwrap();
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas()["quarantined_directory_records"];
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
-        assert_eq!(quarantined.len(), 1, "{status}");
         assert_eq!(
-            quarantined[0].fields().unwrap()["defect"],
-            "status-number-invalid"
+            crate::test_support::given_up_part_bytes(&result, ("directory-entry", 1)).len(),
+            161,
+            "{status}"
         );
-        assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
+        assert_eq!(losses.len(), 2, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
             IgesLossCode::DirectoryRecordQuarantined.kind()
         );
+        assert!(losses[0]
+            .message
+            .contains("the status number is neither blank"));
+        crate::test_support::assert_given_up(&losses[1], ("directory-entry", 1));
     }
 }
 

@@ -320,7 +320,10 @@ fn assert_decoder_and_scan_leave_timeline_unread(bytes: &[u8]) {
     })
     .expect("an unreadable timeline record is contained");
     assert!(decoded.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        crate::test_support::given_up_codes(crate::loss::F3dLossCode::FeatureTimelineUndecoded)
+    );
     let scan = F3dCodec::scan_design(
         View::over_retained(bytes),
         ScanLimits::default(),

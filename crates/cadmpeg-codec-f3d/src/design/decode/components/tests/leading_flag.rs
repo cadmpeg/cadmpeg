@@ -206,13 +206,14 @@ fn discover(
         super::super::admitted_stream_occurrences(
             ctx,
             bytes,
-            STREAM,
+            "Design/BulkStream.dat",
             &frame_ends,
             &super::super::occurrence_source_entities(meta),
             &primary,
             &typed_primary,
         )
     });
+    let admitted = admitted.unwrap();
     (admitted.occurrences, admitted.losses, admitted.superseded)
 }
 
