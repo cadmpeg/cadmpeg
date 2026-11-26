@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The fields of the design records a decoder projects and of the model
-//! records they restate. Each enum is generated from the field names of its
-//! record type, and each key is its field name as written on the wire.
+//! records they restate. Each key is a field name of the record type as
+//! written on the wire, and the impls of each enum destructure the record by
+//! those names, so every variant names a field and every field has one.
 
 use crate::design::feature::{Feature, FeatureDefinition};
 use crate::design::options::NativeOptions;
@@ -48,14 +49,10 @@ always_stated!(
     NativeOptions
 );
 
-macro_rules! field_enum {
-    ($(#[$meta:meta])* $name:ident { $($field:ident => $variant:ident),+ $(,)? }) => {
-        $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-        pub enum $name {
-            $(#[doc = concat!("`", stringify!($field), "`")] $variant),+
-        }
-
+/// Implements [`Field`] for the field enum `$name`, each variant keyed by its
+/// field name.
+macro_rules! field_keys {
+    ($name:ident { $($field:ident => $variant:ident),+ $(,)? }) => {
         impl $name {
             /// Every field, in declared order.
             pub const ALL: &'static [Self] = &[$(Self::$variant),+];
@@ -78,10 +75,11 @@ macro_rules! field_enum {
     };
 }
 
-/// A design record type's field enum, with whether a record states each field.
+/// Implements [`Field`] for the field enum of a design record type, and
+/// whether a record states each field.
 macro_rules! design_fields {
-    ($(#[$meta:meta])* $name:ident of $record:ident { $($field:ident => $variant:ident),+ $(,)? }) => {
-        field_enum!($(#[$meta])* $name { $($field => $variant),+ });
+    ($name:ident of $record:ident { $($field:ident => $variant:ident),+ $(,)? }) => {
+        field_keys!($name { $($field => $variant),+ });
 
         impl $name {
             /// Each field with whether `record` serializes it.
@@ -93,11 +91,11 @@ macro_rules! design_fields {
     };
 }
 
-/// A model record type's field enum. A field the type gains or renames fails
-/// to compile here.
+/// Implements [`Field`] for the field enum of a model record type. A field
+/// the type gains or renames fails to compile here.
 macro_rules! model_fields {
-    ($(#[$meta:meta])* $name:ident of $record:ident $(<$lifetime:lifetime>)? { $($field:ident => $variant:ident),+ $(,)? }) => {
-        field_enum!($(#[$meta])* $name { $($field => $variant),+ });
+    ($name:ident of $record:ident $(<$lifetime:lifetime>)? { $($field:ident => $variant:ident),+ $(,)? }) => {
+        field_keys!($name { $($field => $variant),+ });
 
         const _: fn(&$record$(<$lifetime>)?) = |record| {
             let $record { id: _, $($field: _),+ } = record;
@@ -105,8 +103,26 @@ macro_rules! model_fields {
     };
 }
 
+/// A field of a design feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FeatureField {
+    /// `name`
+    Name,
+    /// `suppressed`
+    Suppressed,
+    /// `definition`
+    Definition,
+    /// `placement`
+    Placement,
+    /// `component`
+    Component,
+    /// `driven_by`
+    DrivenBy,
+    /// `native_ref`
+    NativeRef,
+}
+
 design_fields! {
-    /// A field of a design feature.
     FeatureField of Feature {
         name => Name,
         suppressed => Suppressed,
@@ -118,8 +134,40 @@ design_fields! {
     }
 }
 
+/// A field of a design parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ParameterField {
+    /// `scope`
+    Scope,
+    /// `owner`
+    Owner,
+    /// `name`
+    Name,
+    /// `kind`
+    Kind,
+    /// `unit`
+    Unit,
+    /// `definition`
+    Definition,
+    /// `value`
+    Value,
+    /// `display`
+    Display,
+    /// `tolerance`
+    Tolerance,
+    /// `decimals`
+    Decimals,
+    /// `comment`
+    Comment,
+    /// `native_options`
+    NativeOptions,
+    /// `source_settings`
+    SourceSettings,
+    /// `native_ref`
+    NativeRef,
+}
+
 design_fields! {
-    /// A field of a design parameter.
     ParameterField of DesignParameter {
         scope => Scope,
         owner => Owner,
@@ -138,8 +186,38 @@ design_fields! {
     }
 }
 
+/// A field of a model feature, as the wire writes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelFeatureField {
+    /// `product_definition`
+    ProductDefinition,
+    /// `ordinal`
+    Ordinal,
+    /// `name`
+    Name,
+    /// `suppressed`
+    Suppressed,
+    /// `regeneration_parent`
+    RegenerationParent,
+    /// `dependencies`
+    Dependencies,
+    /// `source_properties`
+    SourceProperties,
+    /// `source_tag`
+    SourceTag,
+    /// `source_text`
+    SourceText,
+    /// `source_content`
+    SourceContent,
+    /// `outputs`
+    Outputs,
+    /// `definition`
+    Definition,
+    /// `native_ref`
+    NativeRef,
+}
+
 model_fields! {
-    /// A field of a model feature, as the wire writes it.
     ModelFeatureField of FeatureWriteWire<'_> {
         product_definition => ProductDefinition,
         ordinal => Ordinal,
@@ -157,8 +235,34 @@ model_fields! {
     }
 }
 
+/// A field of a model parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelParameterField {
+    /// `product_definition`
+    ProductDefinition,
+    /// `owner`
+    Owner,
+    /// `ordinal`
+    Ordinal,
+    /// `name`
+    Name,
+    /// `expression`
+    ExpressionText,
+    /// `display`
+    Display,
+    /// `value`
+    Value,
+    /// `dependencies`
+    Dependencies,
+    /// `properties`
+    Properties,
+    /// `pmi`
+    Pmi,
+    /// `native_ref`
+    NativeRef,
+}
+
 model_fields! {
-    /// A field of a model parameter.
     ModelParameterField of ModelParameter {
         product_definition => ProductDefinition,
         owner => Owner,
