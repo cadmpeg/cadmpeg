@@ -516,9 +516,10 @@ pub struct ExportBody {
     /// The catalog row the payload is, where the writer wrote another row
     /// than the resolution names; `None` for the resolved row.
     pub written_row: Option<target::WrittenRow>,
-    /// The annotations of the input's fidelity less those of each record the
-    /// payload leaves out, where it leaves out a record they name; `None`
-    /// where they describe the payload as given.
+    /// The annotations of the written document: those of the input's
+    /// fidelity without the keys of each record the payload does not hold
+    /// (§3.2, §3.4). `None` where the input has no fidelity, and for a
+    /// payload that carries no annotations.
     pub annotations: Option<crate::annotations::Annotations>,
 }
 
@@ -563,8 +564,7 @@ impl ExportPlan {
         &self.report
     }
 
-    /// The annotations that describe the payload, where the write left out a
-    /// record the input's annotations name ([`ExportBody::annotations`]).
+    /// The annotations of the written document ([`ExportBody::annotations`]).
     #[must_use]
     pub fn annotations(&self) -> Option<&crate::annotations::Annotations> {
         self.annotations.as_ref()
@@ -775,15 +775,14 @@ impl EncoderBackend for CadirEncoder {
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
         );
         body.losses = losses;
-        body.annotations = input
-            .fidelity
-            .filter(|fidelity| !std::ptr::eq(ir, input.ir) && !fidelity.annotations.is_empty())
-            .and_then(|fidelity| {
-                let removed =
-                    crate::annotations::Removed::before(input.ir).after(std::iter::empty(), ir);
-                let mut annotations = fidelity.annotations.clone();
-                annotations.remove(&removed).then_some(annotations)
-            });
+        body.annotations = input.fidelity.map(|fidelity| {
+            let mut annotations = fidelity.annotations.clone();
+            if !annotations.is_empty() {
+                annotations
+                    .remove(&crate::annotations::Removed::before(input.ir).after_writing(ir));
+            }
+            annotations
+        });
         Ok(body)
     }
 }

@@ -318,15 +318,11 @@ pub(super) fn write_plan_atomic(
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
 /// The sidecar holds `annotations`, the plan's annotations of the written
-/// document, where the write left out records, and the origin's otherwise.
-/// The annotations of the records of the arenas the CADIR wire omits stay
-/// out of the sidecar, since the written document holds none of those
-/// records.
+/// document, and the origin's where the plan states none.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
-    ir: &cadmpeg_ir::CadIr,
     annotations: Option<cadmpeg_ir::Annotations>,
 ) -> Result<SidecarPersistOutcome> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
@@ -345,10 +341,6 @@ pub(super) fn persist_decode_sidecar(
             if let Some(annotations) = annotations {
                 fidelity.annotations = annotations;
             }
-            let omitted = ir.model.omitted_record_ids();
-            fidelity
-                .annotations
-                .retain_entities(|id| !omitted.contains(id));
             let sidecar =
                 DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();

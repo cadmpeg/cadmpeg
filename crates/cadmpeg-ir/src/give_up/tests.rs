@@ -72,9 +72,12 @@ fn run_annotated(
                 marked: released.marked.clone(),
                 states: released
                     .states
-                    .iter()
-                    .map(|(path, state)| {
-                        (path.clone(), (state.dropped.clone(), state.marked.clone()))
+                    .values()
+                    .map(|state| {
+                        (
+                            state.path.clone(),
+                            (state.dropped.clone(), state.marked.clone()),
+                        )
                     })
                     .collect(),
                 tail: released.tail(&[]),
@@ -1032,7 +1035,6 @@ fn a_carrier_left_with_no_user_is_dropped() {
     assert!(after.is_empty(), "{after:#?}");
 }
 
-/// The path in a loss of the stored state `evaluation`.
 /// A give-up removes the annotations of each record it removes: a
 /// top-level record, and a record of a delta under its qualified key. The
 /// annotations of a record it keeps, and a key that named no record before
@@ -1075,6 +1077,7 @@ fn a_given_up_record_and_its_delta_records_take_their_annotations() {
     }
 }
 
+/// The path in a loss of the stored state `evaluation`.
 fn state_path(evaluation: &str) -> String {
     format!("design.evaluations/{evaluation}")
 }
