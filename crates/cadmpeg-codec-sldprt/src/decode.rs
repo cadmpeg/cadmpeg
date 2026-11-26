@@ -3798,6 +3798,8 @@ fn build_geometry_ir(
         metadata_header.as_ref(),
         display_summary,
     )?);
+    ir.tolerances =
+        cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_resolutions.iter().copied());
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
@@ -4065,7 +4067,6 @@ fn build_geometry_ir(
     ir.model.sketch_constraints = sketch_constraints;
 
     let brep_entities = brep.neutral_entity_count()?;
-    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_resolutions);
     ir.geometry.bodies = brep.bodies;
     ir.geometry.regions = brep.regions;
     ir.geometry.shells = brep.shells;
