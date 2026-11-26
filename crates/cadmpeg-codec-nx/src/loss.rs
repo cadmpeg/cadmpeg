@@ -295,6 +295,7 @@ mod tests {
                 "native.attachment-failed",
                 "body.resolution-invalid",
                 "body.resolution-unread",
+                "feature.recognition-tolerance-floor",
             ]
         );
     }

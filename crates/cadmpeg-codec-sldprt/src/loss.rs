@@ -1941,6 +1941,7 @@ mod tests {
                 "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
                 "body.resolution-invalid",
+                "body.resolution-unread",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
