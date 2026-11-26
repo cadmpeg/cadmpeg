@@ -385,23 +385,18 @@ jobs:
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
         # No other build compiles the JsonSchema derives. The core and
-        # assembly crates have no target but their library, so these unit
-        # test builds cover each of their targets under the feature.
-        run: cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
-
-      - name: Committed schema text
-        if: needs.changes.outputs.schema == 'true'
-        # Compares the committed crates/cadmpeg-ir/schema files with the
-        # derives, as text in declared property order. `schema-order` changes
-        # serde_json's map for the whole build, so this build is separate; as
-        # an integration test it compiles no unit test of the crate.
-        run: cargo test -q -p cadmpeg-ir --features schema-order --test committed_schema
-
-      - name: Assembly schema library
-        if: needs.changes.outputs.schema == 'true'
-        # The unit test build compiles the assembly crate under `cfg(test)`
-        # only; its library lints apart from the tests.
-        run: cargo check -q -p cadmpeg-asm --lib --features cadmpeg-asm/schema
+        # assembly crates have no target but their library, so the unit test
+        # build covers each of their targets under the feature; the assembly
+        # library also lints outside `cfg(test)`. `committed_schema` compares
+        # the committed crates/cadmpeg-ir/schema files with the derives, as
+        # text in declared property order. `schema-order` changes serde_json's
+        # map for the whole build, so that build is separate; as an integration
+        # test it compiles no unit test of the crate.
+        run: |
+          set -euo pipefail
+          cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
+          cargo check -q -p cadmpeg-asm --lib --features cadmpeg-asm/schema
+          cargo test -q -p cadmpeg-ir --features schema-order --test committed_schema
 
       - name: Annex A
         if: needs.changes.outputs.schema == 'true'
