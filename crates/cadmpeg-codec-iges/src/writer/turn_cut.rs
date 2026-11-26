@@ -111,7 +111,7 @@ pub(super) fn start_at_seam_cut<'ir>(
     };
     let Some(point) = finite_or_refusal(model_surface_point(
         EvaluationAdmission::Standard,
-        index.ir,
+        &index.model,
         surface,
         uv.u,
         uv.v,

@@ -319,7 +319,7 @@ pub(crate) struct Builder<'a> {
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Vec<Ref>>,
     edge_midpoints: HashMap<String, Ref>,
-    edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    model_index: cadmpeg_ir::index::ModelIndex<'a>,
     edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
@@ -631,7 +631,7 @@ impl<'a> Builder<'a> {
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
             edge_midpoints: HashMap::new(),
-            edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            model_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
             edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
@@ -3874,7 +3874,7 @@ impl<'a> Builder<'a> {
             let uv = uv.get();
             let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -4232,7 +4232,7 @@ impl<'a> Builder<'a> {
         let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
             Some(*vertex)
         } else {
-            match edge_split::midpoint(&self.edge_split_index, edge) {
+            match edge_split::midpoint(&self.model_index, edge) {
                 Ok(edge_split::Split::At(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
@@ -4513,7 +4513,7 @@ impl<'a> Builder<'a> {
             let uv = uv.get();
             finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,

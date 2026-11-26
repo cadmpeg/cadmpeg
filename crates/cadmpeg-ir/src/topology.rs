@@ -15,6 +15,7 @@ use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
 };
+use crate::index::identities::FastBuildHasher;
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
 use crate::transform::Transform;
@@ -674,10 +675,10 @@ impl crate::document::Topology {
 /// its records' parent pointers. Each list holds its children in arena order.
 #[derive(Debug, Default)]
 pub struct ChildLists<'a> {
-    faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>>,
-    regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>>,
-    marked_shells: std::collections::HashSet<&'a ShellId>,
-    marked_bodies: std::collections::HashSet<&'a BodyId>,
+    faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>, FastBuildHasher>,
+    regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>, FastBuildHasher>,
+    marked_shells: std::collections::HashSet<&'a ShellId, FastBuildHasher>,
+    marked_bodies: std::collections::HashSet<&'a BodyId, FastBuildHasher>,
 }
 
 impl<'a> ChildLists<'a> {
