@@ -71,6 +71,12 @@ pub(super) struct StateTopology<'a> {
     pub(super) edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The faces on which each vertex lies.
     pub(super) vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The edges that each vertex ends.
+    vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The shells that list each wire edge.
+    wire_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
+    /// The shells that list each free vertex.
+    free_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
     /// The face loops that use each edge through a coedge.
     pub(super) edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The edges each face loop uses through its coedges.
@@ -153,6 +159,30 @@ impl<'a> Collected<'a> {
                     .extend(faces.iter().copied());
             }
         }
+        let mut vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        for (edge, record) in &self.edges {
+            for vertex in record.vertices() {
+                vertex_edges
+                    .entry(vertex.as_str())
+                    .or_default()
+                    .insert(edge);
+            }
+        }
+        let mut wire_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        let mut free_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        for &shell in self.shells.values() {
+            for member in &shell.members {
+                match member {
+                    ShellMember::WireEdge { id } => {
+                        wire_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::FreeVertex { id } => {
+                        free_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::Subd { .. } => {}
+                }
+            }
+        }
         for record in self.loops.values() {
             if let LoopBoundary::Vertex { vertex, .. } = &record.boundary {
                 if self.faces.contains_key(record.face.as_str()) {
@@ -175,6 +205,9 @@ impl<'a> Collected<'a> {
             surfaces: self.surfaces,
             edge_faces,
             vertex_faces,
+            vertex_edges,
+            wire_shells,
+            free_shells,
             edge_loops,
             loop_edges,
         }
@@ -182,6 +215,13 @@ impl<'a> Collected<'a> {
 }
 
 impl<'a> StateTopology<'a> {
+    /// Every record of `geometry`.
+    pub(super) fn of_geometry(geometry: &'a Topology) -> Self {
+        let mut collected = Collected::default();
+        collected.add(geometry, &|_| true, &|_| true);
+        collected.finish()
+    }
+
     fn of_extents(geometry: &'a Topology, extents: &[&Extent<'a>]) -> Self {
         let mut collected = Collected::default();
         collected.add(
@@ -236,13 +276,28 @@ impl<'a> StateTopology<'a> {
             .filter_map(|face| self.face_body(face))
             .map(|body| body.id.as_str())
             .collect();
-        for shell in self.shells.values() {
-            let owns = shell.members.iter().any(
-                |member| matches!(member, ShellMember::WireEdge { id } if id.as_str() == edge),
-            );
-            if owns {
-                bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
-            }
+        for &shell in self.wire_shells.get(edge).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
+        }
+        bodies
+    }
+
+    /// The bodies that hold `vertex`: those of the faces it lies on, of the
+    /// edges it ends, and of the shells that own it as a free vertex.
+    pub(super) fn vertex_bodies(&self, vertex: &str) -> BTreeSet<&'a str> {
+        let mut bodies: BTreeSet<&'a str> = self
+            .vertex_faces
+            .get(vertex)
+            .into_iter()
+            .flatten()
+            .filter_map(|face| self.face_body(face))
+            .map(|body| body.id.as_str())
+            .collect();
+        for edge in self.vertex_edges.get(vertex).into_iter().flatten() {
+            bodies.extend(self.edge_bodies(edge));
+        }
+        for &shell in self.free_shells.get(vertex).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
         }
         bodies
     }
