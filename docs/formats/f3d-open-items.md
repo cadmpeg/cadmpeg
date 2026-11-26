@@ -20,6 +20,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
+
+**Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
+
+**Known.** The record is an indexed Design record in a Design `BulkStream`, and `f3d.md` §1.2 gives its layout. Its three-digit class tag is the dynamic class tag `256 + k` of the type row at ordinal `k` whose entity list holds the record index, and the primary record index gives its extent. The key `DesignConfigurationRoot` identifies the record without its type row. The table id and row id name a row of a `DesignConfigurationTable` JSON document. The serializer trigger records of the configuration-table and configuration-rule documents register under type version `0`, add-in `Fusion`, and one shared base type (`f3d.md` §3.1, "Records of a sketch-and-extrude design").
+
+**Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
+
+**Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names, or the configuration table document whose stated row it names.
+
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?

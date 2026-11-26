@@ -2,10 +2,12 @@
 //! Human-readable and JSON command-report rendering.
 
 use cadmpeg_core::serde_erase::json;
+use std::collections::BTreeSet;
 use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
+use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_ir::SourceFidelity;
 use serde::ser::SerializeStruct;
@@ -49,6 +51,22 @@ fn render_attribute(value: Option<&str>) -> String {
     value.map_or_else(|| "<absent>".to_owned(), ToOwned::to_owned)
 }
 
+/// The classes a scope holds, as `diff` prints them.
+pub(super) fn render_scope(scope: ContentScope) -> String {
+    render_classes(&scope.classes().collect())
+}
+
+fn render_classes(classes: &BTreeSet<ArenaClass>) -> String {
+    if classes.is_empty() {
+        return "no class".to_owned();
+    }
+    classes
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub(super) enum FidelitySummary {
     None,
     OnlyLeft,
@@ -60,18 +78,28 @@ pub(super) enum FidelitySummary {
 pub(super) struct FidelityDiff {
     annotations_changed: bool,
     retained_records_changed: bool,
+    /// Classes the right-hand sidecar leaves unrepresented and the left does not.
+    unrepresented_added: BTreeSet<ArenaClass>,
+    /// Classes the left-hand sidecar leaves unrepresented and the right does not.
+    unrepresented_removed: BTreeSet<ArenaClass>,
 }
 
 impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
+        let (before, after) = (left.unrepresented(), right.unrepresented());
         Self {
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records() != right.retained_records(),
+            unrepresented_added: after.difference(&before).copied().collect(),
+            unrepresented_removed: before.difference(&after).copied().collect(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        !self.annotations_changed && !self.retained_records_changed
+        !self.annotations_changed
+            && !self.retained_records_changed
+            && self.unrepresented_added.is_empty()
+            && self.unrepresented_removed.is_empty()
     }
 }
 
@@ -145,6 +173,18 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
     }
     if diff.retained_records_changed {
         println!("    retained records changed");
+    }
+    if !diff.unrepresented_added.is_empty() {
+        println!(
+            "    unrepresented added: {}",
+            render_classes(&diff.unrepresented_added)
+        );
+    }
+    if !diff.unrepresented_removed.is_empty() {
+        println!(
+            "    unrepresented removed: {}",
+            render_classes(&diff.unrepresented_removed)
+        );
     }
 }
 
@@ -490,8 +530,49 @@ pub(crate) fn print_check_report(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_core::decode::ArenaClass;
+
     use super::{FidelityDiff, FidelitySummary};
     use cadmpeg_core::serde_erase::json;
+
+    #[test]
+    fn a_fidelity_diff_names_the_classes_that_became_or_ceased_to_be_unrepresented() {
+        use cadmpeg_ir::hash::digest::Sha256Digest;
+        use cadmpeg_ir::{RetainedBytes, RetainedSourceRecord, SourceFidelity, StreamName};
+
+        let retained = |classes: &[ArenaClass]| {
+            let mut fidelity = SourceFidelity::new(Sha256Digest::digest(b""));
+            fidelity
+                .insert_retained_record(
+                    cadmpeg_ir::ids::UnknownId::mint("test:source:part#1").unwrap(),
+                    RetainedSourceRecord::from_bytes(
+                        StreamName::try_from("part".to_owned()).unwrap(),
+                        0,
+                        RetainedBytes::Inline { data: vec![1] },
+                    )
+                    .unwrap()
+                    .with_untyped(classes.iter().copied()),
+                )
+                .unwrap();
+            fidelity
+        };
+        let left = retained(&[ArenaClass::Model]);
+        let right = retained(&[ArenaClass::Design]);
+        let diff = FidelityDiff::between(&left, &right);
+        assert!(!diff.is_empty());
+        assert_eq!(
+            json::to_value(&diff).unwrap(),
+            serde_json::json!({
+                "annotations_changed": false,
+                "retained_records_changed": true,
+                "unrepresented_added": ["design"],
+                "unrepresented_removed": ["model"]
+            })
+        );
+        assert!(FidelityDiff::between(&left, &left).is_empty());
+    }
 
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
@@ -511,6 +592,8 @@ mod tests {
             json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
+                unrepresented_added: BTreeSet::new(),
+                unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
             serde_json::json!({
@@ -518,7 +601,9 @@ mod tests {
                 "different": false,
                 "diff": {
                     "annotations_changed": false,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_added": [],
+                    "unrepresented_removed": []
                 }
             })
         );
@@ -526,6 +611,8 @@ mod tests {
             json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
+                unrepresented_added: BTreeSet::new(),
+                unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
             serde_json::json!({
@@ -533,7 +620,9 @@ mod tests {
                 "different": true,
                 "diff": {
                     "annotations_changed": true,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_added": [],
+                    "unrepresented_removed": []
                 }
             })
         );

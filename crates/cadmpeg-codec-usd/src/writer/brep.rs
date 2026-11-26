@@ -8,7 +8,10 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh};
 use cadmpeg_ir::topology::Body;
 
-use cadmpeg_tessellate::Tessellator;
+use cadmpeg_tessellate::{FaceMesh, Refusal, Tessellator};
+
+/// The tessellation of each face that a write has already meshed.
+pub(super) type FaceMeshes = std::collections::BTreeMap<FaceId, Result<FaceMesh, Refusal>>;
 
 /// Mesh chord as a share of a body's box diagonal.
 const CHORD_RATIO: f64 = 2e-3;
@@ -110,12 +113,14 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
 pub(super) type FaceTriangles = (FaceId, std::ops::Range<usize>);
 
 /// The mesh of `faces` of `body`, in order, with the triangles of each face;
-/// each face keeps its own points. Faces with no mesh are named with the
+/// each face keeps its own points. A face in `meshed` keeps that mesh; the
+/// tessellator meshes the others. Faces with no mesh are named with the
 /// reason.
 pub(super) fn mesh(
     body: &Body,
     faces: &[&FaceId],
     tessellator: &mut Tessellator<'_>,
+    mut meshed: FaceMeshes,
 ) -> (Option<(Tessellation, Vec<FaceTriangles>)>, Vec<String>) {
     let mut ranges = Vec::new();
     let mut positions = Vec::new();
@@ -123,7 +128,10 @@ pub(super) fn mesh(
     let mut triangles = Vec::new();
     let mut unmeshed = Vec::new();
     for face in faces {
-        let mesh = match tessellator.face(face) {
+        let tessellated = meshed
+            .remove(*face)
+            .unwrap_or_else(|| tessellator.face(face));
+        let mesh = match tessellated {
             Ok(mesh) => mesh,
             Err(refusal) => {
                 unmeshed.push(format!("{face}: {refusal}"));

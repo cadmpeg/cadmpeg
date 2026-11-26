@@ -8,7 +8,8 @@ use std::io::Write;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
+use cadmpeg_ir::report::export::{SynthesisFidelity, WritePath};
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
@@ -22,6 +23,7 @@ struct SessionWrite<'s, 'f> {
 impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::FORMAT;
+    const NAME: &'static str = <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::NAME;
     const REQUEST: cadmpeg_core::decode::DecodeDepth =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REQUEST;
     type Target = cadmpeg_ir::codec::write::target::Catalog;
@@ -84,9 +86,8 @@ pub(crate) fn plan_inherited_write(
 /// Plans a write that names no target and whose patch path declines the
 /// edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
-/// Checks that the output decodes, and returns the
-/// `export:native.records-omitted` message, which states why the patch
-/// declined.
+/// Checks that the output decodes, and returns the degraded reason of the
+/// synthesized path, which states why the patch declined.
 pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     let mut output = Vec::new();
     let report = SldprtCodec
@@ -114,22 +115,14 @@ pub(crate) fn plan_fixture_write_with_native_envelope_declined(
 }
 
 fn declined(report: &cadmpeg_ir::report::export::ExportReport, output: Vec<u8>) -> String {
-    assert!(
-        matches!(report.write_path(), WritePath::Synthesized { .. }),
-        "{:?}",
-        report.write_path()
-    );
+    let WritePath::Synthesized {
+        fidelity: SynthesisFidelity::Degraded { reason },
+    } = report.write_path()
+    else {
+        panic!("{:?}", report.write_path());
+    };
     decode_bytes(output);
-    report
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("because the patch of the document")
-        })
-        .unwrap_or_else(|| panic!("{:?}", report.losses))
-        .message
-        .clone()
+    reason.clone()
 }
 
 /// The messages of a write's unwritten-attribute losses, by code.

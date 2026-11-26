@@ -15,9 +15,9 @@
 //! model target cannot yet name in a state that is not current (interim,
 //! §8), with one loss per configuration. The display tables bind to the
 //! active configuration's faces only, so none names a retired record.
-//! [`annotate_state_records`] first keys a copy of the annotations of each
-//! record an evaluation's delta holds by that evaluation (§3.2), so a retired
-//! record keeps them.
+//! [`retire`] first keys a copy of the annotations of each record an
+//! evaluation's delta holds by that evaluation (§3.2), so a retired record
+//! keeps them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -40,24 +40,25 @@ use crate::loss::SldprtLossCode;
 /// Annotates each record of the delta of each evaluation as the geometry
 /// record of the same id is annotated, under the record's key in that
 /// evaluation.
-pub(super) fn annotate_state_records(ir: &CadIr, annotations: &mut Annotations) {
+fn annotate_state_records(ir: &CadIr, annotations: &mut Annotations) {
     for evaluation in &ir.design.evaluations {
         let Some(content) = &evaluation.content else {
             continue;
         };
         topology_ids(&content.delta.records, |id| {
-            annotations.copy_entity(id, AnnotationKey::in_evaluation(&evaluation.id, id));
+            annotations.copy_entity(id, AnnotationKey::in_delta(&evaluation.id, id));
         });
     }
 }
 
-/// Removes the `retired` geometry records, which the evaluations of
-/// configurations that are not active hold, with every model reference to
-/// them: [`retire_model`], with one loss per configuration for the feature
-/// outputs on them that its evaluation's face names do not state; the
-/// appearance bindings on them, and the
-/// appearances only those bindings used, with one loss per configuration;
-/// their annotations and the unknown-record links to them.
+/// Annotates each record of each evaluation's delta under its key in that
+/// evaluation, then removes the `retired` geometry records, which the
+/// evaluations of configurations that are not active hold, with every model
+/// reference to them: [`retire_model`], with one loss per configuration for
+/// the feature outputs on them that its evaluation's face names do not state;
+/// the appearance bindings on them, and the appearances only those bindings
+/// used, with one loss per configuration; their annotations and the
+/// unknown-record links to them.
 pub(super) fn retire(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -65,6 +66,7 @@ pub(super) fn retire(
     retired: &BTreeMap<String, ConfigurationId>,
     losses: &mut Vec<LossNote>,
 ) {
+    annotate_state_records(ir, annotations);
     if retired.is_empty() {
         return;
     }

@@ -16,8 +16,10 @@ use cadmpeg_core::CodecError;
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
 mod key;
+mod named;
 mod sparse;
-pub use key::{AnnotationKey, AnnotationTarget};
+pub use key::{AnnotationKey, AnnotationTarget, Qualifier};
+pub(crate) use named::{delta_records, deltas, design_and_process_records, Removed};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
 /// Document-wide provenance and exactness tables keyed by annotation key.
@@ -26,8 +28,8 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 /// of a record inside the delta of an evaluation or a process state is the
 /// id of that evaluation or process state, one space, and the record's id.
 /// Validation reports a key whose qualifier names no evaluation or process
-/// state, or whose record that delta does not hold, as it reports a key that
-/// names no entity.
+/// state with a delta, or whose record that delta does not hold, as it
+/// reports a key that names no entity.
 ///
 /// An entity absent from `exactness` is byte-exact.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,7 +131,7 @@ impl From<AnnotationFieldError> for CodecError {
 /// Non-empty serde field path keying an exactness override.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct FieldName(String);
+pub struct FieldName(std::borrow::Cow<'static, str>);
 
 #[cfg(feature = "schema")]
 impl JsonSchema for FieldName {
@@ -149,6 +151,17 @@ impl JsonSchema for FieldName {
 pub struct EmptyFieldName;
 
 impl FieldName {
+    /// The field path `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics where `name` is empty; in a constant, the crate does not build.
+    #[must_use]
+    pub const fn from_static(name: &'static str) -> Self {
+        assert!(!name.is_empty(), "an exactness field name cannot be empty");
+        Self(std::borrow::Cow::Borrowed(name))
+    }
+
     /// Returns the field path.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -163,13 +176,13 @@ impl TryFrom<String> for FieldName {
         if name.is_empty() {
             return Err(EmptyFieldName);
         }
-        Ok(Self(name))
+        Ok(Self(std::borrow::Cow::Owned(name)))
     }
 }
 
 impl From<FieldName> for String {
     fn from(name: FieldName) -> Self {
-        name.0
+        name.0.into_owned()
     }
 }
 
@@ -472,6 +485,13 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         self.field_exactness(id, field, Exactness::Derived)
     }
 
+    /// Mark the field `field` of `id` derived.
+    pub fn derived_field(&mut self, id: impl Display, field: FieldName) -> &mut Self {
+        self.state
+            .set_field_exactness(id.to_string(), field, Exactness::Derived);
+        self
+    }
+
     /// Set field exactness.
     pub fn field_exactness<'f>(
         &mut self,
@@ -579,7 +599,7 @@ impl AnnotationState {
             std::borrow::Cow::Owned(id) => {
                 self.annotations
                     .provenance
-                    .insert(AnnotationKey::from(id), provenance);
+                    .insert(AnnotationKey::read(id), provenance);
             }
             std::borrow::Cow::Borrowed(id) => {
                 if let Some(previous) = self.annotations.provenance.get_mut(id) {
@@ -587,7 +607,7 @@ impl AnnotationState {
                 } else {
                     self.annotations
                         .provenance
-                        .insert(AnnotationKey::from(id), provenance);
+                        .insert(AnnotationKey::read(id.to_owned()), provenance);
                 }
             }
         }
@@ -634,7 +654,7 @@ impl AnnotationState {
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
             self.annotations.exactness.insert(
-                AnnotationKey::from(id.into_owned()),
+                AnnotationKey::read(id.into_owned()),
                 ExactnessNote::Entity {
                     entity,
                     fields: BTreeMap::new(),
@@ -676,7 +696,7 @@ impl AnnotationState {
                 "an exactness field name cannot be empty",
             ));
         }
-        let field = FieldName(field.into_owned());
+        let field = FieldName(std::borrow::Cow::Owned(field.into_owned()));
         self.set_field_exactness(id, field, exactness);
         Ok(self)
     }
@@ -697,7 +717,7 @@ impl AnnotationState {
                 }
             }
         } else {
-            match self.annotations.exactness.entry(AnnotationKey::from(id)) {
+            match self.annotations.exactness.entry(AnnotationKey::read(id)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(ExactnessNote::Fields {
                         fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),

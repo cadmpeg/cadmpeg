@@ -514,7 +514,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     }));
     let point = cadmpeg_ir::eval::model_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        result.ir(),
+        &cadmpeg_ir::index::ModelIndex::new_model_only(result.ir()),
         &surface.geometry,
         2.0,
         0.5,
