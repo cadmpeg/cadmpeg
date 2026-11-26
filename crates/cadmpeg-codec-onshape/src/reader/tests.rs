@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
 /// The revolve fixture's bundle with `states` as its bodydetails, each a list of

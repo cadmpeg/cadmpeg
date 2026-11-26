@@ -47,6 +47,6 @@ fn construction_serialization_borrows_its_resolved_value() {
     assert_eq!(clones.get(), 0);
     assert_eq!(
         wire,
-        serde_json::json!({"inputs":[],"after":[],"resolved":7,"resolved_in":{}})
+        cadmpeg_core::json!({"inputs":[],"after":[],"resolved":7,"resolved_in":{}})
     );
 }

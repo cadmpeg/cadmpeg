@@ -501,11 +501,11 @@ mod tests {
         );
         assert_eq!(
             json::to_value(FidelitySummary::OnlyLeft).unwrap(),
-            serde_json::json!({ "present": "left_only" })
+            cadmpeg_core::json!({ "present": "left_only" })
         );
         assert_eq!(
             json::to_value(FidelitySummary::OnlyRight).unwrap(),
-            serde_json::json!({ "present": "right_only" })
+            cadmpeg_core::json!({ "present": "right_only" })
         );
         assert_eq!(
             json::to_value(FidelitySummary::Both(FidelityDiff {
@@ -513,7 +513,7 @@ mod tests {
                 retained_records_changed: false,
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": false,
                 "diff": {
@@ -528,7 +528,7 @@ mod tests {
                 retained_records_changed: false,
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": true,
                 "diff": {

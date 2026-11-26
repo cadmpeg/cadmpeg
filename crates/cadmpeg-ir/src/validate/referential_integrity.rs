@@ -203,7 +203,7 @@ mod tests {
     fn a_reference_into_an_omitted_arena_of_a_cadir_read_document_is_a_warning() {
         let mut ir = read_from_cadir();
         let mut definition: crate::products::ProductDefinition =
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:product#owner", "bom_properties": {},
                 "storage": {"kind": "embedded"}, "bodies": [], "occurrences": [],
                 "instance_bodies": [], "representations": []

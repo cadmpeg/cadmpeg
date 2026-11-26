@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 use super::{DrawingPart, InstanceTarget, ReferenceEntity, ReferenceSelection, ReferenceTarget};
 use crate::attributes::AttributeTarget;

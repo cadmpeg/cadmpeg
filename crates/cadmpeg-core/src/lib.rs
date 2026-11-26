@@ -12,6 +12,7 @@ pub mod error;
 pub mod finite_json;
 pub mod io;
 pub mod iter_wire;
+mod json_macro;
 pub mod printable;
 pub mod read_session;
 pub mod scan;
@@ -28,3 +29,5 @@ extern crate self as cadmpeg_core;
 pub use container::ContainerEntry;
 pub use error::CodecError;
 pub use io::ReadSeek;
+#[doc(hidden)]
+pub use serde_json as __serde_json;

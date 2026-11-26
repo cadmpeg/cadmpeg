@@ -5,7 +5,8 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use super::super::fixture::{assert_finding, design_findings, document, id};
 use crate::design::configuration::MaterialOverride;

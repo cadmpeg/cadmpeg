@@ -17,7 +17,7 @@ fn model(bytes: &[u8], name: &str) -> serde_json::Value {
     let result = UsdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-    serde_json::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
+    cadmpeg_core::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
 }
 
 /// The text fixture a binary fixture `<stem>_<major>_<minor>_<patch>` was

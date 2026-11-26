@@ -749,7 +749,7 @@ mod tests {
     fn value_display_preserves_pretty_snapshot_bytes() {
         for value in [
             serde_json::Value::Null,
-            serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
+            cadmpeg_core::json!({"z": [1.25, true, null], "a": "é\n\""}),
         ] {
             let expected =
                 json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn snapshot_text_writes_negative_zero_as_the_writer_does() {
-        let value = serde_json::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
+        let value = cadmpeg_core::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
         assert_eq!(
             snapshot_text(&value),
             "{\n  \"n\": 0,\n  \"x\": 0.0,\n  \"y\": [\n    0.0,\n    -1.5\n  ]\n}\n"

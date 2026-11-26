@@ -541,18 +541,18 @@ mod tests {
     fn a_blank_selection_id_has_no_wire_spelling() {
         assert!(
             json::from_value::<crate::features::evaluation::SelectionMember>(
-                serde_json::json!({"kind": "face", "id": "   "})
+                cadmpeg_core::json!({"kind": "face", "id": "   "})
             )
             .is_err()
         );
         assert!(
             json::from_value::<crate::features::evaluation::SelectionMember>(
-                serde_json::json!({"kind": "face", "id": " a "})
+                cadmpeg_core::json!({"kind": "face", "id": " a "})
             )
             .is_ok()
         );
         let topology = |id: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:model:feature-result#1",
                 "output_of": "test:test:feature#1",
                 "members": [{"kind": "face", "id": id}],
@@ -574,7 +574,7 @@ mod tests {
         let root_wire = json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
-            serde_json::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
+            cadmpeg_core::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
         );
         assert_eq!(
             json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
@@ -599,7 +599,7 @@ mod tests {
         assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
             external_wire["container"]["external_document"],
-            serde_json::json!({"path": "parts/widget.FCStd"})
+            cadmpeg_core::json!({"path": "parts/widget.FCStd"})
         );
         assert_eq!(
             json::from_value::<JointOperand>(external_wire).unwrap(),
@@ -607,14 +607,14 @@ mod tests {
         );
 
         let mut both = occurrence_wire;
-        both["container"]["external_document"] = serde_json::json!({});
+        both["container"]["external_document"] = cadmpeg_core::json!({});
         let error = json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
         assert!(error.contains("external_document"), "{error}");
 
         let mut stray = root_wire.clone();
-        stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
+        stray["container"]["occurrence"] = cadmpeg_core::json!(occurrence_id.as_str());
         let error = json::from_value::<JointOperand>(stray)
             .unwrap_err()
             .to_string();
@@ -681,14 +681,14 @@ mod tests {
         let wire = json::to_value(JointLimits::Range(range)).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
+            cadmpeg_core::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
         );
         assert_eq!(
             json::from_value::<JointLimits>(wire).unwrap(),
             JointLimits::Range(range)
         );
         let error = json::from_value::<JointLimits>(
-            serde_json::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
+            cadmpeg_core::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
         )
         .unwrap_err()
         .to_string();

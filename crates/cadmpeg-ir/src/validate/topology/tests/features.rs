@@ -1521,7 +1521,7 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
         ),
     ] {
         let mut ir = CadIr::empty();
-        let mut construction: RevolveConstruction = json::from_value(serde_json::json!({
+        let mut construction: RevolveConstruction = json::from_value(cadmpeg_core::json!({
             "kind": "unresolved", "value": {"kind": "profile"}
         }))
         .unwrap();

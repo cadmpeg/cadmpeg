@@ -6,8 +6,9 @@ use super::super::{
     DisplayJtPartitionNodeWire, DisplayJtPolygonMesh, DisplayJtPolygonMeshWire,
     DisplayJtTriStripShapeNode, DisplayJtTriStripShapeNodeWire,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn polygon_mesh_wire() -> Value {
     json!({

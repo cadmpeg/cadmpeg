@@ -5,11 +5,11 @@ use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn thicken_result_and_chain_round_trip_independently() {
-    let operation = serde_json::json!({"kind": "thicken", "value": {
+    let operation = cadmpeg_core::json!({"kind": "thicken", "value": {
         "faces": {"kind": "native", "value": "faces:1"},
         "thickness": 5.0, "side": "forward"
     }});
-    let original = serde_json::json!({"kind": "operation", "value": operation});
+    let original = cadmpeg_core::json!({"kind": "operation", "value": operation});
     let legacy: FeatureDefinition = json::from_value(original.clone()).unwrap();
     assert!(matches!(
         legacy,
@@ -21,12 +21,12 @@ fn thicken_result_and_chain_round_trip_independently() {
     ));
     assert_eq!(json::to_value(legacy).unwrap(), original);
     for result in [
-        serde_json::json!({"kind": "new_body"}),
-        serde_json::json!({"kind": "boolean", "operation": "cut", "targets": {"kind": "bodies", "value": ["synthetic:test:body#2"]}}),
+        cadmpeg_core::json!({"kind": "new_body"}),
+        cadmpeg_core::json!({"kind": "boolean", "operation": "cut", "targets": {"kind": "bodies", "value": ["synthetic:test:body#2"]}}),
     ] {
         let mut wire = original.clone();
         wire["value"]["value"]["result"] = result;
-        wire["value"]["value"]["tangent_chain"] = serde_json::json!(false);
+        wire["value"]["value"]["tangent_chain"] = cadmpeg_core::json!(false);
         let decoded: FeatureDefinition = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(decoded).unwrap(), wire);
     }

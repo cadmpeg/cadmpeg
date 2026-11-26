@@ -101,7 +101,7 @@ fn generated_configuration_document() -> serde_json::Value {
         ],
         &["small", "medium", "large"],
     );
-    document["extension"] = serde_json::json!({"future": 7});
+    document["extension"] = cadmpeg_core::json!({"future": 7});
     document
 }
 

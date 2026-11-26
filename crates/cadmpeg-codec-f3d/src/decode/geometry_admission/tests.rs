@@ -217,14 +217,14 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.0);
         ir.geometry.surfaces.push(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:brep:surface#1",
                 "geometry": {"kind": "solved", "value": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
                     "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}}
             }))
             .unwrap(),
         );
-        let definition = json::from_value(serde_json::json!({
+        let definition = json::from_value(cadmpeg_core::json!({
             "kind":"spring", "direction":0,
             "layout":{"kind":"cache_first",
                 "context":{"sides":[{"surface":"test:brep:surface#1",

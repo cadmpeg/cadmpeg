@@ -327,7 +327,7 @@ pub(crate) fn inspect(
                     path,
                     report_path,
                     "inspect",
-                    Payload::Refused(serde_json::json!({ "summary": null }), refusal),
+                    Payload::Refused(cadmpeg_core::json!({ "summary": null }), refusal),
                     json,
                 );
             }

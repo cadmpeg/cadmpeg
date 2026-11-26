@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{document::Model, CadIr};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{features, id, number, push, rows, text, topology, Mapping};
 

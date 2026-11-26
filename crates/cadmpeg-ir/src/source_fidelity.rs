@@ -915,7 +915,7 @@ mod tests {
         );
 
         let mut restated = wire;
-        restated["bytes"]["byte_len"] = serde_json::json!(3);
+        restated["bytes"]["byte_len"] = cadmpeg_core::json!(3);
         let error = json::from_value::<RetainedSourceRecord>(restated)
             .unwrap_err()
             .to_string();
@@ -929,7 +929,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
         for attach in [false, true] {
-            let unknown: UnknownRecord = json::from_value(serde_json::json!({
+            let unknown: UnknownRecord = json::from_value(cadmpeg_core::json!({
                 "id": "synthetic:model:unknown#0",
                 "offset": 7,
                 "retention": {"kind": "inline", "data": "AQID"},
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn a_restated_record_id_is_refused_by_name() {
         let record = |stream: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "stream": stream,
                 "offset": 0,
                 "bytes": {

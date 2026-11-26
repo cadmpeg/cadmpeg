@@ -284,7 +284,7 @@ fn null_is_admitted_only_as_an_element_or_a_map_value() {
 /// objects they hold. A member with no value, `{"not": {}}`, admits no `null`.
 #[test]
 fn the_null_walk_finds_an_option_outside_an_element() {
-    let schema = serde_json::json!({
+    let schema = cadmpeg_core::json!({
         "type": "object",
         "properties": {
             "section": {"$ref": "#/$defs/Section"},

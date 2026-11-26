@@ -4448,7 +4448,7 @@ mod tests {
     }
 
     fn assignment(physical_token: bool) -> DesignMaterialAssignment {
-        let mut document = serde_json::json!({
+        let mut document = cadmpeg_core::json!({
             "id": "material#0",
             "asm_body_key": 42,
             "asm_body_key_offset": 200,

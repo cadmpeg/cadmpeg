@@ -589,18 +589,18 @@ fn sketch_bindings_abstain_without_eligible_source_declarations() {
 
 #[test]
 fn sketch_target_optional_keys_have_one_absence_spelling() {
-    let target = serde_json::json!({"entity":"entity", "object":"object", "group":"group"});
+    let target = cadmpeg_core::json!({"entity":"entity", "object":"object", "group":"group"});
     let parsed: super::CatiaSketchMemberTarget = json::from_value(target.clone()).unwrap();
     assert!(parsed.child.is_none());
     let mut stated = target.clone();
-    stated["child"] = serde_json::json!("child");
+    stated["child"] = cadmpeg_core::json!("child");
     assert!(json::from_value::<super::CatiaSketchMemberTarget>(stated.clone()).is_ok());
     stated["child"] = serde_json::Value::Null;
     assert!(json::from_value::<super::CatiaSketchMemberTarget>(stated)
         .unwrap_err()
         .to_string()
         .contains("child"));
-    let mut member = serde_json::json!({"ordinal":0,"payload_offset":0,"entity_id":1});
+    let mut member = cadmpeg_core::json!({"ordinal":0,"payload_offset":0,"entity_id":1});
     assert!(json::from_value::<super::CatiaSketchMember>(member.clone())
         .unwrap()
         .target

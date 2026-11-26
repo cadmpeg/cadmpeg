@@ -911,7 +911,10 @@ mod tests {
 
         let rendered =
             json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
-        assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
+        assert_eq!(
+            rendered["format_change"],
+            cadmpeg_core::json!(["", "rhino"])
+        );
 
         assert!(diff(&bare, &bare).is_empty());
     }

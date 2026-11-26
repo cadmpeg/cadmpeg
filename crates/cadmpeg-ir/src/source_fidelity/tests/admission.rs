@@ -173,14 +173,14 @@ fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
     for version in [
         None,
         Some(serde_json::Value::Null),
-        Some(serde_json::json!(0)),
-        Some(serde_json::json!(false)),
-        Some(serde_json::json!("unsupported")),
-        Some(serde_json::json!("7")),
-        Some(serde_json::json!("8")),
-        Some(serde_json::json!("9")),
-        Some(serde_json::json!("12")),
-        Some(serde_json::json!({})),
+        Some(cadmpeg_core::json!(0)),
+        Some(cadmpeg_core::json!(false)),
+        Some(cadmpeg_core::json!("unsupported")),
+        Some(cadmpeg_core::json!("7")),
+        Some(cadmpeg_core::json!("8")),
+        Some(cadmpeg_core::json!("9")),
+        Some(cadmpeg_core::json!("12")),
+        Some(cadmpeg_core::json!({})),
     ] {
         let mut wire = valid.clone();
         match version {
@@ -226,7 +226,7 @@ fn complete_sidecar_admission_rejects_malformed_digests_and_record_keys() {
         );
     }
     let mut wire = valid;
-    wire["fidelity"]["retained_records"][id("a").as_str()]["bytes"] = serde_json::json!({
+    wire["fidelity"]["retained_records"][id("a").as_str()]["bytes"] = cadmpeg_core::json!({
         "kind": "digest", "byte_len": 3, "sha256": "wire-value"
     });
     let error = DecodeSidecar::from_json(&wire.to_string()).unwrap_err();
@@ -236,14 +236,17 @@ fn complete_sidecar_admission_rejects_malformed_digests_and_record_keys() {
 #[test]
 fn complete_sidecar_admission_checks_inline_and_digest_extents() {
     for (image, admitted) in [
-        (serde_json::json!({"kind": "inline", "data": ""}), true),
-        (serde_json::json!({"kind": "inline", "data": "AQ=="}), false),
+        (cadmpeg_core::json!({"kind": "inline", "data": ""}), true),
         (
-            serde_json::json!({"kind": "digest", "byte_len": 0, "sha256": Sha256Digest::digest(b"")}),
+            cadmpeg_core::json!({"kind": "inline", "data": "AQ=="}),
+            false,
+        ),
+        (
+            cadmpeg_core::json!({"kind": "digest", "byte_len": 0, "sha256": Sha256Digest::digest(b"")}),
             true,
         ),
         (
-            serde_json::json!({"kind": "digest", "byte_len": 1, "sha256": Sha256Digest::digest(b"a")}),
+            cadmpeg_core::json!({"kind": "digest", "byte_len": 1, "sha256": Sha256Digest::digest(b"a")}),
             false,
         ),
     ] {
@@ -449,7 +452,7 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
         .set_arena(
             &crate::native::test_ctx(),
             "unknowns",
-            &[serde_json::json!({"id": id("bad"), "links": [1]})],
+            &[cadmpeg_core::json!({"id": id("bad"), "links": [1]})],
         )
         .unwrap();
     let mut fidelity = super::fidelity();
@@ -522,7 +525,7 @@ fn attached_unknown_record_retains_its_native_text_once() {
 
     let link = "synthetic:model:point#target";
     let incoming = UnknownRecord::retained(id("bytes"), 0, vec![1, 2, 3, 4], vec![link.into()]);
-    let native_text = json::to_vec(&serde_json::json!({
+    let native_text = json::to_vec(&cadmpeg_core::json!({
         "id": id("bytes").as_str(),
         "links": [link],
     }))

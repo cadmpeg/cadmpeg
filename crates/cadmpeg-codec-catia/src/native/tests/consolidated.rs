@@ -240,12 +240,12 @@ fn consolidated_parameter_point_wire_rejects_contradictory_controls() {
     for (index, control) in [(0, 0x01), (1, 0x08), (2, 0x48)] {
         let mut wire = json::to_value(&native.consolidated_parameter_points[index])
             .expect("serialize parameter point");
-        wire["control"] = serde_json::json!(control);
+        wire["control"] = cadmpeg_core::json!(control);
         assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
     }
     let mut wire =
         json::to_value(&native.consolidated_parameter_points[2]).expect("serialize explicit line");
-    wire["payload"]["values"][3] = serde_json::json!(2.0);
+    wire["payload"]["values"][3] = cadmpeg_core::json!(2.0);
     assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
 }
 
@@ -277,11 +277,11 @@ fn parameter_operand_native_round_trip_preserves_all_compact_widths() {
         ("u24", 0x0100_0000),
     ] {
         let mut wire = json::to_value(&native.consolidated_parameter_points[0]).unwrap();
-        wire["operand"] = serde_json::json!({"value":invalid,"encoding":encoding});
+        wire["operand"] = cadmpeg_core::json!({"value":invalid,"encoding":encoding});
         assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
     }
     let mut wire = json::to_value(&native.consolidated_parameter_points[0]).unwrap();
-    wire["byte_len"] = serde_json::json!(5);
+    wire["byte_len"] = cadmpeg_core::json!(5);
     assert!(json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err());
 }
 
@@ -639,7 +639,7 @@ fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
     let full_circle = wire["full_circle"]
         .as_bool()
         .expect("serialized circle flag");
-    wire["full_circle"] = serde_json::json!(!full_circle);
+    wire["full_circle"] = cadmpeg_core::json!(!full_circle);
 
     let error = json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)
         .expect_err("full_circle mismatch must fail admission");
@@ -853,7 +853,7 @@ fn consolidated_revolution_wire_rejects_directions_outside_the_exact_tolerance()
     };
     let mut wire = json::to_value(revolution).expect("serialize CATIA revolution");
     let off_axis = (1.0_f64 + 5.0e-10).sqrt();
-    wire["axis"] = serde_json::json!([0.0, 0.0, off_axis]);
+    wire["axis"] = cadmpeg_core::json!([0.0, 0.0, off_axis]);
     let error = json::from_value::<crate::native::CatiaConsolidatedRevolution>(wire).expect_err(
         "an axis outside the exact squared-length tolerance is not a revolution direction",
     );
@@ -1550,7 +1550,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
     );
 
     let mut invalid = json::to_value(packet).expect("owner packet wire");
-    invalid["payload"]["tail"] = serde_json::json!("");
+    invalid["payload"]["tail"] = cadmpeg_core::json!("");
     assert!(json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err());
 }
 
@@ -1664,7 +1664,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = json::to_value(crate::native::CatiaNative::decode(&bytes))
         .expect("serialize CATIA edge definition");
-    invalid["consolidated_edge_nodes"][0]["definition"]["class"] = serde_json::json!(0x26);
+    invalid["consolidated_edge_nodes"][0]["definition"]["class"] = cadmpeg_core::json!(0x26);
     assert!(json::from_value::<crate::native::CatiaNative>(invalid).is_err());
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
@@ -1840,13 +1840,16 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
         *cone
     );
     for (field, value) in [
-        ("direction_y", serde_json::json!([1.0, 0.0, 0.0])),
-        ("axis", serde_json::json!([0.0, 0.0, -1.0])),
-        ("half_angle", serde_json::json!(0.0)),
-        ("half_angle", serde_json::json!(std::f64::consts::FRAC_PI_2)),
-        ("angular_range", serde_json::json!([-10.0, -9.0])),
-        ("angular_domain", serde_json::json!([0.0, 1.0])),
-        ("slant_range", serde_json::json!([-1.0, 1.0])),
+        ("direction_y", cadmpeg_core::json!([1.0, 0.0, 0.0])),
+        ("axis", cadmpeg_core::json!([0.0, 0.0, -1.0])),
+        ("half_angle", cadmpeg_core::json!(0.0)),
+        (
+            "half_angle",
+            cadmpeg_core::json!(std::f64::consts::FRAC_PI_2),
+        ),
+        ("angular_range", cadmpeg_core::json!([-10.0, -9.0])),
+        ("angular_domain", cadmpeg_core::json!([0.0, 1.0])),
+        ("slant_range", cadmpeg_core::json!([-1.0, 1.0])),
     ] {
         let mut invalid = valid.clone();
         invalid[field] = value;
@@ -1864,10 +1867,10 @@ fn plane_wire_rejects_selector_direction_and_range_contradictions() {
     let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
     let original = json::to_value(&native.consolidated_plane_carriers[0]).expect("plane wire");
     for (field, value) in [
-        ("layout", serde_json::json!(0xdc)),
-        ("direction", serde_json::json!([0.0, 1.0, 0.0])),
-        ("u_range", serde_json::json!([5.0, 0.0])),
-        ("v_range", serde_json::json!([3.0, -2.0])),
+        ("layout", cadmpeg_core::json!(0xdc)),
+        ("direction", cadmpeg_core::json!([0.0, 1.0, 0.0])),
+        ("u_range", cadmpeg_core::json!([5.0, 0.0])),
+        ("v_range", cadmpeg_core::json!([3.0, -2.0])),
     ] {
         let mut wire = original.clone();
         wire["payload"][field] = value;

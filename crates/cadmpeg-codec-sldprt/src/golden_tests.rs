@@ -51,7 +51,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
             Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -64,13 +64,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": json::to_value(result.ir()).expect("serialize ir"),
                 "report": json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -117,7 +117,7 @@ fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> 
                 section_identities(&scan).expect("unique admitted source member identities");
             normalized_document(result.ir(), &sections)
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -901,7 +901,7 @@ fn normalized(
             &declared_replacements,
         );
     }
-    let mut document = serde_json::json!({
+    let mut document = cadmpeg_core::json!({
         "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
@@ -1011,7 +1011,7 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
         }) > 0
     );
     assert_ne!(original, normalized_in_memory(&changed, &sections));
-    let mut ordered = serde_json::json!({"model": {"entities": [
+    let mut ordered = cadmpeg_core::json!({"model": {"entities": [
         {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
     ]}});
     canonicalize_model_arena_order(&mut ordered);

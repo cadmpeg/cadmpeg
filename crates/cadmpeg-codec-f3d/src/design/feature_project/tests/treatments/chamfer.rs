@@ -281,16 +281,16 @@ fn another_role_beside_a_face_group_keeps_the_reading_and_names_the_assumption()
 
 fn mixed_scope() -> DesignParameterScope {
     let specs = [
-        serde_json::json!({"kind":"equal_distance", "distance_owner_record_index":10}),
-        serde_json::json!({"kind":"two_distances", "first_owner_record_index":20,
+        cadmpeg_core::json!({"kind":"equal_distance", "distance_owner_record_index":10}),
+        cadmpeg_core::json!({"kind":"two_distances", "first_owner_record_index":20,
             "second_owner_record_index":30}),
-        serde_json::json!({"kind":"distance_angle", "distance_owner_record_index":40,
+        cadmpeg_core::json!({"kind":"distance_angle", "distance_owner_record_index":40,
             "angle_owner_record_index":50}),
     ];
     let sets = (0_u32..)
         .zip(specs)
         .map(|(ordinal, spec)| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "record_index":500+ordinal, "byte_offset":2000+100*u64::from(ordinal),
                 "frame_length":if ordinal==0 {83} else {93}, "group_record_index":100+ordinal,
                 "spec":spec, "auxiliary_record_index":600+ordinal, "entry_count":1,
@@ -301,7 +301,7 @@ fn mixed_scope() -> DesignParameterScope {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.sets = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "form":"current", "corner_type":"miter", "entry_count":3, "sets":sets
             }))
             .unwrap(),
@@ -640,7 +640,7 @@ fn ownerless_chamfer_fixed_scalar_fallback_preserves_the_referenced_dimensions()
         let sets = payload.sets.as_mut().unwrap();
         sets.sets = vec![sets.sets[1].clone()];
         payload.fixed = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "kind":"two_distances", "first":{"value":0.2,"record_index":20,"value_offset":2020},
                 "second":{"value":0.3,"record_index":30,"value_offset":2030}
             }))
@@ -726,7 +726,7 @@ fn fixed_two_distance_chamfer_names_reference_face_assumption() {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "kind":"two_distances", "first":{"value":0.2,"record_index":20,"value_offset":2020},
                 "second":{"value":0.3,"record_index":30,"value_offset":2030}
             }))
@@ -745,7 +745,7 @@ fn fixed_equal_distance_scope() -> DesignParameterScope {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "kind":"equal_distance", "distance":{"value":0.2,"record_index":20,"value_offset":2020}
             }))
             .unwrap(),
@@ -841,7 +841,7 @@ fn reversed_distance_angle_keeps_dimensions_and_native_side_control() {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.sets = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "form":"current", "corner_type":"chamfer", "entry_count":1,
                 "sets":[{
                     "record_index":500, "byte_offset":2000, "frame_length":93,
@@ -895,7 +895,7 @@ fn reversed_two_distance_set_projects_flip_direction_and_disagreeing_sets_record
     let mut single = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = single.payload_mut() {
         payload.sets = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "form":"current", "corner_type":"chamfer", "entry_count":1,
                 "sets":[{
                     "record_index":500, "byte_offset":2000, "frame_length":93,

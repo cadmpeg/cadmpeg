@@ -125,9 +125,9 @@ fn class25_samples_keep_pairing_and_do_not_require_endpoint_samples() {
     }
     assert!(parse(&payload(0x1587, 0x0a, 13, false)).is_none());
     for wire in [
-        serde_json::json!({"target":[1.0,2.0],"source":[1.0]}),
-        serde_json::json!({"target":[2.0,1.0],"source":[1.0,2.0]}),
-        serde_json::json!({"target":[1.0,2.0,3.0],"source":[1.0,3.0,2.0]}),
+        cadmpeg_core::json!({"target":[1.0,2.0],"source":[1.0]}),
+        cadmpeg_core::json!({"target":[2.0,1.0],"source":[1.0,2.0]}),
+        cadmpeg_core::json!({"target":[1.0,2.0,3.0],"source":[1.0,3.0,2.0]}),
     ] {
         assert!(json::from_value::<Class25SamplePairs>(wire).is_err());
     }
@@ -211,7 +211,7 @@ fn class25_named_sampled_witness_retains_two_arrays() {
     };
     assert_eq!(
         json::to_value(samples).expect("paired sample arrays"),
-        serde_json::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
+        cadmpeg_core::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
     );
 }
 

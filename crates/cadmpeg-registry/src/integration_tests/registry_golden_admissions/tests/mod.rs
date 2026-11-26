@@ -4,10 +4,11 @@ use super::{
     AdmissionViolation, ReadDisposition, RegistryRows, DECLARED_CARRIER, DECLARED_SCHEMA,
 };
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
