@@ -2,6 +2,7 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
@@ -60,8 +61,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .first()
         .expect("revision surface construction");
     let expected = scrubbed_definition(procedural.definition());
-    let kind = cadmpeg_core::serde_erase::json::to_value(procedural.definition()).expect("kind")
-        ["kind"]
+    let kind = json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
         .expect("kind string")
         .to_string();
@@ -77,7 +77,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
@@ -830,6 +830,16 @@ pub(crate) fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
+    multi_asset_f3d(include_design_brep, "")
+}
+
+/// [`synthetic_multi_asset_f3d`] with a model BREP, whose Design asset is a
+/// board asset: its manifest stores the subtype `PCBAssetSubType`.
+pub(crate) fn synthetic_board_asset_f3d() -> Vec<u8> {
+    multi_asset_f3d(true, "PCBAssetSubType")
+}
+
+fn multi_asset_f3d(include_design_brep: bool, design_subtype: &str) -> Vec<u8> {
     const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
     const SIBLING_GUID: &str = "20000000-0000-4000-8000-000000000002";
     const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
@@ -860,8 +870,15 @@ pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
     zip.write_all(&synthetic_smbh()).unwrap();
     zip.start_file("DesignAsset[Active]/Manifest.dat", stored)
         .unwrap();
-    zip.write_all(&crate::manifest::encode_design_asset("DesignAsset", DESIGN_GUID).unwrap())
-        .unwrap();
+    zip.write_all(
+        &crate::manifest::encode_design_asset_with_subtype(
+            "DesignAsset",
+            DESIGN_GUID,
+            design_subtype,
+        )
+        .unwrap(),
+    )
+    .unwrap();
     zip.start_file(
         "DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat",
         stored,

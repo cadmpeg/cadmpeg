@@ -41944,6 +41944,7 @@ section = "1.2"
 anchor = "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."
 size = 57
 note = "Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/configuration_root.rs"
 
 [[record.gap]]
 offset = 0
@@ -41987,6 +41988,11 @@ type = "u32"
 value = 1
 source = "spec"
 anchor = "eleven zero bytes, u32 `1`, the LP-UTF16 table id"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/configuration.rs"
+contains = "pub(crate) const ID_WIDTH: usize = 256;"
+note = "The reader admits a table id and a row id of 1 to 256 UTF-16 code units after the prefix; the writer fits both ids to the same width."
 
 [[record]]
 name = "snapshot_body_map_plain_prefix"

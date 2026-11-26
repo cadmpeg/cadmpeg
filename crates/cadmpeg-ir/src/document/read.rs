@@ -28,9 +28,10 @@ use serde_json::Value;
 use self::loss::ReadLossCode;
 use self::text::{Found, Member, Scanner, Span};
 use super::{one_zero, CadIr, Design, Model, Process, Topology};
+use crate::annotations::Removed;
 use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
-use crate::native::{Native, NativeRecord};
+use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::report::loss::LossNote;
 use crate::report::strictness::Strictness;
 use crate::report::Severity;
@@ -79,6 +80,42 @@ pub struct CadirRead {
     /// The text of each part the read gave up, retained `untyped` under the
     /// id of its `unknowns` stub (§3.3).
     pub fidelity: SourceFidelity,
+    /// Each record the read gave up, and each record it dropped with one.
+    removed: Removed,
+}
+
+impl CadirRead {
+    /// The document, the read's report, and `sidecar`, the source fidelity
+    /// of a decode sidecar that matches the text read, reconciled with the
+    /// read (§3.3): without the annotations of each record the read gave up
+    /// and of each record it dropped with one, and with the retained text of
+    /// each part the read gave up under the id of its stub, where `sidecar`
+    /// retains no text under that id.
+    ///
+    /// # Errors
+    ///
+    /// A retained text the sidecar refuses.
+    pub fn with_sidecar(
+        self,
+        mut sidecar: SourceFidelity,
+    ) -> Result<(CadIr, Vec<LossNote>, SourceFidelity), NativeConvertError> {
+        let Self {
+            document,
+            report,
+            fidelity,
+            removed,
+        } = self;
+        if !sidecar.annotations.is_empty() {
+            sidecar.annotations.remove(&removed.after(&document));
+        }
+        let (_, retained) = fidelity.into_parts();
+        for (id, record) in retained {
+            if sidecar.retained_record(id.as_str()).is_none() {
+                sidecar.insert_retained_record(id, record)?;
+            }
+        }
+        Ok((document, report, sidecar))
+    }
 }
 
 /// Why a read states no document.
@@ -132,17 +169,21 @@ impl CadIr {
             parts: Vec::new(),
             part_entries: BTreeMap::new(),
             lost: Vec::new(),
+            removed: Removed::default(),
             stop: None,
             refusal: None,
         };
         let (document, fidelity) = reader.document()?;
-        let report = reader.report;
+        let Reader {
+            report, removed, ..
+        } = reader;
         match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
             None => Ok(CadirRead {
                 document,
                 report,
                 fidelity,
+                removed,
             }),
         }
     }
@@ -178,6 +219,9 @@ struct Reader<'r, 'a> {
     /// The id of each record the read gave up, with the report entry that
     /// names it.
     lost: Vec<(String, usize)>,
+    /// Each record that `lost` names, and each record the release of one
+    /// dropped.
+    removed: Removed,
     stop: Option<text::Stop>,
     refusal: Option<ResourceLimit>,
 }
@@ -209,6 +253,17 @@ impl Members {
         }
     }
 }
+
+/// What a part's reader reads: the part's text, or the value a repair made
+/// of it.
+#[derive(Clone, Copy)]
+enum Source<'s> {
+    Text(&'s str),
+    Value(&'s Value),
+}
+
+/// The reader of one part's type, which keeps the last value it read.
+type ReadPart<'r> = dyn FnMut(Source<'_>) -> Result<(), serde_json::Error> + 'r;
 
 impl Reader<'_, '_> {
     fn note(&mut self, code: ReadLossCode, message: String) {
@@ -345,7 +400,23 @@ impl Reader<'_, '_> {
         }
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
-        let released = match crate::give_up::release_lost(self.ctx, document, &ids) {
+        let released = crate::give_up::release_lost(self.ctx, document, &ids);
+        let releases = released.as_deref().unwrap_or_default();
+        self.removed = Removed::of_records(
+            ids.iter()
+                .chain(releases.iter().flat_map(|(_, release)| &release.dropped))
+                .cloned(),
+            releases
+                .iter()
+                .flat_map(|(_, release)| &release.states)
+                .flat_map(|((_, state), delta)| {
+                    delta
+                        .dropped
+                        .iter()
+                        .map(|record| (state.clone(), record.clone()))
+                }),
+        );
+        let released = match released {
             Ok(released) => released,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
             Err(other) => {
@@ -436,12 +507,33 @@ impl Reader<'_, '_> {
         enclosing: usize,
         classes: &[ArenaClass],
     ) -> Option<T> {
+        let mut read = None;
+        let kept = self.read_part(span, path, enclosing, classes, &mut |source| {
+            read = Some(match source {
+                Source::Text(text) => one_zero::from_str::<T>(text)?,
+                Source::Value(value) => one_zero::from_value::<T>(value)?,
+            });
+            Ok(())
+        });
+        read.filter(|_| kept)
+    }
+
+    /// Reads one part with `read`, or gives it up. Returns whether the part
+    /// is kept: `read` then holds the last value it read.
+    fn read_part(
+        &mut self,
+        span: Span,
+        path: &str,
+        enclosing: usize,
+        classes: &[ArenaClass],
+        read: &mut ReadPart<'_>,
+    ) -> bool {
         if self.halted() {
-            return None;
+            return false;
         }
         if !span.closed {
             self.give_up(span, path, classes, "the text stops being JSON inside it");
-            return None;
+            return false;
         }
         let depth = enclosing + span.depth;
         if depth > MAX_DOCUMENT_DEPTH {
@@ -451,36 +543,37 @@ impl Reader<'_, '_> {
                 classes,
                 format_args!("it nests to depth {depth}, past the bound of {MAX_DOCUMENT_DEPTH}"),
             );
-            return None;
+            return false;
         }
         if let Ok(text) = std::str::from_utf8(&self.bytes[span.start..span.end]) {
-            let (read, repairs, ceiling) = self.attempt(|| one_zero::from_str::<T>(text));
+            let (outcome, repairs, ceiling) = self.attempt(|| read(Source::Text(text)));
             if let Some(limit) = ceiling {
                 self.give_up(span, path, classes, CodecError::ResourceLimit(limit));
-                return None;
+                return false;
             }
-            if let Ok(value) = read {
+            if outcome.is_ok() {
                 self.repaired(path, repairs);
-                return Some(value);
+                return true;
             }
         }
-        self.repair(span, path, classes)
+        self.repair(span, path, classes, read)
     }
 
     /// Reads one part through its value, repairing each refusal that has one
     /// reading, or gives it up.
-    fn repair<T: DeserializeOwned>(
+    fn repair(
         &mut self,
         span: Span,
         path: &str,
         classes: &[ArenaClass],
-    ) -> Option<T> {
+        read: &mut ReadPart<'_>,
+    ) -> bool {
         let mut found = Vec::new();
         let mut value = match text::value(self.bytes, span, &mut found) {
             Ok(value) => value,
             Err(error) => {
                 self.give_up(span, path, classes, error);
-                return None;
+                return false;
             }
         };
         let mut notes = Vec::new();
@@ -506,9 +599,9 @@ impl Reader<'_, '_> {
         }
         let mut ignored = false;
         for _ in 0..MAX_REPAIRS {
-            let (read, repairs, ceiling) = self.attempt(|| one_zero::from_value::<T>(&value));
-            let error = match read {
-                Ok(read) => {
+            let (outcome, repairs, ceiling) = self.attempt(|| read(Source::Value(&value)));
+            let error = match outcome {
+                Ok(()) => {
                     self.report.append(&mut notes);
                     self.repaired(path, repairs);
                     for (key, (start, end)) in &copies {
@@ -526,14 +619,14 @@ impl Reader<'_, '_> {
                             "a restated key",
                         );
                     }
-                    return Some(read);
+                    return true;
                 }
                 Err(error) => error,
             };
             if let Some(limit) = ceiling {
                 self.report.append(&mut notes);
                 self.give_up(span, path, classes, CodecError::ResourceLimit(limit));
-                return None;
+                return false;
             }
             let message = error.to_string();
             let repaired = match repair::refusal(&message) {
@@ -590,7 +683,7 @@ impl Reader<'_, '_> {
                     }
                 }
                 Some(repair::Refusal::MissingField(name))
-                    if !ignored && !repeated && self.collection::<T>(&mut value, &name) =>
+                    if !ignored && !repeated && self.collection(&mut value, &name, read) =>
                 {
                     notes.push(ReadLossCode::SpellingNormalized.note(format!(
                         "{path}: the omitted collection `{name}` is read as empty"
@@ -612,7 +705,7 @@ impl Reader<'_, '_> {
                         self.charge(given);
                     }
                 }
-                return None;
+                return false;
             }
         }
         self.report.append(&mut notes);
@@ -622,12 +715,12 @@ impl Reader<'_, '_> {
             classes,
             "its refusals take more repairs than the reader makes",
         );
-        None
+        false
     }
 
     /// States the omitted collection `name` as empty in the object of
     /// `value` that the record's type then reads past it.
-    fn collection<T: DeserializeOwned>(&self, value: &mut Value, name: &str) -> bool {
+    fn collection(&self, value: &mut Value, name: &str, read: &mut ReadPart<'_>) -> bool {
         let missing = format!("missing field `{name}`");
         for site in repair::collection_sites(value, name, MAX_COLLECTION_SITES) {
             for filler in [
@@ -635,8 +728,8 @@ impl Reader<'_, '_> {
                 Value::Object(serde_json::Map::new()),
             ] {
                 repair::insert(value, &site, name, filler);
-                let (read, _, _) = self.attempt(|| one_zero::from_value::<T>(value));
-                let message = read.err().map(|error| error.to_string());
+                let (outcome, _, _) = self.attempt(|| read(Source::Value(value)));
+                let message = outcome.err().map(|error| error.to_string());
                 let progressed = message.as_deref().is_none_or(|message| {
                     !(message.contains(&missing)
                         || message.contains("invalid type")
@@ -1086,24 +1179,35 @@ impl<'r, 'a> Reader<'r, 'a> {
         class: ArenaClass,
         id: fn(&T) -> &str,
     ) -> Vec<(T, Span)> {
-        let mut kept: Vec<(T, Span)> = Vec::with_capacity(records.len());
-        let mut run: Vec<(T, Span)> = Vec::new();
-        let mut records = records.into_iter().peekable();
-        while let Some(record) = records.next() {
-            let continues = records
-                .peek()
-                .is_some_and(|next| id(&next.0) == id(&record.0));
-            run.push(record);
-            if continues {
-                continue;
-            }
-            let copies = std::mem::take(&mut run);
+        let stated: Vec<(&str, Span)> = records
+            .iter()
+            .map(|(record, span)| (id(record), *span))
+            .collect();
+        let kept = self.distinct_copies(path, &stated, class);
+        records
+            .into_iter()
+            .zip(kept)
+            .filter_map(|(record, kept)| kept.then_some(record))
+            .collect()
+    }
+
+    /// Which of `records`, each an id and its span in id order, are kept:
+    /// the one record of an id, the first copy of an id whose copies hold
+    /// one value, and no copy of an id stated with different values.
+    fn distinct_copies(
+        &mut self,
+        path: &str,
+        records: &[(&str, Span)],
+        class: ArenaClass,
+    ) -> Vec<bool> {
+        let mut kept = Vec::with_capacity(records.len());
+        for copies in records.chunk_by(|left, right| left.0 == right.0) {
             if copies.len() == 1 {
-                kept.extend(copies);
+                kept.push(true);
                 continue;
             }
             let first = copies[0].1;
-            let record_id = id(&copies[0].0).to_owned();
+            let record_id = copies[0].0.to_owned();
             let positions: Vec<usize> = copies.iter().map(|(_, span)| span.start).collect();
             if copies.iter().all(|(_, span)| self.same_value(first, *span)) {
                 self.note(
@@ -1112,10 +1216,11 @@ impl<'r, 'a> Reader<'r, 'a> {
                         "{path}: id {record_id} is stated at offsets {positions:?} with one value"
                     ),
                 );
-                kept.extend(copies.into_iter().take(1));
+                kept.push(true);
+                kept.extend(copies[1..].iter().map(|_| false));
                 continue;
             }
-            for (_, span) in &copies {
+            for (_, span) in copies {
                 // discarded-value: `record.repeated` charges the id.
                 let _ = self.give_up_part(
                     *span,
@@ -1131,6 +1236,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                 ),
             );
             self.lost(record_id, self.report.len() - 1);
+            kept.extend(copies.iter().map(|_| false));
         }
         kept
     }

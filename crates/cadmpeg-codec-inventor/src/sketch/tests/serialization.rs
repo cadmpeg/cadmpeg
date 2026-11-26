@@ -6,6 +6,7 @@ use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
     PmDcContentHeader, PmDcListMetadata, PmDcReference, PmDcReferenceList, PMDC_LIST_CLONE_COUNT,
 };
+use cadmpeg_core::serde_erase::json;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -28,8 +29,8 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
     };
     let wire = PointTailWire::from(tail.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&tail).expect("borrowed tail"),
-        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned tail")
+        json::to_vec(&tail).expect("borrowed tail"),
+        json::to_vec(&wire).expect("owned tail")
     );
     let record = Record {
         id: "inventor:pmdc:point-tail#1",
@@ -38,14 +39,13 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
     PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&PointTail::Absent).expect("borrowed absent tail"),
-        cadmpeg_core::serde_erase::json::to_vec(&PointTailWire::from(PointTail::Absent))
-            .expect("owned absent tail")
+        json::to_vec(&PointTail::Absent).expect("borrowed absent tail"),
+        json::to_vec(&PointTailWire::from(PointTail::Absent)).expect("owned absent tail")
     );
 }
 
@@ -69,8 +69,8 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
     };
     let wire = PmDcTransformPayloadWire::from(transform.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&transform).expect("borrowed transform"),
-        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned transform")
+        json::to_vec(&transform).expect("borrowed transform"),
+        json::to_vec(&wire).expect("owned transform")
     );
     let record = Record {
         id: "inventor:pmdc:transform#1",
@@ -78,6 +78,6 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
 }

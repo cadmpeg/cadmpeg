@@ -3,15 +3,16 @@ use super::{
     resolve, BodyIdEncoding, ParasolidAttributeDefinition, ParasolidEntity51Record,
     ParasolidEntity52IntegerRecord,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn definition() -> ParasolidAttributeDefinition {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"definition", "stream_ordinal":0,"xmt":12,"next_definition_xmt":1,"identifier_xmt":13,"identifier_inflated_offset":0,"name":"body_id","type_id":9000,"action_codes":[0,0,0,0,0,0,0,0],"field_names_xmt":1,"legal_owner_flags":"00000000000000000000000000000000","field_count":1,"field_codes":[0],"inflated_offset":0})).unwrap()
+    json::from_value(cadmpeg_core::json!({"id":"definition", "stream_ordinal":0,"xmt":12,"next_definition_xmt":1,"identifier_xmt":13,"identifier_inflated_offset":0,"name":"body_id","type_id":9000,"action_codes":[0,0,0,0,0,0,0,0],"field_names_xmt":1,"legal_owner_flags":"00000000000000000000000000000000","field_count":1,"field_codes":[0],"inflated_offset":0})).unwrap()
 }
 fn entity() -> ParasolidEntity51Record {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"entity", "stream_ordinal":0,"xmt":3,"flags":1,"sequence":1,"definition_xmt":12,"leading_references":[2,13,1,1,1],"trailing_references":[14],"byte_len":28,"inflated_offset":0})).unwrap()
+    json::from_value(cadmpeg_core::json!({"id":"entity", "stream_ordinal":0,"xmt":3,"flags":1,"sequence":1,"definition_xmt":12,"leading_references":[2,13,1,1,1],"trailing_references":[14],"byte_len":28,"inflated_offset":0})).unwrap()
 }
 fn integer() -> ParasolidEntity52IntegerRecord {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"value", "stream_ordinal":0,"xmt":14,"values":[11],"byte_len":16,"inflated_offset":0})).unwrap()
+    json::from_value(cadmpeg_core::json!({"id":"value", "stream_ordinal":0,"xmt":14,"values":[11],"byte_len":16,"inflated_offset":0})).unwrap()
 }
 #[test]
 fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {

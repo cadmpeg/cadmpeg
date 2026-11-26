@@ -74,7 +74,7 @@ mod tests {
             DecodeDepth::Full,
         ] {
             assert_eq!(
-                serde_json::to_value(depth).expect("depth serializes"),
+                crate::serde_erase::json::to_value(depth).expect("depth serializes"),
                 serde_json::Value::String(depth.to_string())
             );
         }

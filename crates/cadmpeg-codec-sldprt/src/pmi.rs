@@ -240,8 +240,8 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let native = crate::native::SldprtNative::load(namespace, ir.tolerances.linear)
+        .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -755,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",

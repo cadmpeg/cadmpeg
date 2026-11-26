@@ -69,9 +69,9 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
-        let positions = super::super::vertex_positions(&ir);
+        let index = crate::index::ModelIndex::new_model_only(&ir);
         assert_eq!(
-            positions.get(vertex.id.as_str()),
+            index.vertex_position(vertex.id.as_str()),
             Some(&(
                 Point3::new(7.0, 8.0, 9.0),
                 vertex.tolerance.map(crate::scalar::PositiveLength::get)

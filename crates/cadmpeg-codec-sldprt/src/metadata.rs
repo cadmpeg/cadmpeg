@@ -348,7 +348,7 @@ fn attribute(
 ) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
-            &cadmpeg_ir::identity_component!("sldprt"),
+            cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT),
             &cadmpeg_ir::identity_component!("metadata"),
             name,
         ),
@@ -356,7 +356,7 @@ fn attribute(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         section.source_stream(),
         u64_from_index(offset),
         std::str::from_utf8(token).unwrap_or(name.as_str()),

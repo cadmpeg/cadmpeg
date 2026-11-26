@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::test_support::push_reference;
 use crate::test_support::lp_utf16;
@@ -84,10 +85,7 @@ fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
             case.label
         );
         let replay: crate::records::sketch_geometry::SketchText =
-            cadmpeg_core::serde_erase::json::from_value(
-                cadmpeg_core::serde_erase::json::to_value(&text).unwrap(),
-            )
-            .unwrap();
+            json::from_value(json::to_value(&text).unwrap()).unwrap();
         assert_eq!(replay, text, "{}", case.label);
     }
 }
@@ -128,13 +126,9 @@ fn native_sketch_text_refuses_zero_height() {
         None,
     ))
     .expect("sketch text record");
-    let mut zero_height =
-        cadmpeg_core::serde_erase::json::to_value(&text).expect("serialize sketch text");
-    zero_height["height"] = serde_json::json!(0.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::records::sketch_geometry::SketchText,
-    >(zero_height)
-    .is_err());
+    let mut zero_height = json::to_value(&text).expect("serialize sketch text");
+    zero_height["height"] = cadmpeg_core::json!(0.0);
+    assert!(json::from_value::<crate::records::sketch_geometry::SketchText>(zero_height).is_err());
 }
 
 #[test]
@@ -145,13 +139,11 @@ fn native_sketch_text_refuses_negative_width_factor() {
         None,
     ))
     .expect("sketch text record");
-    let mut negative_width =
-        cadmpeg_core::serde_erase::json::to_value(&text).expect("serialize sketch text");
-    negative_width["width_factor"] = serde_json::json!(-1.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::records::sketch_geometry::SketchText,
-    >(negative_width)
-    .is_err());
+    let mut negative_width = json::to_value(&text).expect("serialize sketch text");
+    negative_width["width_factor"] = cadmpeg_core::json!(-1.0);
+    assert!(
+        json::from_value::<crate::records::sketch_geometry::SketchText>(negative_width).is_err()
+    );
 }
 
 #[test]

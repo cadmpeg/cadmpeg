@@ -14,11 +14,13 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document, Row,
 };
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignParameter as NeutralParameter,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 const ENTRY: &str =
@@ -66,7 +68,7 @@ fn parameter(index: u32, name: &str) -> DesignParameter {
 }
 
 fn owner(stream: &str, index: u32, parameter: u32) -> DesignParameterOwner {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": format!("{stream}:design-parameter-owner#{index}"),
         "byte_offset": 2000,
         "frame_length": 104,
@@ -574,8 +576,7 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     zip.start_file(bad, stored).unwrap();
     zip.write_all(b"[").unwrap();
     zip.start_file(ENTRY, stored).unwrap();
-    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&document()).unwrap())
-        .unwrap();
+    zip.write_all(&json::to_vec(&document()).unwrap()).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();

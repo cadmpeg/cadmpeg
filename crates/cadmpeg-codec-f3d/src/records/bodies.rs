@@ -695,6 +695,7 @@ impl From<BodyVisibility> for BodyVisibilityWire {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::serde_erase::json;
 
     use super::{DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire};
 
@@ -728,7 +729,7 @@ mod tests {
     }
 
     fn bounds_fixture() -> DesignBodyBounds {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:native:design-body-bounds#0",
             "entity_suffix": 10,
             "entity_byte_offset": 0,
@@ -743,7 +744,7 @@ mod tests {
     }
 
     fn binding_fixture() -> DesignBodyBinding {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:design-body-binding#10",
             "stream": "Design/BulkStream.dat",
             "pair_count": 1,
@@ -763,17 +764,15 @@ mod tests {
         let bounds = bounds_fixture();
         let owned = DesignBodyBoundsWire::from(bounds.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&bounds).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&bounds).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 
     #[test]
     fn body_bounds_native_retained_limit_refuses_before_binding_ids_clone() {
         let bounds = bounds_fixture();
-        let needed = cadmpeg_core::serde_erase::json::to_vec(&bounds)
-            .unwrap()
-            .len();
+        let needed = json::to_vec(&bounds).unwrap().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -805,9 +804,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["design_body_bounds"][0])
-                .unwrap(),
-            cadmpeg_core::serde_erase::json::to_value(&bounds).unwrap()
+            json::to_value(&namespace.arenas()["design_body_bounds"][0]).unwrap(),
+            json::to_value(&bounds).unwrap()
         );
     }
 
@@ -816,17 +814,15 @@ mod tests {
         let binding = binding_fixture();
         let owned = DesignBodyBindingWire::from(binding.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&binding).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&binding).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 
     #[test]
     fn body_binding_native_retained_limit_refuses_before_stream_clone() {
         let binding = binding_fixture();
-        let needed = cadmpeg_core::serde_erase::json::to_vec(&binding)
-            .unwrap()
-            .len();
+        let needed = json::to_vec(&binding).unwrap().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -858,22 +854,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(
-                &namespace.arenas()["design_body_bindings"][0]
-            )
-            .unwrap(),
-            cadmpeg_core::serde_erase::json::to_value(&binding).unwrap()
+            json::to_value(&namespace.arenas()["design_body_bindings"][0]).unwrap(),
+            json::to_value(&binding).unwrap()
         );
     }
     #[test]
     fn body_member_rejects_unbound_native_identity() {
-        let wire = serde_json::json!({"id":"f3d:Design/BulkStream.dat:design-body-member#10", "byte_offset":10, "entity_suffix":7, "flags":0});
-        let member: super::DesignBodyMember =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&member).unwrap(),
-            wire
-        );
+        let wire = cadmpeg_core::json!({"id":"f3d:Design/BulkStream.dat:design-body-member#10", "byte_offset":10, "entity_suffix":7, "flags":0});
+        let member: super::DesignBodyMember = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&member).unwrap(), wire);
         for id in [
             "",
             "f3d:Design/BulkStream.dat:other#10",
@@ -881,15 +870,9 @@ mod tests {
             "stream:design-body-member#10",
         ] {
             let mut value = wire.clone();
-            value["id"] = serde_json::json!(id);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::DesignBodyMember>(
-                    value.clone()
-                )
-                .is_err()
-            );
-            let raw: super::DesignBodyMemberWire =
-                cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+            value["id"] = cadmpeg_core::json!(id);
+            assert!(json::from_value::<super::DesignBodyMember>(value.clone()).is_err());
+            let raw: super::DesignBodyMemberWire = json::from_value(value).unwrap();
             assert!(super::DesignBodyMember::try_from(raw).is_err());
         }
     }
@@ -898,23 +881,23 @@ mod tests {
     fn body_bounds_reject_unbound_record_and_binding_identities() {
         let valid = bounds_fixture();
         for (field, value) in [
-            ("id", serde_json::json!("")),
-            ("id", serde_json::json!("f3d:native:design-body-bounds#1")),
-            ("id", serde_json::json!("f3d:native:other#0")),
-            ("body_binding_ids", serde_json::json!([""])),
+            ("id", cadmpeg_core::json!("")),
+            ("id", cadmpeg_core::json!("f3d:native:design-body-bounds#1")),
+            ("id", cadmpeg_core::json!("f3d:native:other#0")),
+            ("body_binding_ids", cadmpeg_core::json!([""])),
             (
                 "body_binding_ids",
-                serde_json::json!(["f3d:native:other#1"]),
+                cadmpeg_core::json!(["f3d:native:other#1"]),
             ),
             (
                 "body_binding_ids",
-                serde_json::json!(["f3d:native:design-body-binding#bad"]),
+                cadmpeg_core::json!(["f3d:native:design-body-binding#bad"]),
             ),
         ] {
-            let mut wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
+            let mut wire = json::to_value(&valid).unwrap();
             wire[field] = value;
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignBodyBounds>(wire).is_err(),
+                json::from_value::<DesignBodyBounds>(wire).is_err(),
                 "{field}"
             );
         }
@@ -935,27 +918,19 @@ mod tests {
             ("stream", "Other/BulkStream.dat"),
             ("stream", "Design/MetaStream.dat"),
         ] {
-            let mut wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
-            wire[field] = serde_json::json!(value);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignBodyBinding>(wire.clone())
-                    .is_err()
-            );
-            let raw: DesignBodyBindingWire =
-                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            let mut wire = json::to_value(&valid).unwrap();
+            wire[field] = cadmpeg_core::json!(value);
+            assert!(json::from_value::<DesignBodyBinding>(wire.clone()).is_err());
+            let raw: DesignBodyBindingWire = json::from_value(wire).unwrap();
             assert!(DesignBodyBinding::try_from(raw).is_err());
         }
     }
 
     #[test]
     fn body_visibility_rejects_unbound_record_and_stream_identities() {
-        let wire = serde_json::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
-        let visibility: super::BodyVisibility =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&visibility).unwrap(),
-            wire
-        );
+        let wire = cadmpeg_core::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
+        let visibility: super::BodyVisibility = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&visibility).unwrap(), wire);
         for (field, value) in [
             ("id", ""),
             ("id", "f3d:Breps/BREP.synthetic.smbh:body-visibility#4"),
@@ -964,15 +939,9 @@ mod tests {
             ("stream", "Design/MetaStream.dat"),
         ] {
             let mut value_wire = wire.clone();
-            value_wire[field] = serde_json::json!(value);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::BodyVisibility>(
-                    value_wire.clone()
-                )
-                .is_err()
-            );
-            let raw: super::BodyVisibilityWire =
-                cadmpeg_core::serde_erase::json::from_value(value_wire).unwrap();
+            value_wire[field] = cadmpeg_core::json!(value);
+            assert!(json::from_value::<super::BodyVisibility>(value_wire.clone()).is_err());
+            let raw: super::BodyVisibilityWire = json::from_value(value_wire).unwrap();
             assert!(super::BodyVisibility::try_from(raw).is_err());
         }
     }

@@ -46,19 +46,17 @@ impl NameReferences {
 #[cfg(test)]
 mod tests {
     use super::{NameReferences, NAME_REFERENCES_INTO_WIRE_COUNT};
+    use cadmpeg_core::serde_erase::json;
     #[test]
     fn field_names_preserve_numeric_wire_and_reject_empty_or_null_references() {
         let wire = "[2,4294967295]";
         let names: NameReferences = serde_json::from_str(wire).unwrap();
+        assert_eq!(json::to_string(&names).unwrap(), wire);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&names).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&names).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(
-                &Vec::<cadmpeg_parasolid::xmt::NonNullXmt>::from(names.clone())
-            )
+            json::to_vec(&names).unwrap(),
+            json::to_vec(&Vec::<cadmpeg_parasolid::xmt::NonNullXmt>::from(
+                names.clone()
+            ))
             .unwrap()
         );
         for wire in ["[]", "[0]", "[1]", "[2,1]"] {
@@ -81,7 +79,7 @@ mod tests {
         NAME_REFERENCES_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id":"nx:parasolid:name-references#0", "name_xmts":[2,4_294_967_295_u32]}),
+            cadmpeg_core::json!({"id":"nx:parasolid:name-references#0", "name_xmts":[2,4_294_967_295_u32]}),
         );
         NAME_REFERENCES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

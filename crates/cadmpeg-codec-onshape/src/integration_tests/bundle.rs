@@ -2,21 +2,23 @@
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
+pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
     let mut report = Report::default();
     let model = read_bytes(Path::new("test.onshape-bundle"), bytes, &mut report)?;
     Ok((model, report))
 }
 
-fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
+pub(super) fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
@@ -24,9 +26,9 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
         let mut data = Vec::new();
         member.read_to_end(&mut data).unwrap();
         if member.name().unwrap().ends_with(".json") {
-            let mut value = cadmpeg_core::serde_erase::json::from_slice(&data).unwrap();
+            let mut value = json::from_slice(&data).unwrap();
             edit(&member.name().unwrap(), &mut value);
-            data = cadmpeg_core::serde_erase::json::to_vec(&value).unwrap();
+            data = json::to_vec(&value).unwrap();
         }
         zip.start_file(
             member.name().unwrap().as_ref(),
@@ -38,7 +40,7 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-fn timeline(model: &Model) -> Value {
+pub(super) fn timeline(model: &Model) -> Value {
     let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir);
     wire["model"]["features"]
         .as_array_mut()
@@ -47,7 +49,7 @@ fn timeline(model: &Model) -> Value {
     wire
 }
 
-fn kinds(model: &Model) -> Vec<String> {
+pub(super) fn kinds(model: &Model) -> Vec<String> {
     timeline(model)["model"]["features"]
         .as_array()
         .unwrap()
@@ -73,13 +75,9 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
-        let written = cadmpeg_core::serde_erase::json::to_value(&model.ir).unwrap();
-        let roundtrip: cadmpeg_ir::CadIr =
-            cadmpeg_core::serde_erase::json::from_value(written.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&roundtrip).unwrap(),
-            written
-        );
+        let written = json::to_value(&model.ir).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(written.clone()).unwrap();
+        assert_eq!(json::to_value(&roundtrip).unwrap(), written);
         assert!(wire["model"].get("bodies").is_none());
         assert!(!wire["geometry"]["edges"].as_array().unwrap().is_empty());
         for edge in wire["geometry"]["edges"].as_array().unwrap() {
@@ -1405,11 +1403,7 @@ fn repeated_exterior_consumers_exhaust_the_bundle_budget_early() {
         .unwrap()
         .iter()
         .filter_map(|f| f.pointer("/definition/value/value/profile/value/value/regions"))
-        .map(|regions| {
-            cadmpeg_core::serde_erase::json::to_vec(regions)
-                .unwrap()
-                .len()
-        })
+        .map(|regions| json::to_vec(regions).unwrap().len())
         .sum();
     eprintln!("Cumulative recovery: refused at consumer {first_loss} of 129 (128 extra holes); emitted {boundary_bytes} region JSON bytes; reader {elapsed:?}");
     assert!(

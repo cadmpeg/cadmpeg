@@ -64,6 +64,7 @@ const EXPECTED_FORMATS: &[&str] = &[
     "freecad",
     "iges",
     "inventor",
+    "ironcad",
     "nx",
     "protein",
     "rhino",

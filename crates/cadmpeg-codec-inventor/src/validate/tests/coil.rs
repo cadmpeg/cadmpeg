@@ -3,6 +3,7 @@
 use super::*;
 use crate::feature::coil::{definition_matches, CLASS_ID};
 use crate::feature::tests::{test_feature, test_label};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestResult {
@@ -14,17 +15,16 @@ fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestR
     )?;
     for (marker, count) in [(2, 19), (2, 20), (2, 21), (8, 20)] {
         let source = test_feature(0, count, &[]);
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&source)?;
-        wire["properties"]["marker"] = serde_json::json!(marker);
+        let mut wire = json::to_value(&source)?;
+        wire["properties"]["marker"] = cadmpeg_core::json!(marker);
         if marker == 8 {
-            wire["properties"]["metadata"]["width"] = serde_json::json!("u16");
+            wire["properties"]["metadata"]["width"] = cadmpeg_core::json!("u16");
         }
-        let source: crate::feature::PmDcFeature =
-            cadmpeg_core::serde_erase::json::from_value(wire)?;
+        let source: crate::feature::PmDcFeature = json::from_value(wire)?;
         let label = test_label(0, 1, CLASS_ID, &[]);
         let mut data = empty_data();
         for identity in [&source.identity, &label.identity] {
-            data.records.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            data.records.push(json::from_value(cadmpeg_core::json!({
                 "id": format!("inventor:rse:record#{}-{}", identity.segment_token, identity.record_ordinal),
                 "token": identity.segment_token.as_str(), "ordinal": identity.record_ordinal,
                 "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),

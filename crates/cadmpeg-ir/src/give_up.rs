@@ -20,6 +20,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 
+use crate::annotations::Removed;
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
 use crate::design::refs::{EntityRef, Member, RecordRef};
@@ -109,9 +110,10 @@ pub(crate) struct Released {
     /// The records kept in a partial form or with a mark, sorted.
     pub(crate) marked: BTreeSet<String>,
     /// The records of the delta of each stored state that the delta dropped
-    /// and marked, by the state's path. A record of a delta is the state's
-    /// own: the document's record of the same id keeps its own outcome.
-    pub(crate) states: BTreeMap<String, Released>,
+    /// and marked, by the state's arena and id, each under the state's path.
+    /// A record of a delta is the state's own: the document's record of the
+    /// same id keeps its own outcome.
+    pub(crate) states: BTreeMap<(Arena, String), Released>,
     /// The stored states dropped whole, each with the occurrences whose
     /// member entry names a removed definition: no delta states that an
     /// occurrence leaves a state (§5.4, §6.7).
@@ -160,9 +162,10 @@ impl Released {
     /// dropped because its delta cannot state what leaves it.
     pub(crate) fn stated(&self) -> Vec<String> {
         let mut parts = Vec::new();
-        for (path, state) in &self.states {
+        for state in self.states.values() {
             parts.push(format!(
-                "delta of {path}: dropped=[{}]; marked=[{}]",
+                "delta of {}: dropped=[{}]; marked=[{}]",
+                state.path,
                 list(state.dropped.iter().map(String::as_str)),
                 list(state.marked.iter().map(String::as_str))
             ));
@@ -351,7 +354,8 @@ pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
 /// Gives up each seed, in order, as a part (§3.3): removes it as
 /// [`drop_records`] does, and adds its `unknowns` stub to `codec`'s
 /// namespace and its canonical JSON to `fidelity` as an `untyped` retained
-/// record. `loss` states the loss of each seed from what its give-up did.
+/// record. The annotations of each record the give-ups remove go with it.
+/// `loss` states the loss of each seed from what its give-up did.
 ///
 /// # Errors
 ///
@@ -365,6 +369,7 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let before = (!fidelity.annotations.is_empty()).then(|| Removed::before(ir));
     let mut cascade = Cascade::new(ctx, ir)?;
     let mut losses = Vec::new();
     for seed in seeds {
@@ -395,6 +400,9 @@ pub(crate) fn give_up(
             note,
         )?;
         losses.push(part.commit(ctx, ir, fidelity)?);
+    }
+    if let Some(before) = before {
+        fidelity.annotations.remove(&before.after(ir));
     }
     Ok(losses)
 }
@@ -442,7 +450,7 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
                 return false;
             };
             let restate = restate.past_the_bound();
-            ir.rewrite_records(&seed.arena, &seed.id, |record| {
+            ir.rewrite_records(&seed.arena, &seed.id, &mut |record| {
                 restate.record(home, field, record)
             })
         })
@@ -1091,11 +1099,11 @@ fn release_states(
             .get(id)
             .is_some_and(|states| states.iter().any(|state| *state != holder.id))
     };
-    let path = format!("{}/{}", holder.arena, holder.id);
+    let key = (holder.arena.clone(), holder.id.clone());
     let mut state = released
         .states
-        .remove(&path)
-        .unwrap_or_else(|| Released::new(path.clone()));
+        .remove(&key)
+        .unwrap_or_else(|| Released::new(format!("{}/{}", holder.arena, holder.id)));
     let plans: Vec<Withdrawn> = deltas(ir, &holder.arena, &holder.id)
         .into_iter()
         .map(|delta| withdrawn(ir, &holder.id, delta, here))
@@ -1108,9 +1116,55 @@ fn release_states(
         changed |= release_delta(ctx, references, lazy, &elsewhere, delta, plan, &mut state)?;
     }
     if !state.dropped.is_empty() || !state.marked.is_empty() {
-        released.states.insert(path, state);
+        released.states.insert(key, state);
     }
     Ok(changed)
+}
+
+/// Drops from the delta of each copy of the stored state `holder` each of
+/// its records of `ids` and each record of the delta that needs one, as §3.3
+/// drops a record, and returns what the deltas dropped and marked, under the
+/// state's path, or `None` where no delta changed.
+///
+/// # Errors
+///
+/// A resource refusal for the walk of the carriers.
+pub(crate) fn drop_state_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    holder: &Seed,
+    ids: BTreeSet<String>,
+) -> Result<Option<Released>, CodecError> {
+    let Cascade {
+        references, lazy, ..
+    } = Cascade::new(ctx, ir)?;
+    let naming = lazy.stated.get_or_init(|| states_naming(ir));
+    let elsewhere = |id: &str| {
+        naming
+            .get(id)
+            .is_some_and(|states| states.iter().any(|state| *state != holder.id))
+    };
+    let plan = Withdrawn {
+        gone: BTreeSet::new(),
+        ids,
+        removed: Vec::new(),
+        names: Vec::new(),
+        owners: Vec::new(),
+    };
+    let mut state = Released::new(format!("{}/{}", holder.arena, holder.id));
+    let mut changed = false;
+    for delta in deltas_mut(ir, &holder.arena, &holder.id) {
+        changed |= release_delta(
+            ctx,
+            &references,
+            &lazy,
+            &elsewhere,
+            delta,
+            &plan,
+            &mut state,
+        )?;
+    }
+    Ok(changed.then_some(state))
 }
 
 /// What a stored state withdraws because an owner entry of its delta names
@@ -1450,7 +1504,7 @@ fn clear_native_refs(ir: &mut CadIr, holder: &mut Holder) -> bool {
     if !holder.names.iter().any(|(path, _)| path == "native_ref") {
         return false;
     }
-    let cleared = ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    let cleared = ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         if let Some(record) = record.as_object_mut() {
             record.remove("native_ref");
         }
@@ -1525,7 +1579,7 @@ fn restate(
     let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
         return false;
     };
-    ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         restate.record(home, field, record)
     })
 }

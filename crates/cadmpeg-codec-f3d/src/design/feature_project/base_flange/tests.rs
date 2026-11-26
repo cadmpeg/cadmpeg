@@ -4,6 +4,7 @@ use super::*;
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 use crate::records::feature::sheet_metal::DesignFlangeSide;
 use crate::records::identity::Located;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
@@ -55,7 +56,7 @@ fn stored_side(side: DesignFlangeSide) -> Located<DesignFlangeSide> {
 fn unread_operation_keeps_the_profile_and_owned_rule_thickness() {
     let (mut scope, groups, placements) = fixture();
     let operation = scope.base_flange_operation().unwrap().clone();
-    let settings: DesignSheetMetalSettings = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let settings: DesignSheetMetalSettings = json::from_value(cadmpeg_core::json!({
         "id": format!("{}:design-sheet-metal-settings#300", native_stream(&scope.id).unwrap()),
         "record_index": operation.settings_record_index, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
         "inputs": {"version": "v2", "slots": [null, null, null, null, null, null, null]},

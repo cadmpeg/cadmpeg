@@ -7,6 +7,7 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
@@ -49,9 +50,8 @@ fn branches() -> [Branch; 2] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => cadmpeg_core::serde_erase::json::to_value(&summary)
-                .expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -64,13 +64,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            serde_json::json!({
-                "ir": cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir"),
-                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -117,7 +117,7 @@ fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> 
                 section_identities(&scan).expect("unique admitted source member identities");
             normalized_document(result.ir(), &sections)
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -848,7 +848,7 @@ fn normalized_in_memory(
 
 /// The JSON form of `model`, with the arenas the wire omits where `omitted`.
 fn model_value(model: &cadmpeg_ir::document::Model, omitted: bool) -> serde_json::Value {
-    let mut value = cadmpeg_core::serde_erase::json::to_value(model).expect("serialize model");
+    let mut value = json::to_value(model).expect("serialize model");
     if omitted {
         let serde_json::Value::Object(arenas) = model
             .omitted_arenas_value()
@@ -870,8 +870,7 @@ fn normalized(
     omitted: bool,
 ) -> serde_json::Value {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let original_geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry)
-        .expect("serialize original geometry");
+    let original_geometry = json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = model_value(&ir.model, omitted);
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
@@ -889,8 +888,7 @@ fn normalized(
     model
         .extend_rewritten(ir.model.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
-    let mut normalized_geometry =
-        cadmpeg_core::serde_erase::json::to_value(&geometry).expect("serialize geometry");
+    let mut normalized_geometry = json::to_value(&geometry).expect("serialize geometry");
     let mut normalized_model = model_value(&model, omitted);
     for (original, normalized) in [
         (&original_geometry, &mut normalized_geometry),
@@ -903,11 +901,11 @@ fn normalized(
             &declared_replacements,
         );
     }
-    let mut document = serde_json::json!({
+    let mut document = cadmpeg_core::json!({
         "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
-        "tolerances": cadmpeg_core::serde_erase::json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     canonicalize_model_arena_order(&mut document);
     document
@@ -1013,7 +1011,7 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
         }) > 0
     );
     assert_ne!(original, normalized_in_memory(&changed, &sections));
-    let mut ordered = serde_json::json!({"model": {"entities": [
+    let mut ordered = cadmpeg_core::json!({"model": {"entities": [
         {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
     ]}});
     canonicalize_model_arena_order(&mut ordered);

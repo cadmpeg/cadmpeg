@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::Report;
@@ -286,7 +288,7 @@ pub(super) fn sketch_entities_in_order(
                 .find(|e| e.id().as_str() == entity_id)
                 .ok_or("the selected sketch entity has no solved geometry")?;
             if entity_type == "VERTEX" {
-                let wire = cadmpeg_core::serde_erase::json::to_value(entity)
+                let wire = json::to_value(entity)
                     .map_err(|_| "the selected sketch entity is unreadable")?;
                 if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
                     return Err(
@@ -328,8 +330,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|e| Some(e.id().as_str()) == entity_id.as_str())
         .ok_or("the axis line is missing")?;
-    let entity = cadmpeg_core::serde_erase::json::to_value(entity)
-        .map_err(|_| "the axis line is unreadable")?;
+    let entity = json::to_value(entity).map_err(|_| "the axis line is unreadable")?;
     if entity.pointer("/geometry/kind").and_then(Value::as_str) != Some("line")
         || entity.get("construction").and_then(Value::as_bool) != Some(true)
     {
@@ -340,8 +341,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|s| s.id.as_str() == sketch_id)
         .ok_or("the axis sketch has no resolved frame")?;
-    let sketch = cadmpeg_core::serde_erase::json::to_value(sketch)
-        .map_err(|_| "the axis sketch is unreadable")?;
+    let sketch = json::to_value(sketch).map_err(|_| "the axis sketch is unreadable")?;
     let frame = sketch
         .pointer("/placement/frame")
         .ok_or("the axis frame is missing")?;

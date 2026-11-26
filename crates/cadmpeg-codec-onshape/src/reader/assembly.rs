@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bundle product structure projection.
 
-use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, ROWS};
+use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, Session, ROWS};
 use crate::archive::Bundle;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointOperand, Occurrence, ProductDefinition,
@@ -22,12 +23,12 @@ const ASSEMBLY_DEPTH: usize = 64;
 const MATE_NOTES_PER_LEVEL: usize = 16;
 const MATE_NOTE_LIMIT: usize = 256;
 
-pub(super) fn read(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
+pub(super) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
     step_decoder: crate::StepDecoder,
     report: &mut Report,
-    bundle: &Bundle<'_>,
+    bundle: &Bundle<'a>,
     mid: &str,
     manifest: &Value,
 ) -> Result<Model, Error> {
@@ -41,6 +42,13 @@ pub(super) fn read(
             declared.entry(eid).or_insert(position);
         }
     }
+    let mut session = Session {
+        ctx,
+        bundle,
+        root,
+        step_decoder,
+        studios: BTreeMap::new(),
+    };
     for (position, element) in elements.iter().enumerate() {
         if let Some(eid) = element.get("id").and_then(Value::as_str) {
             if declared.get(eid) != Some(&position) {
@@ -86,19 +94,18 @@ pub(super) fn read(
             );
             continue;
         }
-        let part = match ctx.run_part(|| {
-            studio(ctx, root, step_decoder, report, bundle, mid, eid).map_err(Into::into)
-        })? {
-            Ok(part) => part,
-            Err(error) => {
-                report.push_coded(
-                    eid,
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
-                    error.to_string(),
-                );
-                continue;
-            }
-        };
+        let part =
+            match ctx.run_part(|| studio(&mut session, report, mid, eid).map_err(Into::into))? {
+                Ok(part) => part,
+                Err(error) => {
+                    report.push_coded(
+                        eid,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                        error.to_string(),
+                    );
+                    continue;
+                }
+            };
         let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(format!(
             "/{}",
             cadmpeg_ir::ids::IdentityKey::encode_key_text(eid)
@@ -382,7 +389,7 @@ fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
     }
     let mut value = cadmpeg_ir::schema::structural::project(ctx, home, "Onshape home projection")?;
     visit(ctx, &mut value, rehome)?;
-    cadmpeg_core::serde_erase::json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
+    json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
 }
 
 fn merge_design(target: &mut cadmpeg_ir::document::Design, source: cadmpeg_ir::document::Design) {
@@ -448,7 +455,7 @@ fn element_id(eid: &str) -> bool {
 }
 
 fn key(path: &[String]) -> String {
-    cadmpeg_core::serde_erase::json::to_string(path).unwrap_or_default()
+    json::to_string(path).unwrap_or_default()
 }
 fn product_id(native: &str) -> Result<ProductDefinitionId, Error> {
     id("product", native)

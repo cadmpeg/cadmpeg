@@ -2,6 +2,7 @@
 //! The one door that mints the identities the NX decoder creates.
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::FormatId;
 use cadmpeg_ir::ids::{
     Identity, IdentityComponent, IdentityKey, IdentityKeyTail, IdentityNamespace,
 };
@@ -9,9 +10,7 @@ use cadmpeg_ir::{identity_component, identity_key};
 use std::fmt::Display;
 
 /// The format component every NX identity carries.
-fn nx() -> IdentityComponent {
-    identity_component!("nx")
-}
+const NX: FormatId = FormatId::new(crate::dialect::FORMAT);
 
 /// The `<format>:<scope>` half of every identity the NX decoder mints.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,11 +67,7 @@ impl IdScope {
         kind: &IdentityComponent,
         key: impl Into<IdentityKey>,
     ) -> T {
-        Identity::compose(
-            &IdentityNamespace::from_components(&nx(), &self.0, kind),
-            key,
-        )
-        .into()
+        Identity::compose(&IdentityNamespace::from_components(NX, &self.0, kind), key).into()
     }
 
     /// Mint an NX identity from a displayed key, refusing text outside the

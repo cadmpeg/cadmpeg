@@ -774,6 +774,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use std::collections::HashMap;
 
@@ -785,19 +786,17 @@ mod tests {
             (true, false, false),
             (true, true, true),
         ] {
-            let record: crate::records::Feature =
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                    "id":"native", "parent":"history", "ordinal":0,
-                    "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-                    "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
-                    "properties":{"EndCondition":"Blind", "Operation":"Join"}
-                }))
-                .expect("synthetic feature record");
-            let history: crate::records::FeatureHistory =
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                    "id":"history", "features":[record.clone()]
-                }))
-                .expect("synthetic history");
+            let record: crate::records::Feature = json::from_value(cadmpeg_core::json!({
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join"}
+            }))
+            .expect("synthetic feature record");
+            let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
+                "id":"history", "features":[record.clone()]
+            }))
+            .expect("synthetic history");
             let mut feature = crate::history::project::project_features(&[history])
                 .expect("feature projection")
                 .into_iter()
@@ -856,32 +855,30 @@ mod tests {
     /// and the record gains no `Depth`.
     #[test]
     fn a_depth_edit_is_written_to_the_records_one_length_parameter() {
-        let record: crate::records::Feature =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "id":"native", "parent":"history", "ordinal":0,
-                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-                "input_class":"moExtrusion_c", "parameters":{"Plate thickness":"10mm"},
-                "properties":{"EndCondition":"Blind", "Operation":"Join"}
-            }))
-            .expect("synthetic feature record");
-        let history: crate::records::FeatureHistory =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "id":"history", "features":[record.clone()]
-            }))
-            .expect("synthetic history");
+        let record: crate::records::Feature = json::from_value(cadmpeg_core::json!({
+            "id":"native", "parent":"history", "ordinal":0,
+            "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+            "input_class":"moExtrusion_c", "parameters":{"Plate thickness":"10mm"},
+            "properties":{"EndCondition":"Blind", "Operation":"Join"}
+        }))
+        .expect("synthetic feature record");
+        let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
+            "id":"history", "features":[record.clone()]
+        }))
+        .expect("synthetic history");
         let mut feature = crate::history::project::project_features(&[history])
             .expect("feature projection")
             .into_iter()
             .next()
             .expect("extrusion");
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition())
-            .expect("definition wire form");
+        let mut wire =
+            json::to_value(feature.evaluation.definition()).expect("definition wire form");
         let length = first_length(&mut wire).expect("the record's length is the depth");
         assert_eq!(length.as_f64(), Some(10.0));
-        *length = serde_json::json!(11.0);
-        feature.evaluation.set_definition(
-            cadmpeg_core::serde_erase::json::from_value(wire).expect("edited definition"),
-        );
+        *length = cadmpeg_core::json!(11.0);
+        feature
+            .evaluation
+            .set_definition(json::from_value(wire).expect("edited definition"));
         let encoded = NeutralFeatureEncoder {
             contradicted_travel: false,
             feature: &feature,
@@ -911,11 +908,12 @@ mod tests {
     #[test]
     fn a_reversal_writes_from_the_decoded_record() {
         let record = |operation: &str, reverse: bool| -> crate::records::Feature {
-            let mut properties = serde_json::json!({"EndCondition":"Blind", "Operation":operation});
+            let mut properties =
+                cadmpeg_core::json!({"EndCondition":"Blind", "Operation":operation});
             if reverse {
                 properties["Reverse"] = "true".into();
             }
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id":"native", "parent":"history", "ordinal":0,
                 "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
                 "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
@@ -924,11 +922,10 @@ mod tests {
             .expect("synthetic feature record")
         };
         let project = |record: &crate::records::Feature| {
-            let history: crate::records::FeatureHistory =
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                    "id":"history", "features":[record.clone()]
-                }))
-                .expect("synthetic history");
+            let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
+                "id":"history", "features":[record.clone()]
+            }))
+            .expect("synthetic history");
             crate::history::project::project_features(&[history])
                 .expect("feature projection")
                 .into_iter()

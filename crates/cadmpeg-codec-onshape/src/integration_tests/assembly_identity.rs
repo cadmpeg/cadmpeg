@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly identity keys, repeated records, mate scope and malformed frames.
 use crate::test_support::{assembly::*, read_bytes, Report};
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 use std::path::Path;
 
 fn decode(bytes: &[u8]) -> (crate::reader::Model, Report) {

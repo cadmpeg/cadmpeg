@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::test_support::build_prt;
@@ -46,7 +47,7 @@ fn serialized_offset_ids_preserve_legacy_wire_text() {
         ),
     ] {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&id).expect("serialize offset identity"),
+            json::to_string(&id).expect("serialize offset identity"),
             expected
         );
     }
@@ -612,13 +613,13 @@ fn array_completeness_wire_retains_continuation_failures() {
     assert_eq!(persistence.incomplete_string_array_count, 2);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&persistence.string_values[0].payload).unwrap(),
-        serde_json::json!({"form": "array", "dimensions": [1],
+        json::to_value(&persistence.string_values[0].payload).unwrap(),
+        cadmpeg_core::json!({"form": "array", "dimensions": [1],
             "values": [{"form": "utf8", "text": "value"}], "complete": false})
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&persistence.string_values[1].payload).unwrap(),
-        serde_json::json!({"form": "array", "dimensions": [1],
+        json::to_value(&persistence.string_values[1].payload).unwrap(),
+        cadmpeg_core::json!({"form": "array", "dimensions": [1],
             "values": [], "complete": false})
     );
     let payload = ObjectPayload::Array {
@@ -626,8 +627,8 @@ fn array_completeness_wire_retains_continuation_failures() {
         elements: vec!["first".into(), "second".into()],
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(payload).unwrap(),
-        serde_json::json!({
+        json::to_value(payload).unwrap(),
+        cadmpeg_core::json!({
             "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
             "complete": true
         })
@@ -791,11 +792,11 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(reals.len(), 1);
     assert_eq!(
         reals[0].field("name"),
-        Some(serde_json::json!("rel_accuracy"))
+        Some(cadmpeg_core::json!("rel_accuracy"))
     );
     assert_eq!(
         reals[0].field("payload"),
-        Some(serde_json::json!({"form": "scalar", "value": 1.0}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 1.0}))
     );
     let integers = &result
         .ir()
@@ -806,11 +807,11 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(integers.len(), 1);
     assert_eq!(
         integers[0].field("name"),
-        Some(serde_json::json!("feat_id"))
+        Some(cadmpeg_core::json!("feat_id"))
     );
     assert_eq!(
         integers[0].field("payload"),
-        Some(serde_json::json!({"form": "scalar", "value": 42}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 42}))
     );
     let objects = &result
         .ir()
@@ -821,7 +822,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(objects.len(), 1);
     assert_eq!(
         integers[0].field("parent"),
-        Some(serde_json::json!(objects[0].id()))
+        Some(cadmpeg_core::json!(objects[0].id()))
     );
     let strings = &result
         .ir()
@@ -832,15 +833,15 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(strings.len(), 2);
     let principal = strings
         .iter()
-        .find(|record| record.field("name") == Some(serde_json::json!("principal_sys_units")))
+        .find(|record| record.field("name") == Some(cadmpeg_core::json!("principal_sys_units")))
         .expect("principal-unit string");
     let encoded = strings
         .iter()
-        .find(|record| record.field("name") == Some(serde_json::json!("encoded")))
+        .find(|record| record.field("name") == Some(cadmpeg_core::json!("encoded")))
         .expect("encoded string");
     assert_eq!(
         principal.field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "scalar",
             "value": {
                 "form": "utf8",
@@ -850,7 +851,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     );
     assert_eq!(
         encoded.field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "scalar",
             "value": {"form": "bytes", "bytes": "e9"}
         }))
@@ -932,13 +933,13 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
     assert_eq!(
         native.arenas()["legacy_type_6_values"]
             .iter()
-            .find(|record| record.field("name") == Some(serde_json::json!("six")))
+            .find(|record| record.field("name") == Some(cadmpeg_core::json!("six")))
             .and_then(|record| record.field("payload")),
-        Some(serde_json::json!({"form": "scalar", "value": 2.0}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 2.0}))
     );
     assert_eq!(
         native.arenas()["legacy_type_11_values"][0].field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "array",
             "dimensions": [1],
             "runs": [{"count": 1, "value": 14633}]
@@ -946,7 +947,9 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
     );
     assert_eq!(
         native.arenas()["legacy_type_11_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
+        Some(cadmpeg_core::json!(
+            native.arenas()["legacy_objects"][0].id()
+        ))
     );
 }
 
@@ -986,19 +989,21 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
     assert_eq!(native.arenas()["legacy_type_4_values"].len(), 1);
     assert_eq!(
         native.arenas()["legacy_type_3_values"][0].field("payload"),
-        Some(serde_json::json!({"form": "null"}))
+        Some(cadmpeg_core::json!({"form": "null"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_3_values"][1].field("payload"),
-        Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
+        Some(cadmpeg_core::json!({"form": "utf8", "text": "texture-name"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_4_values"][0].field("payload"),
-        Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
+        Some(cadmpeg_core::json!({"form": "utf8", "text": "NULL"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_4_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
+        Some(cadmpeg_core::json!(
+            native.arenas()["legacy_objects"][0].id()
+        ))
     );
 }
 

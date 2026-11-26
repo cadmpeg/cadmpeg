@@ -1,8 +1,9 @@
 use super::{write_repeating, SpellingSweep, Step};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn the_repeated_key_is_the_first_key_of_the_named_object_only() {
-    let value = serde_json::json!({"a": [{"b": 1, "c": 2}, {"b": 3}], "d": {"e": 4}});
+    let value = cadmpeg_core::json!({"a": [{"b": 1, "c": 2}, {"b": 3}], "d": {"e": 4}});
     let mut text = String::new();
     write_repeating(
         &value,
@@ -28,7 +29,7 @@ fn every_example_document_has_one_spelling() {
     ];
     let values = documents
         .iter()
-        .map(|ir| cadmpeg_core::serde_erase::json::to_value(ir).expect("a CadIr serializes"))
+        .map(|ir| json::to_value(ir).expect("a CadIr serializes"))
         .collect::<Vec<_>>();
     let mut sweep = SpellingSweep::default();
     for value in &values {

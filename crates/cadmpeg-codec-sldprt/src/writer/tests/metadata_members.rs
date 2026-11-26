@@ -188,8 +188,13 @@ fn a_real_feature_rename_replaces_a_patched_member_and_charges_its_metadata() {
         name_index: 0,
         value: cadmpeg_core::nonblank_literal!("RenamedSketchLong1"),
     }];
-    let generated =
-        crate::writer::resolved_feature_payload(lane, &native.feature_histories, &renames).unwrap();
+    let generated = crate::writer::resolved_feature_payload(
+        lane,
+        &native.feature_histories,
+        &renames,
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_ne!(generated, original);
     let names = crate::resolved_features::names::object_names(
         &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -328,7 +333,7 @@ fn the_actual_owned_stream_is_unavailable_even_if_a_lookalike_member_exists() {
     lookalike_annotations.provenance.remove(owner.id.as_str());
     crate::annotations::note(
         &mut lookalike_annotations,
-        owner.id.as_str(),
+        &owner.id,
         &cadmpeg_ir::stream_name!("Other/Config-0-ResolvedFeatures"),
         0,
         "unknown",
@@ -361,7 +366,16 @@ fn unsupported_manager_fields_keep_a_retained_member() {
     let attribute_id =
         cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#999_999:0")
             .unwrap();
-    for (id, offset) in [(record_id.as_str(), 999_999), (attribute_id.as_str(), 0)] {
+    for (id, offset) in [
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&record_id),
+            999_999,
+        ),
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&attribute_id),
+            0,
+        ),
+    ] {
         crate::annotations::note(
             &mut annotations,
             id,
@@ -465,7 +479,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
     };
     crate::annotations::note(
         &mut annotations,
-        duplicate.id.as_str(),
+        &duplicate.id,
         &cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures"),
         999_999,
         "unknown",
@@ -531,7 +545,7 @@ fn source_unit_code_uses_its_separate_units_route() {
             .unwrap();
     crate::annotations::note(
         &mut annotations,
-        id.as_str(),
+        &id,
         &cadmpeg_ir::stream_name!("Units"),
         0,
         "SW_UnitsLinear",
@@ -572,7 +586,13 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
         let lane = &native.feature_input_lanes[0];
         assert_eq!(lane.sketch_entities.len(), 1);
         assert_eq!(
-            crate::writer::resolved_feature_payload(lane, &native.feature_histories, &[]).unwrap(),
+            crate::writer::resolved_feature_payload(
+                lane,
+                &native.feature_histories,
+                &[],
+                cadmpeg_ir::units::Tolerances::default().linear
+            )
+            .unwrap(),
             original
         );
         edit_radius(&mut decoded.ir_mut());
@@ -633,8 +653,13 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
             }
         }
         assert!(
-            crate::writer::resolved_feature_payload(&changed, &native.feature_histories, &[])
-                .is_err(),
+            crate::writer::resolved_feature_payload(
+                &changed,
+                &native.feature_histories,
+                &[],
+                cadmpeg_ir::units::Tolerances::default().linear
+            )
+            .is_err(),
             "mutation {mutation}"
         );
     }
@@ -723,7 +748,7 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
         &changed,
         "Contents/Keywords",
         &[(
-            native.feature_histories[0].clone(),
+            &native.feature_histories[0],
             "Contents/Keywords".into(),
             history.to_vec(),
         )],
@@ -1054,9 +1079,9 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         .provenance
         .iter()
         .filter(|(id, provenance)| {
-            id.starts_with("sldprt:metadata:") && provenance.stream() == EXTRA
+            id.as_str().starts_with("sldprt:metadata:") && provenance.stream() == EXTRA
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .collect();
     assert!(
         !extra_attributes.is_empty(),
@@ -1068,9 +1093,9 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         .provenance
         .iter()
         .find(|(id, provenance)| {
-            id.starts_with("sldprt:file:block#") && provenance.stream() == EXTRA
+            id.as_str().starts_with("sldprt:file:block#") && provenance.stream() == EXTRA
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .unwrap();
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     crate::test_support::make_retained_record_unavailable(decoded.source_fidelity_mut(), &block);
@@ -1080,7 +1105,7 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
                 decoded.ir(),
                 Some(decoded.source_fidelity()),
             ),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
         )
         .unwrap();
     let losses: Vec<String> = plan
@@ -1109,7 +1134,7 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         members.iter().all(|member| member != EXTRA),
         "EXTRA was written"
     );
-    let omitted = format!("{EXTRA} ({block})");
+    let omitted = format!("{block} ({EXTRA})");
     assert!(
         losses.iter().any(
             |loss| loss.starts_with("export:native.records-omitted") && loss.contains(&omitted)

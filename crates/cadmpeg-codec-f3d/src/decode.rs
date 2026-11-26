@@ -3399,14 +3399,9 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let geometry_materials =
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
-        let (mut ir, source_attributes, mut native, mut asm_remainder) =
+        let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
-        geometry_admission::admit(
-            ctx,
-            &mut ir,
-            &mut report.losses,
-            &mut asm_remainder.annotation_records,
-        )?;
+        geometry_admission::admit(ctx, &mut ir, &mut report.losses)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         let mut admitted_entities = u64_from_index(ir.entity_count());
@@ -5698,8 +5693,10 @@ fn note_native_annotation(
     stream: &StreamHandle,
     id: &str,
     tag: &str,
-) {
-    annotations.note(id, stream, trailing_offset(id), Some(tag));
+) -> Result<(), CodecError> {
+    let key = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
+    annotations.note(key, stream, trailing_offset(id), Some(tag));
+    Ok(())
 }
 
 fn populate_annotations(
@@ -5715,14 +5712,11 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(stream_name)?;
         for record in records {
-            annotations.note(
-                &record.id,
-                &stream,
-                record.offset,
-                Some(record.tag.as_str()),
-            );
+            let key = cadmpeg_ir::ids::Identity::new(record.id.as_str())
+                .map_err(CodecError::malformed)?;
+            annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
             for field in &record.derived_fields {
-                annotations.derived(&record.id, field)?;
+                annotations.derived(&key, field)?;
             }
         }
     }
@@ -5739,7 +5733,7 @@ fn populate_annotations(
     for entity in &ir.model.sketch_entities {
         if let Some(native_ref) = entity.native_ref.as_deref() {
             if !entities_by_native.contains_key(native_ref) {
-                entities_by_native.insert(native_ref, entity.id().as_str());
+                entities_by_native.insert(native_ref, entity.id());
             }
         }
     }
@@ -5759,7 +5753,7 @@ fn populate_annotations(
     let native_stream = StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     macro_rules! note {
         ($id:expr, $tag:expr $(,)?) => {{
-            note_native_annotation(&mut annotations, &native_stream, $id, $tag);
+            note_native_annotation(&mut annotations, &native_stream, $id, $tag)?;
         }};
     }
     {
@@ -5870,18 +5864,18 @@ fn populate_annotations(
         for entity in &native.sketch_points {
             note!(&entity.id, "sketch_point");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_entity");
+                note!(projected.as_str(), "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_entity");
+                note!(projected.as_str(), "sketch_entity");
                 // Admitted z noise is read as zero, so the projected
                 // endpoints are derived rather than byte-exact.
                 if entity.planar_z_noise.is_some() {
                     for field in ["geometry.start", "geometry.end"] {
-                        annotations.derived(projected, field)?;
+                        annotations.derived(*projected, field)?;
                     }
                 }
             }
@@ -5942,7 +5936,7 @@ fn populate_annotations(
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations.note(
-                appearance.id.as_str(),
+                &appearance.id,
                 &stream,
                 0,
                 Some(appearance.schema.as_deref().unwrap_or("appearance")),
@@ -5950,23 +5944,13 @@ fn populate_annotations(
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations.note(
-            binding.id.as_str(),
-            &native_stream,
-            0,
-            Some("appearance_binding"),
-        );
+        annotations.note(&binding.id, &native_stream, 0, Some("appearance_binding"));
     }
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(&fallback.name)?;
             for unknown in unknowns {
-                annotations.note(
-                    unknown.id().as_str(),
-                    &stream,
-                    unknown.offset(),
-                    Some("opaque_brep"),
-                );
+                annotations.note(unknown.id(), &stream, unknown.offset(), Some("opaque_brep"));
             }
         }
     }

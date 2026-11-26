@@ -6,28 +6,28 @@ use crate::design::feature_project::{
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn edge_resolve_deleted_set_assumption_reaches_projection_losses() {
-    let scope: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "f3d:test/Design/BulkStream.dat:scope", "byte_offset": 0, "class_tag": "300",
-            "record_index": 1, "frame_length": 200, "kind": "Fillet", "kind_offset": 32,
-            "feature_ordinal": 1, "feature_ordinal_offset": 128,
-            "history_state_id": 8, "history_state_id_offset": 24,
-            "previous_history_state_id": 7, "previous_history_state_id_offset": 158,
-            "reference_count_offset": 9, "reference_members": [2], "reference_member_offsets": [14],
-            "fixed_fillet_parameters": { "groups": [{
-                "radii": [0.3], "radius_record_indexes": [5], "radius_offsets": [0],
-                "intermediate_parameters": [], "intermediate_parameter_record_indexes": [],
-                "intermediate_parameter_offsets": []
-            }] },
-            "paired_class_tag": "261", "paired_byte_offset": 200
-        }))
-        .unwrap();
-    let group: DesignConstructionOperandGroup = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let scope: DesignParameterScope = json::from_value(cadmpeg_core::json!({
+        "id": "f3d:test/Design/BulkStream.dat:scope", "byte_offset": 0, "class_tag": "300",
+        "record_index": 1, "frame_length": 200, "kind": "Fillet", "kind_offset": 32,
+        "feature_ordinal": 1, "feature_ordinal_offset": 128,
+        "history_state_id": 8, "history_state_id_offset": 24,
+        "previous_history_state_id": 7, "previous_history_state_id_offset": 158,
+        "reference_count_offset": 9, "reference_members": [2], "reference_member_offsets": [14],
+        "fixed_fillet_parameters": { "groups": [{
+            "radii": [0.3], "radius_record_indexes": [5], "radius_offsets": [0],
+            "intermediate_parameters": [], "intermediate_parameter_record_indexes": [],
+            "intermediate_parameter_offsets": []
+        }] },
+        "paired_class_tag": "261", "paired_byte_offset": 200
+    }))
+    .unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test/Design/BulkStream.dat:group-2", "scope_record_index": 1, "scope_reference_ordinal": 0,
         "record_index": 2, "byte_offset": 0, "class_tag": "300",
         "members": [10, 11], "member_offsets": [0, 11],
@@ -40,7 +40,7 @@ fn edge_resolve_deleted_set_assumption_reaches_projection_losses() {
     }))
     .unwrap();
     let reference_contexts = [1, 2].map(|face| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "reference_ordinal": face - 1,
             "preceding_faces": [format!("f3d:brep:entity#{face}")],
             "result_faces": [], "result_shared_edge_slots": [],
@@ -49,12 +49,12 @@ fn edge_resolve_deleted_set_assumption_reaches_projection_losses() {
         })
     });
     let recipe_sides = [0, 1].map(|_| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []
         })
     });
     let operands: [DesignEdgeOperand; 2] = [10, 11].map(|index| {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("f3d:test/Design/BulkStream.dat:edge-operand#{index}"),
             "scope_record_index": 1, "scope_reference_ordinal": 0,
             "record_index": index, "byte_offset": 0, "class_tag": "297",

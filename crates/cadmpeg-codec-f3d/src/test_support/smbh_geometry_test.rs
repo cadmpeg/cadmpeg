@@ -12,6 +12,18 @@ use crate::test_support::tokens_test::{
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
+    synthetic_geometry_smbh_with_points([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+}
+
+/// The geometry of [`synthetic_geometry_smbh`] with the three vertex points
+/// (records 16, 17, 18) at `points`, in cm. The face's plane is the plane of
+/// the points: its root is the first point, its UV reference direction runs
+/// to the second, and its normal follows the loop's order.
+pub(crate) fn synthetic_geometry_smbh_with_points(points: [[f64; 3]; 3]) -> Vec<u8> {
+    let [first, second, third] = points;
+    let to_second = difference(second, first);
+    let normal = unit(cross(to_second, difference(third, first)));
+    let reference = unit(to_second);
     // Indices: 0 asmheader, 1 body, 2 region, 3 shell, 4 face, 5 loop,
     // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
     // 16/17/18 points.
@@ -84,9 +96,9 @@ pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, -1); // attrib
     t_long(&mut r, -1); // history
     t_ref(&mut r, -1); // null
-    t_pos(&mut r, [0.0, 0.0, 0.0]); // root
-    t_vec(&mut r, [0.0, 0.0, 1.0]); // normal
-    t_vec(&mut r, [1.0, 0.0, 0.0]); // UV reference direction
+    t_pos(&mut r, first); // root
+    t_vec(&mut r, normal); // normal
+    t_vec(&mut r, reference); // UV reference direction
     r.push(0x0b); // sense
     t_end(&mut r);
 
@@ -140,7 +152,6 @@ pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
     }
 
     // 16/17/18: points  (coordinates in cm; ×10 = mm)
-    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for p in points {
         t_ident(&mut r, "point");
         t_ref(&mut r, -1); // attrib
@@ -1210,4 +1221,21 @@ pub(crate) fn synthetic_mixed_smbh() -> Vec<u8> {
     let mut out = smbh_header_prefix();
     out.extend_from_slice(&r);
     out
+}
+
+fn difference(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit(v: [f64; 3]) -> [f64; 3] {
+    let length = v[0].hypot(v[1]).hypot(v[2]);
+    v.map(|component| component / length)
 }

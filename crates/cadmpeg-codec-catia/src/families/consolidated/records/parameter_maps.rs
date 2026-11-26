@@ -2,6 +2,7 @@
 //! Affine-map invariants of eight-scalar class-23 definitions.
 
 use super::consolidated_edge_definition_data;
+use cadmpeg_core::serde_erase::json;
 
 fn payload(operands: [u8; 2], values: [f64; 8]) -> Vec<u8> {
     let mut bytes = vec![0x82, operands[0], operands[1], 0x0a, 0x87, 0x0d];
@@ -47,20 +48,14 @@ fn class23_affine_map_rejects_contradictory_intervals_scale_and_slots() {
 #[test]
 fn class23_slots_reject_other_local_slot_pairs() {
     for pair in [[0, 1], [1, 1], [2, 2], [1, 3]] {
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::Class23Slots>(serde_json::json!(
-                pair
-            ))
-            .is_err()
-        );
+        assert!(json::from_value::<super::Class23Slots>(cadmpeg_core::json!(pair)).is_err());
     }
     for pair in [[1, 2], [2, 1]] {
         let slots: super::Class23Slots =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!(pair))
-                .expect("known local slots");
+            json::from_value(cadmpeg_core::json!(pair)).expect("known local slots");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(slots).expect("serialize local slots"),
-            serde_json::json!(pair)
+            json::to_value(slots).expect("serialize local slots"),
+            cadmpeg_core::json!(pair)
         );
     }
 }

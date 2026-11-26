@@ -19,7 +19,7 @@ use crate::scalar::{
 
 /// A size measured on the radius or on the diameter, as the source states
 /// it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -28,7 +28,7 @@ use crate::scalar::{
     deny_unknown_fields,
     bound(
         serialize = "Q: Serialize, P: Serialize",
-        deserialize = "Q: Deserialize<'de>, P: Deserialize<'de>"
+        deserialize = "Q: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
     )
 )]
 pub enum RadialDimension<Q, P = ParameterId> {
@@ -40,13 +40,16 @@ pub enum RadialDimension<Q, P = ParameterId> {
 
 /// Material placed along a direction or about an axis, measured from the
 /// operation's origin.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Span<Q> {
     /// From `start` to `end`. `end` is measured along the direction and
@@ -72,14 +75,17 @@ pub enum Span<Q> {
 }
 
 /// One end of a span.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Limit<Q> {
     /// At the operation's origin.
@@ -132,14 +138,17 @@ pub enum Limit<Q> {
 }
 
 /// A function of a quantity along a path parameter from 0 to 1.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Law<Q> {
     /// A constant.
@@ -454,7 +463,10 @@ pub struct LinearRun {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct PatternRun<Q> {
     /// How the run spaces its instances.
@@ -481,14 +493,17 @@ pub struct PatternRun<Q> {
 }
 
 /// Where a run places its instances.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum RunSides<Q> {
     /// Along the run's direction from the seed.
@@ -521,14 +536,17 @@ pub enum RunSides<Q> {
 }
 
 /// The spacing of a run. Every count includes the seed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Spacing<Q> {
     /// Count and spacing between neighbours.
@@ -586,14 +604,17 @@ pub enum Spacing<Q> {
 }
 
 /// How an `UpTo` run fills its extent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum UpToFill<Q> {
     /// A number of instances.
@@ -1138,7 +1159,10 @@ pub enum AxisLimits {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct Bounds<Q> {
     /// The lower bound.

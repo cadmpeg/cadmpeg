@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component-path world poses applied to expanded nested occurrences.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem::size_of;
 
@@ -1216,13 +1217,13 @@ fn a_proven_root_instance_element_selects_the_saved_world_pose() {
 }
 
 fn object_snapshot(carrier: &mut DesignComponentOccurrence) {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&*carrier).unwrap();
-    wire["attributed"] = serde_json::json!({
+    let mut wire = json::to_value(&*carrier).unwrap();
+    wire["attributed"] = cadmpeg_core::json!({
         "attributes": [], "property_names": ["Transform"],
         "persistent_key": "0_100", "ordinal_prefix": 0,
         "path_discriminator": 0, "key_record_index": 0, "key_segment_index": 0
     });
-    *carrier = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    *carrier = json::from_value(wire).unwrap();
 }
 
 #[test]
@@ -1267,13 +1268,13 @@ fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose(
             .find(|carrier| carrier.record_index == 100)
             .unwrap();
         object_snapshot(carrier);
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&*carrier).unwrap();
+        let mut wire = json::to_value(&*carrier).unwrap();
         wire["attributed"]["guid_marker"] = source_flag.into();
         if source_flag == 0 {
             wire["attributed"]["source_transform"] =
-                cadmpeg_core::serde_erase::json::to_value(pose(EYE, [7.0, 8.0, 9.0])).unwrap();
+                json::to_value(pose(EYE, [7.0, 8.0, 9.0])).unwrap();
         }
-        *carrier = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        *carrier = json::from_value(wire).unwrap();
         let projection = project(&carriers, &components, &[]);
         for chain in [
             &[100][..],
