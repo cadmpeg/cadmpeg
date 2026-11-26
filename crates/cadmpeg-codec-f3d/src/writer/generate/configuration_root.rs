@@ -269,9 +269,8 @@ impl Plan {
     }
 
     /// Append the root record to `bulk` under the source's type of the
-    /// record, else under [`ROOT_TYPE`], and drop the source's root record
-    /// from every other type; return the plan's losses and the loss of a
-    /// type the source does not state.
+    /// record, else under [`ROOT_TYPE`]; return the plan's losses and the
+    /// loss of a type the source does not state.
     pub(super) fn write(
         self,
         registry: &mut GeneratedDesignRegistry,
@@ -279,9 +278,6 @@ impl Plan {
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.losses;
         let Some(root) = self.root else {
-            if let Some(source) = self.source {
-                registry.unlist(source);
-            }
             return Ok(losses);
         };
         let record_index = registry.allocate()?;
@@ -292,9 +288,6 @@ impl Plan {
         let class_tag = match stated {
             Some(class_tag) => class_tag,
             None => {
-                if let Some(source) = self.source {
-                    registry.unlist(source);
-                }
                 losses.extend(record_residual_unavailable(
                     "F3D",
                     &format!(

@@ -385,14 +385,6 @@ impl GeneratedDesignRegistry {
         entity_ids.dedup();
         dynamic_class_tag(ordinal).map(Some)
     }
-
-    /// Remove `entity_id` from the entity list of every registered type.
-    pub(super) fn unlist(&mut self, entity_id: u32) {
-        let entity_id = u64::from(entity_id);
-        for design_type in &mut self.types {
-            design_type.entity_ids.retain(|entity| *entity != entity_id);
-        }
-    }
 }
 
 fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {

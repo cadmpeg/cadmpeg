@@ -217,6 +217,77 @@ fn an_unwritten_root_record_leaves_the_type_table() {
     assert!(!listed(round_trip.ir(), ROOT_RECORD));
 }
 
+#[test]
+fn a_cleared_active_row_leaves_only_written_records_in_the_type_table() {
+    use std::io::Read;
+
+    let mut ir = source_less(rooted());
+    assert!(listed(&ir, ROOT_RECORD));
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        let document = &native.design_configurations[0];
+        native.design_configurations[0] =
+            crate::records::configuration::DesignConfiguration::try_new(
+                document.entry_name().clone(),
+                document.kind(),
+                document.payload().clone(),
+            )
+            .unwrap();
+    });
+    ir.model.configurations = crate::test_support::configuration_table::project(&ir);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("source-less write");
+    let mut meta = Vec::new();
+    zip::ZipArchive::new(Cursor::new(&bytes))
+        .unwrap()
+        .by_name(&format!(
+            "{}/Design1/MetaStream.dat",
+            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+        ))
+        .expect("the written Design MetaStream")
+        .read_to_end(&mut meta)
+        .unwrap();
+    let meta = crate::metastream::parse(&meta, "MetaStream.dat").unwrap();
+    let written = meta
+        .records
+        .iter()
+        .map(|record| record.entity_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    for design_type in &meta.types {
+        for entity in design_type.entities.values() {
+            assert!(
+                written.contains(entity),
+                "{entity} is listed but not written"
+            );
+        }
+    }
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("source-less round trip");
+    let round_trip = f3d_native(decoded.ir());
+    assert!(round_trip.design_configurations[0].active_row().is_none());
+    for design_type in &round_trip.design_types {
+        for entity in design_type.entities.values() {
+            assert!(
+                written.contains(entity),
+                "{entity} is decoded as listed but not written"
+            );
+        }
+    }
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("primary record")),
+        "{:#?}",
+        decoded.report().losses
+    );
+}
+
 /// A source-less design whose one table holds row `row`, active.
 fn active_row_document(row: &str) -> cadmpeg_ir::CadIr {
     let payload = serde_json::to_vec(&table_document(

@@ -905,6 +905,9 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
+/// The Design `MetaStream` of `registry`'s types and the primary index
+/// `primary_records`. Each type lists only the entities of `primary_records`,
+/// the records the sibling `BulkStream` holds.
 pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
     primary_records: &[crate::metastream::RecordIndexEntry],
@@ -912,6 +915,10 @@ pub(super) fn encode_design_metastream(
     if registry.types.is_empty() {
         return Ok(None);
     }
+    let written = primary_records
+        .iter()
+        .map(|record| record.entity_id)
+        .collect::<std::collections::BTreeSet<_>>();
 
     // A generated segment writes the modern header shape, the type table, and
     // the primary offsets captured while writing its sibling BulkStream.
@@ -946,11 +953,16 @@ pub(super) fn encode_design_metastream(
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
-        let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
+        let entity_ids = design_type
+            .entity_ids
+            .iter()
+            .filter(|entity_id| written.contains(entity_id))
+            .collect::<Vec<_>>();
+        let count = u32::try_from(entity_ids.len()).map_err(|_| {
             CodecError::NotImplemented("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
-        for entity_id in &design_type.entity_ids {
+        for entity_id in entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
             let next = entity_id.checked_add(1).ok_or_else(|| {
                 CodecError::Malformed("generated Design next entity id overflows".into())
@@ -1082,10 +1094,30 @@ mod tests {
         ])
     }
 
+    /// The primary index entry of a record of `entity_id`.
+    fn written_record(entity_id: u64) -> crate::metastream::RecordIndexEntry {
+        crate::metastream::RecordIndexEntry {
+            entity_id,
+            bulk_offset: 0,
+        }
+    }
+
+    #[test]
+    fn metastream_lists_only_written_records() {
+        let bytes = super::encode_design_metastream(&registry_with_entity(7), &[])
+            .unwrap()
+            .unwrap();
+        let meta = crate::metastream::parse(&bytes, "MetaStream.dat").unwrap();
+        assert_eq!(meta.types[0].entities.values().count(), 0);
+    }
+
     #[test]
     fn metastream_rejects_overflowed_next_entity_id() {
-        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
-            .expect_err("the next identity cannot be represented");
+        let error = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX),
+            &[written_record(u64::MAX)],
+        )
+        .expect_err("the next identity cannot be represented");
         assert!(
             matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
             if message == "generated Design next entity id overflows")
@@ -1094,9 +1126,12 @@ mod tests {
 
     #[test]
     fn metastream_preserves_largest_representable_next_entity_id() {
-        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
-            .unwrap()
-            .unwrap();
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX - 1),
+            &[written_record(u64::MAX - 1)],
+        )
+        .unwrap()
+        .unwrap();
         let next_offset = bytes.len() - 16;
         assert_eq!(
             cadmpeg_core::decode::View::u64_le_at(&bytes, next_offset),

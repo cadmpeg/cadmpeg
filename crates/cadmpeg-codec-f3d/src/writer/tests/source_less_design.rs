@@ -135,10 +135,7 @@ fn generated_source_less_writes_design_type_metastream() {
         })
         .expect("Fusion type");
     assert_eq!(fusion.module, "Fusion");
-    assert_eq!(
-        fusion.entities.values().copied().collect::<Vec<_>>(),
-        [1, 2]
-    );
+    assert_eq!(fusion.entities.values().count(), 0);
     assert_eq!(fusion.version, 7);
     assert_eq!(
         fusion.base_type_guid,
@@ -150,7 +147,7 @@ fn generated_source_less_writes_design_type_metastream() {
             design_type.module == crate::records::entity_header::DESIGN_MODULE_SKETCH
         })
         .expect("sketch-module type");
-    assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), [277]);
+    assert_eq!(sketch.entities.values().count(), 0);
     assert_eq!(
         sketch
             .base_type_guid
@@ -163,7 +160,7 @@ fn generated_source_less_writes_design_type_metastream() {
         .iter()
         .find(|design_type| design_type.module == "FutureFeature")
         .expect("forward-compatible module");
-    assert_eq!(future.entities.values().copied().collect::<Vec<_>>(), [999]);
+    assert_eq!(future.entities.values().count(), 0);
     assert_eq!(future.version, 11);
 }
 
