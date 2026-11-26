@@ -463,6 +463,13 @@ fn lift_pcurve_with_chart(
 
 type LiftedEdgeCandidate<'a> = (&'a ConsolidatedRecord, Option<[f64; 2]>, Option<u64>);
 
+fn unique_matching_coedge(matching: &[usize]) -> Option<usize> {
+    match matching {
+        &[single] => Some(single),
+        _ => None,
+    }
+}
+
 #[inline(never)]
 fn build_general_lifted_plan(
     env: &LiftedPlanContext<'_>,
@@ -530,7 +537,7 @@ fn build_general_lifted_plan(
                         })
                 })
                 .collect();
-            (matching.len() == 1).then_some(matching[0])
+            unique_matching_coedge(&matching)
         });
         let face_surface = coedge_index
             .and_then(|ci| loop_faces.get(&ir.geometry.coedges[ci].owner_loop))
@@ -1685,7 +1692,7 @@ pub(in crate::families) fn attach(
 mod tests {
     use cadmpeg_ir::math::Point3;
 
-    use super::endpoint_matches;
+    use super::{endpoint_matches, unique_matching_coedge};
 
     #[test]
     fn endpoint_match_uses_the_stored_binary32_cell_or_declared_tolerance() {
@@ -1695,5 +1702,12 @@ mod tests {
         assert!(endpoint_matches(rounded, stored, 1.0e-6));
         assert!(!endpoint_matches(outside, stored, 1.0e-6));
         assert!(endpoint_matches(outside, stored, 0.1));
+    }
+
+    #[test]
+    fn unique_matching_coedge_handles_empty_and_ambiguous_matches_without_panicking() {
+        assert_eq!(unique_matching_coedge(&[]), None);
+        assert_eq!(unique_matching_coedge(&[7]), Some(7));
+        assert_eq!(unique_matching_coedge(&[7, 9]), None);
     }
 }
