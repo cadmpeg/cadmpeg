@@ -10,6 +10,7 @@ use crate::records::feature::scope::{
 use crate::records::feature::sheet_metal::fold::DesignUnfoldOperation;
 use crate::records::identity::Located;
 use crate::test_support::real;
+use cadmpeg_core::serde_erase::json;
 
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -756,10 +757,8 @@ fn a_later_envelope_without_flags_keeps_the_latest_stored_flags() {
             [note],
             "flags {flags:?}"
         );
-        let reloaded = cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
-            cadmpeg_core::serde_erase::json::to_value(retained).unwrap(),
-        )
-        .expect("the kept scope reloads");
+        let reloaded = json::from_value::<DesignParameterScope>(json::to_value(retained).unwrap())
+            .expect("the kept scope reloads");
         assert_eq!(reloaded.tail_flags, retained.tail_flags, "flags {flags:?}");
     }
 }

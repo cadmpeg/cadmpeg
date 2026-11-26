@@ -84,6 +84,7 @@ impl Serialize for FeatureSwp104LeadingBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
@@ -108,15 +109,12 @@ mod tests {
             |token| Some(format!("block#{}", token.value())),
         )
         .unwrap();
-        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&branch).unwrap();
-        let owned = cadmpeg_core::serde_erase::json::to_vec(
-            &super::super::FeatureSwp104LeadingBranchWire::from(branch.clone()),
-        )
+        let borrowed = json::to_vec(&branch).unwrap();
+        let owned = json::to_vec(&super::super::FeatureSwp104LeadingBranchWire::from(
+            branch.clone(),
+        ))
         .unwrap();
         assert_eq!(borrowed, owned);
-        assert_native_limit(
-            &branch,
-            cadmpeg_core::serde_erase::json::to_value(&branch).unwrap(),
-        );
+        assert_native_limit(&branch, json::to_value(&branch).unwrap());
     }
 }

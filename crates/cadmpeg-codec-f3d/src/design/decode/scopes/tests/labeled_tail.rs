@@ -3,6 +3,7 @@
 //! and the typed form, and the state bytes and lane flags of each form.
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
@@ -105,12 +106,9 @@ fn assert_labeled_with_previous(tail: &PlainTail) {
         scope.previous_history_state_id_offset(),
         Some(u64_from_index(kind_end + 31 + 2 * LABEL.len()))
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::feature::scope::DesignParameterScope,
-        >(wire)
-        .unwrap(),
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire).unwrap(),
         scope
     );
 }
@@ -265,12 +263,10 @@ fn plain_tails_read_their_state_bytes_and_lane_flags() {
                     Some(tail_flags(state, [no_result, rolled_back], state_at, at)),
                     "label {label:?}, long form {long_form}"
                 );
-                let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+                let wire = json::to_value(&scope).unwrap();
                 assert_eq!(
-                    cadmpeg_core::serde_erase::json::from_value::<
-                        crate::records::feature::scope::DesignParameterScope,
-                    >(wire)
-                    .unwrap(),
+                    json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire)
+                        .unwrap(),
                     scope
                 );
             }
@@ -312,12 +308,10 @@ fn a_plain_tail_state_byte_above_one_is_read_as_set() {
             assert_eq!(scope.tail_flags, Some(flags), "state {state:?}");
             assert_eq!(flags.stored_state(), state);
             assert_eq!(flags.suppressed(), byte < 2, "state {state:?}");
-            let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+            let wire = json::to_value(&scope).unwrap();
             assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<
-                    crate::records::feature::scope::DesignParameterScope,
-                >(wire)
-                .unwrap(),
+                json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire)
+                    .unwrap(),
                 scope
             );
         }
@@ -403,15 +397,13 @@ fn scope_wire_refuses_stored_state_bytes_that_disagree_with_the_set_bytes() {
         ..PlainTail::default()
     });
     let scope = parse_plain(&bytes).expect("plain scope");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     for stored in ["000001", "000200", "020002"] {
         let mut changed = wire.clone();
         changed["tail_flags"]["wide_state"] = serde_json::json!(stored);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::records::feature::scope::DesignParameterScope,
-            >(changed)
-            .is_err(),
+            json::from_value::<crate::records::feature::scope::DesignParameterScope>(changed)
+                .is_err(),
             "stored {stored:?}"
         );
     }
@@ -444,7 +436,7 @@ fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_f
         ..PlainTail::default()
     });
     let scope = parse_plain(&bytes).expect("flagged scope");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     for offset in [
         scope.feature_ordinal_offset() - 1,
         scope.paired_byte_offset() - 1,
@@ -454,10 +446,8 @@ fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_f
         let mut moved = wire.clone();
         moved["tail_flags"]["no_result_offset"] = offset.into();
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::records::feature::scope::DesignParameterScope,
-            >(moved)
-            .is_err(),
+            json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                .is_err(),
             "offset {offset}"
         );
     }
@@ -469,20 +459,17 @@ fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_f
         let mut moved = wire.clone();
         moved["tail_flags"]["state_offset"] = offset.into();
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::records::feature::scope::DesignParameterScope,
-            >(moved)
-            .is_err(),
+            json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                .is_err(),
             "state offset {offset}"
         );
     }
     let mut current = wire;
     current["tail_flags"]["no_result"] = false.into();
     current["tail_flags"]["suppression"] = serde_json::json!([false, true]);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::records::feature::scope::DesignParameterScope,
-    >(current)
-    .is_err());
+    assert!(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(current).is_err()
+    );
 }
 
 /// A scope reads flags that an earlier envelope of its record stores when they
@@ -508,14 +495,14 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
     .expect("later envelope");
     let flags = earlier.tail_flags.expect("earlier flags");
     let carried = |envelope_offset: u64, no_result_offset: u64| {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&later).unwrap();
-        wire["tail_flags"] = cadmpeg_core::serde_erase::json::to_value(DesignScopeTailFlags {
+        let mut wire = json::to_value(&later).unwrap();
+        wire["tail_flags"] = json::to_value(DesignScopeTailFlags {
             no_result_offset,
             envelope_offset: Some(envelope_offset),
             ..flags
         })
         .unwrap();
-        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire)
+        json::from_value::<DesignParameterScope>(wire)
     };
     assert_eq!(
         carried(earlier.byte_offset(), flags.no_result_offset)
@@ -600,10 +587,8 @@ fn carried_flags_of_an_earlier_envelope_reload() {
             &bytes[at..at + 2],
             &[u8::from(flags.no_result), u8::from(flags.rolled_back)]
         );
-        let reloaded = cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
-            cadmpeg_core::serde_erase::json::to_value(kept).unwrap(),
-        )
-        .expect("the kept scope reloads");
+        let reloaded = json::from_value::<DesignParameterScope>(json::to_value(kept).unwrap())
+            .expect("the kept scope reloads");
         assert_eq!(&reloaded, kept, "unread {unread:?}");
     }
 }

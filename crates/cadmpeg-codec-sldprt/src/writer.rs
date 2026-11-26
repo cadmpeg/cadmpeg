@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic SLDPRT writer for analytic B-reps.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
@@ -1563,7 +1564,7 @@ fn section_type_ids(
 }
 
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let bytes = cadmpeg_core::serde_erase::json::to_vec(&ir.model.pmi)
+    let bytes = json::to_vec(&ir.model.pmi)
         .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }

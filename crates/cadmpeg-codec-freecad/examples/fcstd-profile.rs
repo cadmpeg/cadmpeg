@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic machine-readable evidence from the public `FCStd` corpus.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -202,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_report = env::var_os("CADMPEG_FCSTD_NATIVE_REPORT")
         .map(fs::read)
         .transpose()?
-        .map(|bytes| cadmpeg_core::serde_erase::json::from_slice::<Value>(&bytes))
+        .map(|bytes| json::from_slice::<Value>(&bytes))
         .transpose()?;
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
@@ -1646,6 +1647,7 @@ mod tests {
         serialize_gates, Observed,
     };
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
@@ -1697,7 +1699,7 @@ mod tests {
         let mut native_only = decoded.ir().clone();
         for feature in &mut native_only.model.features {
             feature.evaluation.set_definition(
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                json::from_value(serde_json::json!({
                     "kind": "operation",
                     "value": {"kind": "native", "value": {"kind": "retained_operation", "parameters": {}}}
                 }))

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Law-slot grammar at the source-less writer boundary.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -71,9 +72,8 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     procedural.edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Sweep(replacement);
     });
-    let json = cadmpeg_core::serde_erase::json::to_value(&*ir).unwrap();
-    let decoded: CadIr =
-        cadmpeg_core::serde_erase::json::from_value(json).expect("document serde admission");
+    let json = json::to_value(&*ir).unwrap();
+    let decoded: CadIr = json::from_value(json).expect("document serde admission");
     assert_eq!(layout(&decoded), layout(ir));
 }
 

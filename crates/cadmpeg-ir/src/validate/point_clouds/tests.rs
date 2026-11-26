@@ -4,11 +4,12 @@ use super::check_point_clouds;
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::products::{ExternalDocument, ProductDefinition, Storage};
+use cadmpeg_core::serde_erase::json;
 
 const DEFINITION: &str = "test:model:definition#part";
 
 fn cloud(value: serde_json::Value) -> crate::point_cloud::PointCloud {
-    cadmpeg_core::serde_erase::json::from_value(value).expect("a point cloud")
+    json::from_value(value).expect("a point cloud")
 }
 
 fn scan(definition: &str) -> crate::point_cloud::PointCloud {
@@ -49,17 +50,14 @@ fn a_cloud_with_one_value_per_point_is_valid() {
 
 #[test]
 fn a_cloud_states_its_definition() {
-    let mut value = cadmpeg_core::serde_erase::json::to_value(scan(DEFINITION)).unwrap();
+    let mut value = json::to_value(scan(DEFINITION)).unwrap();
     assert_eq!(value["definition"], DEFINITION);
     let fields = value.as_object_mut().unwrap();
     fields.remove("definition");
-    let missing = cadmpeg_core::serde_erase::json::from_value::<crate::point_cloud::PointCloud>(
-        value.clone(),
-    );
+    let missing = json::from_value::<crate::point_cloud::PointCloud>(value.clone());
     assert!(missing.is_err(), "a cloud with no definition reads");
     value["product_definition"] = DEFINITION.into();
-    let renamed =
-        cadmpeg_core::serde_erase::json::from_value::<crate::point_cloud::PointCloud>(value);
+    let renamed = json::from_value::<crate::point_cloud::PointCloud>(value);
     assert!(renamed.is_err(), "the v10 field name reads");
 }
 

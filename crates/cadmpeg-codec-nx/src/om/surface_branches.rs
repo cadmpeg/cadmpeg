@@ -438,6 +438,7 @@ pub(crate) fn surface_feature_payload_branches(
 mod tests {
     use super::{surface_feature_payload_branches, BranchPathSearch, SurfaceFamily, SurfaceSuffix};
     use crate::om::operation_record::OperationPayload;
+    use cadmpeg_core::serde_erase::json;
 
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
@@ -511,10 +512,7 @@ mod tests {
             let wire = byte.to_string();
             let decoded = serde_json::from_str::<SurfaceFamily>(&wire);
             if matches!(byte, 0x14 | 0x50) {
-                assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_string(&decoded.unwrap()).unwrap(),
-                    wire
-                );
+                assert_eq!(json::to_string(&decoded.unwrap()).unwrap(), wire);
             } else {
                 assert!(decoded.unwrap_err().to_string().contains("family"));
             }
@@ -531,10 +529,7 @@ mod tests {
             "\"ff00010203\"",
         ] {
             let decoded: SurfaceSuffix = serde_json::from_str(wire).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_string(&decoded).unwrap(), wire);
             assert!((1..=5).contains(&decoded.into_vec().len()));
         }
         for wire in ["\"\"", "\"000102030405\""] {

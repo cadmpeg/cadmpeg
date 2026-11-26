@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 use cadmpeg_core::decode::u64_from_index;
@@ -1136,14 +1137,14 @@ fn split_body_projects_tool_extension_independently_of_native_tool_selection() {
                 groups[0].id.clone()
             )),
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+        let wire = json::to_value(&definition).unwrap();
         let operation = &wire["value"];
         assert_eq!(
             operation["value"].get("extend_tool"),
             extend_tool.map(serde_json::Value::Bool).as_ref(),
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(wire).unwrap(),
+            json::from_value::<FeatureDefinition>(wire).unwrap(),
             definition
         );
     }

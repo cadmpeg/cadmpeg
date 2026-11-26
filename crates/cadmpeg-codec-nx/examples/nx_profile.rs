@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic, conservative NX capability-gate evidence.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
@@ -749,8 +750,7 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
             path.display()
         )));
     }
-    cadmpeg_core::serde_erase::json::from_slice(&output.stdout)
-        .map_err(|error| WorkerFailure::Failed(error.to_string()))
+    json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
 }
 
 fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
@@ -1431,6 +1431,7 @@ mod tests {
 #[cfg(test)]
 mod boundary_wire_tests {
     use super::RederivationBoundary;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn worker_boundary_requires_a_feature_for_unsupported_reasons() {
@@ -1438,11 +1439,9 @@ mod boundary_wire_tests {
             "feature": null, "feature_name": null, "feature_family": null,
             "feature_ordinal": null, "reason": "incomplete_feature_definition"
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<RederivationBoundary>(wire)
-                .expect_err("unsupported boundaries require a feature")
-                .to_string()
-                .contains("feature")
-        );
+        assert!(json::from_value::<RederivationBoundary>(wire)
+            .expect_err("unsupported boundaries require a feature")
+            .to_string()
+            .contains("feature"));
     }
 }

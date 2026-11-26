@@ -10,6 +10,7 @@
 //! fails the test.
 
 use cadmpeg_core::serde_erase::from_json_value;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::CadIr;
 use serde_json::{json, Value};
 
@@ -98,7 +99,7 @@ fn documents() -> Vec<Value> {
     documents.extend(
         examples
             .iter()
-            .map(|ir| cadmpeg_core::serde_erase::json::to_value(ir).expect("a CadIr serializes")),
+            .map(|ir| json::to_value(ir).expect("a CadIr serializes")),
     );
     documents.extend(hand_written_documents().into_iter().map(|(_, ir)| ir));
     for (name, seed) in seed_documents() {
@@ -387,8 +388,7 @@ fn operation_limits() -> Vec<Value> {
 /// The empty document with `elements` as the elements of the `process` arena
 /// `arena`.
 fn process_document(arena: &str, elements: Vec<Value>) -> Value {
-    let mut document =
-        cadmpeg_core::serde_erase::json::to_value(CadIr::empty()).expect("a CadIr serializes");
+    let mut document = json::to_value(CadIr::empty()).expect("a CadIr serializes");
     assert!(
         document["process"].get(arena).is_some(),
         "no process arena {arena}"
@@ -400,8 +400,7 @@ fn process_document(arena: &str, elements: Vec<Value>) -> Value {
 /// The empty document with `element` as the one element of the `design`
 /// arena `arena`.
 fn design_document(arena: &str, element: Value) -> Value {
-    let mut document =
-        cadmpeg_core::serde_erase::json::to_value(CadIr::empty()).expect("a CadIr serializes");
+    let mut document = json::to_value(CadIr::empty()).expect("a CadIr serializes");
     assert!(
         document["design"].get(arena).is_some(),
         "no design arena {arena}"
@@ -412,8 +411,7 @@ fn design_document(arena: &str, element: Value) -> Value {
 
 /// The empty document with `element` as the one element of `arena`.
 fn document(arena: &str, element: Value) -> Value {
-    let mut document =
-        cadmpeg_core::serde_erase::json::to_value(CadIr::empty()).expect("a CadIr serializes");
+    let mut document = json::to_value(CadIr::empty()).expect("a CadIr serializes");
     let home = ["geometry", "model"]
         .into_iter()
         .find(|home| document[*home].get(arena).is_some())

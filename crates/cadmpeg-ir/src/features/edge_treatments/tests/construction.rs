@@ -3,6 +3,7 @@ use super::point;
 use crate::features::edge_treatments::{VariableRadii, VariableRadius};
 use crate::scalar::{Fraction, NonNegativeLength};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 fn raw() -> Vec<VariableRadius> {
     vec![point(0., 0.), point(0.5, 0.), point(1., 2.)]
@@ -29,10 +30,8 @@ fn radius_construction_moves_typed_storage_and_shares_serde_admission() {
     let law = VariableRadii::new(raw()).expect("valid");
     ctx.finish_session().expect("no scratch or duplicate scan");
     assert_eq!(
-        serde_json::from_str::<VariableRadii>(
-            &cadmpeg_core::serde_erase::json::to_string(&law).expect("wire")
-        )
-        .expect("context-free serde"),
+        serde_json::from_str::<VariableRadii>(&json::to_string(&law).expect("wire"))
+            .expect("context-free serde"),
         law
     );
     let arena = DecodeArena::new();

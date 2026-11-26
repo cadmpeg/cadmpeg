@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::annotations::Annotations;
@@ -23,7 +24,7 @@ const FACE: &str = "sldprt:brep:face#37@block@1";
 const KEPT_FACE: &str = "sldprt:brep:face#38@block@2";
 
 fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": id,
         "target": {"entity": {"kind": "face", "value": face}},
         "appearance": appearance,
@@ -33,7 +34,7 @@ fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
 }
 
 fn appearance(id: &str) -> Appearance {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": id,
         "schema": "entity-53",
         "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},

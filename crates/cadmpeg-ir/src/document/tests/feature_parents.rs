@@ -2,6 +2,7 @@
 
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
 use crate::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -73,14 +74,8 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
             }
             _ => unreachable!(),
         }
-        assert!(
-            cadmpeg_core::serde_erase::json::to_value(&ir.model).is_err(),
-            "{mutation}"
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::to_value(&ir).is_err(),
-            "{mutation}"
-        );
+        assert!(json::to_value(&ir.model).is_err(), "{mutation}");
+        assert!(json::to_value(&ir).is_err(), "{mutation}");
         assert!(ir.to_canonical_json().is_err(), "{mutation}");
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(

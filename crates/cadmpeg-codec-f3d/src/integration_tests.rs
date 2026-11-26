@@ -52,6 +52,7 @@ mod tracking_path_headers;
 mod treatment_losses;
 mod work_planes;
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
@@ -221,7 +222,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = cadmpeg_core::serde_erase::json::to_vec(&table_document(
+    let payload = json::to_vec(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[("wide", "Wide", vec![("P", string_cell("W-1"))])],

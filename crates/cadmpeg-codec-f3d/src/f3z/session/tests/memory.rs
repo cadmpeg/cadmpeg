@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn archive_session_retained_estimate_for_skipped_member_is_id_length() {
@@ -45,7 +46,7 @@ fn archive_session_member_result_outlives_source_and_releases_archive_ownership(
     assert!(member.decoded().unwrap().is_ok());
     let decoded = member.decoded().unwrap().unwrap();
     let body = &decoded.body;
-    let payload = cadmpeg_core::serde_erase::json::to_vec(&(
+    let payload = json::to_vec(&(
         &decoded.ir,
         (
             &body.transfer,

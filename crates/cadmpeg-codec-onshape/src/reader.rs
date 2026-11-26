@@ -2,6 +2,7 @@
 //! Part Studio history and assembly projection.
 
 use crate::archive;
+use cadmpeg_core::serde_erase::json;
 mod assembly;
 pub(super) mod expression;
 mod features;
@@ -85,7 +86,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        cadmpeg_core::serde_erase::json::from_value(row)
+        json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -194,7 +195,7 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
     {
         return;
     }
-    let Ok(text) = cadmpeg_core::serde_erase::json::to_string(&model.ir) else {
+    let Ok(text) = json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -687,7 +688,7 @@ fn studio(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
