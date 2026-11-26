@@ -83,9 +83,13 @@ fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKin
                     refusal.message.contains(&format!("at byte {pos} ")),
                     "{refusal:#?}"
                 );
-                let part =
-                    super::give_up_record(ctx, (0, "nx:parasolid#0:partition"), node, &refusal)
-                        .expect("the refused record is given up");
+                let part = super::give_up_record(
+                    ctx,
+                    (0, &cadmpeg_ir::stream_name!("nx:parasolid#0:partition")),
+                    node,
+                    &refusal,
+                )
+                .expect("the refused record is given up");
                 let loss = part.loss();
                 assert_eq!(
                     loss.code,

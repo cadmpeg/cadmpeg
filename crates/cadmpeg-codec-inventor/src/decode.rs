@@ -2237,10 +2237,16 @@ fn admit_kernel_annotation(
     let name = format!("inventor:{}", record.stream);
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
     let stream = StreamHandle::new(name);
-    let key = cadmpeg_ir::ids::Identity::new(record.id.as_str()).map_err(CodecError::malformed)?;
-    annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
+    annotations.note(
+        &record.id,
+        &stream,
+        record.offset,
+        Some(record.tag.as_str()),
+    );
     for field in &record.derived_fields {
-        annotations.derived(&key, field).map_err(CodecError::from)?;
+        annotations
+            .derived(&record.id, field)
+            .map_err(CodecError::from)?;
     }
     Ok(())
 }

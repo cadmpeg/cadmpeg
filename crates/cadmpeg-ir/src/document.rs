@@ -1670,6 +1670,15 @@ macro_rules! declare_arena_name {
                 ids
             }
 
+            /// The ids of the records of the arenas the CADIR wire omits.
+            pub(crate) fn wire_omitted_ids(self) -> std::collections::BTreeSet<&'a str> {
+                let mut omitted = std::collections::BTreeSet::new();
+                $(if ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    omitted.extend(self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity));
+                })*
+                omitted
+            }
+
             /// The ids of `among` that a record of an arena the CADIR wire
             /// carries has.
             pub(crate) fn written_among<'b>(self, among: &std::collections::BTreeSet<&'b str>) -> std::collections::BTreeSet<&'b str> {

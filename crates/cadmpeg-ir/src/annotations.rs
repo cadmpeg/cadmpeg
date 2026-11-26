@@ -358,10 +358,10 @@ impl StreamHandle {
         Self(Arc::new(stream))
     }
 
-    /// Returns the stream name.
+    /// The shared stream name.
     #[must_use]
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
+    pub fn name(&self) -> &StreamName {
+        &self.0
     }
 }
 
@@ -723,7 +723,13 @@ impl Annotations {
 
     /// Annotate `to` as the entity `from` is annotated, replacing the
     /// annotations of `to`.
-    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+    pub fn copy_entity(&mut self, from: &impl AsRef<crate::ids::Identity>, to: AnnotationKey) {
+        self.copy_annotations(from.as_ref().as_str(), to);
+    }
+
+    /// Annotate `to` as the record whose annotation key reads `from` is
+    /// annotated, replacing the annotations of `to`.
+    pub(crate) fn copy_annotations(&mut self, from: &str, to: AnnotationKey) {
         match self.provenance.get(from).cloned() {
             Some(provenance) => self.provenance.insert(to.clone(), provenance),
             None => self.provenance.remove(&to),
