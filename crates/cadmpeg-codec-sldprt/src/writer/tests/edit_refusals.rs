@@ -25,7 +25,7 @@ fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>) {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut output)

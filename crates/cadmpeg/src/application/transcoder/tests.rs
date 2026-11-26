@@ -652,7 +652,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
     use cadmpeg_registry::InputCatalog;
 
     CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("plan the mutated CADIR document")
         .write_to(&mut std::fs::File::create(path).expect("create CADIR input"))
         .expect("write the mutated CADIR document");

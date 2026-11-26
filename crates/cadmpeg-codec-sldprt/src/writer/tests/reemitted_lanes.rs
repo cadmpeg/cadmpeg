@@ -133,7 +133,7 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     crate::SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut written)

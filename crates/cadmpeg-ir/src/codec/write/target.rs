@@ -245,10 +245,11 @@ impl<'a> ResolvedWrite<'a> {
     /// row the writer states it wrote instead, if any. A named row that the
     /// file is not charges `target.request-displaced`; a recorded same-format
     /// dialect that the file is not, a same-format source that records no
-    /// dialect, an `Inherit` request from a source of another format or from
-    /// none, and a row the writer states in place of the row a request that
-    /// names no target resolved to, charge `target.source-dialect-displaced`.
-    /// An `Inherit` or unnamed request names no row, so it charges only the
+    /// dialect, and an `Inherit` request from a source of another format or
+    /// from none charge `target.source-dialect-displaced`. A request that
+    /// names no target, on a source of another format or none, has no source
+    /// dialect to lose and charges nothing, whatever row the file is. An
+    /// `Inherit` or unnamed request names no row, so it charges only the
     /// source code.
     fn written(
         &self,
@@ -270,10 +271,10 @@ impl<'a> ResolvedWrite<'a> {
         };
         let because = reason.map_or_else(String::new, |reason| format!("; {reason}"));
         let restated = written != planned;
-        let resolved = |request: &str| {
+        let resolved = || {
             if restated {
                 format!(
-                    "{request} resolved to {planned}, and the file is written as \
+                    "Inherit resolved to {planned}, and the file is written as \
                      {written}{because}"
                 )
             } else {
@@ -320,21 +321,18 @@ impl<'a> ResolvedWrite<'a> {
             )),
             ResolvedTarget::Default {
                 source: DefaultSource::ForeignFormat(other),
-                inherit,
+                inherit: true,
                 ..
-            } if *inherit || restated => Some(format!(
+            } => Some(format!(
                 "the document's source is {other}, which records no {} dialect; {}",
                 format.as_str(),
-                resolved(request_name(*inherit))
+                resolved()
             )),
             ResolvedTarget::Default {
                 source: DefaultSource::NoSource,
-                inherit,
+                inherit: true,
                 ..
-            } if *inherit || restated => Some(format!(
-                "the document records no source; {}",
-                resolved(request_name(*inherit))
-            )),
+            } => Some(format!("the document records no source; {}", resolved())),
             ResolvedTarget::Explicit { .. } | ResolvedTarget::Default { .. } => None,
         };
         let losses = requested
@@ -601,15 +599,6 @@ impl TargetDomain for Catalog {
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
         resolve_write_request(ir, request, *self)
-    }
-}
-
-/// How a report message names a request that resolved to a default row.
-const fn request_name(inherit: bool) -> &'static str {
-    if inherit {
-        "Inherit"
-    } else {
-        "the request, which names no target,"
     }
 }
 

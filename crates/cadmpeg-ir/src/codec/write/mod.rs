@@ -122,8 +122,9 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// catalog's: a patch-only writer's row is reachable only from a retained
     /// source of that flavor, and `plan` refuses by name where it cannot
     /// deliver. Preservation of dialects outside the catalog is not listed
-    /// here; [`TargetRequest::Inherit`] asks for it. Ids come from this
-    /// encoder's own format namespace only.
+    /// here; [`TargetRequest::Inherit`] and [`TargetRequest::Unnamed`] on a
+    /// same-format source ask for it. Ids come from this encoder's own format
+    /// namespace only.
     fn targets(&self) -> TargetCatalog;
 
     /// The decode depth this encoder plans from, [`EncoderBackend::REQUEST`].

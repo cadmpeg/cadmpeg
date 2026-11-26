@@ -507,9 +507,9 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
 
 /// A request that names no target takes the catalog default without a loss
 /// where the source is of another format or absent, and inherits where it is
-/// of this format: a recorded catalog dialect writes as itself, and a source
-/// that records no dialect is charged. A row the writer states in place of
-/// the default is charged, naming both rows.
+/// of this format: a recorded catalog dialect writes as itself, a row the
+/// writer states in its place is charged, and a source that records no
+/// dialect is charged.
 #[test]
 fn an_unnamed_request_inherits_only_from_a_source_of_this_format() {
     for ir in [
@@ -540,24 +540,52 @@ fn an_unnamed_request_inherits_only_from_a_source_of_this_format() {
         )
     );
 
-    let foreign = catalog_write_ir(Some(("other", Some("other:only"))));
+    let recorded = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved =
-        resolve_write_request(&foreign, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
-    let row = WrittenRow {
-        target: cadmpeg_core::dialect_id!("test:old"),
-        reason: "the stored envelope decides the row".into(),
-    };
+        resolve_write_request(&recorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
     assert_eq!(
-        charged(&resolved, true, Some(row)),
+        charged(
+            &resolved,
+            false,
+            Some(stated_row(cadmpeg_core::dialect_id!("test:new")))
+        ),
         (
-            "test:old".into(),
+            "test:new".into(),
             vec![(
                 SOURCE_DIALECT_DISPLACED.to_owned(),
-                "the document's source is other, which records no test dialect; the request, \
-                 which names no target, resolved to test:new, and the file is written as \
-                 test:old; the stored envelope decides the row"
+                "source dialect test:old was displaced by target dialect test:new; the source \
+                 dialect identity is not preserved; the stored envelope decides the row"
                     .to_owned()
             )]
         )
     );
+}
+
+/// A request that names no target, on a document whose source is of another
+/// format or absent, charges nothing whatever row the writer states: no source
+/// dialect exists to lose.
+#[test]
+fn an_unnamed_request_without_a_same_format_source_charges_no_stated_row() {
+    for ir in [
+        catalog_write_ir(None),
+        catalog_write_ir(Some(("other", Some("other:only")))),
+    ] {
+        let resolved =
+            resolve_write_request(&ir, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+        assert_eq!(
+            charged(
+                &resolved,
+                true,
+                Some(stated_row(cadmpeg_core::dialect_id!("test:old")))
+            ),
+            ("test:old".into(), vec![])
+        );
+    }
+}
+
+fn stated_row(target: DialectId) -> WrittenRow {
+    WrittenRow {
+        target,
+        reason: "the stored envelope decides the row".into(),
+    }
 }

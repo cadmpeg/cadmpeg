@@ -44,6 +44,11 @@ const UNREAD_PAYLOAD: &str = "whose ZIP member has no archive entry record";
 const UNHELD_PAYLOAD: &str =
     "as the payload entries of these properties, which the archive does not hold; each written \
      property names no entry";
+const DROPPED_PROPERTY: &str =
+    "whose payload entries the archive does not hold, each with the entries it names";
+const KEPT_REFERENCE: &str =
+    "as the payload entries of these properties, which are written as stored and still name \
+     them; each with the property that names it";
 const UNREADABLE_SPAN: &str =
     "whose physical ledger span does not read; the archive member order it states is not kept";
 
@@ -123,6 +128,12 @@ fn write_seekable(
     for id in written.unheld {
         omitted.push(UNHELD_PAYLOAD, id);
     }
+    for line in written.omitted_properties {
+        omitted.push(DROPPED_PROPERTY, line);
+    }
+    for line in written.unresolved {
+        omitted.push(KEPT_REFERENCE, line);
+    }
     let mut omitted_members = resolution.omitted_members().clone();
     omitted_members.extend(written.members);
     for span in &physical_ledger {
@@ -170,8 +181,8 @@ fn write_seekable(
     ));
     losses.extend(evaluation_stale(
         "FCStd",
-        "writes input edits or empty payload entry names of these objects beside their stored \
-         shapes, and their schema-2 declarations hold no recompute mark",
+        "writes input edits of these objects, or removes payload entry names from them, beside \
+         their stored shapes, and their schema-2 declarations hold no recompute mark",
         written.stale,
     ));
     let notes = vec![
@@ -231,19 +242,25 @@ struct WrittenDocument {
     /// Records whose edit the output holds as the source stores them.
     dropped: BTreeSet<String>,
     /// Schema-2 objects the output changes without a recompute mark: input
-    /// edits, or properties written with an empty file name.
+    /// edits, properties written with an empty file name, or properties left
+    /// out.
     stale: BTreeSet<String>,
     /// Properties written with an empty file name in place of an archive
     /// entry the output does not hold.
     unheld: BTreeSet<String>,
-    /// The archive members that `unheld` names.
+    /// Properties left out of the written file, each with the entries it
+    /// names that the output does not hold.
+    omitted_properties: Vec<String>,
+    /// Entries the output does not hold that a property written as stored
+    /// names, each with that property.
+    unresolved: Vec<String>,
+    /// The archive members that the properties above name.
     members: HashSet<String>,
 }
 
 impl WrittenDocument {
     /// The written `xml`, which reads back as `graph`, with every record of
-    /// the document that `graph` does not state named as dropped, and each
-    /// property that still names an entry the output does not hold. The
+    /// the document that `graph` does not state named as dropped. The
     /// document's properties are `unheld.expected`.
     fn read_back_as(
         xml: String,
@@ -258,12 +275,13 @@ impl WrittenDocument {
         let mut dropped = differing_properties(&unheld.expected, graph, &none, &none, held);
         dropped.extend(declaration_edits(objects, extensions, graph));
         dropped.extend(absent_properties(&unheld.expected, graph));
-        dropped.extend(unheld.named);
         Self {
             xml,
             dropped,
             stale,
             unheld: unheld.emptied,
+            omitted_properties: unheld.omitted,
+            unresolved: unheld.named,
             members: unheld.members,
         }
     }
@@ -273,64 +291,76 @@ impl WrittenDocument {
 /// the written `Document.xml` states them.
 struct Unheld {
     /// The document's properties as the written file states them: each
-    /// property in `named` as stored, without the entries the output does not
-    /// hold, and every other property as written.
+    /// property written as stored without the entries the output does not
+    /// hold, every other written property as written, and none of those
+    /// left out.
     expected: Vec<PropertyRecord>,
     /// Properties written with an empty file name.
     emptied: BTreeSet<String>,
-    /// Properties written as stored, still naming the entry.
-    named: BTreeSet<String>,
-    /// The archive members the properties in `emptied` name.
+    /// Properties left out, each as `<property> names <entry>, …`.
+    omitted: Vec<String>,
+    /// Entries named by properties written as stored, each as
+    /// `<entry> named by <property>`.
+    named: Vec<String>,
+    /// The archive members the properties above name.
     members: HashSet<String>,
 }
 
 impl Unheld {
-    /// Splits `unheld` into the properties written with an empty file name
-    /// and those left as stored (`as_stored`). `written` holds the
-    /// document's properties with every `removed` file name made empty, in
-    /// the order of `originals`.
+    /// Splits `unheld` into the properties written with an empty file name,
+    /// those left out (`left_out`), and those written as stored
+    /// (`as_stored`, which holds `left_out`). `written` holds the document's
+    /// properties with every `removed` file name made empty, in the order of
+    /// `originals`.
     fn split(
         written: &[PropertyRecord],
         originals: &[PropertyRecord],
         unheld: &BTreeSet<String>,
-        as_stored: &BTreeSet<String>,
+        (as_stored, left_out): (&BTreeSet<String>, &BTreeSet<String>),
         removed: &HashSet<String>,
     ) -> Self {
-        let named = unheld
-            .intersection(as_stored)
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let emptied = unheld
-            .difference(as_stored)
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let members = originals
-            .iter()
-            .filter(|property| emptied.contains(&property.id))
-            .flat_map(PropertyRecord::side_entries)
-            .filter(|name| removed.contains(name.as_str()))
-            .cloned()
-            .collect();
-        let expected = written
-            .iter()
-            .zip(originals)
-            .map(|(written, original)| {
-                if !named.contains(&original.id) {
-                    return written.clone();
-                }
+        let entries = |property: &PropertyRecord| {
+            property
+                .side_entries()
+                .iter()
+                .filter(|name| removed.contains(name.as_str()))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let mut split = Self {
+            expected: Vec::with_capacity(written.len()),
+            emptied: BTreeSet::new(),
+            omitted: Vec::new(),
+            named: Vec::new(),
+            members: HashSet::new(),
+        };
+        for (written, original) in written.iter().zip(originals) {
+            let id = &original.id;
+            if !unheld.contains(id) {
+                split.expected.push(written.clone());
+                continue;
+            }
+            let names = entries(original);
+            if left_out.contains(id) {
+                split
+                    .omitted
+                    .push(format!("{id} names {}", names.join(" and ")));
+            } else if as_stored.contains(id) {
+                split
+                    .named
+                    .extend(names.iter().map(|name| format!("{name} named by {id}")));
                 let mut stored = original.clone();
                 if let PropertyBody::Persisted { side_entries, .. } = &mut stored.body {
                     side_entries.retain(|name| !removed.contains(name));
                 }
-                stored
-            })
-            .collect();
-        Self {
-            expected,
-            emptied,
-            named,
-            members,
+                split.expected.push(stored);
+            } else {
+                split.emptied.insert(id.clone());
+                split.expected.push(written.clone());
+            }
+            split.members.extend(names);
         }
+        split
     }
 }
 
@@ -348,9 +378,10 @@ impl Unheld {
 /// an archive entry the output does not hold is written with an empty file
 /// name, and its object is marked the same way. Where the patch cannot write
 /// that property from its record, it writes the stored record with the
-/// empty file name; one it cannot write either way is held as stored and
-/// reported dropped. The edits reported dropped are the records of the
-/// document the written file does not state.
+/// empty file name. One it cannot write either way is left out of the file,
+/// and its object is marked (W1); where the patch cannot remove its element,
+/// it is written as stored. The edits reported dropped are the records of
+/// the document the written file does not state.
 fn written_document(
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
@@ -370,7 +401,12 @@ fn written_document(
     let originals = properties;
     let (properties, unheld) = without_entries(originals, &removed);
     let properties = properties.as_slice();
-    let mut stored = match read_back(source, resolution, false)? {
+    let stored = if unheld.is_empty() {
+        None
+    } else {
+        read_back(source, resolution, false)?
+    };
+    let mut stored = match stored {
         Some(graph) => {
             let (stored, _) = without_entries(&graph.properties, &removed);
             stored
@@ -401,13 +437,31 @@ fn written_document(
         };
         let differing = differing_properties(&writable, &graph, &kept, &patch.edited, &held);
         if differing.is_empty() {
-            let unheld = Unheld::split(properties, originals, &unheld, &kept, &removed);
-            return Ok(WrittenDocument::read_back_as(
+            let written = Written {
                 xml,
-                &graph,
-                (&marked, extensions),
-                &held,
+                graph,
+                marked,
                 stale,
+            };
+            let named = unheld.intersection(&kept).cloned().collect();
+            let (written, left_out) = without_unresolved(
+                resolution,
+                objects,
+                (&writable, &named),
+                (&patch.changed_inputs, &emptied),
+                written,
+                |graph| {
+                    differing_properties(&writable, graph, &kept, &patch.edited, &held).is_empty()
+                },
+            )?;
+            let unheld =
+                Unheld::split(properties, originals, &unheld, (&kept, &left_out), &removed);
+            return Ok(WrittenDocument::read_back_as(
+                written.xml,
+                &written.graph,
+                (&written.marked, extensions),
+                &held,
+                written.stale,
                 unheld,
             ));
         }
@@ -419,6 +473,163 @@ fn written_document(
         &held,
         &removed,
     )
+}
+
+/// A patched `Document.xml`, how it reads back, and the object declarations
+/// it states.
+struct Written {
+    xml: String,
+    graph: Graph,
+    marked: Vec<ObjectRecord>,
+    stale: BTreeSet<String>,
+}
+
+/// `written` without the element of each property in `named`, which the
+/// patch writes as stored although it names an entry the output does not
+/// hold, with each such object marked as for an emptied file name (W1), and
+/// the properties left out. Where that file does not read back as `holds`
+/// accepts, `written` is returned unchanged and none is left out.
+fn without_unresolved<'p>(
+    resolution: &Resolution<'_>,
+    objects: &[ObjectRecord],
+    (properties, named): (&'p [PropertyRecord], &BTreeSet<String>),
+    (changed_inputs, emptied): (&HashSet<String>, &HashSet<&'p str>),
+    written: Written,
+    holds: impl Fn(&Graph) -> bool,
+) -> Result<(Written, BTreeSet<String>), CodecError> {
+    let Some((xml, left_out)) =
+        without_properties(&written.xml, resolution, objects, properties, named)?
+    else {
+        return Ok((written, BTreeSet::new()));
+    };
+    let mut owners = emptied.clone();
+    owners.extend(
+        properties
+            .iter()
+            .filter(|property| left_out.contains(&property.id))
+            .map(|property| property.owner.as_str()),
+    );
+    let (marked, stale) = marked_objects(resolution, objects, changed_inputs, &owners);
+    let Some(xml) = with_touches(resolution, xml, &marked)? else {
+        return Ok((written, BTreeSet::new()));
+    };
+    let Some(graph) = read_back(&xml, resolution, true)? else {
+        return Ok((written, BTreeSet::new()));
+    };
+    let reads_out = !graph
+        .properties
+        .iter()
+        .any(|property| left_out.contains(&property.id));
+    if !reads_out || !holds(&graph) {
+        return Ok((written, BTreeSet::new()));
+    }
+    Ok((
+        Written {
+            xml,
+            graph,
+            marked,
+            stale,
+        },
+        left_out,
+    ))
+}
+
+/// `xml` without the element of each property in `named`, with the count of
+/// its container lowered, and the properties removed. A property whose
+/// element `xml` does not hold as its retained text, or whose container
+/// declares no count of its kind, stays. `None` where none is removed.
+fn without_properties(
+    xml: &str,
+    resolution: &Resolution<'_>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    named: &BTreeSet<String>,
+) -> Result<Option<(String, BTreeSet<String>)>, CodecError> {
+    if named.is_empty() {
+        return Ok(None);
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
+    let parsed = match ctx.parse_xml(xml, "FreeCAD property containers") {
+        Ok(parsed) => parsed,
+        Err(error) => return recover(error).map(|()| None),
+    };
+    let targets = properties
+        .iter()
+        .filter(|property| named.contains(&property.id))
+        .map(|property| ((property.owner.as_str(), property.name.as_str()), property))
+        .collect::<HashMap<_, _>>();
+    let owners = objects
+        .iter()
+        .map(|object| (object.name().as_str(), object.id().as_str()))
+        .collect::<HashMap<_, _>>();
+    let document = crate::native::native_id("document", "0");
+    let (_, data_tag, element_tag) = resolution.vocabulary().tags();
+    let root = parsed.root_element();
+    let containers = root
+        .children()
+        .filter(|node| node.has_tag_name("Properties"))
+        .map(|node| (document.as_str(), node))
+        .chain(
+            root.children()
+                .filter(|node| node.has_tag_name(data_tag))
+                .flat_map(|data| data.children())
+                .filter(|node| node.has_tag_name(element_tag))
+                .filter_map(|node| {
+                    let owner = owners.get(node.attribute("name")?)?;
+                    Some(
+                        node.children()
+                            .filter(|child| child.has_tag_name("Properties"))
+                            .map(move |container| (*owner, container)),
+                    )
+                })
+                .flatten(),
+        );
+    let mut edits = Vec::new();
+    let mut removed = BTreeSet::new();
+    for (owner, container) in containers {
+        for (tag, field) in [("Property", "Count"), ("_Property", "TransientCount")] {
+            let elements = container
+                .children()
+                .filter(|node| node.has_tag_name(tag))
+                .filter_map(|node| {
+                    let property = targets.get(&(owner, node.attribute("name")?))?;
+                    (xml.get(node.range()) == Some(property.xml.text()))
+                        .then_some((node.range(), &property.id))
+                })
+                .collect::<Vec<_>>();
+            let Some(count) = container.attribute_node(field) else {
+                continue;
+            };
+            let Some(lowered) = count
+                .value()
+                .parse::<usize>()
+                .ok()
+                .and_then(|declared| declared.checked_sub(elements.len()))
+            else {
+                continue;
+            };
+            if elements.is_empty() {
+                continue;
+            }
+            edits.push((count.range_value(), lowered.to_string()));
+            for (range, id) in elements {
+                edits.push((range, String::new()));
+                removed.insert(id.clone());
+            }
+        }
+    }
+    if removed.is_empty() {
+        return Ok(None);
+    }
+    edits.sort_by_key(|(range, _)| range.start);
+    let mut output = xml.to_owned();
+    for (range, replacement) in edits.into_iter().rev() {
+        output.replace_range(range, &replacement);
+    }
+    Ok(Some((output, removed)))
 }
 
 /// Moves each property in `failed` one rung down: to its stored record with
@@ -483,8 +694,13 @@ fn stored_document(
             if let Some(graph) = read_back(&xml, resolution, true)? {
                 let (marked, stale) =
                     marked_objects(resolution, objects, &HashSet::new(), &emptied);
-                let unheld =
-                    Unheld::split(properties, originals, &unheld, &patch.unwritten, removed);
+                let unheld = Unheld::split(
+                    properties,
+                    originals,
+                    &unheld,
+                    (&patch.unwritten, &BTreeSet::new()),
+                    removed,
+                );
                 return Ok(WrittenDocument::read_back_as(
                     xml,
                     &graph,
@@ -501,6 +717,8 @@ fn stored_document(
         dropped: BTreeSet::from([resolution.document().id.clone()]),
         stale: BTreeSet::new(),
         unheld: BTreeSet::new(),
+        omitted_properties: Vec::new(),
+        unresolved: Vec::new(),
         members: HashSet::new(),
     })
 }

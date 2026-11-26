@@ -10,7 +10,7 @@ use crate::{build_encoder, Format};
 
 fn export(format: Format, ir: &CadIr) -> Result<(Vec<u8>, String), String> {
     let plan = build_encoder(format)
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     let report = plan

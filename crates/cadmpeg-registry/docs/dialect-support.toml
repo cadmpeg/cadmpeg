@@ -50,7 +50,7 @@
 #
 #   PRESERVATION reproduces a dialect only when the source already is one --
 #   verbatim byte replay or a patch of the retained baseline, asked for with
-#   `TargetRequest::Inherit`. It is input-conditioned, so it is never a
+#   `TargetRequest::Inherit` or `TargetRequest::Unnamed`. It is input-conditioned, so it is never a
 #   catalog row: a `targets()` that listed it would advertise an output
 #   arbitrary input cannot reach. `preserved` is that cell.
 #

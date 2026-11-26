@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
-        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Inherit)?
+        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Unnamed)?
         .write_to(&mut output)?;
     Ok(())
 }

@@ -123,20 +123,21 @@ fn a_property_the_patch_cannot_write_names_no_removed_optional_entry() {
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
 }
 
-/// A removed entry named by a `file` attribute on a nested value element,
-/// which the patch cannot write empty from the record or from the stored
-/// record, leaves the property as stored. `export:edit.dropped` names the
-/// property, and the ledger span of the left-out member names the member, so
-/// the report states that the written property still names the entry.
-#[test]
-fn a_property_the_patch_cannot_empty_is_reported_dropped() {
-    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
+/// Removes the entry record of `Payload.bin` from the decode of `xml`, whose
+/// `Payload` property names it, and writes the document: the written
+/// `Document.xml`, the report, and the round trip, with the property.
+fn write_without_payload(
+    xml: &str,
+) -> (
+    cadmpeg_ir::report::export::ExportReport,
+    String,
+    cadmpeg_ir::CadIr,
+    PropertyRecord,
+) {
     let mut ir = decode(&archive_entries(&[
         ("Document.xml", xml.as_bytes()),
         ("Payload.bin", b"payload"),
     ]));
-    let spans = payload_spans(&ir, "Payload.bin");
-    assert!(!spans.is_empty());
     let mut entries = native_arena::<EntryRecord>(&ir, "entries");
     entries.retain(|entry| entry.name() != "Payload.bin");
     replace_arena(&mut ir, "entries", &entries);
@@ -144,10 +145,58 @@ fn a_property_the_patch_cannot_empty_is_reported_dropped() {
     let [payload] = naming.as_slice() else {
         panic!("one property names Payload.bin, got {naming:?}");
     };
-
     let (report, bytes, round_trip) = write_and_read_back(&ir);
-    assert!(!archive_payloads(&bytes).contains_key("Payload.bin"));
-    let written = native_arena::<PropertyRecord>(round_trip.ir(), "properties")
+    let payloads = archive_payloads(&bytes);
+    assert!(!payloads.contains_key("Payload.bin"));
+    let document = String::from_utf8(payloads["Document.xml"].clone()).expect("UTF-8 Document.xml");
+    (report, document, round_trip.ir().clone(), payload.clone())
+}
+
+/// A property whose `file` attribute on a nested value element names a
+/// removed entry, which the patch cannot write empty from the record or from
+/// the stored record, is left out of the written file, its container's count
+/// is lowered, and its object is marked `Touched` (W1). One
+/// `export:native.records-omitted` line names the property and its entry;
+/// no edit is reported dropped, and no ledger span of the entry is named.
+#[test]
+fn a_property_the_patch_cannot_empty_is_left_out() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties Count="1"><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
+    let (report, document, round_trip, payload) = write_without_payload(xml);
+    assert!(
+        document.contains(r#"<Properties Count="0">"#) && !document.contains("Payload"),
+        "{document}"
+    );
+    assert!(native_arena::<PropertyRecord>(&round_trip, "properties")
+        .iter()
+        .all(|property| property.id != payload.id));
+    let holder = native_arena::<crate::native::ObjectRecord>(&round_trip, "objects")
+        .into_iter()
+        .find(|object| *object.id() == payload.owner)
+        .expect("Holder written");
+    assert_eq!(
+        holder.attributes.get("Touched").map(String::as_str),
+        Some("1")
+    );
+    let omitted = export_messages(&report, "native.records-omitted");
+    let [message] = omitted.as_slice() else {
+        panic!("expected one omitted line, got {omitted:?}");
+    };
+    assert!(
+        message.ends_with(&format!("{} names Payload.bin", payload.id)),
+        "{message}"
+    );
+    assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
+}
+
+/// Where the patch cannot remove that property's element, because its
+/// container declares no count, the property is written as stored and still
+/// names the entry. One `export:native.records-omitted` line names the entry
+/// and the property; no edit is reported dropped.
+#[test]
+fn a_property_the_patch_cannot_remove_is_written_as_stored() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::FeaturePython" name="Holder"/></Objects><ObjectData Count="1"><Object name="Holder"><Properties><Property name="Payload" type="App::PropertyFileIncluded"><FileIncluded file="Payload.bin"><Note/></FileIncluded></Property></Properties></Object></ObjectData></Document>"#;
+    let (report, _, round_trip, payload) = write_without_payload(xml);
+    let written = native_arena::<PropertyRecord>(&round_trip, "properties")
         .into_iter()
         .find(|property| property.id == payload.id)
         .expect("Payload written");
@@ -158,28 +207,15 @@ fn a_property_the_patch_cannot_empty_is_reported_dropped() {
             .map(String::as_str),
         Some("Payload.bin")
     );
-    let dropped = export_messages(&report, "edit.dropped");
-    let [message] = dropped.as_slice() else {
-        panic!("expected one dropped line, got {dropped:?}");
-    };
-    assert!(message.contains(payload.id.as_str()), "{message}");
     let omitted = export_messages(&report, "native.records-omitted");
+    let [message] = omitted.as_slice() else {
+        panic!("expected one omitted line, got {omitted:?}");
+    };
     assert!(
-        omitted
-            .iter()
-            .all(|message| !message.contains(payload.id.as_str())),
-        "{omitted:?}"
+        message.ends_with(&format!("Payload.bin named by {}", payload.id)),
+        "{message}"
     );
-    for span in &spans {
-        assert_eq!(
-            omitted
-                .iter()
-                .filter(|message| message.contains(span.as_str()))
-                .count(),
-            1,
-            "{span}: {omitted:?}"
-        );
-    }
+    assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
 }
 
 /// Each member the output no longer holds is named on one

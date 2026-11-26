@@ -223,7 +223,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
 
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);

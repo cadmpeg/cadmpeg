@@ -85,7 +85,7 @@ pub(super) fn export_messages<'r>(
         .collect()
 }
 
-/// Writes `ir` through `Inherit` and decodes the file.
+/// Writes `ir` with a request that names no target and decodes the file.
 pub(super) fn write_and_read_back(
     ir: &cadmpeg_ir::CadIr,
 ) -> (
@@ -95,7 +95,7 @@ pub(super) fn write_and_read_back(
 ) {
     let mut bytes = Vec::new();
     let report = FcstdCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the retained document patches");
     let decoded = FcstdCodec
@@ -399,7 +399,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
     let report = FcstdCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
@@ -559,7 +559,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .expect("decode source");
     let mut staged = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
@@ -741,7 +741,7 @@ fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization
             }
             let mut output = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant");
             let mut archive =
@@ -818,7 +818,7 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
             );
             let mut bytes = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("write edit");
             let output = FcstdCodec
@@ -912,7 +912,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("replace values");
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write native edit");
     let output = FcstdCodec
