@@ -10,6 +10,18 @@ use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The infix of the id of each body, region, shell, and edge that a
+/// restatement adds, between the id it restates and its ordinal.
+const RESTATED: &str = ":unjoined.";
+
+/// The id of the document body that written body `body` states: `body`, or
+/// the body that a restatement splits it from.
+pub(super) fn source_body(body: &str) -> &str {
+    body.rsplit_once(RESTATED)
+        .filter(|(_, ordinal)| ordinal.parse::<usize>().is_ok())
+        .map_or(body, |(source, _)| source)
+}
+
 /// The document with each sheet body of more than one face, and each solid
 /// body where `version` defines no solid (Type 186), restated as one sheet
 /// body per face, with a copy of each edge for each further use, and a
@@ -112,9 +124,9 @@ pub(super) fn unjoined_open_shells(
         .with_native_ref(native_ref);
         let mut bodies = Vec::new();
         for (ordinal, face) in faces.iter().enumerate().skip(1) {
-            let body_id = BodyId::try_from(format!("{}:unjoined.{ordinal}", body.id)).ok()?;
-            let region_id = RegionId::try_from(format!("{kept_region}:unjoined.{ordinal}")).ok()?;
-            let shell_id = ShellId::try_from(format!("{kept_shell}:unjoined.{ordinal}")).ok()?;
+            let body_id = BodyId::try_from(format!("{}{RESTATED}{ordinal}", body.id)).ok()?;
+            let region_id = RegionId::try_from(format!("{kept_region}{RESTATED}{ordinal}")).ok()?;
+            let shell_id = ShellId::try_from(format!("{kept_shell}{RESTATED}{ordinal}")).ok()?;
             let mut split = body.clone();
             split.id = body_id.clone();
             split.kind = BodyKind::Sheet;
@@ -151,7 +163,7 @@ pub(super) fn unjoined_open_shells(
         }
         let edge = geometry.edges.iter().find(|edge| edge.id == coedge.edge)?;
         let mut copy = edge.clone();
-        copy.id = EdgeId::try_from(format!("{}:unjoined.{count}", edge.id)).ok()?;
+        copy.id = EdgeId::try_from(format!("{}{RESTATED}{count}", edge.id)).ok()?;
         coedge.edge = copy.id.clone();
         copies.push(copy);
         shared.extend(body_of_loop.get(coedge.owner_loop.as_str()).copied());

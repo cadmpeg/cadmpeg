@@ -86,7 +86,8 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
 /// rest of the fact is compared. The colour and blank status of a record
 /// decoded from an entity whose display attribute record is Dropped are that
 /// record's loss. Each Regenerated display attribute and colour definition
-/// record reads back with its values. Each appearance and appearance binding
+/// record reads back with its values, and each that is Dropped while its
+/// entity is Regenerated reads back fewer times than the source states it. Each appearance and appearance binding
 /// the write states reads back with its values, the binding with the colour
 /// of its appearance and the record it binds; each it does not state is
 /// charged with its reason and does not read back. The written Global section restates
@@ -242,13 +243,34 @@ fn check(
             readback::color_values(source),
         ),
     ] {
-        for (id, value) in stated {
-            if of(arena, &id) == NativeDisposition::Regenerated
-                && !readback::holds(written.values(), &value)
-            {
-                failures.push(format!(
-                    "{name} {id} Regenerated, its values do not read back: {value}"
-                ));
+        let entity_written = |id: &str| {
+            arenas
+                .get(arena)
+                .into_iter()
+                .flatten()
+                .find(|record| record.id() == id)
+                .and_then(|record| record.field("source_entity"))
+                .and_then(|source| entity_dispositions.get(source.as_str()?).copied())
+                == Some(NativeDisposition::Regenerated)
+        };
+        for (id, value) in &stated {
+            match of(arena, id) {
+                NativeDisposition::Regenerated if !readback::holds(written.values(), value) => {
+                    failures.push(format!(
+                        "{name} {id} Regenerated, its values do not read back: {value}"
+                    ));
+                }
+                NativeDisposition::Dropped
+                    if entity_written(id)
+                        && readback::tally(written.values(), value)
+                            >= readback::tally(stated.values(), value) =>
+                {
+                    failures.push(format!(
+                        "{name} {id} Dropped while its entity is Regenerated, its values read \
+                         back: {value}"
+                    ));
+                }
+                _ => {}
             }
         }
     }
@@ -573,6 +595,196 @@ fn a_curve_colour_is_charged_with_its_appearance() {
             "iges:appearance:standard#2".to_owned(),
             appearances::APPEARANCE_UNUSED
         )])
+    );
+}
+
+/// An open shell of one face that the write states as a trimmed surface. A
+/// Type 406 Form 15 names the face and another names the shell, whose name
+/// the decoder takes as the body name.
+const FACE_AND_BODY_NAMES: &str = concat!(
+    "original fixture                                                        S      1\n",
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMG      1\n",
+    "M,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;      G      2\n",
+    "     116       1       0       0       0       0       0       000010000D      1\n",
+    "     116       0       0       1       0                LOCATION       0D      2\n",
+    "     123       2       0       0       0       0       0       000010000D      3\n",
+    "     123       0       0       1       0                  NORMAL       0D      4\n",
+    "     190       3       0       0       0       0       0       000010000D      5\n",
+    "     190       0       0       1       0                 SURFACE       0D      6\n",
+    "     110       4       0       0       0       0       0       000010000D      7\n",
+    "     110       0       0       1       0                   EDGE1       0D      8\n",
+    "     110       5       0       0       0       0       0       000010000D      9\n",
+    "     110       0       0       1       0                   EDGE2       0D     10\n",
+    "     110       6       0       0       0       0       0       000010000D     11\n",
+    "     110       0       0       1       0                   EDGE3       0D     12\n",
+    "     110       7       0       0       0       0       0       000010000D     13\n",
+    "     110       0       0       1       0                   EDGE4       0D     14\n",
+    "     502       8       0       0       0       0       0       000010000D     15\n",
+    "     502       0       0       1       1                VERTICES       0D     16\n",
+    "     504       9       0       0       0       0       0       000010001D     17\n",
+    "     504       0       0       1       1                   EDGES       0D     18\n",
+    "     508      10       0       0       0       0       0       000010000D     19\n",
+    "     508       0       0       1       1                    LOOP       0D     20\n",
+    "     510      11       0       0       0       0       0       000010000D     21\n",
+    "     510       0       0       1       1                    FACE       0D     22\n",
+    "     514      12       0       0       0       0       0       000000000D     23\n",
+    "     514       0       0       1       2                   SHELL       0D     24\n",
+    "     406      13       0       0       0       0       0       000010000D     25\n",
+    "     406       0       0       1      15                    NAME       0D     26\n",
+    "     406      14       0       0       0       0       0       000010000D     27\n",
+    "     406       0       0       1      15                    NAME       0D     28\n",
+    "116,0,0,0,0;                                                           1P      1\n",
+    "123,0,0,1;                                                             3P      2\n",
+    "190,1,3;                                                               5P      3\n",
+    "110,0,0,0,1,0,0;                                                       7P      4\n",
+    "110,1,0,0,1,1,0;                                                       9P      5\n",
+    "110,1,1,0,0,1,0;                                                      11P      6\n",
+    "110,0,1,0,0,0,0;                                                      13P      7\n",
+    "502,4,0,0,0,1,0,0,1,1,0,0,1,0;                                        15P      8\n",
+    "504,4,7,15,1,15,2,9,15,2,15,3,11,15,3,15,4,13,15,4,15,1;              17P      9\n",
+    "508,4,0,17,1,1,0,0,17,2,1,0,0,17,3,1,0,0,17,4,1,0;                    19P     10\n",
+    "510,5,1,1,19,0,1,25;                                                  21P     11\n",
+    "514,1,21,1,0,1,27;                                                    23P     12\n",
+    "406,1,8HFACENAME;                                                     25P     13\n",
+    "406,1,8HBODYNAME;                                                     27P     14\n",
+    "S0000001G0000002D0000028P0000014                                        T      1\n",
+);
+
+/// The write states the body name as a Type 406 Form 15 on the trimmed
+/// surface, so the name property of the shell is Regenerated and the name
+/// property of the face, which the write does not state, is Dropped.
+#[test]
+fn a_body_name_written_on_a_trimmed_surface_restates_the_shell_name() {
+    let mut failures = Vec::new();
+    check(
+        "face_and_body_names",
+        FACE_AND_BODY_NAMES.as_bytes(),
+        &mut failures,
+    )
+    .unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
+    let checked = readback::write_and_read_back(FACE_AND_BODY_NAMES.as_bytes())
+        .ok()
+        .unwrap();
+    for (id, disposition) in [
+        ("iges:entity:directory#25", NativeDisposition::Dropped),
+        ("iges:entity:directory#27", NativeDisposition::Regenerated),
+        ("iges:entity:directory#23", NativeDisposition::Dropped),
+    ] {
+        assert_eq!(
+            checked.native.disposition("iges", "entities", id),
+            disposition,
+            "{id}"
+        );
+    }
+}
+
+/// A free line whose Directory status blanks it.
+const BLANKED_LINE: &str = concat!(
+    "original fixture                                                        S      1\n",
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMG      1\n",
+    "M,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;      G      2\n",
+    "     110       1       0       0       0       0       0       001000000D      1\n",
+    "     110       0       0       1       0                    LINE       0D      2\n",
+    "110,0,0,0,1,0,0;                                                       1P      1\n",
+    "S0000001G0000002D0000002P0000001                                        T      1\n",
+);
+
+/// The write states the line and no blank status of it, so the display
+/// attribute record of the line is Dropped while the line is Regenerated.
+#[test]
+fn a_blank_status_the_write_does_not_state_is_dropped() {
+    let mut failures = Vec::new();
+    check("blanked_line", BLANKED_LINE.as_bytes(), &mut failures).unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
+    let checked = readback::write_and_read_back(BLANKED_LINE.as_bytes())
+        .ok()
+        .unwrap();
+    for (arena, id, disposition) in [
+        (
+            "entities",
+            "iges:entity:directory#1",
+            NativeDisposition::Regenerated,
+        ),
+        (
+            "display_attributes",
+            "iges:presentation:display-attributes#D1",
+            NativeDisposition::Dropped,
+        ),
+    ] {
+        assert_eq!(
+            checked.native.disposition("iges", arena, id),
+            disposition,
+            "{id}"
+        );
+    }
+}
+
+/// The body and the face of [`NAMED_BODY`] bound to one appearance of another
+/// format, named `paint`, by bindings that state the source identity, the
+/// source object type, and the change-version channels of their targets.
+/// The write states the colour on the body and the face and the name in the
+/// Type 314, so it charges neither the appearance nor the bindings.
+#[test]
+fn a_binding_that_states_its_source_object_is_written_with_its_target_and_colour() {
+    let mut ir = IgesCodec
+        .decode(
+            &mut Cursor::new(NAMED_BODY.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir()
+        .clone();
+    ir.native = cadmpeg_ir::native::Native::default();
+    let paint =
+        cadmpeg_ir::ids::AppearanceId::try_from("test:model:appearance#paint".to_owned()).unwrap();
+    assert_eq!(ir.model.appearances.len(), 1);
+    let appearance = &mut ir.model.appearances[0];
+    appearance.id = paint.clone();
+    appearance.name = Some("paint".to_owned());
+    appearance.schema = None;
+    let color = appearance.base_color.unwrap();
+    for (ordinal, binding) in ir.model.appearance_bindings.iter_mut().enumerate() {
+        binding.appearance = paint.clone();
+        binding.source_entity_id = Some(format!("#{}", ordinal + 40));
+        binding.object_type = Some("ADVANCED_FACE".to_owned());
+        binding.channels = BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("geometry"),
+            "0123".to_owned(),
+        )]);
+    }
+    let (synthesis, _) =
+        crate::writer::target::synthesis_and_dispositions(&ir, crate::IgesVersion::V5_3)
+            .ok()
+            .unwrap();
+    let drops = appearances::AppearanceDrops::of(&ir, &synthesis);
+    assert!(
+        drops.appearances.is_empty() && drops.bindings.is_empty(),
+        "{:?} {:?}",
+        drops.appearances,
+        drops.bindings
+    );
+    let output = IgesCodec
+        .decode(&mut Cursor::new(synthesis.bytes), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone();
+    let named = output
+        .model
+        .appearances
+        .iter()
+        .filter(|appearance| appearance.name.as_deref() == Some("paint"))
+        .collect::<Vec<_>>();
+    assert_eq!(named.len(), 1, "{:?}", output.model.appearances);
+    assert_eq!(named[0].base_color, Some(color));
+    assert_eq!(
+        output
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.appearance == named[0].id)
+            .count(),
+        2
     );
 }
 

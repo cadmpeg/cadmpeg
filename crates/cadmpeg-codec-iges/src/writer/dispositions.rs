@@ -500,8 +500,12 @@ impl Held {
                 .collect::<BTreeSet<_>>()
         };
         // A vertex or edge list is stated again only by a written list of its
-        // type: a trimmed surface boundary states its curves with no list.
+        // type: a trimmed surface boundary states its curves with no list. A
+        // written Type 406 states only the names of the entity it names.
         for (index, entity) in entities.iter().enumerate() {
+            if entity.type_code == 406 {
+                continue;
+            }
             for sequence in resolved(entity) {
                 let list = sources
                     .records
@@ -817,18 +821,18 @@ fn display_drops(
             .get(&sequence)
             .and_then(|record| entity_type(record));
         let stated = source_display(record, &colors);
-        // A written Type 406 states the name of the entity it names, and
-        // writes no display field of it.
-        let holders = holders
+        // The entity that carries the body or face of a source entity states
+        // its display fields. The curves of its boundary state it with the
+        // display fields of a curve.
+        let presenting = holders
             .iter()
-            .filter(|index| {
-                source_type == Some(406)
-                    || written
-                        .entities
-                        .get(**index)
-                        .is_none_or(|entity| entity.type_code != 406)
-            })
+            .filter(|index| written.presented.contains_key(index))
             .collect::<Vec<_>>();
+        let holders = if presenting.is_empty() {
+            holders.iter().collect()
+        } else {
+            presenting
+        };
         let writes = |index: &usize| {
             if source_type == Some(124) {
                 Some(Display {

@@ -138,6 +138,82 @@ fn an_open_shell_before_5_3_writes_each_face_as_its_own_trimmed_surface() {
     }
 }
 
+/// Before IGES 5.3 each face of an open sheet is written as a trimmed
+/// surface of its own, whose one Directory colour field states the face
+/// colour. A body colour that differs from the face colours is charged once,
+/// naming the body and its faces. Where a binding of the whole body names the
+/// body colour, the charge of that binding states the loss.
+#[test]
+fn a_body_colour_that_unjoined_faces_replace_is_charged_once() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
+    ir.geometry.bodies[0].color = red;
+    for face in &mut ir.geometry.faces {
+        face.color = blue;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} "))
+            && ir
+                .geometry
+                .faces
+                .iter()
+                .all(|face| charges[0].contains(face.id.as_str())),
+        "{charges:#?}"
+    );
+    let appearance =
+        cadmpeg_ir::ids::AppearanceId::try_from("test:model:appearance#red".to_owned())
+            .expect("an appearance id");
+    let binding = cadmpeg_ir::ids::AppearanceBindingId::try_from(
+        "test:model:appearance-binding#body".to_owned(),
+    )
+    .expect("a binding id");
+    ir.model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: appearance.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: red,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+            native_ref: None,
+        });
+    ir.model
+        .appearance_bindings
+        .push(cadmpeg_ir::appearance::AppearanceBinding {
+            id: binding.clone(),
+            target: cadmpeg_ir::appearance::AppearanceTarget::Body(body).into(),
+            appearance,
+            precedence: None,
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    assert!(
+        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .any(|loss| loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
 #[test]
 fn an_open_shell_at_5_3_keeps_its_joined_edges() {
     let (losses, bytes) = written(&open_cylinder(isoparametric_side()), IgesVersion::V5_3);

@@ -304,7 +304,9 @@ fn a_trimmed_face_colour_replaces_a_different_body_colour_with_a_charge() {
         let mut ir = decoded.ir().clone();
         ir.geometry.bodies[0].color = body_color;
         ir.geometry.faces[0].color = blue;
-        let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+        let (generated, _) =
+            crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+                .expect("synthesis");
         assert_eq!(generated.counts.get("144_trimmed_surface"), Some(&1));
         assert_eq!(
             generated.losses.iter().any(|loss| {

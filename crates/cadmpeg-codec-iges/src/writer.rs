@@ -413,13 +413,6 @@ fn trimmed_face_presentation(
 ) -> Presentation {
     let mut presentation = body_presentation(ir, body, losses);
     if face.color.is_some() {
-        if body.color.is_some_and(|color| face.color != Some(color)) {
-            losses.push(IgesLossCode::WriterBodyColorNotRepresented.note(format!(
-                "IGES body {} colour is not written on the entity of face {}, whose one \
-                 Directory colour field states the face colour",
-                body.id, face.id
-            )));
-        }
         let own = face_presentation(ir, face, losses);
         presentation.color = own.color;
         presentation.color_definition = own.color_definition;
@@ -463,9 +456,10 @@ fn directory_color(
     }
 }
 
-/// The source Type 314 whose appearance a binding of the whole of `target`
-/// names with `color`. Its name is written when every byte is printable
-/// ASCII, and the written Type 314 then states the source one.
+/// The appearance that a binding of the whole of `target` names with `color`,
+/// when it is a source Type 314 or has a name that a Type 314 can write. Its
+/// name is written when every byte is printable ASCII, and the written Type
+/// 314 then states the appearance.
 fn bound_color_definition(
     ir: &CadIr,
     target: &AppearanceTarget,
@@ -484,19 +478,23 @@ fn bound_color_definition(
         })
         .find(|appearance| {
             appearance.base_color == Some(color)
-                && dispositions::color_definition_sequence(appearance.id.as_str()).is_some()
+                && (dispositions::color_definition_sequence(appearance.id.as_str()).is_some()
+                    || appearance.name.as_deref().is_some_and(writable_name))
         })?;
     let name = appearance.name.clone();
-    let writable = name.as_deref().is_none_or(|name| {
-        !name.is_empty()
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-    });
+    let writable = name.as_deref().is_none_or(writable_name);
     Some(ColorDefinition {
         name: name.filter(|_| writable),
         restates: writable.then(|| appearance.id.as_str().to_owned()),
     })
+}
+
+/// Whether the name field of a Type 314 can state `name`.
+fn writable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
 }
 
 /// Writes a Type 314 for each distinct colour definition the presentations
@@ -585,7 +583,11 @@ fn append_name_properties(
         owner
             .parameter_body
             .extend_from_slice(format!(",0,1,{next_sequence};").as_bytes());
-        let restates = owner.restates.clone();
+        let restates = presentation
+            .body
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect();
         entities.push(Entity {
             type_code: 406,
             form: 15,
