@@ -98,7 +98,6 @@ fn planning(
         &decoded,
         &ir.model.configurations,
         &TARGETS,
-        &crate::writer::primitives::SourceConfigurations::new(None),
     )
     .unwrap();
     let mut plan = plan(

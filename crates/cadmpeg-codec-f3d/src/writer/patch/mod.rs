@@ -15,7 +15,6 @@ use cadmpeg_ir::geometry::{
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
-    SourceConfigurations,
 };
 use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -88,6 +87,7 @@ pub(crate) fn write_semantic(
     )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
+        validate_configuration_projection(target, native)?;
         validate_assembly_projection(target, Some(native))?;
     } else {
         validate_assembly_projection(target, None)?;
@@ -109,13 +109,6 @@ pub(crate) fn write_semantic(
         return Err(CodecError::NotImplemented(
             "F3D semantic patching refuses a source whose design intent was not decoded".into(),
         ));
-    }
-    if let Some(native) = target_native.as_ref() {
-        validate_configuration_projection(
-            target,
-            native,
-            &SourceConfigurations::decoded(&baseline.ir().model.configurations),
-        )?;
     }
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {

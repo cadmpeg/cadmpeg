@@ -253,7 +253,7 @@ fn projected_table(
 
 /// The neutral configurations of configuration documents, and the table
 /// whose rows they project.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Projection {
     /// The position of the table's document, and of the table in the
     /// document's `tables` array.

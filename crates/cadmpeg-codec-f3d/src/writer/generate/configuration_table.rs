@@ -10,17 +10,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
-use cadmpeg_ir::features::parameters::{DesignConfiguration as Configuration, ParameterValue};
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, DesignConfiguration as Configuration, ParameterValue,
+};
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
 use serde_json::{Map, Value};
 
 use super::presentation::deterministic_guid;
-use crate::design::configurations::{
-    project, reconcile_active_configurations, table_at, ConfigurationTargets, Projection,
-};
+use crate::design::configurations::{table_at, ConfigurationTargets, Projection};
 use crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE;
 use crate::ids::neutral_configuration_id;
 use crate::records::configuration::table::{
@@ -28,9 +28,7 @@ use crate::records::configuration::table::{
     ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue, RowGuids,
 };
 use crate::records::configuration::DesignConfiguration;
-use crate::writer::primitives::{
-    unheld, Cells, Difference, SourceConfigurations, StoredStates, INFERRED,
-};
+use crate::writer::primitives::{bases, differences, projection, reconciled, same_row};
 
 /// The configuration documents the write holds, and what they read back as.
 pub(super) struct Written<'a> {
@@ -47,17 +45,16 @@ pub(super) struct Written<'a> {
 /// Write `documents` with the rows, cells, row order and rule targets of
 /// `configurations`, where they differ from `decoded`, the configurations
 /// that `documents` project. Return the written documents and the losses of
-/// what they read back as otherwise than `configurations`; `source` is the
-/// source of the write.
+/// what they read back as otherwise than `configurations`.
 pub(super) fn regenerate<'a>(
     documents: &'a [DesignConfiguration],
     decoded: &Projection,
     configurations: &[Configuration],
     targets: &ConfigurationTargets<'_>,
-    source: &SourceConfigurations<'_>,
 ) -> Result<(Written<'a>, Vec<LossNote>), CodecError> {
     let mut payloads = vec![None; documents.len()];
     let mut losses = Vec::new();
+    let bases = bases(targets.neutral_features);
     let host = host(documents, decoded.table);
     let expected = match host {
         Some((index, table)) => Rows {
@@ -66,8 +63,7 @@ pub(super) fn regenerate<'a>(
             payload: &mut payloads[index],
             table,
             targets,
-            stored: &StoredStates::of(documents, Some((index, table.position)), targets),
-            baseline: source,
+            bases: &bases,
         }
         .write(&decoded.configurations, configurations),
         None => {
@@ -87,14 +83,17 @@ pub(super) fn regenerate<'a>(
         configurations,
     );
     let documents = written(documents, payloads)?;
-    let projection = match project(&documents, targets) {
-        Ok(projection) => projection,
-        Err(error) if crate::design::decode::record::is_fatal(&error) => return Err(error),
-        Err(_) => Projection::default(),
-    };
-    let read = read_back(&projection, &expected, targets)?;
-    let stored = StoredStates::of(&documents, projection.table, targets);
-    losses.extend(compare(&expected, &read, &stored, source));
+    let projection = projection(&documents, targets)?;
+    // The root record that the planner writes names the expected active
+    // configuration.
+    let mut read = projection.clone();
+    for configuration in &mut read.configurations {
+        if let Some(expected) = expected.get(configuration.id.as_str()) {
+            configuration.active = expected.active;
+        }
+    }
+    let read = reconciled(read, targets.neutral_features)?;
+    losses.extend(compare(&expected, &read.configurations, &bases));
     let generated = expected
         .iter()
         .filter(|(written, configuration)| configuration.id.as_str() != written.as_str())
@@ -108,30 +107,6 @@ pub(super) fn regenerate<'a>(
         },
         losses,
     ))
-}
-
-/// The configurations that the decoder states for the written documents,
-/// `projection`: each row active where its configuration in `expected` is,
-/// since the root record names the active configuration, and the active
-/// configuration reconciled with the features. A reconciliation that fails
-/// leaves the rows as they are.
-fn read_back(
-    projection: &Projection,
-    expected: &BTreeMap<String, &Configuration>,
-    targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<Configuration>, CodecError> {
-    let mut read = projection.configurations.clone();
-    for configuration in &mut read {
-        if let Some(expected) = expected.get(configuration.id.as_str()) {
-            configuration.active = expected.active;
-        }
-    }
-    let mut reconciled = read.clone();
-    match reconcile_active_configurations(&mut targets.neutral_features.to_vec(), &mut reconciled) {
-        Ok(()) => Ok(reconciled),
-        Err(error) if crate::design::decode::record::is_fatal(&error) => Err(error),
-        Err(_) => Ok(read),
-    }
 }
 
 /// The table that holds the rows of the configurations: the table whose rows
@@ -162,23 +137,20 @@ fn edit<'p>(
 
 /// The rows of `table`, the table at `table.position` of the document
 /// `entry`, which `source` states and `payload` writes.
-struct Rows<'s, 'p, 'b> {
+struct Rows<'s, 'p> {
     entry: &'s str,
     source: &'s Map<String, Value>,
     payload: &'p mut Option<Map<String, Value>>,
     table: &'s ConfigurationTable,
     targets: &'s ConfigurationTargets<'s>,
-    /// The feature states that each row of `table` stores in a cell.
-    stored: &'s StoredStates,
-    /// The source of the write.
-    baseline: &'s SourceConfigurations<'b>,
+    /// The state of each feature in a configuration that states none.
+    bases: &'s BTreeMap<&'s FeatureId, ConfigurationEvaluation>,
 }
 
-impl Rows<'_, '_, '_> {
+impl Rows<'_, '_> {
     /// Write a row of each of `configurations`: the row of its id, else a
     /// new row. Regenerate the cells of each row whose configuration states
-    /// cells other than `decoded`, or a part no cell stores that neither
-    /// `decoded` nor the source states ([`unheld`]); remove the other rows;
+    /// another row than `decoded` ([`same_row`]); remove the other rows;
     /// write the rows in the order of the configurations' ordinals. Return
     /// the configuration of each written row, keyed by the configuration id
     /// it reads back as.
@@ -206,13 +178,9 @@ impl Rows<'_, '_, '_> {
         for configuration in configurations {
             let row_id = match stored.get(configuration.id.as_str()) {
                 Some(row) => {
-                    let stored = self.stored.row(configuration.id.as_str());
                     let unchanged = decoded
                         .get(configuration.id.as_str())
-                        .is_some_and(|decoded| {
-                            Cells::of(decoded, stored) == Cells::of(configuration, stored)
-                                && unheld(configuration, decoded, stored, self.baseline).is_empty()
-                        });
+                        .is_some_and(|decoded| same_row(configuration, decoded, self.bases));
                     if !unchanged {
                         self.cells(&row.id, Some(row), configuration);
                     }
@@ -566,29 +534,14 @@ fn written(
         .map(Cow::Owned)
 }
 
-/// The keys whose values `left` and `right` state otherwise.
-fn differing<'k, K: Ord, V: PartialEq>(
-    left: &'k BTreeMap<K, V>,
-    right: &'k BTreeMap<K, V>,
-) -> impl Iterator<Item = &'k K> {
-    left.keys()
-        .chain(right.keys())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|key| left.get(*key) != right.get(*key))
-}
-
 /// The losses of the configurations that the written rows, `read`, state
 /// otherwise than `expected`, the configuration of each row keyed by the
-/// configuration id it reads back as. `stored` names the feature states
-/// that each written row stores in a cell; a part that no cell stores is
-/// charged where `source` does not state it as `expected` does
-/// ([`unheld`]).
+/// configuration id it reads back as. `bases` holds the state of each
+/// feature in a configuration that states none.
 fn compare(
     expected: &BTreeMap<String, &Configuration>,
     read: &[Configuration],
-    stored: &StoredStates,
-    source: &SourceConfigurations<'_>,
+    bases: &BTreeMap<&FeatureId, ConfigurationEvaluation>,
 ) -> Vec<LossNote> {
     let read = read
         .iter()
@@ -614,80 +567,31 @@ fn compare(
         if back.name != configuration.name {
             names.push(id.to_owned());
         }
-        let mut fields = Vec::new();
-        if back.material != configuration.material {
-            fields.push(Difference::of(
-                "material".to_owned(),
-                configuration.material.as_ref(),
-                back.material.as_ref(),
-            ));
-        }
-        if back.bodies != configuration.bodies {
-            fields.push(Difference::of(
-                "bodies".to_owned(),
-                configuration.bodies.as_ref(),
-                back.bodies.as_ref(),
-            ));
-        }
-        fields.extend(
-            differing(&configuration.properties, &back.properties)
-                .filter(|key| !key.as_str().starts_with(INFERRED))
-                .map(|key| {
-                    Difference::of(
-                        format!("properties.{key}"),
-                        configuration.properties.get(key),
-                        back.properties.get(key),
-                    )
-                }),
-        );
-        fields.extend(
-            differing(
-                &configuration.parameter_overrides,
-                &back.parameter_overrides,
-            )
-            .map(|parameter| {
-                Difference::of(
-                    format!("parameter_overrides.{parameter}"),
-                    configuration.parameter_overrides.get(parameter),
-                    back.parameter_overrides.get(parameter),
-                )
-            }),
-        );
-        for parameter in differing(&configuration.parameter_values, &back.parameter_values) {
-            let expression = configuration.parameter_overrides.get(parameter);
-            if expression.is_some() && expression == back.parameter_overrides.get(parameter) {
-                values.push(format!("{id}: {parameter}"));
-            } else {
-                fields.push(Difference::of(
-                    format!("parameter_values.{parameter}"),
-                    configuration.parameter_values.get(parameter),
-                    back.parameter_values.get(parameter),
-                ));
-            }
-        }
-        let states = |configuration: &'_ Configuration| {
-            configuration
-                .feature_states
+        let evaluated = configuration
+            .parameter_overrides
+            .iter()
+            .filter(|(parameter, expression)| {
+                back.parameter_overrides.get(*parameter) == Some(*expression)
+                    && back.parameter_values.get(*parameter)
+                        != configuration.parameter_values.get(*parameter)
+            })
+            .map(|(parameter, _)| parameter)
+            .collect::<Vec<_>>();
+        values.extend(
+            evaluated
                 .iter()
-                .map(|(feature, state)| (feature.clone(), state.evaluation.clone()))
-                .collect::<BTreeMap<_, _>>()
-        };
-        let row = stored.row(written);
-        let (stated, held) = (states(configuration), states(back));
-        fields.extend(
-            differing(&stated, &held)
-                .filter(|feature| row.contains(*feature))
-                .map(|feature| {
-                    Difference::of(
-                        format!("feature_states.{feature}"),
-                        stated.get(feature),
-                        held.get(feature),
-                    )
-                }),
+                .map(|parameter| format!("{id}: {parameter}")),
         );
-        fields.extend(unheld(configuration, back, row, source));
+        let evaluated = evaluated
+            .iter()
+            .map(|parameter| format!("parameter_values.{parameter}"))
+            .collect::<BTreeSet<_>>();
+        let fields = differences(configuration, back, bases)
+            .into_iter()
+            .filter(|difference| !evaluated.contains(&difference.field))
+            .map(|difference| difference.to_string())
+            .collect::<Vec<_>>();
         if !fields.is_empty() {
-            let fields = fields.iter().map(ToString::to_string).collect::<Vec<_>>();
             dropped.push(format!("{id}: {}", fields.join("; ")));
         }
     }
