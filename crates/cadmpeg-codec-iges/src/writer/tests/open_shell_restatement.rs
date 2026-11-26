@@ -165,6 +165,83 @@ fn a_body_colour_that_unjoined_faces_replace_is_charged_once() {
                 .all(|face| charges[0].contains(face.id.as_str())),
         "{charges:#?}"
     );
+    let binding = bind_the_body(&mut ir, red, None);
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    assert!(
+        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .any(|loss| loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// A binding of the whole body to an appearance of the body colour that is
+/// charged for its visibility states no colour loss, so the body colour that
+/// the unjoined faces replace is charged.
+#[test]
+fn a_body_colour_whose_binding_is_charged_for_its_visibility_is_charged() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
+    ir.geometry.bodies[0].color = red;
+    for face in &mut ir.geometry.faces {
+        face.color = blue;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let binding = bind_the_body(&mut ir, red, Some(true));
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} ")),
+        "{charges:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .any(|loss| loss.contains("visibility") && loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// A body whose id ends as the id of a piece of a split body does, and which
+/// the writer does not split, is the target of its own binding.
+#[test]
+fn a_body_named_like_a_split_piece_carries_its_own_binding() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let source = ir.geometry.bodies[0].id.clone();
+    let body =
+        cadmpeg_ir::ids::BodyId::try_from(format!("{source}:unjoined.1")).expect("a body id");
+    for region in &mut ir.geometry.regions {
+        if region.body == source {
+            region.body = body.clone();
+        }
+    }
+    ir.geometry.bodies[0].id = body;
+    ir.geometry.bodies[0].color = red;
+    ir.finalize();
+    let binding = bind_the_body(&mut ir, red, None);
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .all(|loss| !loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// Binds the whole of the first body of `ir` to a new appearance of `color`,
+/// with the blank status `visible`.
+fn bind_the_body(
+    ir: &mut CadIr,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> cadmpeg_ir::ids::AppearanceBindingId {
     let appearance =
         cadmpeg_ir::ids::AppearanceId::try_from("test:model:appearance#red".to_owned())
             .expect("an appearance id");
@@ -183,7 +260,7 @@ fn a_body_colour_that_unjoined_faces_replace_is_charged_once() {
             physical_token: None,
             schema: None,
             category: None,
-            base_color: red,
+            base_color: color,
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
             native_ref: None,
@@ -192,26 +269,19 @@ fn a_body_colour_that_unjoined_faces_replace_is_charged_once() {
         .appearance_bindings
         .push(cadmpeg_ir::appearance::AppearanceBinding {
             id: binding.clone(),
-            target: cadmpeg_ir::appearance::AppearanceTarget::Body(body).into(),
+            target: cadmpeg_ir::appearance::AppearanceTarget::Body(
+                ir.geometry.bodies[0].id.clone(),
+            )
+            .into(),
             appearance,
             precedence: None,
             source_entity_id: None,
             object_type: None,
-            visible: None,
+            visible,
             channels: std::collections::BTreeMap::new(),
             native_ref: None,
         });
-    let (losses, _) = written(&ir, IgesVersion::V5_0);
-    assert!(
-        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
-        "{losses:#?}"
-    );
-    assert!(
-        charged(&losses, "iges/writer.appearance-not-represented")
-            .iter()
-            .any(|loss| loss.contains(binding.as_str())),
-        "{losses:#?}"
-    );
+    binding
 }
 
 #[test]

@@ -14,8 +14,8 @@
 //!
 //! A Type 143 or 144 has one Directory colour field for its sheet body and
 //! its face. A body whose faces it writes with another colour is charged
-//! once, unless the charge of a binding of the whole body to an appearance of
-//! the body colour states that loss.
+//! once, unless a binding of the whole body to an appearance of the body
+//! colour is charged for the colour its entities state.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,7 +25,6 @@ use cadmpeg_ir::CadIr;
 
 use super::Presented;
 use crate::loss::IgesLossCode;
-use crate::writer::unjoined::source_body;
 use crate::writer::Synthesis;
 
 const BINDING_PATH: &str = "that bind through an occurrence path, which IGES does not state";
@@ -70,7 +69,7 @@ impl AppearanceDrops {
         let mut drops = Self::default();
         for binding in &ir.model.appearance_bindings {
             let appearance = appearances.get(binding.appearance.as_str()).copied();
-            if let Some(reason) = binding_drop(binding, appearance, &synthesis.presented) {
+            if let Some(reason) = binding_drop(binding, appearance, synthesis) {
                 drops
                     .bindings
                     .insert(binding.id.as_str().to_owned(), reason);
@@ -86,7 +85,7 @@ impl AppearanceDrops {
                     .get(binding.appearance.as_str())
                     .and_then(|appearance| appearance.base_color);
                 color.is_some()
-                    && carriers(&binding.target.entity, &synthesis.presented)
+                    && carriers(&binding.target.entity, synthesis)
                         .is_some_and(|carrying| carrying.iter().any(|p| p.color == color))
             })
             .map(|binding| binding.appearance.as_str())
@@ -148,7 +147,7 @@ impl AppearanceDrops {
 fn binding_drop(
     binding: &AppearanceBinding,
     appearance: Option<&Appearance>,
-    presented: &BTreeMap<usize, Presented>,
+    synthesis: &Synthesis,
 ) -> Option<&'static str> {
     if binding.target.path.is_some() {
         return Some(BINDING_PATH);
@@ -156,7 +155,7 @@ fn binding_drop(
     if binding.target.entity == AppearanceTarget::Unresolved {
         return Some(BINDING_UNRESOLVED);
     }
-    let Some(carrying) = carriers(&binding.target.entity, presented) else {
+    let Some(carrying) = carriers(&binding.target.entity, synthesis) else {
         return Some(BINDING_TARGET);
     };
     if carrying.is_empty() {
@@ -178,15 +177,12 @@ fn binding_drop(
 }
 
 /// The written entities that carry `target` when it is a body or a face.
-fn carriers<'p>(
-    target: &AppearanceTarget,
-    presented: &'p BTreeMap<usize, Presented>,
-) -> Option<Vec<&'p Presented>> {
+fn carriers<'s>(target: &AppearanceTarget, synthesis: &'s Synthesis) -> Option<Vec<&'s Presented>> {
     let carries = |presented: &Presented| match target {
         AppearanceTarget::Body(id) => presented
             .body
             .as_ref()
-            .is_some_and(|body| source_body(body.as_str()) == id.as_str()),
+            .is_some_and(|body| synthesis.source_body(body) == id),
         AppearanceTarget::Face(id) => presented.face.as_ref() == Some(id),
         _ => false,
     };
@@ -194,12 +190,18 @@ fn carriers<'p>(
         target,
         AppearanceTarget::Body(_) | AppearanceTarget::Face(_)
     )
-    .then(|| presented.values().filter(|p| carries(p)).collect())
+    .then(|| {
+        synthesis
+            .presented
+            .values()
+            .filter(|p| carries(p))
+            .collect()
+    })
 }
 
 /// Each body with a colour whose faces a Type 143 or 144 writes with another
-/// colour, with those faces, less each body that a charged binding of the
-/// whole body to an appearance of the body colour names.
+/// colour, with those faces, less each body that a binding of the whole body
+/// to an appearance of the body colour names, charged for its colour.
 fn body_colors(
     ir: &CadIr,
     synthesis: &Synthesis,
@@ -223,7 +225,7 @@ fn body_colors(
             continue;
         };
         let (Some(body), Some(face)) = (
-            bodies.get(source_body(body.as_str())),
+            bodies.get(synthesis.source_body(body).as_str()),
             faces.get(face.as_str()),
         ) else {
             continue;
@@ -246,7 +248,7 @@ fn body_colors(
             continue;
         };
         let names_body_color = binding.target.path.is_none()
-            && charged.contains_key(binding.id.as_str())
+            && charged.get(binding.id.as_str()) == Some(&BINDING_COLOR)
             && bodies.get(body.as_str()).is_some_and(|body| {
                 body.color.is_some()
                     && appearances

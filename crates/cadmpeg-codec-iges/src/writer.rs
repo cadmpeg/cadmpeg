@@ -282,7 +282,17 @@ struct Synthesis {
     /// The colour and blank status the Directory entry of each entity that
     /// carries a body or a face states, by entity index.
     presented: BTreeMap<usize, dispositions::Presented>,
+    /// The document body that each sheet body the writer splits from it
+    /// restates, by the id of the sheet body.
+    split_bodies: BTreeMap<BodyId, BodyId>,
     losses: Vec<LossNote>,
+}
+
+impl Synthesis {
+    /// The document body that written body `body` states.
+    fn source_body<'a>(&'a self, body: &'a BodyId) -> &'a BodyId {
+        self.split_bodies.get(body).unwrap_or(body)
+    }
 }
 
 /// The Directory display fields of an entity that carries a body or a face.
@@ -862,6 +872,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         counts,
         entities,
         presented,
+        split_bodies: BTreeMap::new(),
         losses,
     })
 }
