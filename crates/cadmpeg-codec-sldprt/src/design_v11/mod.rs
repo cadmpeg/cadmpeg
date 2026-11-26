@@ -20,6 +20,7 @@ mod names;
 mod operation;
 mod order;
 pub(crate) mod parameters;
+mod pattern;
 mod profile_check;
 mod revolve;
 mod sketch;
