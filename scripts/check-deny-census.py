@@ -264,6 +264,8 @@ class ImportBinding:
     def __init__(self, path, scope, alias, target, offsets=(), scopes=(),
                  module_scope=()):
         self.path = path
+        self.path_text = str(path)
+        self.crate_parts = path.parts[:path.parts.index("src")]
         self.scope = scope
         self.alias = alias
         self.target = target
@@ -1875,6 +1877,9 @@ def generic_arguments(declaration, position, items, resolve, values=(), names=No
     sources = [(item.body, item, True) for item in items]
     sources += [(value, item, False) for value, item in values]
     for text, item, declared in sources:
+        # Masking only blanks text, so a text that spells no name has no use.
+        if not any(name in text for name in names):
+            continue
         code = SOURCE_POLICY.mask_rust_non_code(text)
         header = GENERIC_HEADER_RE.match(code) if declared else None
         own_header = header.end() - 1 if header is not None else None
@@ -2668,7 +2673,9 @@ def renamed_names(name, paths):
         pattern = name_pattern(names)
         pending = [
             path for path in paths
-            if path not in read and pattern.search(read_source(path))
+            if path not in read
+            and any(name in read_source(path) for name in names)
+            and pattern.search(read_source(path))
         ]
         if not pending:
             return names
@@ -4208,7 +4215,7 @@ def main():
                        source_scope=None):
         source_path = owner.path if source_path is None else source_path
         source_scope = owner.scope if source_scope is None else source_scope
-        if binding.path != source_path:
+        if binding.path_text != str(source_path):
             return binding.scope == source_scope
         if position is None:
             call_scope = source_scope
@@ -4234,10 +4241,11 @@ def main():
         prefix, separator, suffix = name.partition("::")
         source_path = owner.path if source_path is None else source_path
         source_scope = owner.scope if source_scope is None else source_scope
-        source_crate = Path(*source_path.parts[:source_path.parts.index("src")])
+        source_parts = source_path.parts
+        source_crate = source_parts[:source_parts.index("src")]
         candidates = [
             binding for binding in imports.get(prefix, ())
-            if binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            if binding.crate_parts == source_crate
             and import_visible(
                 binding,
                 owner,
@@ -4268,7 +4276,7 @@ def main():
         if len(candidates) > 1:
             return import_ambiguous
         if any(
-            binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            binding.crate_parts == source_crate
             and import_visible(binding, owner, position, source_path, source_scope)
             for binding in imports.get("*", ())
         ):
