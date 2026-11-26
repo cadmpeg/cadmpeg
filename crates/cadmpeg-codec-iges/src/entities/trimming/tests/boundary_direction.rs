@@ -389,7 +389,29 @@ fn a_band_with_a_ring_without_a_parameter_curve_keeps_the_unresolved_winding() {
 /// unresolved winding, and the reader checks no closure.
 #[test]
 fn a_band_with_a_hole_without_a_parameter_curve_keeps_the_unresolved_winding() {
-    assert_eq!(band_read(ring_band_with_bare_hole_file()), (3, 0));
+    assert_eq!(band_read(ring_band_with_bare_hole_file(true)), (3, 0));
+}
+
+/// A face whose last boundary does not close is dropped with its geometry
+/// loss. The boundaries before it charge no unresolved winding.
+#[test]
+fn an_invalid_face_charges_no_unresolved_winding_for_its_valid_boundaries() {
+    let result = crate::test_support::decode(ring_band_with_bare_hole_file(false));
+    let losses = &result.report().losses;
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code == IgesLossCode::GeometryNotProjected.kind()
+                && loss.message.contains("do not form a closed ring")
+        }),
+        "{losses:#?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::BoundaryWindingUnresolved.kind()),
+        "{losses:#?}"
+    );
 }
 
 /// Type 141 states the direction of each boundary of a Type 143 face, and

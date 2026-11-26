@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::{homogeneous_pcurve_spans, split_homogeneous_pcurve};
+use super::super::{restricted_pcurve_spans, split_homogeneous_pcurve};
 use crate::entities::nurbs_controls::{BlendCheck, RefiningNet};
 
 /// De Casteljau's split that keeps every level.
@@ -56,12 +56,13 @@ fn pcurve_spans_of_a_long_pcurve_insert_each_knot_near_its_span() {
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
+    let range = [0.0, f64::from(count - 2)];
+    let spans = restricted_pcurve_spans(2, &knots, &controls, range, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(spans.len(), usize::try_from(count - 2).unwrap());
     assert_eq!(
-        spans[1].controls,
+        spans[1],
         [
             [1.0, 1.5, 0.0, 0.0],
             [1.0, 2.0, 0.0, 0.0],
@@ -108,18 +109,14 @@ fn pcurve_many_internal_knots_split_into_one_span_per_knot_interval() {
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
+    let range = [0.0, f64::from(CONTROL_COUNT - 2)];
+    let spans = restricted_pcurve_spans(2, &knots, &controls, range, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(spans.len(), usize::try_from(CONTROL_COUNT - 2).unwrap());
-    assert_eq!(spans.first().unwrap().domain, [0.0, 1.0]);
-    assert_eq!(spans.first().unwrap().controls[0], [1.0, 0.0, 0.0, 0.0]);
+    assert_eq!(spans.first().unwrap()[0], [1.0, 0.0, 0.0, 0.0]);
     assert_eq!(
-        spans.last().unwrap().domain,
-        [f64::from(CONTROL_COUNT - 3), f64::from(CONTROL_COUNT - 2)]
-    );
-    assert_eq!(
-        spans.last().unwrap().controls[2],
+        spans.last().unwrap()[2],
         [1.0, f64::from(CONTROL_COUNT - 1), 0.0, 0.0]
     );
 }
