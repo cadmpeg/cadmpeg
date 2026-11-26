@@ -392,12 +392,21 @@ fn translated(
     }
     if translates {
         if let Ok(tree) = expr::parse(&neutral, &refs, &[]) {
-            if quantity(&tree, parameters)
-                .map(ValueKind::Quantity)
-                .as_ref()
-                == Some(kind)
-            {
+            let stated = quantity(&tree, parameters);
+            if stated.map(ValueKind::Quantity).as_ref() == Some(kind) {
                 return Expression::Neutral(Neutral(tree));
+            }
+            // FreeCAD takes a dimensionless result in the property's
+            // internal unit (§5.12, Kind).
+            let internal = match kind {
+                ValueKind::Quantity(Quantity::LENGTH) => Some("mm"),
+                ValueKind::Quantity(Quantity::ANGLE) => Some("deg"),
+                _ => None,
+            };
+            if let (Some(Quantity::REAL), Some(unit)) = (stated, internal) {
+                if let Ok(tree) = expr::parse(&format!("({neutral}) * 1[{unit}]"), &refs, &[]) {
+                    return Expression::Neutral(Neutral(tree));
+                }
             }
         }
     }
