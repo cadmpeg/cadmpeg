@@ -589,6 +589,9 @@ fn keys_of_design_and_process_records_resolve() {
         annotations.note(key, &stream, 0, None);
         annotations.exactness(key, crate::provenance::Exactness::Inferred);
     }
+    annotations
+        .derived("test:design:feature#fillet", "source_content")
+        .unwrap();
     let findings = annotation_findings(&ir, annotations.build());
     for rule in [
         "annotations_native.provenance-key-does-not-resolve-entity",
@@ -604,24 +607,4 @@ fn keys_of_design_and_process_records_resolve() {
         );
     }
     assert_eq!(findings.len(), 2, "{findings:?}");
-}
-
-#[test]
-fn a_field_path_of_a_design_record_is_checked_against_that_record() {
-    let (ir, _) = design_with_process_state();
-    let mut annotations = crate::AnnotationBuilder::new();
-    annotations
-        .derived("test:design:feature#extrude", "definition")
-        .unwrap();
-    annotations
-        .derived("test:design:feature#fillet", "not_a_serialized_field")
-        .unwrap();
-    let findings = annotation_findings(&ir, annotations.build());
-    assert!(
-        matches!(findings.as_slice(), [finding]
-            if finding.severity == crate::report::Severity::Warning
-                && finding.entity.as_deref() == Some("test:design:feature#fillet")
-                && finding.message.contains("`not_a_serialized_field`")),
-        "{findings:?}"
-    );
 }

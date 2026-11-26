@@ -28,12 +28,9 @@ macro_rules! define_model_entity_projection {
             wanted: &BorrowedIdentities<'_, bool>,
             add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>),
         ) -> Result<(), CodecError> {
-            // A design record that restates a model record has its id: the
-            // model record, of an earlier arena, takes precedence.
-            let mut projected = BTreeSet::new();
             $(for entity in &ir.$home.$field {
-                let id = crate::schema::ArenaRecord::record_identity(entity);
-                if wanted.contains(id) && projected.insert(id) {
+                let id = crate::schema::EntitySchema::identity(entity);
+                if wanted.contains(id) {
                     let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {
                         Ok(value) => value,
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -46,7 +43,7 @@ macro_rules! define_model_entity_projection {
         }
     };
 }
-crate::document::every_arena_registry!(define_model_entity_projection);
+crate::document::arena_registry!(define_model_entity_projection);
 
 /// The records that annotation keys name outside `all_ids`: the records of
 /// the design and process arenas, and the records of the deltas of the
@@ -205,6 +202,8 @@ pub(super) fn check_annotations(
         }
         let projected;
         let entity = match key.target() {
+            // Field paths are checked against geometry, model, and native records.
+            AnnotationTarget::Entity(id) if !all_ids.contains(id) => continue,
             AnnotationTarget::Entity(id) => entities.get(id).map(|position| &values[*position]),
             AnnotationTarget::Delta { qualifier, record } => {
                 match unindexed.projected.remove(&(qualifier, record)).flatten() {
