@@ -490,10 +490,7 @@ pub(super) fn boolean(
     {
         return Err("Boolean parameter offset is not supported yet".into());
     }
-    let keep = features::parameter(feature, "keepTools")?
-        .get("value")
-        .and_then(Value::as_bool)
-        .ok_or("the Boolean keep-tools choice has no stored boolean value")?;
+    let keep = features::enabled(feature, "keepTools")?;
     let parts = inputs.solid_parts(ordinal)?;
     let selected = |key| -> Mapping<Vec<(String, String)>> {
         let mut picked = Vec::new();

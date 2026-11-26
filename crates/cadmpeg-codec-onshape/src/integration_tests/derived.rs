@@ -384,40 +384,52 @@ fn derived_studios_validate_their_own_pin_and_continue_after_a_bad_reference_rec
 }
 
 #[test]
-fn derived_boolean_requires_a_stored_keep_tools_choice_and_keeps_later_records() {
-    for choice in [Value::Null, json!("false")] {
-        let bytes = changed(&fixture("derived"), |path, value| {
-            if path == HOST {
-                let parameters = value["features"][3]["parameters"].as_array_mut().unwrap();
-                if choice.is_null() {
-                    parameters.retain(|p| p["parameterId"] != "keepTools");
-                } else {
-                    parameters
-                        .iter_mut()
-                        .find(|p| p["parameterId"] == "keepTools")
-                        .unwrap()["value"] = choice.clone();
-                }
-                let mut later = value["features"][0].clone();
-                later["featureId"] = json!("later-sketch");
-                value["features"].as_array_mut().unwrap().push(later);
-            }
-        });
-        let (model, report) = read(&bytes).unwrap();
-        assert_eq!(
-            kinds(&model),
-            ["sketch", "extrude", "stored_geometry", "native", "sketch"],
-            "{:?}",
-            report.losses()
-        );
-        assert!(
-            report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/history.not-supported")
-                && (loss.detail.contains("keepTools") || loss.detail.contains("keep-tools"))),
-            "{:?}",
-            report.losses()
-        );
-        assert!(model.source_step.is_some());
-    }
+fn derived_boolean_without_keep_tools_defaults_to_false() {
+    let bytes = changed(&fixture("derived"), |path, value| {
+        if path == HOST {
+            value["features"][3]["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|p| p["parameterId"] != "keepTools");
+        }
+    });
+    let (model, report) = read(&bytes).unwrap();
+    let wire = timeline(&model);
+    let operation = &wire["model"]["features"][3]["definition"]["value"]["value"];
+    assert_eq!(operation["op"], "cut", "{:?}", report.losses());
+    assert_eq!(operation["keep_tools"], false);
+}
+
+#[test]
+fn derived_boolean_with_a_non_boolean_keep_tools_stays_native_and_keeps_later_records() {
+    let bytes = changed(&fixture("derived"), |path, value| {
+        if path == HOST {
+            value["features"][3]["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|p| p["parameterId"] == "keepTools")
+                .unwrap()["value"] = json!("false");
+            let mut later = value["features"][0].clone();
+            later["featureId"] = json!("later-sketch");
+            value["features"].as_array_mut().unwrap().push(later);
+        }
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(
+        kinds(&model),
+        ["sketch", "extrude", "stored_geometry", "native", "sketch"],
+        "{:?}",
+        report.losses()
+    );
+    assert!(
+        report.losses().iter().any(|loss| loss.code.as_deref()
+            == Some("onshape/history.not-supported")
+            && loss.detail.contains("keepTools")),
+        "{:?}",
+        report.losses()
+    );
+    assert!(model.source_step.is_some());
 }
 
 #[test]
