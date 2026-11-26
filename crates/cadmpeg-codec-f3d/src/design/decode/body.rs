@@ -779,6 +779,23 @@ fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
+    Ok(body_map_carriers(bytes, meta)?.maps)
+}
+
+/// The body-map carriers of one Design `BulkStream`.
+struct BodyMapCarriers {
+    /// Carriers that bind bodies, and carriers with zero pairs and an empty
+    /// basename.
+    maps: Vec<BodyMapRecord>,
+    /// Carriers with zero pairs that name a history blob. Such a carrier
+    /// classifies its blob and selects no body.
+    unbound_histories: Vec<BodyMapRecord>,
+}
+
+fn body_map_carriers(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<BodyMapCarriers, CodecError> {
     let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
@@ -789,7 +806,10 @@ fn body_map_records(
             .or_insert(Some(ordinal));
     }
 
-    let mut out = Vec::new();
+    let mut out = BodyMapCarriers {
+        maps: Vec::new(),
+        unbound_histories: Vec::new(),
+    };
     let mut typed_entities = HashSet::new();
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
@@ -884,7 +904,11 @@ fn body_map_records(
                 }
             }
             if let Some(record) = matched {
-                out.push(record);
+                if record.bindings.is_empty() && !record.blob_name.is_empty() {
+                    out.unbound_histories.push(record);
+                } else {
+                    out.maps.push(record);
+                }
             }
         }
     }
@@ -1000,7 +1024,10 @@ pub(crate) fn design_model_selection(
         else {
             continue;
         };
-        let modern = body_map_records(bytes, &metadata)?;
+        let BodyMapCarriers {
+            maps: modern,
+            unbound_histories,
+        } = body_map_carriers(bytes, &metadata)?;
         saw_modern_map |= !modern.is_empty();
         let mut snapshots = snapshot_body_map_records(bytes, &metadata)?;
         saw_snapshot_map |= !snapshots.is_empty();
@@ -1009,7 +1036,10 @@ pub(crate) fn design_model_selection(
                 || record.blob_name.is_empty()
                 || archive_counts.contains_key(&record.blob_name)
         });
-        for record in modern.iter().chain(&snapshots) {
+        let unbound_histories = unbound_histories
+            .iter()
+            .filter(|record| archive_counts.contains_key(&record.blob_name));
+        for record in modern.iter().chain(&snapshots).chain(unbound_histories) {
             if !record.blob_name.is_empty() {
                 if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
                     *count += 1;
@@ -1123,8 +1153,7 @@ fn parse_body_map_frame(
         };
         Ok((name_end == end
             && ((pair_count == 0 && blob_name.is_empty())
-                || (pair_count > 0
-                    && is_brep_blob_basename(&blob_name)
+                || (is_brep_blob_basename(&blob_name)
                     && std::path::Path::new(&blob_name).extension()
                         == Some(std::ffi::OsStr::new("smbh")))))
         .then_some((name_at, blob_name)))

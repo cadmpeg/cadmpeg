@@ -464,6 +464,60 @@ fn malformed_text_brep_returns_an_entry_named_error() {
 }
 
 #[test]
+fn a_zero_pair_body_map_classifies_the_history_blob_it_names_and_selects_no_body() {
+    use crate::test_support::body_map_test::{
+        f3d_with_breps_and_design, f3d_with_model_breps, f3d_with_model_breps_and_unbound_history,
+        ModelBlob,
+    };
+    let model = synthetic_smbh();
+    let blobs = [ModelBlob {
+        basename: "BREP.model.smbh",
+        smbh: &model,
+        selector: 0,
+    }];
+    let selected = |archive: &[u8]| {
+        crate::test_support::zip_test::with_scan(archive, |scan| {
+            crate::design::decode::body::design_model_selection(scan)
+                .map(|selection| (selection.blob_names, selection.explicitly_empty))
+        })
+    };
+    let model_only = (vec!["BREP.model.smbh".to_string()], false);
+
+    // The named blob is in the archive: the carrier classifies it.
+    let present =
+        f3d_with_model_breps_and_unbound_history(&blobs, "BREP.history.smbh", Some(&[0; 16]));
+    assert_eq!(selected(&present).unwrap(), model_only);
+
+    // The archive holds no blob of that basename: the carrier classifies nothing.
+    let absent = f3d_with_model_breps_and_unbound_history(&blobs, "BREP.history.smbh", None);
+    assert_eq!(selected(&absent).unwrap(), model_only);
+
+    // A blob that no carrier names stays unclassified.
+    let unnamed = {
+        let named = f3d_with_model_breps(&blobs);
+        crate::test_support::zip_test::with_scan(&named, |scan| {
+            let stream = |name: &str| {
+                scan.entry_bytes(&format!("FusionAssetName[Active]/Design1/{name}"))
+                    .unwrap()
+                    .to_vec()
+            };
+            f3d_with_breps_and_design(
+                &[
+                    ("BREP.model.smbh", model.as_slice()),
+                    ("BREP.history.smbh", &[0; 16]),
+                ],
+                &stream("BulkStream.dat"),
+                &stream("MetaStream.dat"),
+            )
+        })
+    };
+    assert!(selected(&unnamed)
+        .unwrap_err()
+        .to_string()
+        .contains("do not classify every binary BREP entry exactly once"));
+}
+
+#[test]
 fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
     let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
     let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(&snapshot, &[]);
