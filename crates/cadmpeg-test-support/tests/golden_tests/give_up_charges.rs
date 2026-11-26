@@ -4,7 +4,9 @@
 //!
 //! A record give-up names a record id the document does not hold. A part
 //! give-up names the `unknowns` stub that stands in for the lost part. No id
-//! is named by two give-ups, and no id in a `dropped=[..]` list is held.
+//! is named by two give-ups. No id in a `dropped=[..]` list is a neutral
+//! record the document holds; a native record there names the source entity
+//! whose neutral records the give-up dropped.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -91,6 +93,13 @@ fn parse(message: &str) -> Option<Charge<'_>> {
 fn audit(ir: &Value, messages: &[&str]) -> Vec<String> {
     let mut held = BTreeSet::new();
     held_ids(ir, &mut held);
+    let mut neutral = BTreeSet::new();
+    if let Some(fields) = ir.as_object() {
+        fields
+            .iter()
+            .filter(|(key, _)| key.as_str() != "native")
+            .for_each(|(_, field)| held_ids(field, &mut neutral));
+    }
     let stubs = ir
         .get("native")
         .and_then(Value::as_object)
@@ -116,7 +125,7 @@ fn audit(ir: &Value, messages: &[&str]) -> Vec<String> {
         }
         *named.entry(charge.named).or_default() += 1;
         for id in charge.dropped {
-            if held.contains(id) {
+            if neutral.contains(id) {
                 findings.push(format!("{} drops held record {id}", charge.named));
             }
             *named.entry(id).or_default() += 1;
@@ -149,10 +158,13 @@ fn held_ids<'a>(value: &'a Value, held: &mut BTreeSet<&'a str>) {
 fn the_audit_finds_each_misnamed_give_up() {
     let ir = serde_json::json!({
         "model": { "bodies": [{ "id": "t:body#1" }, { "id": "t:body#2" }] },
-        "native": { "t": { "unknowns": [{ "id": "t:source:part#a" }] } }
+        "native": { "t": {
+            "unknowns": [{ "id": "t:source:part#a" }],
+            "entities": [{ "id": "t:entity:directory#5" }]
+        } }
     });
     let messages = [
-        "record t:body#1 given up: bad; dropped=[t:body#2, t:face#9]",
+        "record t:body#1 given up: bad; dropped=[t:body#2, t:entity:directory#5, t:face#9]",
         "record t:face#9 given up: bad; dropped=[]",
         "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; dropped=[]",
         "part blob \"b\" stream=\"s\" offset=1 length=1 record=t:source:part#b: bad; dropped=[]",
