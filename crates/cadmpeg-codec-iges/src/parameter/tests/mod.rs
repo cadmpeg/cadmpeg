@@ -155,7 +155,7 @@ pub(super) fn directory_target_with_form(
 ) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
-        source_length: 160,
+        source_length: Some(160),
         sequence,
         entity_type,
         parameter_start: 1,

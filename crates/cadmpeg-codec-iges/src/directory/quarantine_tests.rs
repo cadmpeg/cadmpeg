@@ -319,7 +319,7 @@ fn directory_quarantine_record_names_its_identity_and_defect() {
     let record = super::QuarantinedDirectoryRecord {
         sequence: 3,
         source_offset: 160,
-        source_length: 160,
+        source_length: Some(160),
         bytes: Vec::new(),
         defect: super::DirectoryDefect::FieldNotAnInteger("level"),
     };

@@ -47,14 +47,15 @@ fn push_given_up_loss(
 /// Pushes `why` and the `record.unreadable` that gives up `entry`'s entity,
 /// spanning its Directory Entry.
 fn give_up(losses: &mut Vec<LossNote>, entry: &DirectoryEntry, why: LossNote) {
-    let unreadable = GivenUpRecord::caused_by(
+    let mut unreadable = GivenUpRecord::caused_by(
         format_args!("iges:entity:directory#{}", entry.sequence),
         &why,
-    )
-    .spanning(entry.source_length)
-    .loss();
+    );
+    if let Some(length) = entry.source_length {
+        unreadable = unreadable.spanning(length);
+    }
     losses.push(why);
-    losses.push(unreadable);
+    losses.push(unreadable.loss());
 }
 
 /// Keeps the first `record.unreadable` of each entity for which the

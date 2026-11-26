@@ -217,7 +217,7 @@ impl SourceStatus {
 pub(crate) struct DirectoryEntry {
     pub(crate) source_offset: u64,
     /// The byte length of the two-card pair from `source_offset`.
-    pub(crate) source_length: u64,
+    pub(crate) source_length: Option<u64>,
     pub(crate) sequence: u32,
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
@@ -344,7 +344,7 @@ pub(crate) struct QuarantinedDirectoryRecord {
     pub(crate) sequence: u32,
     pub(crate) source_offset: u64,
     /// The byte length of the record's cards from `source_offset`.
-    pub(crate) source_length: u64,
+    pub(crate) source_length: Option<u64>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) defect: DirectoryDefect,
 }
@@ -501,10 +501,10 @@ fn parse_pair(
 
 /// The byte length from the start of `first` to the end of the card
 /// payload of `last`.
-pub(crate) fn card_span(first: &PhysicalLine, last: &PhysicalLine) -> u64 {
+pub(crate) fn card_span(first: &PhysicalLine, last: &PhysicalLine) -> Option<u64> {
     last.offset
-        .saturating_add(cadmpeg_core::decode::u64_from_index(last.payload.len()))
-        .saturating_sub(first.offset)
+        .checked_add(cadmpeg_core::decode::u64_from_index(last.payload.len()))?
+        .checked_sub(first.offset)
 }
 
 fn quarantine(

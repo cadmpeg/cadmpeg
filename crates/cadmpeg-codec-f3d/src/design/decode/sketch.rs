@@ -2121,9 +2121,12 @@ fn decode_sketch_relation_with_losses(
             }
         });
     let given_up = DesignRecord::entity(stream, record.record_index);
-    let given_up = match usize::try_from(record.byte_offset) {
-        Ok(start) => given_up.spanning(start, start.saturating_add(payload.len())),
-        Err(_) => given_up,
+    let span = usize::try_from(record.byte_offset)
+        .ok()
+        .and_then(|start| Some((start, start.checked_add(payload.len())?)));
+    let given_up = match span {
+        Some((start, end)) => given_up.spanning(start, end),
+        None => given_up,
     };
     super::record::recover(
         result,

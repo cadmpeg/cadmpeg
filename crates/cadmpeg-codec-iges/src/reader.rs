@@ -420,10 +420,11 @@ impl<'a> PhysicalParse<'a> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
             let why = record.loss_note();
-            let unreadable = GivenUpRecord::caused_by(record.identity(), &why)
-                .spanning(record.source_length)
-                .loss();
-            losses.extend([why, unreadable]);
+            let mut unreadable = GivenUpRecord::caused_by(record.identity(), &why);
+            if let Some(length) = record.source_length {
+                unreadable = unreadable.spanning(length);
+            }
+            losses.extend([why, unreadable.loss()]);
         }
         for record in &self.quarantined_parameters {
             let why = record.loss_note()?;

@@ -3621,7 +3621,8 @@ fn quarantine(
                 range,
                 bytes,
                 first_offset,
-                length: crate::directory::card_span(line, last),
+                length: crate::directory::card_span(line, last)
+                    .ok_or_else(|| CodecError::malformed("IGES parameter card span overflows"))?,
             }
         }
         None => QuarantinedCards::None {

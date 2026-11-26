@@ -435,7 +435,7 @@ fn read_binary(
                         let mut part = Part::at(
                             "pvz",
                             "pvs-stream",
-                            u64_from_index(stream.payload.start().saturating_sub(member.start())),
+                            u64_from_index(stream.payload.start().abs_diff(member.start())),
                             stream.payload.window(),
                             [ArenaClass::Model],
                         )

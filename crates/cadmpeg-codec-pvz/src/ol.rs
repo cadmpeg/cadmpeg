@@ -205,7 +205,7 @@ pub(crate) fn stream_part<'m>(name: &str, member: View<'_>, stored: View<'m>) ->
     Part::at(
         "pvz",
         "ol-stream",
-        u64_from_index(stored.start().saturating_sub(member.start())),
+        u64_from_index(stored.start().abs_diff(member.start())),
         stored.window(),
         [ArenaClass::Model],
     )

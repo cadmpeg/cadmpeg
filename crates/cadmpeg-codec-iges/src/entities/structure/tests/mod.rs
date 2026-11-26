@@ -72,7 +72,7 @@ fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
 fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
     let target = |entity_type, use_flag| DirectoryEntry {
         source_offset: 0,
-        source_length: 160,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 0,

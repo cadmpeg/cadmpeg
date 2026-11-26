@@ -1096,7 +1096,7 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
 fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
     let entry = |line_font, subordinate, use_flag, hierarchy| DirectoryEntry {
         source_offset: 0,
-        source_length: 160,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 308,
         parameter_start: 0,
