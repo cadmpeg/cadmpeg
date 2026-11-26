@@ -93,7 +93,7 @@ fn a_timeline_member_states_suppression_only_where_the_source_does() {
             &stored_thin(true, false, false),
             |path, response| {
                 if let (true, Some(key)) = (path.ends_with("features.json"), key) {
-                    response["features"][0][key] = serde_json::json!(false);
+                    response["features"][0][key] = cadmpeg_core::json!(false);
                 }
             },
         );
@@ -115,7 +115,7 @@ fn a_timeline_member_states_suppression_only_where_the_source_does() {
             .expect("the sketch has a design feature");
         assert_eq!(
             design.get("suppressed"),
-            key.map(|_| serde_json::json!({"kind":"literal","value":false}))
+            key.map(|_| cadmpeg_core::json!({"kind":"literal","value":false}))
                 .as_ref(),
             "{key:?}"
         );
