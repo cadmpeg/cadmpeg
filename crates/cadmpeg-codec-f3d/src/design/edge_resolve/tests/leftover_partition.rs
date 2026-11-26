@@ -151,6 +151,28 @@ fn lost_sibling_group_leaves_the_whole_transition_to_the_native_group() {
 }
 
 #[test]
+fn lost_sibling_group_keeps_the_edges_it_resolves() {
+    let mut scope = scope();
+    scope.groups[0].lost_edge_references = vec!["f3d:test:lost-edge-reference#1".to_owned()];
+    let mut selections = [historical(&scope.groups[0].id, &[101, 102]), native(&scope)];
+    partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
+    assert_eq!(
+        selections[1],
+        historical(&scope.groups[1].id, &[103, 104, 105])
+    );
+}
+
+#[test]
+fn leftover_partition_refuses_a_transition_group_outside_the_scope_list() {
+    let mut scope = scope();
+    scope.identities.push(transition_identity(30, 4));
+    let mut selections = [historical(&scope.groups[0].id, &[101]), native(&scope)];
+    let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
+    assert_eq!(selections[1], native(&scope));
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn leftover_partition_requires_complete_sibling_selections() {
     let scope = scope();
     for sibling in [

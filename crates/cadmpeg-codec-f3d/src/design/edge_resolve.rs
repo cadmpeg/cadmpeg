@@ -1720,9 +1720,10 @@ pub(crate) struct ScopeTreatmentGroup<'a> {
 /// the other groups of the scope do not take.
 ///
 /// The transition edge set of an identity is the union of the edges of every
-/// group in the scope. Each other group with members has a complete
-/// historical selection inside that set, or every member of that group is a
-/// lost reference and contributes no edge. The other groups' edges are
+/// group in the scope, and every group that carries it is in `groups`. Each
+/// other group with members has a complete historical selection inside that
+/// set, or every member of that group is a lost reference and the group
+/// contributes the edges its selection states. The other groups' edges are
 /// disjoint. The target group's members are identities that carry the set
 /// and the same radius candidates, have no exact slot and no recipe operand.
 /// The leftover set is nonempty, holds at least one edge per member, and,
@@ -1803,25 +1804,42 @@ pub(crate) fn partition_leftover_treatment_groups(
         {
             return;
         }
-        if group.members().is_empty() || group.lost_edge_references.len() == group.members().len() {
-            continue;
-        }
-        let EdgeSelection::Historical {
-            state: selected_state,
-            edges,
-            ..
-        } = selection
-        else {
-            return;
+        let all_lost = group.lost_edge_references.len() == group.members().len();
+        let edges = match selection {
+            EdgeSelection::Historical {
+                state: selected_state,
+                edges,
+                ..
+            } if *selected_state == state => edges.as_slice(),
+            EdgeSelection::HistoricalPartial {
+                state: selected_state,
+                edges,
+                ..
+            } if all_lost && *selected_state == state => edges.as_slice(),
+            EdgeSelection::Unresolved | EdgeSelection::Native(_)
+                if group.members().is_empty() || all_lost =>
+            {
+                &[]
+            }
+            _ => return,
         };
-        if *selected_state != state {
-            return;
-        }
-        for edge in edges.as_slice() {
+        for edge in edges {
             if !taken.insert(edge.clone()) {
                 return;
             }
         }
+    }
+    if input.identity_operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == target_group.scope_record_index
+            && sorted_transition_slots(&operand.transition_edge_candidates) == transition
+            && !groups.iter().any(|scope_group| {
+                scope_group
+                    .group
+                    .is_some_and(|group| group.record_index == operand.group_record_index)
+            })
+    }) {
+        return;
     }
     let mut leftover = Vec::new();
     let mut leftover_slots = Vec::new();
