@@ -3,6 +3,9 @@
 
 use super::super::reader::{bad, Reader, Res, V};
 
+#[cfg(test)]
+mod tests;
+
 /// `moCStringHandle_c`.
 pub(crate) fn cstringhandle(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::Str(r.cstring()?))
@@ -61,7 +64,9 @@ pub(crate) fn own(c: &str) -> Option<usize> {
         | "moThinOffsetSurfIdRep_c"
         | "moWireEdgeIdRep_c"
         | "moSimpleEdgeIdRep_c" => 4,
-        "moFromSktEnt3IntSurfIdRep_c" | "moEndFace3IntSurfIdRep_c" => 12,
+        "moFromSktEnt3IntSurfIdRep_c"
+        | "moEndFace3IntSurfIdRep_c"
+        | "moSideFace3IntSurfIdRep_c" => 12,
         "moEndFaceSurfIdRep_c"
         | "moThinClosingSurfIdRep_c"
         | "moUnBendSurfIdRep_c"

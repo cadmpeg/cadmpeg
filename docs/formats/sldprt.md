@@ -1922,7 +1922,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
 | `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
-| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
+| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c`, `moSideFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
 | `moMirPatternSurfIdRep_c` | an object pointer to the hop it mirrors |
