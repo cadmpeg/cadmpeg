@@ -108,6 +108,7 @@ impl Fixture {
         let topology = FeatureInputTopology {
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: id,
             bodies: Default::default(),
