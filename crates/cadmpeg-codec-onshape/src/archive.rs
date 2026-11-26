@@ -58,7 +58,7 @@ impl<'a> Bundle<'a> {
             .filter_map(|element| element.get("id").and_then(Value::as_str))
             .map(|id| format!("partstudios/{id}/"))
             .collect();
-        for root in studio_prefix("", &manifest) {
+        if let Some(root) = studio_prefix("", &manifest) {
             if !prefixes.contains(&root) {
                 prefixes.push(root);
             }
