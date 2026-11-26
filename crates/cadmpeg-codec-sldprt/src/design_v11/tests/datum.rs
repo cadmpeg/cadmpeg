@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::design::construction::{
     AxisValue, FrameValue, InputReference, PlaneValue, Relation, ScalarDimension,
 };
@@ -15,6 +17,7 @@ use cadmpeg_ir::features::geometry::{
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
 };
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureOperation as V10Operation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -325,17 +328,17 @@ fn a_datum_whose_geometry_differs_in_a_configuration_is_named() {
         source_index: Some(1),
         name: None,
         material: None,
-        properties: Default::default(),
-        parameter_overrides: Default::default(),
+        properties: BTreeMap::default(),
+        parameter_overrides: BTreeMap::default(),
         bodies: None,
-        parameter_values: Default::default(),
+        parameter_values: BTreeMap::default(),
         feature_states: [(
             plane1,
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Active {
-                    outputs: Default::default(),
+                    outputs: DistinctMembers::default(),
                 },
-                dependencies: Default::default(),
+                dependencies: DistinctMembers::default(),
                 definition: plane_at(10.0),
             },
         )]
