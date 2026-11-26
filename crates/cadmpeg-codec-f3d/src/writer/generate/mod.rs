@@ -12,9 +12,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
-use crate::writer::primitives::{
-    f3d_native, validate_assembly_projection, validate_configuration_projection,
-};
+use crate::writer::primitives::{decoded_configurations, f3d_native, validate_assembly_projection};
 mod attributes;
 pub(in crate::writer) mod configuration_root;
 mod design;
@@ -239,7 +237,6 @@ fn attempt<W: Write + Seek>(
     let mut native_parameters = None;
     if write_design {
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
-            validate_configuration_projection(target, &native)?;
             validate_source_less_history_graph(target, &native)?;
             let parameters = design::parameters::native_or_neutral(target, &native)?;
             validate_source_less_design_ownership(&native)?;
@@ -330,7 +327,8 @@ fn attempt<W: Write + Seek>(
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
     let mut root = None;
     if write_design {
-        let plan = configuration_root::plan(target, &native.design_configurations);
+        let decoded = decoded_configurations(target, &native).map_err(Failure::design)?;
+        let plan = configuration_root::plan(target, &native.design_configurations, &decoded);
         let names = configuration_entry_names(&native.design_configurations);
         for (index, (configuration, (name, fault))) in
             native.design_configurations.iter().zip(names).enumerate()

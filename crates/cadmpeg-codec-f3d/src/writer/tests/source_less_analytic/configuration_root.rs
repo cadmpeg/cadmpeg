@@ -15,7 +15,7 @@ use crate::test_support::configuration_table::{
 };
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_configuration;
+use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_configurations};
 use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -394,4 +394,128 @@ fn a_wide_row_id_is_cut_in_the_root_record_and_its_table() {
         .map(|row| row.id.as_str())
         .collect::<Vec<_>>();
     assert_eq!(rows, [cut.as_str()]);
+}
+
+/// No `export:native.records-omitted` loss of `report` drops the Design
+/// stream.
+fn assert_design_stream_written(report: &cadmpeg_ir::report::export::ExportReport) {
+    assert!(
+        report.losses.iter().all(|loss| {
+            loss.code.to_string() != "export/native.records-omitted"
+                || !loss.message.contains("of the Design stream")
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn two_populated_tables_and_a_root_record_are_written_as_the_decoder_states_them() {
+    const OTHER: &str = "FusionAssetName[Active]/DesignConfigurationTable.456.dsgcfg";
+    let first = serde_json::to_vec(&generated_configuration_document()).unwrap();
+    let second = serde_json::to_vec(&table_document(
+        "2",
+        &[],
+        &[("x", "Row x", Vec::new())],
+        &["x"],
+    ))
+    .unwrap();
+    let ir = source_less(with_root_segment(
+        f3d_with_configurations(
+            &synthetic_geometry_smbh(),
+            &[(ENTRY, &first), (OTHER, &second)],
+        ),
+        root_record(*b"256", ROOT_RECORD, "1", "large"),
+    ));
+    let documents = f3d_native(&ir).design_configurations;
+    assert_eq!(documents.len(), 2);
+    assert!(documents[0].active_row().is_some());
+    assert!(ir.model.configurations.is_empty());
+    let mut read = ir.clone();
+    read.model.drop_omitted_arenas();
+    for ir in [&ir, &read] {
+        let (report, round_trip) = write_and_decode(ir);
+        assert_design_stream_written(&report);
+        assert!(
+            report.losses.iter().all(|loss| documents
+                .iter()
+                .all(|document| !loss.message.contains(document.id().as_str()))),
+            "{:#?}",
+            report.losses
+        );
+        let written = f3d_native(round_trip.ir()).design_configurations;
+        assert_eq!(written.len(), 2);
+        let active = written[0]
+            .active_row()
+            .expect("the written root record names the stated row")
+            .clone();
+        assert_eq!(
+            (active.table_id.as_str(), active.row_id.as_str()),
+            ("1", "large")
+        );
+        assert!(listed(round_trip.ir(), active.record_index));
+        for (written, stated) in written.iter().zip(&documents) {
+            assert_eq!(written.payload(), stated.payload());
+        }
+        assert!(round_trip.ir().model.configurations.is_empty());
+    }
+}
+
+#[test]
+fn an_edited_configuration_is_written_from_the_document_with_a_charge() {
+    let mut ir = source_less(configured());
+    set_active_row(&mut ir, "large");
+    let medium = crate::ids::neutral_configuration_id(ENTRY, "medium");
+    let configuration = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.id == medium)
+        .unwrap();
+    configuration.name = Some("Mid".into());
+    configuration.material = Some("Steel".into());
+    let (report, round_trip) = write_and_decode(&ir);
+    assert_design_stream_written(&report);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("the writer restates a row's name")
+                && loss.message.contains(medium.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+    let configurations = &round_trip.ir().model.configurations;
+    let written = configurations
+        .iter()
+        .find(|configuration| configuration.id == medium)
+        .expect("the edited configuration reads back");
+    assert_eq!(written.name.as_deref(), Some("Mid"));
+    assert_eq!(written.material, None);
+    let large = crate::ids::neutral_configuration_id(ENTRY, "large");
+    assert_eq!(
+        configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .map(|configuration| &configuration.id)
+            .collect::<Vec<_>>(),
+        [&large]
+    );
+}
+
+#[test]
+fn a_document_read_from_cadir_writes_the_root_record_its_tables_state() {
+    let mut ir = source_less(rooted());
+    ir.model.drop_omitted_arenas();
+    let (report, round_trip) = write_and_decode(&ir);
+    assert_design_stream_written(&report);
+    assert_eq!(generated_type_losses(&report), 0, "{:#?}", report.losses);
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    let active = documents[0]
+        .active_row()
+        .expect("the written root record names the stated row");
+    assert_eq!(
+        (active.table_id.as_str(), active.row_id.as_str()),
+        ("1", "large")
+    );
 }

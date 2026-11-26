@@ -15,10 +15,15 @@ pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
         .map_err(Into::into)
 }
 
-pub(super) fn validate_configuration_projection(
+/// The configurations the decoder states for `native`: the projection of its
+/// configuration tables, with the active configuration reconciled with the
+/// features of `target`. A projection the decoder recovers from states none,
+/// and a reconciliation that fails leaves the projection as it is.
+pub(super) fn decoded_configurations(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
+    use crate::design::decode::record::is_fatal;
     let projected = crate::design::configurations::project_configurations(
         &native.design_configurations,
         &crate::design::configurations::ConfigurationTargets {
@@ -28,8 +33,36 @@ pub(super) fn validate_configuration_projection(
             neutral_parameters: &target.model.parameters,
             neutral_features: &target.model.features,
         },
-    )?;
-    if target.model.configurations != projected {
+    );
+    let configurations = match projected {
+        Ok(configurations) => configurations,
+        Err(error) if is_fatal(&error) => return Err(error),
+        Err(_) => return Ok(Vec::new()),
+    };
+    if !configurations
+        .iter()
+        .any(|configuration| configuration.active)
+    {
+        return Ok(configurations);
+    }
+    let mut reconciled = configurations.clone();
+    match crate::design::configurations::reconcile_active_configurations(
+        &mut target.model.features.clone(),
+        &mut reconciled,
+    ) {
+        Ok(()) => Ok(reconciled),
+        Err(error) if is_fatal(&error) => Err(error),
+        Err(_) => Ok(configurations),
+    }
+}
+
+/// Refuse a patch of `target` whose configurations are other than the ones
+/// the decoder states for `native`.
+pub(super) fn validate_configuration_projection(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    if target.model.configurations != decoded_configurations(target, native)? {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
                 .into(),

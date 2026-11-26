@@ -242,12 +242,7 @@ pub(crate) fn rename_ids(
     table: (&str, &str),
     row: (&str, &str),
 ) {
-    let Some(members) = payload
-        .get_mut("tables")
-        .and_then(Value::as_array_mut)
-        .and_then(|tables| tables.get_mut(position))
-        .and_then(Value::as_object_mut)
-    else {
+    let Some(members) = table_mut(payload, position) else {
         return;
     };
     if let Some(asset) = members.get_mut("asset") {
@@ -275,6 +270,47 @@ pub(crate) fn rename_ids(
             *id = Value::from(row.1);
         }
     }
+}
+
+/// Rewrite the name of the row `row` of the table at `position` of the
+/// `tables` array to `name`, at the position [`AdmittedTables::admit`] reads
+/// it: the row's attribute.
+pub(crate) fn set_row_name(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    row: &str,
+    name: &str,
+) {
+    let rows = table_mut(payload, position)
+        .and_then(|members| members.get_mut("rows"))
+        .and_then(Value::as_array_mut);
+    for attributes in rows
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            value
+                .get_mut("asset")?
+                .get_mut("attributes")?
+                .as_object_mut()
+        })
+        .filter(|attributes| {
+            attributes
+                .get("pim:configuration:rowId")
+                .and_then(Value::as_str)
+                == Some(row)
+        })
+    {
+        attributes.insert("pim:configuration:rowName".to_owned(), Value::from(name));
+    }
+}
+
+/// The members of the table at `position` of the `tables` array.
+fn table_mut(payload: &mut Map<String, Value>, position: usize) -> Option<&mut Map<String, Value>> {
+    payload
+        .get_mut("tables")?
+        .as_array_mut()?
+        .get_mut(position)?
+        .as_object_mut()
 }
 
 /// Rewrite the id `id.0` of `asset` to `id.1` in its attribute `attribute`

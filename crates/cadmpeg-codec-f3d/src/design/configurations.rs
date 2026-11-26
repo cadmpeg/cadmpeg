@@ -4,7 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::records::configuration::table::{ConfigurationRow, ConfiguredValue};
+use crate::records::configuration::table::{ConfigurationRow, ConfigurationTable, ConfiguredValue};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -227,19 +227,17 @@ impl ConfigurationTargets<'_> {
     }
 }
 
-/// Project the rows of the one populated table into the neutral configuration
-/// arena. Rule documents remain native because a rule is a selector, not a
-/// model variant.
-pub(crate) fn project_configurations(
+/// The one table whose rows the neutral configurations project, the only
+/// table of `native` that holds rows, with the position of its document.
+pub(crate) fn projected_table(
     native: &[DesignConfiguration],
-    targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
-    let mut populated = native.iter().flat_map(|document| {
+) -> Result<Option<(usize, &ConfigurationTable)>, CodecError> {
+    let mut populated = native.iter().enumerate().flat_map(|(index, document)| {
         document
             .tables()
             .iter()
             .filter(|table| !table.rows.is_empty())
-            .map(move |table| (document, table))
+            .map(move |table| (index, table))
     });
     let first = populated.next();
     if populated.next().is_some() {
@@ -247,8 +245,19 @@ pub(crate) fn project_configurations(
             "independent nonempty F3D configuration tables have no shared authored order".into(),
         ));
     }
+    Ok(first)
+}
+
+/// Project the rows of the one populated table into the neutral configuration
+/// arena. Rule documents remain native because a rule is a selector, not a
+/// model variant.
+pub(crate) fn project_configurations(
+    native: &[DesignConfiguration],
+    targets: &ConfigurationTargets<'_>,
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
     let mut projected = Vec::new();
-    if let Some((document, table)) = first {
+    if let Some((index, table)) = projected_table(native)? {
+        let document = &native[index];
         let active_row = document
             .active_row()
             .filter(|row| row.table_id == table.id)
