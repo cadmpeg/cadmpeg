@@ -28,7 +28,7 @@ CADIR_SPEC = re.compile(r"^docs/(?:cad-ir|cadir-v\d+)\.md$")
 NAME = "spec-wording"
 ORDER = 80
 
-PROVENANCE = r"we|our|us|corpus|sampled files|observed|experiments?|so far|in practice"
+PROVENANCE = r"(?-i:[Ww]e|[Oo]ur|[Uu]s)|corpus|sampled files|observed|experiments?|so far|in practice"
 PHRASES = re.compile(
     r"\b(?:the decoder|decoders?|the reader|a reader|readers|the writer|writers?|encoders?|"
     r"cadmpeg|is chosen|chooses|picks?|falls? back|fallback|projection|loss note|"
@@ -39,8 +39,7 @@ PHRASES = re.compile(
 CADIR_PHRASES = re.compile(r"\b(?:" + PROVENANCE + r")\b", re.IGNORECASE)
 
 
-def flagged(lines: list[tuple[int, str]],
-            phrases: re.Pattern[str] = PHRASES) -> list[tuple[int, str, str]]:
+def flagged(lines: list[tuple[int, str]], phrases: re.Pattern[str]) -> list[tuple[int, str, str]]:
     found = []
     for number, text in lines:
         if text.lstrip().startswith(("|", "```", "<!--")):

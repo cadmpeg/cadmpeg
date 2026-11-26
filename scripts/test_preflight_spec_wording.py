@@ -28,7 +28,16 @@ class Phrases(unittest.TestCase):
                  (6, "The `decoder_flags` byte at offset 9 is zero."),
                  (7, "A scope whose operand paths do not read keeps its frames."),
                  (8, "The earliest definition record defines the component.")]
-        self.assertEqual([number for number, _, _ in check.flagged(lines)], [1, 2, 3, 7, 8])
+        self.assertEqual([number for number, _, _ in check.flagged(lines, check.PHRASES)],
+                         [1, 2, 3, 7, 8])
+
+    def test_pronouns_match_by_case(self) -> None:
+        lines = [(1, "We store the angle in degrees."),
+                 (2, "The flag marks our frame."),
+                 (3, "A US-customary unit keeps its name."),
+                 (4, "The energy is wE times the factor.")]
+        for phrases in (check.PHRASES, check.CADIR_PHRASES):
+            self.assertEqual([number for number, _, _ in check.flagged(lines, phrases)], [1, 2])
 
 
 class SpecWordingCheck(harness.FixtureCase):
