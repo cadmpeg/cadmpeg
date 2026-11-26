@@ -186,7 +186,6 @@ pub(super) fn encode_design_bulkstream(
         && native.design_entity_headers.is_empty()
         && native.design_record_headers.is_empty()
         && native.design_face_source_groups.is_empty()
-        && native.design_material_assignments.is_empty()
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()

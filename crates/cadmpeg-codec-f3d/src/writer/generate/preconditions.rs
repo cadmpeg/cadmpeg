@@ -580,9 +580,9 @@ pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
 }
 
 /// Proof that [`validate_source_less_design_bindings`] ran against the borrowed
-/// `F3dNative`. The private field keeps construction inside this module, so an
-/// encoder that reads binding-validated fields (material physical tokens) cannot
-/// be reached without the check having run on the very native it will read.
+/// `F3dNative`. The private field keeps construction inside this module, so the
+/// registry that keys each body from the body visibilities cannot be reached
+/// without the check having run on the very native it will read.
 #[derive(Clone, Copy)]
 pub(super) struct DesignBindingsValidated<'a> {
     native: &'a F3dNative,
@@ -614,12 +614,6 @@ pub(super) fn validate_source_less_design_bindings(
         }
         Ok(())
     };
-    if let Some(assignment) = native.design_material_assignments.first() {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
-            assignment.id
-        )));
-    }
     for visibility in &native.body_visibilities {
         insert(
             visibility.asm_body_key(),

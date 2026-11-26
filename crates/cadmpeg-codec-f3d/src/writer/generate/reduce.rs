@@ -79,6 +79,47 @@ const BREP_ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
+/// Native Design arenas the source-less Design stream has no form for. The
+/// generator writes no record of these families on the native path. A
+/// document with parameter records takes the neutral path, which drops them
+/// with the Design stream.
+const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
+    "derived_references",
+    "design_body_bindings",
+    "design_body_bounds",
+    "design_body_recipe_operands",
+    "design_body_reference_tails",
+    "design_canvas_images",
+    "design_component_naming_spaces",
+    "design_component_occurrences",
+    "design_component_paths",
+    "design_construction_operand_groups",
+    "design_construction_operand_identities",
+    "design_decal_images",
+    "design_edge_identity_operands",
+    "design_edge_operands",
+    "design_edge_treatment_vertex_operands",
+    "design_entity_selection_operands",
+    "design_extrude_selection_groups",
+    "design_extrude_selection_members",
+    "design_face_operands",
+    "design_feature_timelines",
+    "design_fillet_radius_groups",
+    "design_intent_failures",
+    "design_joint_motions",
+    "design_loft_legacy_body_carriers",
+    "design_material_assignments",
+    "design_mesh_features",
+    "design_placement_constructions",
+    "design_profile_curve_selections",
+    "design_sheet_metal_settings",
+    "design_surface_trim_operations",
+    "sketch_geometry_groups",
+    "sketch_surfaces",
+    "xref_designs",
+    "xref_references",
+];
+
 /// Native arenas the generator never writes: it has no `MetaStream` record
 /// registry for `ACT`, and a mesh-surface sentinel needs the retained ASM record.
 const UNWRITTEN_ARENAS: &[&str] = &[
@@ -267,6 +308,7 @@ impl<'a> Reduction<'a> {
 
     /// The losses, with `export:output.empty` when no geometry is written.
     pub(super) fn finish(mut self) -> Vec<LossNote> {
+        self.charge_design_arenas_without_form();
         for (body, faces) in std::mem::take(&mut self.opened) {
             let Some(row) = self
                 .ir
@@ -1427,6 +1469,29 @@ impl<'a> Reduction<'a> {
         progressed
     }
 
+    /// W3 for the native Design path: the written Design stream holds no
+    /// record of the Design arenas it has no form for, so each one is
+    /// charged with its ids.
+    fn charge_design_arenas_without_form(&mut self) {
+        if !self.writes_design() {
+            return;
+        }
+        let Some(namespace) = self.ir.native.namespace("f3d") else {
+            return;
+        };
+        let omitted = DESIGN_ARENAS_WITHOUT_FORM
+            .iter()
+            .filter_map(|arena| namespace.arenas().get(*arena))
+            .flatten()
+            .map(|record| record.id().to_owned())
+            .collect::<Vec<_>>();
+        self.losses.extend(native_records_omitted(
+            "F3D",
+            "of Design record families that the source-less Design stream has no form for",
+            omitted,
+        ));
+    }
+
     /// A native design whose timeline is rolled back is written from its
     /// neutral records, which give the features after the marker the form
     /// that `missing_states` selects (cadir-v11.md §3.4, Features without
@@ -2553,4 +2618,69 @@ fn rolled_back_from(ir: &CadIr) -> Option<&Member> {
             } if members.contains(before) => Some(before),
             _ => None,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BREP_ARENAS, DESIGN_ARENAS_WITHOUT_FORM, UNWRITTEN_ARENAS};
+
+    /// Native arenas the source-less Design stream and the B-rep stream's
+    /// history tail are written from.
+    const DESIGN_ARENAS: &[&str] = &[
+        "asm_bulletin_boards",
+        "asm_delta_states",
+        "asm_entity_changes",
+        "asm_face_boundaries",
+        "asm_histories",
+        "asm_history_records",
+        "construction_recipes",
+        "design_body_members",
+        "design_configurations",
+        "design_entity_headers",
+        "design_parameters",
+        "design_record_headers",
+        "design_types",
+        "lost_edge_references",
+        "persistent_references",
+        "sketch_curve_identities",
+        "sketch_points",
+        "sketch_relations",
+        "sketch_texts",
+    ];
+
+    /// Native arenas of parameter records, whose presence sends the design
+    /// to the neutral path.
+    const PARAMETER_ARENAS: &[&str] = &[
+        "design_dimension_annotation_frames",
+        "design_dimension_locus_groups",
+        "design_dimension_locus_pairs",
+        "design_dimension_null_locus_pairs",
+        "design_dimension_presentation_frames",
+        "design_dimension_recipe_records",
+        "design_face_source_groups",
+        "design_parameter_companions",
+        "design_parameter_owners",
+        "design_parameter_scopes",
+        "design_sketch_placements",
+    ];
+
+    /// Each native arena has one disposition on the native path. The
+    /// generator writes no display scene, and no list holds its poses.
+    #[test]
+    fn each_native_arena_has_one_disposition() {
+        for arena in crate::native::F3D_ARENA_NAMES {
+            let lists = [
+                PARAMETER_ARENAS,
+                BREP_ARENAS,
+                DESIGN_ARENAS,
+                DESIGN_ARENAS_WITHOUT_FORM,
+                UNWRITTEN_ARENAS,
+                &["display_poses"],
+            ]
+            .iter()
+            .filter(|list| list.contains(arena))
+            .count();
+            assert_eq!(lists, 1, "{arena}");
+        }
+    }
 }

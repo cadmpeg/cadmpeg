@@ -112,7 +112,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 }
 
 #[test]
-fn generated_source_less_drops_material_assignment_without_presentation_graph() {
+fn generated_source_less_drops_material_assignment_alone() {
     use crate::records::references::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -137,11 +137,19 @@ fn generated_source_less_drops_material_assignment_without_presentation_graph() 
         visual_preset: None,
     }];
 
-    crate::test_support::assert_written_with_loss(
+    let report = crate::test_support::assert_written_with_loss(
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires a typed body-presentation B-rep and scene graph",
+        "of Design record families that the source-less Design stream has no form for: f3d:generated:material-assignment#0",
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("of the Design stream")),
+        "{:#?}",
+        report.losses
     );
 }
 
