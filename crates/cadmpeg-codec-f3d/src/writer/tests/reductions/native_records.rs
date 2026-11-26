@@ -237,6 +237,145 @@ fn a_record_header_outside_the_sketch_graph_is_dropped_alone() {
 }
 
 #[test]
+fn sketch_records_whose_owner_is_absent_are_dropped_alone() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::entity_header::{
+        DesignEntityHeader, DesignEntityRegistration, SegmentType, SegmentTypeData,
+        SketchHeaderReferences, DESIGN_MODULE_SKETCH,
+    };
+    use crate::records::identity::{DesignEntityId, Located, ReferenceRun};
+    use crate::records::references::DesignClassTag;
+    use crate::records::sketch_geometry::{
+        SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+    };
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+        SketchRelationReturnMember,
+    };
+
+    let header = |ordinal: u32, record_index: u32| DesignRecordHeader {
+        id: format!("f3d:generated:record-header#{ordinal}"),
+        record_index,
+        class_tag: DesignClassTag::try_from("350".to_owned()).expect("class tag"),
+        byte_offset: 0,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut native = f3d_native_mut(&mut ir);
+    native.design_types = vec![SegmentType::try_new(
+        "f3d:generated/MetaStream.dat:design-type#0".into(),
+        SegmentTypeData {
+            byte_offset: 0,
+            module: DESIGN_MODULE_SKETCH.to_owned(),
+            entities: ReferenceRun::unlocated(vec![277]),
+            type_guid: "22222222-3333-4444-5555-666666666666"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
+            type_guid_offset: 0,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+            version: 4,
+            version_offset: 0,
+        },
+    )
+    .expect("a sketch type")];
+    native.design_entity_headers = vec![DesignEntityHeader {
+        id: "f3d:generated:entity-header#0".into(),
+        byte_offset: 0,
+        entity_id: DesignEntityId::try_from("0_277".to_owned()).expect("entity ID"),
+        class_tag: DesignClassTag::try_from("256".to_owned()).expect("class tag"),
+        optional_slot_present: true,
+        registration: DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: vec![Located {
+                    value: 33,
+                    offset: 0,
+                }],
+            }),
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("a sketch registration"),
+    }];
+    native.design_record_headers = vec![header(0, 33), header(1, 55)];
+    native.sketch_points = vec![SketchPoint::try_from(SketchPointDraft {
+        id: "f3d:generated:sketch-point#0".into(),
+        record_index: 700,
+        owner_reference: None,
+        geometry_group: None,
+        class_tag: DesignClassTag::try_from("258".to_owned()).expect("class tag"),
+        byte_offset: 0,
+        coordinate_offset: 33,
+        companion: SketchPointCompanion {
+            incident_curves: Vec::new(),
+        },
+        record_form: SketchPointRecordForm::Version0 { flag: true },
+        paired_reference: 701,
+        coordinates: cadmpeg_ir::math::Point2::new(4.0, -7.5),
+    })
+    .expect("a sketch point")];
+    native.sketch_relations = vec![SketchRelation::try_new(SketchRelationDraft {
+        id: "f3d:generated:sketch-relation#0".into(),
+        record_index: 40,
+        class_tag: DesignClassTag::try_from("257".to_owned()).expect("class tag"),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 999,
+        owner_entity_id: None,
+        owner_reference_offset: 0,
+        auxiliary_references: ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members: vec![
+            SketchRelationMember::from_index(700),
+            SketchRelationMember::from_index(55),
+        ]
+        .try_into()
+        .expect("uniform member resolution"),
+        definition: SketchRelationDefinition::new(0x11, None).expect("a relation definition"),
+        entity_genesis: None,
+        return_members: vec![
+            SketchRelationReturnMember::from_index(55),
+            SketchRelationReturnMember::from_index(700),
+        ]
+        .try_into()
+        .expect("uniform member resolution"),
+        raw_bytes: vec![0; 160],
+    })
+    .expect("a sketch relation")];
+    drop(native);
+
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of sketch records whose sketch owner the document does not hold",
+    );
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    for id in [
+        "f3d:generated:sketch-point#0",
+        "f3d:generated:sketch-relation#0",
+        "f3d:generated:record-header#1",
+    ] {
+        assert!(
+            messages.iter().any(|message| message.contains(id)),
+            "{messages:#?}"
+        );
+    }
+    let decoded = write_and_decode(&ir);
+    let native = f3d_native(&decoded);
+    assert!(native.sketch_points.is_empty());
+    assert!(native.sketch_relations.is_empty());
+    let indices = native
+        .design_record_headers
+        .iter()
+        .map(|header| header.record_index)
+        .collect::<Vec<_>>();
+    assert_eq!(indices, [33]);
+}
+
+#[test]
 fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
     use crate::history_records::AsmHistory;
 

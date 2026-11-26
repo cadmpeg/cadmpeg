@@ -1043,7 +1043,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "references missing sketch owner",
+        "of sketch records whose sketch owner the document does not hold",
     );
     {
         let mut native = f3d_native_mut(&mut source_less);

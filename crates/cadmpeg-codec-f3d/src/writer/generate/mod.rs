@@ -28,7 +28,7 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    replaced_by_stamp, unreachable_record_headers, unwritable_continuities,
+    replaced_by_stamp, unowned_sketch_records, unreachable_record_headers, unwritable_continuities,
     unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
@@ -258,7 +258,9 @@ fn attempt<W: Write + Seek>(
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
     if write_design {
-        if let Some(unwritable) = unreachable_record_headers(&native) {
+        if let Some(unwritable) =
+            unowned_sketch_records(&native).or_else(|| unreachable_record_headers(&native))
+        {
             return Err(Failure::unwritable(Stage::Design, unwritable));
         }
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {

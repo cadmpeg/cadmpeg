@@ -266,6 +266,49 @@ pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritabl
     )
 }
 
+/// The sketch records whose sketch owner the document does not hold: the
+/// written record names its owner, and no written sketch header holds it.
+pub(super) fn unowned_sketch_records(native: &F3dNative) -> Option<Unwritable> {
+    let owners = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.in_sketch_module())
+        .map(|header| header.entity_id.suffix())
+        .collect::<BTreeSet<_>>();
+    let owned = |owner: Option<u32>| owner.is_some_and(|owner| owners.contains(&u64::from(owner)));
+    let records = native
+        .sketch_points
+        .iter()
+        .filter(|point| !owned(point.owner_reference))
+        .map(|point| point.id.clone())
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .filter(|curve| !owned(curve.owner_reference))
+                .map(|curve| curve.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .filter(|relation| !owned(Some(relation.owner_reference)))
+                .map(|relation| relation.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .filter(|text| !owned(Some(text.owner_reference)))
+                .map(|text| text.id.clone()),
+        )
+        .collect();
+    Unwritable::of(
+        "of sketch records whose sketch owner the document does not hold (the written record names its owner, and no sketch header holds it)",
+        records,
+    )
+}
+
 /// The sketch-curve links and body visibilities the B-rep and Design
 /// streams cannot hold as they stand, the first family that holds one.
 pub(super) fn unwritable_link_records(
