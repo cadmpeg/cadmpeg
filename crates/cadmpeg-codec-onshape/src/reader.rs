@@ -555,31 +555,20 @@ fn read_studio<'s>(
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
     let eid = studio_root(manifest, elements)?.ok_or_else(|| {
         Error::Decode(
-            "Onshape bundles with assemblies or multiple elements are not supported yet; \
-             fetch one Part Studio"
+            "the Onshape manifest selects no Part Studio; fetch a bundle whose root is a Part Studio"
                 .into(),
         )
     })?;
     studio_in(session, mid, eid, folder, depth, report)
 }
 
-fn studio<'a>(
-    ctx: &DecodeContext<'a>,
-    root: View<'a>,
-    step_decoder: crate::StepDecoder,
+fn studio(
+    session: &mut Session<'_, '_>,
     report: &mut Report,
-    bundle: &Bundle<'a>,
     mid: &str,
     eid: &str,
 ) -> Result<Model, Error> {
-    let mut session = Session {
-        ctx,
-        bundle,
-        root,
-        step_decoder,
-        studios: std::collections::BTreeMap::new(),
-    };
-    studio_in(&mut session, mid, eid, "", 0, report)
+    studio_in(session, mid, eid, "", 0, report)
 }
 
 fn studio_in(
@@ -1019,16 +1008,8 @@ fn studio_in(
                 .map(body_ids)
                 .transpose()
                 .map_err(|error| error.to_string())?;
-            let bodies = historical.as_ref().and_then(|value| {
-                value
-                    .as_array()
-                    .or_else(|| value.get("bodies").and_then(Value::as_array))
-            });
-            if let Some(bodies) = bodies {
-                let local: Vec<_> = bodies
-                    .iter()
-                    .filter_map(|body| body.get("id").and_then(Value::as_str))
-                    .collect();
+            if let Some(local) = historical {
+                let local: Vec<&str> = local.iter().map(String::as_str).collect();
                 push(
                     &mut model.ir.model.feature_result_topologies,
                     json!({"id": id("result", native), "output_of": feature_id, "members": local.iter().map(|id| json!({"kind": "body", "id": id})).collect::<Vec<_>>()}),
