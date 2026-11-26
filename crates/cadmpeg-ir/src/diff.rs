@@ -744,8 +744,9 @@ mod tests {
         );
         assert!(!result.is_empty());
         assert_eq!(
-            serde_json::to_value(&result).expect("diff serializes")["scope_change"],
-            serde_json::json!([
+            cadmpeg_core::serde_erase::json::to_value(&result).expect("diff serializes")
+                ["scope_change"],
+            cadmpeg_core::json!([
                 {"model": true, "design": true, "process": true},
                 {"model": true, "design": false, "process": false}
             ])

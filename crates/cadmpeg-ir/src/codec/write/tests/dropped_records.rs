@@ -620,7 +620,7 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
         )
         .unwrap();
     let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
-    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
     let read = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),

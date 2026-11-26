@@ -564,7 +564,7 @@ mod tests {
         assert!(!diff.is_empty());
         assert_eq!(
             json::to_value(&diff).unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "annotations_changed": false,
                 "retained_records_changed": true,
                 "unrepresented_added": ["design"],
