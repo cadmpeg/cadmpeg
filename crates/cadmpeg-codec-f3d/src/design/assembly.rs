@@ -2246,7 +2246,7 @@ mod tests {
         );
 
         let mut reference: crate::records::xref::XrefReference =
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id":"f3d:xref:reference#0", "ordinal":0,
                 "from":"root.f3d", "relative_path":"part.f3d",
                 "neutron_role":"shared-role", "neutron_data":"",
@@ -2888,16 +2888,16 @@ mod tests {
         let container = |value: serde_json::Value| -> cadmpeg_ir::OperandContainer {
             json::from_value(value).unwrap()
         };
-        let external = container(serde_json::json!({
+        let external = container(cadmpeg_core::json!({
             "kind": "external",
             "external_document": {"document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
-        let named = container(serde_json::json!({
+        let named = container(cadmpeg_core::json!({
             "kind": "occurrence",
             "occurrence": "f3d:model:occurrence#xref-1-0",
             "occurrence_path": [],
         }));
-        let missing = container(serde_json::json!({
+        let missing = container(cadmpeg_core::json!({
             "kind": "external",
             "external_document": {},
         }));

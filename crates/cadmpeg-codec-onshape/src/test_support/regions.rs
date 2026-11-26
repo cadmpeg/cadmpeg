@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic region mutations shared by reader and writer regressions.
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 #[allow(clippy::panic)]
 fn compact(value: &Value) -> String {

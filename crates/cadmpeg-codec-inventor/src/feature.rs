@@ -5453,20 +5453,20 @@ pub(crate) mod tests {
         );
         for (field, value) in [("class_id", "a".repeat(31)), ("class_id", "a".repeat(33))] {
             let mut wire = valid.clone();
-            wire[field] = serde_json::json!(value);
+            wire[field] = cadmpeg_core::json!(value);
             assert!(json_wire::from_value::<PmDcFeatureLabel>(wire)
                 .expect_err("invalid label")
                 .to_string()
                 .contains(field));
         }
         let mut unnamed = valid.clone();
-        unnamed["name"] = serde_json::json!("");
+        unnamed["name"] = cadmpeg_core::json!("");
         let label: PmDcFeatureLabel =
             json_wire::from_value(unnamed.clone()).expect("optional label");
         assert!(label.name().is_none());
         assert_eq!(json_wire::to_value(label).expect("label JSON"), unnamed);
         let mut wire = valid;
-        wire["class_id"] = serde_json::json!("z".repeat(32));
+        wire["class_id"] = cadmpeg_core::json!("z".repeat(32));
         assert!(json_wire::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
@@ -6925,7 +6925,7 @@ pub(crate) mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
     }
 
@@ -6973,7 +6973,7 @@ pub(crate) mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

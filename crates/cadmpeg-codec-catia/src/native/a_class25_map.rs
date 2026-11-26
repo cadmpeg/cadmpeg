@@ -105,7 +105,7 @@ mod tests {
         let wire = json::to_value(map).expect("serialize map");
         assert_eq!(wire["data"]["selector"], 0x1587);
         let mut contradictory = wire.clone();
-        contradictory["data"]["selector"] = serde_json::json!(0x1586);
+        contradictory["data"]["selector"] = cadmpeg_core::json!(0x1586);
         assert!(json::from_value::<CatiaConsolidatedAClass25Map>(contradictory).is_err());
         assert_eq!(
             json::from_value::<CatiaConsolidatedAClass25Map>(wire).expect("load map"),

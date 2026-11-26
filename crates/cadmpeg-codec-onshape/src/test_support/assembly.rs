@@ -2,8 +2,9 @@
 //! Synthetic evaluated assembly definitions.
 
 use super::step;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
 pub(crate) fn placement(x: f64, y: f64) -> Value {

@@ -3168,7 +3168,7 @@ fn named_child(
         ));
     }
     reader.skip(chunk.next_offset() - offset)?;
-    Ok(serde_json::json!({
+    Ok(cadmpeg_core::json!({
         "offset": offset,
         "byte_len": chunk.next_offset() - offset,
         "sha256": hex(&cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()])),
@@ -3185,7 +3185,7 @@ fn dimension_style_controls(
     let mut values = DimensionControlEntries::default();
     macro_rules! put {
         ($name:literal, $value:expr) => {{
-            values.insert_with($name, || Ok(serde_json::json!($value)))?;
+            values.insert_with($name, || Ok(cadmpeg_core::json!($value)))?;
         }};
     }
     put!("legacy_override_parent_count", reader.u32()?);
@@ -3342,7 +3342,7 @@ fn dimension_style_controls(
             "dimension_text_angle_style",
             "radial_text_angle_style",
         ] {
-            values.insert_with(name, || Ok(serde_json::json!(reader.u32()?)))?;
+            values.insert_with(name, || Ok(cadmpeg_core::json!(reader.u32()?)))?;
         }
         put!("text_underlined", reader.bool()?);
     }
@@ -3483,10 +3483,12 @@ fn parse_v5_dimension_style(
     };
     let mut controls = DimensionControlEntries::default();
     controls.insert_with("v5_version", || {
-        Ok(serde_json::json!({ "major": major, "minor": minor }))
+        Ok(cadmpeg_core::json!({ "major": major, "minor": minor }))
     })?;
-    controls.insert_with("v5_arrow_type", || Ok(serde_json::json!(arrow_type)))?;
-    controls.insert_with("v5_angular_units", || Ok(serde_json::json!(angular_units)))?;
+    controls.insert_with("v5_arrow_type", || Ok(cadmpeg_core::json!(arrow_type)))?;
+    controls.insert_with("v5_angular_units", || {
+        Ok(cadmpeg_core::json!(angular_units))
+    })?;
     let (
         length_factor,
         alternate_enabled,
@@ -3520,14 +3522,16 @@ fn parse_v5_dimension_style(
             "Rhino V5 dimension alternate suffix",
         )?;
         let unused = reader.u32()?;
-        controls.insert_with("v5_length_factor", || Ok(serde_json::json!(length_factor)))?;
+        controls.insert_with("v5_length_factor", || {
+            Ok(cadmpeg_core::json!(length_factor))
+        })?;
         controls.insert_with("v5_alternate_angle_format", || {
-            Ok(serde_json::json!(alternate_angle_format))
+            Ok(cadmpeg_core::json!(alternate_angle_format))
         })?;
         controls.insert_with("v5_alternate_angle_resolution", || {
-            Ok(serde_json::json!(alternate_angle_resolution))
+            Ok(cadmpeg_core::json!(alternate_angle_resolution))
         })?;
-        controls.insert_with("v5_unused", || Ok(serde_json::json!(unused)))?;
+        controls.insert_with("v5_unused", || Ok(cadmpeg_core::json!(unused)))?;
         (
             length_factor,
             alternate_enabled,
@@ -3579,7 +3583,7 @@ fn parse_v5_dimension_style(
     };
     reader.skip_remaining()?;
     controls.insert_with("v5_leader_arrow_type", || {
-        Ok(serde_json::json!(leader_arrow_type))
+        Ok(cadmpeg_core::json!(leader_arrow_type))
     })?;
     Ok(DimensionStyleRecord {
         id: if id.is_nil() {

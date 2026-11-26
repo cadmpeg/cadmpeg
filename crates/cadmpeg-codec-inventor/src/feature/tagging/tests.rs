@@ -21,7 +21,7 @@ fn list(marker: u16, refs: &[u32]) -> PmDcReferenceList {
 }
 
 fn feature() -> PmDcFeature {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:pmdc:feature#generated-0",
         "segment_token": "generated", "record_ordinal": 0,
         "type_id": "914d8790d011f8d10008cabc0663dc09", "save_version_major": 19,
@@ -35,14 +35,14 @@ fn feature() -> PmDcFeature {
 
 fn properties() -> Vec<PmDcFeatureProperty> {
     [
-        (1, "ae70680ed14a1e86d76248b03c2a96e1", serde_json::json!({
+        (1, "ae70680ed14a1e86d76248b03c2a96e1", cadmpeg_core::json!({
             "form": "references", "family": "object_collection", "items": list(2, &[0x8000_0003])
         })),
-        (2, "474d8790d011f8d10008cabc0663dc09", serde_json::json!({
+        (2, "474d8790d011f8d10008cabc0663dc09", cadmpeg_core::json!({
             "form": "surface_body", "body": {"index": 1, "qualified": false}
         })),
     ].into_iter().map(|(ordinal, type_id, kind)| {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:pmdc:feature-property#generated-{ordinal}"),
             "segment_token": "generated", "record_ordinal": ordinal,
             "type_id": type_id, "save_version_major": 19,
@@ -68,7 +68,7 @@ fn inventory(derived: bool) -> FeatureInventory {
         ..FeatureInventory::default()
     };
     let label = |ordinal: u32, class: super::ClassId| {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
         "id": format!("inventor:pmdc:feature-label#generated-{ordinal}"),
         "segment_token": "generated", "record_ordinal": ordinal,
         "type_id": "2ba4482bd2115864600074b79b49ebb0", "save_version_major": 19,
@@ -193,7 +193,7 @@ fn tagging_reports_each_collection_and_member_refusal() {
         json::from_value::<PmDcFeatureProperty>(wire).expect("collection")
     };
     let changed = replace(
-        serde_json::json!({"form": "surface_body", "body": {"index": 1, "qualified": false}}),
+        cadmpeg_core::json!({"form": "surface_body", "body": {"index": 1, "qualified": false}}),
     );
     assert_eq!(
         refusal(&f, |_| Some(&changed)),
@@ -227,7 +227,7 @@ fn tagging_reports_each_collection_and_member_refusal() {
         ),
     ] {
         let changed = replace(
-            serde_json::json!({"form": "references", "family": "object_collection", "items": list(marker, &refs)}),
+            cadmpeg_core::json!({"form": "references", "family": "object_collection", "items": list(marker, &refs)}),
         );
         assert_eq!(refusal(&f, |_| Some(&changed)), expected);
     }
@@ -284,7 +284,7 @@ fn tagging_reports_each_body_wrapper_identity_type_and_form_refusal() {
             "save_version_major" => 20.into(),
             "type_id" => "ae70680ed14a1e86d76248b03c2a96e1".into(),
             "kind" => {
-                serde_json::json!({"form": "references", "family": "object_collection", "items": list(2, &[])})
+                cadmpeg_core::json!({"form": "references", "family": "object_collection", "items": list(2, &[])})
             }
             _ => "other".into(),
         };

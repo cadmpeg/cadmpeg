@@ -4,8 +4,8 @@ use super::super::helix::{
 };
 use super::super::procedural_curves::ProceduralCurveDefinition;
 use crate::math::{Point3, Vector3};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn curve(radius: f64) -> HelixCurveConstruction {
     HelixCurveConstruction::try_new(

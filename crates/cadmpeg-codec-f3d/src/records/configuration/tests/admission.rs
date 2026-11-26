@@ -9,7 +9,7 @@ use cadmpeg_core::serde_erase::json;
 #[test]
 fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
     let name = "Design/Config #1.dsgcfg";
-    let valid = serde_json::json!({
+    let valid = cadmpeg_core::json!({
         "id": "f3d:component-0@configuration:entry#Design/Config%20%231.dsgcfg",
         "entry_name": name, "kind": "table", "payload": {}
     });
@@ -35,12 +35,12 @@ fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
 #[test]
 fn configuration_admission_checks_the_wire_payload_and_kind() {
     use crate::records::configuration::DesignConfiguration;
-    let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg", &cadmpeg_ir::identity_component!("configuration")), "entry_name":"table.dsgcfg", "kind":"table",
+    let wire = cadmpeg_core::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg", &cadmpeg_ir::identity_component!("configuration")), "entry_name":"table.dsgcfg", "kind":"table",
         "payload":{"tables":[]}});
     let configuration: DesignConfiguration = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(&configuration).unwrap(), wire);
     let mut invalid = wire.clone();
-    invalid["payload"] = serde_json::json!([]);
+    invalid["payload"] = cadmpeg_core::json!([]);
     assert!(json::from_value::<DesignConfiguration>(invalid)
         .unwrap_err()
         .to_string()
@@ -105,7 +105,7 @@ fn configuration_id_binds_the_escaped_entry_name() {
         ),
         entry_name: name.into(),
         kind: DesignConfigurationKind::Table,
-        payload: serde_json::json!({}),
+        payload: cadmpeg_core::json!({}),
         active_row: None,
     };
     for id in ["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"] {
@@ -117,7 +117,7 @@ fn configuration_id_binds_the_escaped_entry_name() {
     }
     let record = DesignConfiguration::try_from(wire).unwrap();
     let mut changed_name = json::to_value(&record).unwrap();
-    changed_name["entry_name"] = serde_json::json!("Other.dsgcfg");
+    changed_name["entry_name"] = cadmpeg_core::json!("Other.dsgcfg");
     assert!(json::from_value::<DesignConfiguration>(changed_name).is_err());
     reject_changed_id(
         record,
