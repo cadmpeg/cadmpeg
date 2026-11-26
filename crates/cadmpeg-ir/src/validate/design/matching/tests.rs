@@ -24,7 +24,8 @@ fn face_name(face: usize, index: Option<u32>) -> TopoName {
     if let Some(index) = index {
         value["index"] = json!(index);
     }
-    serde_json::from_value(json!({"kind": "generated", "value": value})).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(json!({"kind": "generated", "value": value}))
+        .unwrap()
 }
 
 fn bounded(faces: &[TopoName], ends: &[TopoName]) -> TopoName {

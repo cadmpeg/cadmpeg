@@ -181,7 +181,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         let stream = crate::ids::native_scope(ENTRY);
         let scope: crate::records::feature::scope::DesignParameterScope =
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": format!("{stream}:scope#1"),
                 "byte_offset": 0,
                 "class_tag": "300",

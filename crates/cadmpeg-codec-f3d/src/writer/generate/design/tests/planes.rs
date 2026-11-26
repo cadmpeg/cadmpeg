@@ -550,3 +550,82 @@ fn the_workplane_note_names_the_parameter_numbering() {
         assert!(note.contains(named), "{named}: {note}");
     }
 }
+
+#[test]
+fn a_failure_in_one_plane_drops_that_plane_and_its_sketches() {
+    let ir = with(
+        Vec::new(),
+        vec![
+            rectangle(
+                "front",
+                picked(principal(PrincipalEntity::XyPlane)),
+                frame([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                false,
+            ),
+            rectangle(
+                "top",
+                unread(),
+                frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                false,
+            ),
+            rectangle(
+                "upper",
+                unread(),
+                frame([0.0, 0.0, 20.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                false,
+            ),
+        ],
+    );
+    let plane = format!("WorkPlane {}", feature_id("top"));
+    let _failing = super::fail_records([plane.as_str()]);
+    let (report, decoded) = write(&ir);
+    assert_eq!(decoded.model.sketches.len(), 2, "{:#?}", report.losses);
+    let planes = datum_planes(&decoded);
+    let [(_, upper)] = planes.as_slice() else {
+        panic!("one construction plane: {planes:#?}");
+    };
+    assert!(upper.is([0.0, 0.0, 1.0], 20.0), "{upper:?}");
+    let missing = loss(&report, "export/evaluation.missing").join("\n");
+    assert!(
+        missing.contains(&format!(
+            "{} (its sketch is dropped because the writer cannot write the records of its construction plane (not implemented yet: a test failure of the records of {plane}))",
+            feature_id("top")
+        )),
+        "{missing}"
+    );
+    assert!(!missing.contains(feature_id("upper").as_str()), "{missing}");
+}
+
+#[test]
+fn a_failure_in_the_plane_records_keeps_the_sketch_dimensions() {
+    super::super::FAIL_NEXT_PLANES.with(|fail| fail.set(true));
+    let ir = with(
+        Vec::new(),
+        vec![
+            rectangle(
+                "front",
+                picked(principal(PrincipalEntity::XyPlane)),
+                frame([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                true,
+            ),
+            rectangle(
+                "top",
+                unread(),
+                frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                false,
+            ),
+        ],
+    );
+    let (report, decoded) = write(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1, "{:#?}", report.losses);
+    assert!(datum_planes(&decoded).is_empty());
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(
+        !omitted.contains("the writer failed with the sketch's dimensions"),
+        "{omitted}"
+    );
+}

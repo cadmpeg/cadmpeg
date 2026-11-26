@@ -74,10 +74,12 @@ mod tests {
         assert_ne!(records[0].id, records[1].id);
         assert_eq!(records[0].byte_offset, 0);
         assert_eq!(records[1].byte_offset, 46);
-        let wire = serde_json::to_value(&records).expect("store programs");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&records).expect("store programs");
         assert_eq!(
-            serde_json::from_value::<Vec<super::CatiaE5CurveSupportRecord>>(wire)
-                .expect("load programs"),
+            cadmpeg_core::serde_erase::json::from_value::<Vec<super::CatiaE5CurveSupportRecord>>(
+                wire
+            )
+            .expect("load programs"),
             records
         );
     }

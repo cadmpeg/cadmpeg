@@ -221,8 +221,8 @@ mod tests {
         }
         let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
         assert_eq!(
-            serde_json::to_vec(&identity).unwrap(),
-            serde_json::to_vec(&String::from(identity.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&identity).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&String::from(identity.clone())).unwrap()
         );
         let record = Record {
             id: "nx:feature:csys-identity#0",

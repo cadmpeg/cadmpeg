@@ -68,7 +68,7 @@ fn scene_archive_reads_root_rows_and_excludes_member_rows() {
         SceneBinding::Unbound {}
     ));
     assert_eq!(
-        serde_json::to_value(&native.display_poses[0].path).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&native.display_poses[0].path).unwrap(),
         serde_json::json!([3, 17])
     );
 }

@@ -131,9 +131,11 @@ fn f3z_archive_merges_identity_occurrences() {
     let report = crate::test_support::assert_written_with_loss(
         decoded.ir(),
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::SourceDialectDisplaced
-            .kind()
-            .to_string(),
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
         "f3d:f3z-multi-document",
     );
     assert!(report
@@ -163,7 +165,11 @@ fn f3z_archive_merges_identity_occurrences() {
         .expect("an explicit F3Z request writes the single-document row");
     assert!(
         report.losses.iter().any(|loss| {
-            loss.code == crate::loss::F3dLossCode::TargetRequestDisplaced.kind()
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("f3d"),
+                    cadmpeg_ir::codec::write::target::REQUEST_DISPLACED,
+                )
                 && loss.message.contains("f3d:manifest-3-2-0-0")
         }),
         "{:#?}",
@@ -631,9 +637,10 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         "{:?}",
         decoded.report().losses
     );
-    let admitted: cadmpeg_ir::CadIr =
-        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap())
-            .expect("complete merged CADIR admission");
+    let admitted: cadmpeg_ir::CadIr = cadmpeg_core::serde_erase::json::from_slice(
+        &cadmpeg_core::serde_erase::json::to_vec(decoded.ir()).unwrap(),
+    )
+    .expect("complete merged CADIR admission");
     for ir in [decoded.ir(), &admitted] {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =

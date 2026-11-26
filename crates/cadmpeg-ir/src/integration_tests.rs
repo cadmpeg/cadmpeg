@@ -23,6 +23,7 @@ use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use crate::validate::validate_neutral;
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
+const FORMAT: &str = "[a-z][a-z0-9]{0,7}";
 
 fn config() -> ProptestConfig {
     ProptestConfig::with_cases(64)
@@ -30,7 +31,7 @@ fn config() -> ProptestConfig {
 
 fn id_strategy() -> impl Strategy<Value = String> {
     (
-        string_regex(SEG).unwrap(),
+        string_regex(FORMAT).unwrap(),
         string_regex(SEG).unwrap(),
         string_regex(SEG).unwrap(),
         string_regex(SEG).unwrap(),
@@ -187,7 +188,7 @@ proptest! {
         {
             let malformed = strip_one_namespace_component(ir.geometry.points[0].id.as_str());
             prop_assert!(PointId::mint(malformed.clone()).is_err());
-            let wire = serde_json::to_string(&malformed).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_string(&malformed).unwrap();
             prop_assert!(serde_json::from_str::<PointId>(&wire).is_err());
         }
 

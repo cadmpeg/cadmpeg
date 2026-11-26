@@ -17,8 +17,8 @@ fn persistent_design_link_borrowed_wire_matches_owned_wire_bytes() {
     let record = link();
     let owned = PersistentDesignLinkWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
     );
 }
 

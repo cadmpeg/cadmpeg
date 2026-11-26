@@ -363,9 +363,10 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =
-            serde_json::from_value(wire.clone()).expect("native store reads back");
+            cadmpeg_core::serde_erase::json::from_value(wire.clone())
+                .expect("native store reads back");
         assert_eq!(
-            serde_json::to_value(read).expect("native store writes back"),
+            cadmpeg_core::serde_erase::json::to_value(read).expect("native store writes back"),
             wire
         );
     }
@@ -374,7 +375,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
-            serde_json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::Native>(wire)
+                .is_err(),
             "native namespace and arena maps refuse invalid value shapes"
         );
     }
@@ -385,17 +387,19 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// open native field map and a closed hand-written object adapter.
 #[test]
 fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = serde_json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
-        "id": "test:source-census:record#0",
-        "codec_field": {"preserved": true},
-    }))
+    let native = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::NativeRecord>(
+        serde_json::json!({
+            "id": "test:source-census:record#0",
+            "codec_field": {"preserved": true},
+        }),
+    )
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
         native.field("codec_field"),
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = serde_json::from_value::<
+    let unknown_configuration = cadmpeg_core::serde_erase::json::from_value::<
         cadmpeg_ir::features::parameters::ConfigurationEvaluation,
     >(serde_json::json!({
         "kind": "suppressed",
@@ -828,15 +832,15 @@ fn declared_optional_fields(
 /// Offenders are named by `file:line`.
 #[test]
 fn every_read_optional_field_refuses_a_null_spelling() {
-    assert!(
-        !null_refusing_helpers().is_empty(),
-        "no source defines a named_optional_field! shim, so no key could refuse null"
-    );
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
+    assert!(
+        !null_refusing_helpers(&root).is_empty(),
+        "no source defines a named_optional_field! shim, so no key could refuse null"
+    );
     let (readable, offenders) = optional_absence_census(&root);
     assert!(
         readable > 0,
@@ -864,7 +868,7 @@ fn every_read_optional_field_refuses_a_null_spelling() {
 ///
 /// The second map holds each function [`forwarded_shim`] reads as a forward
 /// to another helper of its file, keyed the same way, with that helper's name.
-fn shim_definitions() -> (ShimMacros, BTreeMap<(String, String), String>) {
+fn shim_definitions(root: &Path) -> (ShimMacros, BTreeMap<(String, String), String>) {
     fn walk(
         items: &[syn::Item],
         relative: &str,
@@ -918,11 +922,6 @@ fn shim_definitions() -> (ShimMacros, BTreeMap<(String, String), String>) {
         }
     }
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the repository root sits two levels above the crate manifest")
-        .to_path_buf();
     let mut found = BTreeMap::new();
     let mut forwarders = BTreeMap::new();
     for source in [
@@ -936,7 +935,7 @@ fn shim_definitions() -> (ShimMacros, BTreeMap<(String, String), String>) {
         files.sort();
         for file in files {
             let relative = file
-                .strip_prefix(&root)
+                .strip_prefix(root)
                 .expect("a collected source sits under the repository root")
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -1182,28 +1181,25 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 /// `deserialize_with` that does not state the refusal gives `None` a second
 /// spelling. Each shim maps to the macro path its invocation spells, and a
 /// forward to the path of the shim it calls.
-fn null_refusing_helpers() -> &'static BTreeMap<(String, String), String> {
-    static HELPERS: OnceLock<BTreeMap<(String, String), String>> = OnceLock::new();
-    HELPERS.get_or_init(|| {
-        let (macros, forwarders) = shim_definitions();
-        let shims: BTreeMap<(String, String), String> = macros
-            .iter()
-            .filter_map(|(site, macros)| {
-                let [invoked] = macros.iter().collect::<Vec<_>>().try_into().ok()?;
-                (invoked.rsplit("::").next() == Some("named_optional_field"))
-                    .then(|| (site.clone(), invoked.clone()))
-            })
-            .collect();
-        let forwarding: Vec<((String, String), String)> = forwarders
-            .into_iter()
-            .filter(|(site, _)| !macros.contains_key(site))
-            .filter_map(|(site, callee)| {
-                let invoked = shims.get(&(site.0.clone(), callee))?;
-                Some((site, invoked.clone()))
-            })
-            .collect();
-        shims.into_iter().chain(forwarding).collect()
-    })
+fn null_refusing_helpers(root: &Path) -> BTreeMap<(String, String), String> {
+    let (macros, forwarders) = shim_definitions(root);
+    let shims: BTreeMap<(String, String), String> = macros
+        .iter()
+        .filter_map(|(site, macros)| {
+            let [invoked] = macros.iter().collect::<Vec<_>>().try_into().ok()?;
+            (invoked.rsplit("::").next() == Some("named_optional_field"))
+                .then(|| (site.clone(), invoked.clone()))
+        })
+        .collect();
+    let forwarding: Vec<((String, String), String)> = forwarders
+        .into_iter()
+        .filter(|(site, _)| !macros.contains_key(site))
+        .filter_map(|(site, callee)| {
+            let invoked = shims.get(&(site.0.clone(), callee))?;
+            Some((site, invoked.clone()))
+        })
+        .collect();
+    shims.into_iter().chain(forwarding).collect()
 }
 
 /// Whether `helper`, read in `relative`, is a shim that refuses `null`: one
@@ -1211,7 +1207,8 @@ fn null_refusing_helpers() -> &'static BTreeMap<(String, String), String> {
 /// `cadmpeg_core::named_optional_field!`. `crate::` and a bare name reach it
 /// only inside `cadmpeg-core`.
 fn refuses_null(declarations: &Declarations, relative: &str, helper: &str) -> bool {
-    null_refusing_helpers()
+    declarations
+        .null_refusing_helpers()
         .get(&(relative.to_owned(), helper.to_owned()))
         .is_some_and(|invoked| {
             declarations.names_external(

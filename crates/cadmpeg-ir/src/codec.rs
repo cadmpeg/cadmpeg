@@ -282,9 +282,9 @@ impl DecodeResult {
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
-        result.give_up_repeated_ids(ctx.policy(), format)?;
+        result.give_up_repeated_ids(ctx, format)?;
         if record_digests {
-            result.record_content_digest(ctx.policy(), format)?;
+            result.record_content_digest(ctx, format)?;
             result.record_omitted_arenas_baseline(ctx.policy());
         }
         if result.report().format() != format.as_str() {
@@ -337,9 +337,7 @@ impl DecodeResult {
             source_fidelity,
         } = decoded;
         let scope = recorded_scope(&ir, body.transfer.depth().scope(), requested.scope());
-        ir.set_scope(scope).map_err(|error| {
-            CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
-        })?;
+        ir.set_scope(scope);
         for class in scope.missing_from(requested.scope()) {
             if body
                 .losses
@@ -411,10 +409,10 @@ impl DecodeResult {
     /// its stub, and the records its give-up drops and marks.
     fn give_up_repeated_ids(
         &mut self,
-        policy: &DecodePolicy,
+        ctx: &DecodeContext<'_>,
         format: FormatId,
     ) -> Result<(), CodecError> {
-        let repeated = self.ir.repeated_ids();
+        let repeated = self.ir.repeated_ids(crate::document::DifferingCopies::Keep);
         if repeated.is_empty() {
             return Ok(());
         }
@@ -430,10 +428,8 @@ impl DecodeResult {
                 )
             })
             .collect();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
         let losses = crate::give_up::give_up(
-            &ctx,
+            ctx,
             &mut self.ir,
             &mut self.source_fidelity,
             format.as_str(),
@@ -456,8 +452,11 @@ impl DecodeResult {
 
     /// Records the SHA-256 of the canonical JSON of the document the decode
     /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
-    /// walks the document in a session of its own under `policy`, the
-    /// decode's, so a ceiling it meets refuses no part of the decode.
+    /// walks the document in a session of its own under the decode's
+    /// policy, with a recursion ceiling of at least
+    /// [`crate::bounds::DIGEST_WALK_DEPTH`], so a ceiling it meets refuses no
+    /// part of the decode. The records it gives up retain their text in
+    /// `ctx`, the decode's session.
     ///
     /// The same walk finds each record the decoder stated past a bound of
     /// §2.5, which §2.8 states none of. Each expression past the bound of an
@@ -476,16 +475,17 @@ impl DecodeResult {
     /// after each give-up.
     fn record_content_digest(
         &mut self,
-        policy: &DecodePolicy,
+        ctx: &DecodeContext<'_>,
         format: FormatId,
     ) -> Result<(), CodecError> {
         let policy = DecodePolicy {
             limits: ResourceLimits {
-                max_recursion_depth: policy
+                max_recursion_depth: ctx
+                    .policy()
                     .limits
                     .max_recursion_depth
                     .max(crate::bounds::DIGEST_WALK_DEPTH),
-                ..policy.limits
+                ..ctx.policy().limits
             },
         };
         let walk = |ir: &CadIr| {
@@ -497,7 +497,7 @@ impl DecodeResult {
         if self.restate_expressions_past_the_bound(&measured.records) {
             (digest, measured) = walk(&self.ir)?;
         }
-        while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
+        while self.give_up_records_past_the_bounds(ctx, format, &measured.records)? {
             (digest, measured) = walk(&self.ir)?;
         }
         if !measured.outside.is_empty() {
@@ -514,7 +514,7 @@ impl DecodeResult {
                 );
             }
             (digest, measured) = walk(&self.ir)?;
-            while self.give_up_records_past_the_bounds(&policy, format, &measured.records)? {
+            while self.give_up_records_past_the_bounds(ctx, format, &measured.records)? {
                 (digest, measured) = walk(&self.ir)?;
             }
         }
@@ -586,7 +586,7 @@ impl DecodeResult {
     /// order, so the arenas are put in that order first.
     fn give_up_records_past_the_bounds(
         &mut self,
-        policy: &DecodePolicy,
+        ctx: &DecodeContext<'_>,
         format: FormatId,
         records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
     ) -> Result<bool, CodecError> {
@@ -602,10 +602,8 @@ impl DecodeResult {
                     .map(|seed| (seed, bound.describe()))
             })
             .collect();
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
         let losses = crate::give_up::give_up(
-            &ctx,
+            ctx,
             &mut self.ir,
             &mut self.source_fidelity,
             format.as_str(),

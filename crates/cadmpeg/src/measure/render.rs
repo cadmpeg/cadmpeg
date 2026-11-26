@@ -20,7 +20,7 @@ use super::args::Level;
 
 /// The serialized name of a unit-like enum value.
 pub(super) fn name<T: Serialize>(value: &T) -> String {
-    match serde_json::to_value(value) {
+    match cadmpeg_core::serde_erase::json::to_value(value) {
         Ok(serde_json::Value::String(text)) => text,
         Ok(other) => other.to_string(),
         Err(_) => String::new(),

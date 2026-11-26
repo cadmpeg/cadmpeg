@@ -62,7 +62,10 @@ mod tests {
             let wire = code.to_string();
             let action: AttributeAction = serde_json::from_str(&wire).unwrap();
             assert_eq!(action.code(), code);
-            assert_eq!(serde_json::to_string(&action).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&action).unwrap(),
+                wire
+            );
         }
         for code in [7, 255] {
             assert!(serde_json::from_str::<AttributeAction>(&code.to_string()).is_err());

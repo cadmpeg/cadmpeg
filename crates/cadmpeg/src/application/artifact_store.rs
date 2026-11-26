@@ -336,7 +336,8 @@ pub(super) fn persist_decode_sidecar(
         LoadOrigin::Decoded {
             report, fidelity, ..
         }
-        | LoadOrigin::Restored { report, fidelity } => {
+        | LoadOrigin::Restored { report, fidelity }
+        | LoadOrigin::Read { report, fidelity } => {
             let mut fidelity = fidelity.as_ref().clone();
             let omitted = ir.model.omitted_record_ids();
             fidelity
@@ -536,7 +537,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+        let report: DecodeReport = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},

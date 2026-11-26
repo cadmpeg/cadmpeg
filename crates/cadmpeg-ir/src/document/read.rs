@@ -33,6 +33,7 @@ use crate::design::evaluation::Cycles;
 use crate::native::{Native, NativeRecord};
 use crate::report::loss::LossNote;
 use crate::report::strictness::Strictness;
+use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::part::{record_unreadable_kind, DecodeParts, GivenUpPart, Part};
@@ -75,6 +76,9 @@ pub struct CadirRead {
     pub document: CadIr,
     /// What the read repaired, left out, and gave up.
     pub report: Vec<LossNote>,
+    /// The text of each part the read gave up, retained `untyped` under the
+    /// id of its `unknowns` stub (§3.3).
+    pub fidelity: SourceFidelity,
 }
 
 /// Why a read states no document.
@@ -126,16 +130,29 @@ impl CadIr {
             limits: options.limits,
             report: Vec::new(),
             parts: Vec::new(),
+            part_entries: BTreeMap::new(),
+            lost: Vec::new(),
             stop: None,
             refusal: None,
         };
-        let document = reader.document()?;
+        let (document, fidelity) = reader.document()?;
         let report = reader.report;
         match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
-            None => Ok(CadirRead { document, report }),
+            None => Ok(CadirRead {
+                document,
+                report,
+                fidelity,
+            }),
         }
     }
+}
+
+/// The loss a given-up part charges, with the index in the reader's parts
+/// of the part where the read keeps one.
+struct GivenUp {
+    loss: LossNote,
+    part: Option<usize>,
 }
 
 fn session_failure(error: &CodecError) -> ReadFailure {
@@ -155,6 +172,12 @@ struct Reader<'r, 'a> {
     limits: ResourceLimits,
     report: Vec<LossNote>,
     parts: Vec<GivenUpPart>,
+    /// The index in `parts` of the part each report entry names, by the
+    /// entry's index.
+    part_entries: BTreeMap<usize, usize>,
+    /// The id of each record the read gave up, with the report entry that
+    /// names it.
+    lost: Vec<(String, usize)>,
     stop: Option<text::Stop>,
     refusal: Option<ResourceLimit>,
 }
@@ -210,40 +233,162 @@ impl Reader<'_, '_> {
     }
 
     /// Gives up the text `span` frames as one part, and returns the loss the
-    /// part charges.
+    /// part charges. The part retains the canonical JSON of the text where
+    /// it holds one that keeps each of its values, and the text as stated
+    /// otherwise.
     fn give_up_part(
         &mut self,
         span: Span,
         path: &str,
         classes: &[ArenaClass],
         error: impl fmt::Display,
-    ) -> Option<LossNote> {
+    ) -> Option<GivenUp> {
         let end = span.end.min(self.bytes.len());
         let start = span.start.min(end);
+        let mut found = Vec::new();
+        let canonical = (span.closed && span.depth <= MAX_DOCUMENT_DEPTH)
+            .then(|| text::value(self.bytes, span, &mut found).ok())
+            .flatten()
+            .filter(|_| {
+                found
+                    .iter()
+                    .all(|found| matches!(found, Found::Restated(_)))
+            })
+            .and_then(|value| crate::hash::finite_json::to_canonical_json_string(&value).ok());
+        let text = canonical
+            .as_ref()
+            .map_or(&self.bytes[start..end], String::as_bytes);
         let part = Part::at(
             "cadir",
             "record",
             cadmpeg_core::decode::u64_from_index(start),
-            &self.bytes[start..end],
+            text,
             classes.iter().copied(),
         )
-        .named(path)
-        .digest_only();
+        .named(path);
         match self.ctx.give_up_part(part, CodecError::malformed(error)) {
             Ok(given) => {
                 let loss = given.loss();
                 self.parts.push(given);
-                Some(loss)
+                Some(GivenUp {
+                    loss,
+                    part: Some(self.parts.len() - 1),
+                })
             }
             Err(CodecError::ResourceLimit(limit)) => {
                 self.refuse(limit);
                 None
             }
-            Err(other) => Some(LossNote::new(
-                record_unreadable_kind(),
-                format!("{path}: {other}"),
-            )),
+            Err(other) => Some(GivenUp {
+                loss: LossNote::new(record_unreadable_kind(), format!("{path}: {other}"))
+                    .with_severity(Severity::Error),
+                part: None,
+            }),
         }
+    }
+
+    /// Adds the loss of `given` to the report.
+    fn charge(&mut self, given: GivenUp) {
+        if let Some(part) = given.part {
+            self.part_entries.insert(self.report.len(), part);
+        }
+        self.report.push(given.loss);
+    }
+
+    /// Each id that the object `span` frames states in an `id` member. The
+    /// scan reads no other member, so a record given up for its depth or
+    /// for its unclosed text still names its id.
+    fn stated_ids(&self, span: Span) -> Vec<String> {
+        let mut scanner = Scanner::new(self.bytes, span.start);
+        if !scanner.next_is(b'{') {
+            return Vec::new();
+        }
+        let (members, _) = scanner.members();
+        let mut ids: Vec<String> = members
+            .into_iter()
+            .filter(|member| member.key == "id" && !member.key_invalid && member.value.closed)
+            .filter_map(|member| {
+                let mut scanner = Scanner::new(self.bytes, member.value.start);
+                match scanner.next_is(b'"').then(|| scanner.string()) {
+                    Some(Ok((id, false))) => Some(id),
+                    _ => None,
+                }
+            })
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// Records the record `id` as given up, named by the last report entry
+    /// since `from` that gives up a record.
+    fn lost(&mut self, id: String, from: usize) {
+        let gives_up = |entry: &LossNote| {
+            entry.code == record_unreadable_kind()
+                || entry.code == ReadLossCode::RecordRepeated.kind()
+        };
+        if let Some(entry) = (from..self.report.len())
+            .rev()
+            .find(|at| gives_up(&self.report[*at]))
+        {
+            self.lost.push((id, entry));
+        }
+    }
+
+    /// Drops each record of `document` that needs a record the read gave
+    /// up, transitively, marks each that holds one by a parent pointer or as
+    /// a member, and names both in the entry that names the given-up record
+    /// (§3.3). An id another record still states needs no release.
+    fn release_lost(&mut self, document: &mut CadIr) -> Result<(), ReadFailure> {
+        if self.lost.is_empty() {
+            return Ok(());
+        }
+        let lost = std::mem::take(&mut self.lost);
+        let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
+        let released = match crate::give_up::release_lost(self.ctx, document, &ids) {
+            Ok(released) => released,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
+            Err(other) => {
+                self.report.push(
+                    LossNote::new(
+                        record_unreadable_kind(),
+                        format!(
+                            "the records that need the given-up records [{}] are not released: \
+                             {other}",
+                            ids.join(", ")
+                        ),
+                    )
+                    .with_severity(Severity::Error),
+                );
+                return Ok(());
+            }
+        };
+        let mut released = released.into_iter().peekable();
+        for (id, entry) in lost {
+            let Some((_, release)) = released.next_if(|(released, _)| *released == id) else {
+                continue;
+            };
+            match self.part_entries.get(&entry) {
+                Some(&part) => {
+                    let given = &mut self.parts[part];
+                    given
+                        .name_released(
+                            self.ctx,
+                            std::iter::once(id).chain(release.dropped.iter().cloned()),
+                            release.marked.iter().cloned(),
+                            release.stated(),
+                        )
+                        .map_err(|error| session_failure(&error))?;
+                    self.report[entry] = given.loss();
+                }
+                None => {
+                    let message = &mut self.report[entry].message;
+                    message.push_str("; ");
+                    message.push_str(&release.tail(&[&id]));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Gives up `span` and charges `record.unreadable`.
@@ -254,8 +399,8 @@ impl Reader<'_, '_> {
         classes: &[ArenaClass],
         error: impl fmt::Display,
     ) {
-        if let Some(loss) = self.give_up_part(span, path, classes, error) {
-            self.report.push(loss);
+        if let Some(given) = self.give_up_part(span, path, classes, error) {
+            self.charge(given);
         }
     }
 
@@ -456,15 +601,15 @@ impl Reader<'_, '_> {
             };
             if !repaired {
                 self.report.append(&mut notes);
-                let loss = self.give_up_part(span, path, classes, &message);
-                if let Some(loss) = loss {
+                let given = self.give_up_part(span, path, classes, &message);
+                if let Some(given) = given {
                     if repeated || message.contains("stated twice with different values") {
                         self.note(
                             ReadLossCode::RecordRepeated,
                             format!("{path}: {message}; the record is given up"),
                         );
                     } else {
-                        self.report.push(loss);
+                        self.charge(given);
                     }
                 }
                 return None;
@@ -509,7 +654,7 @@ impl Reader<'_, '_> {
 }
 
 impl<'r, 'a> Reader<'r, 'a> {
-    fn document(&mut self) -> Result<CadIr, ReadFailure> {
+    fn document(&mut self) -> Result<(CadIr, SourceFidelity), ReadFailure> {
         let mut scanner = Scanner::new(self.bytes, 0);
         if !scanner.next_is(b'{') {
             return Err(ReadFailure::Malformed(format!(
@@ -595,6 +740,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             process,
             native,
         };
+        self.release_lost(&mut document)?;
         let (_, ceiling) = crate::design::read::with_limits(&self.limits, || {
             super::admit_state_chains(&document.design, &document.process, Cycles::End)
         });
@@ -622,7 +768,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                 }
             }
         }
-        Ok(document)
+        Ok((document, fidelity))
     }
 
     /// Reads a part with no repairs, for a member whose refusal refuses the
@@ -903,15 +1049,20 @@ impl<'r, 'a> Reader<'r, 'a> {
                 break;
             }
             let at = format!("{path}[{index}]");
-            if let Some(record) = self.value::<T>(element, &at, enclosing + 1, &[class]) {
-                if let Err(error) = self.ctx.charge_entities(1, "CADIR record") {
-                    if let CodecError::ResourceLimit(limit) = error {
-                        self.refuse(limit);
-                    }
-                    break;
+            let from = self.report.len();
+            let Some(record) = self.value::<T>(element, &at, enclosing + 1, &[class]) else {
+                for id in self.stated_ids(element) {
+                    self.lost(id, from);
                 }
-                records.push((record, element));
+                continue;
+            };
+            if let Err(error) = self.ctx.charge_entities(1, "CADIR record") {
+                if let CodecError::ResourceLimit(limit) = error {
+                    self.refuse(limit);
+                }
+                break;
             }
+            records.push((record, element));
         }
         if !records
             .windows(2)
@@ -976,9 +1127,10 @@ impl<'r, 'a> Reader<'r, 'a> {
             self.note(
                 ReadLossCode::RecordRepeated,
                 format!(
-                    "{path}: id {record_id} is stated at offsets {positions:?} with different values; no copy is kept; dropped=[{record_id}]"
+                    "{path}: id {record_id} is stated at offsets {positions:?} with different values; no copy is kept"
                 ),
             );
+            self.lost(record_id, self.report.len() - 1);
         }
         kept
     }
@@ -1099,8 +1251,12 @@ impl Home<'_, '_, '_> {
     pub(super) fn give_up_record(&mut self, name: &str, id: &str, error: &str) {
         let path = format!("{}.{name} {id}", self.path);
         let span = self.spans.get(&format!("{name}/{id}")).copied();
+        let from = self.reader.report.len();
         match span {
-            Some(span) => self.reader.give_up(span, &path, &[self.class], error),
+            Some(span) => {
+                self.reader.give_up(span, &path, &[self.class], error);
+                self.reader.lost(id.to_owned(), from);
+            }
             None => self.reader.report.push(LossNote::new(
                 record_unreadable_kind(),
                 format!("{path}: {error}"),

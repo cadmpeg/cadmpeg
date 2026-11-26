@@ -227,9 +227,18 @@ fn rename(value: &mut Value, renames: &HashMap<String, String>) {
 /// What `part` reads back as when the semantic writer writes it with no
 /// edit: the differences every edited write of it has as well.
 pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
+    baseline_with_bytes(part).0
+}
+
+/// Like [`baseline`], also returning the unedited semantic write's output bytes
+/// when the semantic writer accepts the unedited part.
+pub(crate) fn baseline_with_bytes(
+    part: &cadmpeg_ir::codec::DecodeResult,
+) -> (Vec<Entry>, Option<Vec<u8>>) {
     use std::sync::Mutex;
 
-    static BASELINES: Mutex<Vec<(String, Vec<Entry>)>> = Mutex::new(Vec::new());
+    type CachedBaseline = (String, Vec<Entry>, Option<Vec<u8>>);
+    static BASELINES: Mutex<Vec<CachedBaseline>> = Mutex::new(Vec::new());
     let key = part
         .source_fidelity()
         .content_digest
@@ -238,8 +247,8 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         .to_string();
     {
         let baselines = BASELINES.lock().expect("baseline cache");
-        if let Some((_, entries)) = baselines.iter().find(|(cached, _)| *cached == key) {
-            return entries.clone();
+        if let Some((_, entries, bytes)) = baselines.iter().find(|(cached, _, _)| *cached == key) {
+            return (entries.clone(), bytes.clone());
         }
     }
     let part = cadmpeg_test_support::EditableDecodeResult::from(part.clone());
@@ -248,7 +257,7 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
     let mut bytes = Vec::new();
     // A part the semantic writer cannot write unedited has no differences of
     // its own.
-    let entries = crate::writer::write_semantic_with_records(
+    let (entries, unedited_bytes) = crate::writer::write_semantic_with_records(
         part.ir(),
         &part.source_fidelity().annotations,
         &part.source_fidelity().codec_digests,
@@ -257,17 +266,19 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         &[],
         &mut bytes,
     )
-    .map(|_| {
-        let written =
-            crate::decode::decode_for_read_back(&bytes).expect("the unedited write decodes");
-        diff(part.ir(), written.ir())
-    })
-    .unwrap_or_default();
+    .map_or_else(
+        |_| (Vec::new(), None),
+        |_| {
+            let written = crate::decode::decode_for_read_back_cached(&bytes)
+                .expect("the unedited write decodes");
+            (diff(part.ir(), written.ir()), Some(bytes))
+        },
+    );
     BASELINES
         .lock()
         .expect("baseline cache")
-        .push((key, entries.clone()));
-    entries
+        .push((key, entries.clone(), unedited_bytes.clone()));
+    (entries, unedited_bytes)
 }
 
 /// The entries of `entries` that an edit of the features `features` of
@@ -356,7 +367,7 @@ pub(crate) fn edited_json(
     edit: &mut dyn FnMut(&mut Value),
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
-    let value = serde_json::to_value(ir).expect("the document serializes");
+    let value = cadmpeg_core::serde_erase::to_json_value(ir).expect("the document serializes");
     apply_edited_json(ir, value, edit, id)
 }
 
@@ -371,9 +382,11 @@ fn apply_edited_json(
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
             if !ir.model.$arena.is_empty() {
-                let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+                let mut value = cadmpeg_core::serde_erase::to_json_value(&ir.model.$arena)
+                    .expect("the arena serializes");
                 edit(&mut value);
-                edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+                edited.model.$arena = cadmpeg_core::serde_erase::from_json_value(&value)
+                    .expect("the edited arena reads");
             }
         )*};
     }

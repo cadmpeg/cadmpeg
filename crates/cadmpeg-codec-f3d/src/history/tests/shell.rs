@@ -142,7 +142,7 @@ fn group_in(id: &str, scope_record_index: u32, members: &[u32]) -> DesignConstru
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": id,
         "byte_offset": 0,
         "class_tag": "261",

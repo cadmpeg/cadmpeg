@@ -155,10 +155,10 @@ mod tests {
     {
         let json = json.replace("\"id\":\"row\"", "\"id\":\"nx:om-column-row:row#0\"");
         let record: T = serde_json::from_str(&json).unwrap();
-        let borrowed = serde_json::to_vec(&record).unwrap();
+        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
         assert_eq!(
             borrowed,
-            serde_json::to_vec(&W::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&W::from(record.clone())).unwrap()
         );
         assert_eq!(borrowed, json.as_bytes());
         assert_native_limit(

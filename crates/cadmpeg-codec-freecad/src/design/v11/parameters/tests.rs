@@ -43,7 +43,7 @@ fn parameter<'a>(ir: &'a CadIr, id: &str) -> &'a DesignParameter {
 
 /// The canonical text and reference ids of a neutral expression.
 fn neutral(parameter: &DesignParameter) -> (String, Vec<String>) {
-    let wire = serde_json::to_value(&parameter.definition).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&parameter.definition).unwrap();
     assert_eq!(wire["kind"], "expression", "{wire}");
     assert_eq!(wire["value"]["kind"], "neutral", "{wire}");
     let text = wire["value"]["value"]["text"].as_str().unwrap().to_owned();
@@ -108,7 +108,7 @@ fn a_stored_angle_is_a_literal_in_degrees() {
 fn literal_text(text: &str, value: &LegacyValue, carrier: Option<&str>) -> Option<String> {
     let node = super::literal(text, Some(value), carrier)?;
     let parameter = Expression::Neutral(Neutral(node));
-    let wire = serde_json::to_value(&parameter).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&parameter).unwrap();
     Some(wire["value"]["text"].as_str().unwrap().to_owned())
 }
 
@@ -136,7 +136,8 @@ fn a_literal_takes_its_carriers_unit_not_the_one_its_number_agrees_in() {
 fn a_stored_value_with_no_text_is_a_literal_in_its_carriers_unit() {
     let text = |value: &LegacyValue, carrier: Option<&str>| {
         let node = super::stored_literal(value, carrier)?;
-        let wire = serde_json::to_value(Expression::Neutral(Neutral(node))).unwrap();
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(Expression::Neutral(Neutral(node))).unwrap();
         Some(wire["value"]["text"].as_str().unwrap().to_owned())
     };
     let degrees = LegacyValue::Angle(Angle::new(12.5_f64.to_radians()).unwrap());
