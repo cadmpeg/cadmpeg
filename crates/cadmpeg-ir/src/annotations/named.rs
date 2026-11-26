@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 
 use super::{AnnotationKey, AnnotationTarget, Annotations};
 use crate::document::{CadIr, Topology};
-use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 
 /// The id and the delta records of each evaluation and process state of `ir`
@@ -38,23 +37,33 @@ pub(crate) fn delta_records(ir: &CadIr) -> BTreeSet<(&str, &str)> {
         .collect()
 }
 
-/// The records of one document that an annotation key can name.
+/// The records of one document that an annotation key can name: the
+/// records of each arena, the native records, and the records of each delta.
 struct Named<'ir> {
-    index: ModelIndex<'ir>,
+    records: BTreeSet<&'ir str>,
+    native: ModelIndex<'ir>,
     deltas: BTreeSet<(&'ir str, &'ir str)>,
 }
 
 impl<'ir> Named<'ir> {
     fn of(ir: &'ir CadIr) -> Self {
         Self {
-            index: ModelIndex::build(ir),
+            records: ir
+                .arenas()
+                .record_ids()
+                .into_values()
+                .flat_map(|(_, ids)| ids)
+                .collect(),
+            native: ModelIndex::build(ir),
             deltas: delta_records(ir),
         }
     }
 
     fn names(&self, key: &AnnotationKey) -> bool {
         match key.target() {
-            AnnotationTarget::Entity(id) => IdentitySet::contains(&self.index, id),
+            AnnotationTarget::Entity(id) => {
+                self.records.contains(id) || self.native.native_record_owns(id)
+            }
             AnnotationTarget::Delta { qualifier, record } => {
                 self.deltas.contains(&(qualifier, record))
             }
