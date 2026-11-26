@@ -1281,6 +1281,9 @@ fn record_unguarded_fields(
             .as_ref()
             .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
         let at = format!("{relative}:{} {}.{name}", span.start().line, reader.name);
+        if field_states(field, "skip") || field_states(field, "skip_deserializing") {
+            continue;
+        }
         match index.declarations.is_optional(reader, generics, &field.ty) {
             Ok(true) => {}
             Ok(false) => continue,

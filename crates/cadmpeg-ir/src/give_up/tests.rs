@@ -102,7 +102,9 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
 }
 
 fn holds(ir: &CadIr, id: &str) -> bool {
-    ir.references().held.contains_key(id)
+    ir.references_from(super::References::default())
+        .held
+        .contains_key(id)
 }
 
 /// No referential-integrity finding of `ir` names an id the give-up

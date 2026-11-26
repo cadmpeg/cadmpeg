@@ -412,7 +412,13 @@ impl Reader<'_, '_> {
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
         let mut released = Vec::new();
-        let outcome = crate::give_up::release_lost(self.ctx, document, &ids, &mut released);
+        let outcome = crate::give_up::release_lost(
+            self.ctx,
+            document,
+            &ids,
+            crate::give_up::Naming::Text,
+            &mut released,
+        );
         self.removed = Removed::of_records(
             ids.iter()
                 .chain(released.iter().flat_map(|(_, release)| &release.dropped))

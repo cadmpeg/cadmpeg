@@ -6,6 +6,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use super::{byte_accounting, claim_trivia, decode_exchange_mode, ByteClass, Packaging, ValueExt};
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 #[test]
 fn step_integer_number_refuses_inexact_f64() {
@@ -59,6 +60,78 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
     assert_eq!(
         cadmpeg_test_support::wire::coverage_count(decoded.report(), "bytes_unclassified"),
         0
+    );
+}
+
+#[test]
+fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
+    let source = "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+         #1=DIRECTION('',(0.,0.,0.));#2=VECTOR('',#1,2.);ENDSEC;END-ISO-10303-21;";
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an invalid direction is given up");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    let direction = "#1=DIRECTION('',(0.,0.,0.));";
+    let offset = source.find(direction).expect("the direction");
+    let head = format!(
+        "part data_record stream=\"\" offset={offset} length={} record=",
+        direction.len()
+    );
+    assert!(charge.starts_with(&head), "{charge}");
+    assert!(
+        charge.contains("DIRECTION #1 is invalid or zero"),
+        "{charge}"
+    );
+    assert!(
+        charge.ends_with("; dropped=[step:data:instance#2]"),
+        "{charge}"
+    );
+    let stub = charge[head.len()..]
+        .split_once(": ")
+        .map(|(stub, _)| stub.to_owned())
+        .expect("the stub");
+    let (_, _, fidelity) = decoded.into_parts();
+    // The untyped instance keeps its exact source as an opaque record.
+    assert_eq!(
+        fidelity
+            .retained_record(&stub)
+            .expect("the stub's bytes")
+            .data(),
+        None
+    );
+}
+
+#[test]
+fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
+    let mut anchors = String::from("<x 0>=(1,1);");
+    for index in 1..=23 {
+        write!(anchors, "<x {index}>=(<#x {0}>,<#x {0}>);", index - 1).expect("write anchor");
+    }
+    anchors.push_str("<y z>=#1;");
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("a permissive decode refuses no anchor name");
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .ends_with("; dropped=[step:anchor:name#<y%20z>]")
+        }),
+        "{:?}",
+        decoded.report().losses
     );
 }
 

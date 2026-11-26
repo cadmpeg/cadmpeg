@@ -37,19 +37,35 @@ fn a_feature_without_an_id_is_omitted_with_one_named_loss() {
 }
 
 #[test]
-fn a_repeated_feature_id_omits_the_repeat_and_keeps_the_rest() {
+fn a_repeated_feature_id_with_other_content_gives_up_the_repeat_and_keeps_the_rest() {
     let whole = wire(&decode(&fixture("plate-fillet")));
     let total = feature_count(&whole);
+    let mut repeat = String::new();
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             let first = response["features"][0]["featureId"].clone();
             let last = response["features"].as_array().unwrap().len() - 1;
             response["features"][last]["featureId"] = first;
+            repeat = format!("{path}#/features/{last}");
         }
     });
     let result = decode(&bytes);
     assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
     assert_eq!(feature_count(&wire(&result)), total - 1);
+    let repeat = crate::archive::source_record(&repeat);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|word| word == repeat.as_str())
+        })
+        .count();
+    assert_eq!(given_up, 1, "{:?}", result.report().losses);
 }
 
 #[test]
@@ -150,6 +166,15 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
             1,
             "{table}"
         );
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.starts_with(
+                        "part archive-entry \"partstudios/studio/bodydetails/2.json\" ",
+                    )
+            }),
+            "{table}"
+        );
         assert_eq!(
             named_losses(&result, "onshape/history.not-supported"),
             1,
@@ -182,6 +207,20 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
         });
         let result = decode(&bytes);
         assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(
+                    |loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                        && loss
+                            .message
+                            .starts_with("part archive-entry \"partstudios/studio/export.step\" ")
+                )
+                .count(),
+            1
+        );
         assert_eq!(feature_count(&wire(&result)), 3);
         assert!(result.ir().geometry.bodies.is_empty());
         let [root] = result.ir().model.product_definitions.as_slice() else {

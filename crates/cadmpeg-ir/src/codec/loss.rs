@@ -33,6 +33,10 @@ pub(crate) enum DecodeLossCode {
     /// The normalizer gave up records part way, which keep spellings the
     /// decoder stated.
     NormalizeIncomplete,
+    /// A decoder dropped a record only because it needs a given-up record.
+    /// The wrapper names the record in that give-up's `record.unreadable`
+    /// and removes the note.
+    RecordDroppedWith,
     /// The wrapper stated the tolerance of vertices the source stores
     /// farther from a compared position than the coincidence allowance.
     VertexToleranceWidened,
@@ -49,6 +53,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
+            Self::RecordDroppedWith => "record.dropped-with",
             Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
             Self::VertexToleranceUnmeasured => "geometry.vertex-tolerance-unmeasured",
         }
@@ -59,6 +64,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => Severity::Error,
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete => Severity::Warning,
+            Self::RecordDroppedWith => Severity::Info,
             Self::VertexToleranceWidened => Severity::Info,
             Self::VertexToleranceUnmeasured => Severity::Warning,
         }
@@ -75,6 +81,7 @@ impl DecodeLossCode {
             } => LossTaxonomy::ParametricRecordOmitted,
             Self::IdRepeated
             | Self::NormalizeIncomplete
+            | Self::RecordDroppedWith
             | Self::VertexToleranceWidened
             | Self::VertexToleranceUnmeasured => LossTaxonomy::DecodeDiagnostic,
         }
@@ -86,12 +93,13 @@ impl DecodeLossCode {
             Self::IdRepeated => Some(Severity::Error),
             Self::DepthNotDelivered { .. }
             | Self::NormalizeIncomplete
+            | Self::RecordDroppedWith
             | Self::VertexToleranceWidened
             | Self::VertexToleranceUnmeasured => None,
         }
     }
 
-    fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
             .with_strict_floor(self.strict_floor())
             .into()
