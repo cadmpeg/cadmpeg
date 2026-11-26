@@ -35,6 +35,41 @@ fn records_are_read_in_stored_order_at_their_depth() {
 }
 
 #[test]
+fn a_record_after_a_node_that_holds_records_follows_a_node() {
+    let payload = node(&[
+        node(&[
+            node(&[node(&[])]),
+            record(PARASOLID, b"first"),
+            node(&[node(&[])]),
+            record(PARASOLID, b"second"),
+        ]),
+        record(PARASOLID, b"result"),
+        node(&[]),
+        record(ACIS, b"after empty node"),
+        node(&[
+            node(&[node(&[]), record(ACIS, b"nested")]),
+            record(ACIS, b"inner"),
+        ]),
+    ]);
+    let records = read(View::over_retained(&payload)).unwrap();
+    let follows: Vec<_> = records
+        .iter()
+        .map(|record| (record.bytes.window(), record.follows_node))
+        .collect();
+    assert_eq!(
+        follows,
+        [
+            (b"first".as_slice(), false),
+            (b"second".as_slice(), false),
+            (b"result".as_slice(), true),
+            (b"after empty node".as_slice(), false),
+            (b"nested".as_slice(), false),
+            (b"inner".as_slice(), true),
+        ]
+    );
+}
+
+#[test]
 fn another_kernel_tag_and_header_words_are_kept() {
     let payload = node(&[record(7, b""), record_with(PARASOLID, [1, 2, 1, 0], b"x")]);
     let records = read(View::over_retained(&payload)).unwrap();

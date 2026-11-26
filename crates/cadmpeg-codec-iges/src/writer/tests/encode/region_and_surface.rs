@@ -122,7 +122,8 @@ fn synthesized_solid_preserves_long_name_color_and_visibility() {
     body.color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
     body.visible = Some(false);
 
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let (generated, _) = crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+        .expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -152,7 +153,8 @@ fn synthesized_solid_writes_short_body_name_to_directory() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("RED_BODY".into());
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let (generated, _) = crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+        .expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -176,7 +178,8 @@ fn synthesized_solid_round_trips_long_body_name() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("A LONGER BODY NAME".into());
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let (generated, _) = crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+        .expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
     }));
@@ -277,7 +280,8 @@ fn synthesized_solid_reports_unencodable_body_name() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].name = Some("Café".into());
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let (generated, _) = crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+        .expect("synthesis");
     assert!(generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
             && loss.message.contains("Type 406 Form 15")
@@ -334,7 +338,8 @@ fn synthesized_solid_writes_custom_rgb_and_reports_opacity() {
         .expect("source solid");
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let (generated, _) = crate::writer::target::synthesis_and_dispositions(&ir, IgesVersion::V5_3)
+        .expect("synthesis");
     assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyColorNotRepresented.kind()
     }));

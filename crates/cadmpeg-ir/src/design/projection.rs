@@ -109,10 +109,12 @@ fn sub_marks<'n>(
 /// exactness) and the marks on its sub-paths. A stated design field takes the
 /// least exact of its model fields and the mark on its own name. Where that
 /// name is also a model field, the marks on its sub-paths fold into the field
-/// too, since the two records can shape the field differently; under a name
-/// only the design record has, a sub-path mark is kept at no more than its
-/// field. Marks on a design field the record does not state, and model marks
-/// no stated field reads, leave.
+/// too, since the two records can shape the field differently; and where
+/// `inputs` does not list that model field, those marks count at no more
+/// than the entity exactness, since they may describe the model field. Under
+/// a name only the design record has, a sub-path mark is kept at no more than
+/// its field. Marks on a design field the record does not state, and model
+/// marks no stated field reads, leave.
 fn restated_fields<D: Field, M: Field>(
     note: &ExactnessNote,
     stated: impl IntoIterator<Item = (D, bool)>,
@@ -133,11 +135,24 @@ fn restated_fields<D: Field, M: Field>(
         }
         let key = field.key();
         let shared = M::parse(key).is_some();
-        let own = note.fields().get(key).copied().into_iter().chain(
-            sub_marks(note, key)
-                .filter(|_| shared)
-                .map(|(_, exactness)| exactness),
-        );
+        let unlisted = shared && !inputs(field).iter().any(|model| model.key() == key);
+        let own = note
+            .fields()
+            .get(key)
+            .copied()
+            .into_iter()
+            .chain(
+                sub_marks(note, key)
+                    .filter(|_| shared)
+                    .map(|(_, exactness)| exactness),
+            )
+            .map(|mark| {
+                if unlisted {
+                    least_exact(mark, entity)
+                } else {
+                    mark
+                }
+            });
         let exactness = inputs(field)
             .iter()
             .map(input)
