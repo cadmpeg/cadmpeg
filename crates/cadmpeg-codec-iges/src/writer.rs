@@ -318,7 +318,16 @@ struct ColorDefinition {
     /// The appearance of the source Type 314, when the written Type 314
     /// states its colour and its name.
     restates: Option<String>,
-    /// The Directory colour number of the restated source Type 314.
+    /// The percentages and the Directory colour number of the restated
+    /// source Type 314, when its colour definition record states the colour.
+    source: Option<SourceColor>,
+}
+
+/// What a restated source Type 314 states of the colour it defines.
+struct SourceColor {
+    /// The red, green, and blue percentages the source record states.
+    percents: [f64; 3],
+    /// The standard Directory colour number the source record states.
     number: Option<i64>,
 }
 
@@ -439,16 +448,16 @@ fn bound_color_definition(
     Some(ColorDefinition {
         name: name.filter(|_| writable),
         restates: writable.then(|| appearance.id.as_str().to_owned()),
-        number: writable
-            .then(|| source_color_number(ir, appearance.id.as_str(), color))
+        source: writable
+            .then(|| source_color(ir, appearance.id.as_str(), color))
             .flatten(),
     })
 }
 
-/// The standard Directory colour number of the source Type 314 whose
-/// appearance is `appearance`, when its colour definition record states the
-/// red, green, and blue of `color`.
-fn source_color_number(ir: &CadIr, appearance: &str, color: Color) -> Option<i64> {
+/// The percentages and the standard Directory colour number of the source
+/// Type 314 whose appearance is `appearance`, when its colour definition
+/// record states the red, green, and blue of `color`.
+fn source_color(ir: &CadIr, appearance: &str, color: Color) -> Option<SourceColor> {
     let sequence = dispositions::color_definition_sequence(appearance)?;
     let id = format!("iges:presentation:color#D{sequence}");
     let record = ir
@@ -458,25 +467,35 @@ fn source_color_number(ir: &CadIr, appearance: &str, color: Color) -> Option<i64
         .get("colors")?
         .iter()
         .find(|record| record.id() == id)?;
-    let percent = |field: &str| {
-        record
-            .field(field)
-            .and_then(|value| value.as_f64())
-            .map(|percent| percent / 100.0)
-    };
-    let stated = Color::new(
+    let percent = |field: &str| record.field(field).and_then(|value| value.as_f64());
+    let percents = [
         percent("red_percent")?,
         percent("green_percent")?,
         percent("blue_percent")?,
-        1.0,
-    )?;
-    if Some(stated) != dispositions::opaque(color) {
+    ];
+    let [red, green, blue] = percents.map(|percent| percent / 100.0);
+    if Color::new(red, green, blue, 1.0) != dispositions::opaque(color) {
         return None;
     }
-    record
-        .field("fallback_color_number")?
-        .as_i64()
-        .filter(|number| (1..=8).contains(number))
+    let number = record
+        .field("fallback_color_number")
+        .and_then(|value| value.as_i64())
+        .filter(|number| (1..=8).contains(number));
+    Some(SourceColor { percents, number })
+}
+
+/// The percentage a Type 314 states for a colour component, which the reader
+/// divides by 100: the shortest decimal it reads back as `component`, so a
+/// component read from a percentage such as 29 writes that percentage and not
+/// `0.29 * 100`, 28.999999999999996. Where no percentage reads back as
+/// `component`, it is `component * 100`, which reads back within one unit in
+/// the last place.
+fn color_percent(component: f64) -> f64 {
+    let scaled = component * 100.0;
+    (0..17)
+        .filter_map(|digits| format!("{scaled:.digits$e}").parse::<f64>().ok())
+        .find(|percent| percent / 100.0 == component)
+        .unwrap_or(scaled)
 }
 
 /// Whether the name field of a Type 314 can state `name`.
@@ -501,11 +520,17 @@ fn append_color_definitions(
         let DirectoryColor::Custom(color) = presentation.color else {
             continue;
         };
-        let components = [color.r(), color.g(), color.b()]
-            .map(|component| finite(component * 100.0, "color percentage"))
+        let definition = presentation.color_definition.as_ref();
+        let percents = definition
+            .and_then(|definition| definition.source.as_ref())
+            .map_or_else(
+                || [color.r(), color.g(), color.b()].map(color_percent),
+                |source| source.percents,
+            );
+        let components = percents
+            .map(|percent| finite(percent, "color percentage"))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
-        let definition = presentation.color_definition.as_ref();
         let name = definition
             .and_then(|definition| definition.name.as_deref())
             .map_or_else(String::new, |name| format!("{}H{name}", name.len()));
@@ -532,7 +557,10 @@ fn append_color_definitions(
                     });
                     index
                 });
-        if let Some(number) = definition.and_then(|definition| definition.number) {
+        if let Some(number) = definition
+            .and_then(|definition| definition.source.as_ref())
+            .and_then(|source| source.number)
+        {
             numbered.insert(entity_index, number);
         }
         presentation.color = DirectoryColor::Definition(entity_index);
