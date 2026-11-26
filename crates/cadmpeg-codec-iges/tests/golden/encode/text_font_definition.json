@@ -67,7 +67,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 3 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
+        "message": "the IGES write omits 3 native record(s) of `iges` arena `display_attributes` whose entity the semantic writer does not encode: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
         "severity": "warning"
       },
       {
