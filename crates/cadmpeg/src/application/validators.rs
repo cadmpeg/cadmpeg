@@ -77,9 +77,10 @@ mod tests {
         )
         .expect_err("validation must admit the loaded input length");
         assert_eq!(error.exit_code(), 2);
-        let report =
-            serde_json::to_value(error.refusal().expect("typed resource refusal").report())
-                .expect("serialize resource evidence");
+        let report = cadmpeg_core::serde_erase::json::to_value(
+            error.refusal().expect("typed resource refusal").report(),
+        )
+        .expect("serialize resource evidence");
         assert_eq!(report["stage"], "check");
         assert_eq!(report["resource"]["dimension"], "input_bytes");
         assert_eq!(report["resource"]["operation"], "admit loaded input length");

@@ -104,6 +104,11 @@ Region selections can restrict the parameter interval of an exact curve.
 Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
+Two arcs of different circle or ellipse carriers meet only where the carrier
+equations hold at once inside both parameter intervals. A parameter interval
+of a curved boundary arc is positive and at most one turn. A `TANGENT`
+constraint between two sketch entities states one contact point of their
+carriers, at the single position where the carriers touch.
 
 A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
 `query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
@@ -226,6 +231,13 @@ name the bindings in scope at the consuming feature. Expressions represent
 literal computation. A numeric quantity with a supported explicit `units`
 string uses that unit. A feature dependency identifies a consumed earlier
 feature in source operand order. Feature ordinals give timeline order.
+
+A `shell` feature stores `entities`, the faces to remove, as deterministic
+IDs in the consuming rollback state, `thickness` as a quantity, and
+`oppositeDirection` as a Boolean. `isHollow` and `parts` select the hollow
+form, which has no removed faces. A `false` `oppositeDirection` places the
+wall inside the original boundary: the outer extents of the shelled body equal
+those of the input body, and the removed face leaves an opening.
 
 ## 5. Admission bounds
 

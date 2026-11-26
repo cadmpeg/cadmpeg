@@ -93,7 +93,10 @@ fn archive_parameter_classes_serialize_as_snake_case() {
         (ArchiveParameterClass::Scaler, "\"scaler\""),
         (ArchiveParameterClass::Integer, "\"integer\""),
     ] {
-        assert_eq!(serde_json::to_string(&class).unwrap(), text);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&class).unwrap(),
+            text
+        );
     }
 }
 

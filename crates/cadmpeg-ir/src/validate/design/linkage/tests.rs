@@ -29,11 +29,18 @@ fn the_baseline_document_breaks_no_rule() {
     assert!(report.findings.is_empty(), "{:#?}", report.findings);
 }
 
+/// The rules of the scope findings.
+const SCOPE_RULES: [&str; 3] = [
+    "design.scope-holds-class-without-required-class",
+    "design.scope-excluded-arena-holds-records",
+    "design.scope-excluded-class-referenced-another-arena",
+];
+
 /// The scope findings of `ir`, as rule and message.
 fn scope_findings(ir: &CadIr) -> Vec<(String, String)> {
     design_findings(ir)
         .into_iter()
-        .filter(|finding| finding.rule.as_str().starts_with("design.scope-"))
+        .filter(|finding| SCOPE_RULES.contains(&finding.rule.as_str()))
         .inspect(|finding| assert_eq!(finding.severity, Severity::Error))
         .map(|finding| (finding.rule.as_str().to_owned(), finding.message))
         .collect()
@@ -45,11 +52,9 @@ fn reported(violations: &[ScopeViolation]) -> Vec<(String, String)> {
         .iter()
         .map(|violation| {
             let rule = match violation {
-                ScopeViolation::Unmet { .. } => "design.scope-holds-class-without-required-class",
-                ScopeViolation::Populated { .. } => "design.scope-excluded-arena-holds-records",
-                ScopeViolation::Referenced { .. } => {
-                    "design.scope-excluded-class-referenced-another-arena"
-                }
+                ScopeViolation::Unmet { .. } => SCOPE_RULES[0],
+                ScopeViolation::Populated { .. } => SCOPE_RULES[1],
+                ScopeViolation::Referenced { .. } => SCOPE_RULES[2],
             };
             (rule.to_owned(), violation.to_string())
         })
@@ -89,31 +94,69 @@ fn each_breach_of_the_scope_is_its_own_finding() {
         });
     ir.set_scope(ContentScope::geometry());
     let violations = ir.scope_violations();
-    assert!(violations.contains(&ScopeViolation::Populated {
-        arena: ArenaName::parse("design.scopes").unwrap(),
-    }));
-    assert!(violations.contains(&ScopeViolation::Populated {
-        arena: ArenaName::parse("design.features").unwrap(),
-    }));
-    assert!(violations.contains(&ScopeViolation::Referenced {
-        class: ArenaClass::Design,
-        arena: ArenaName::parse("solver_settings").unwrap(),
-    }));
+    let mut expected = populated(&[
+        "design.scopes",
+        "design.containers",
+        "design.features",
+        "design.configurations",
+        "design.evaluations",
+    ]);
+    expected.extend(referenced(ArenaClass::Design, &["solver_settings"]));
+    assert_eq!(violations, expected);
     assert_eq!(scope_findings(&ir), reported(&violations));
 
     ir.set_scope(ContentScope::container().with(ArenaClass::Design, true));
     let violations = ir.scope_violations();
-    assert_eq!(
-        violations[0],
-        ScopeViolation::Unmet {
-            held: ArenaClass::Design,
-            required: ArenaClass::Model,
-        }
-    );
-    assert!(violations.contains(&ScopeViolation::Populated {
-        arena: ArenaName::parse("bodies").unwrap(),
-    }));
+    let mut expected = vec![ScopeViolation::Unmet {
+        held: ArenaClass::Design,
+        required: ArenaClass::Model,
+    }];
+    expected.extend(populated(&[
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "product_definitions",
+        "solver_settings",
+    ]));
+    expected.extend(referenced(
+        ArenaClass::Model,
+        &[
+            "design.scopes",
+            "design.configurations",
+            "design.evaluations",
+        ],
+    ));
+    assert_eq!(violations, expected);
     assert_eq!(scope_findings(&ir), reported(&violations));
+}
+
+/// A `Populated` violation for each of `arenas`.
+fn populated(arenas: &[&str]) -> Vec<ScopeViolation> {
+    arenas
+        .iter()
+        .map(|arena| ScopeViolation::Populated {
+            arena: ArenaName::parse(arena).unwrap(),
+        })
+        .collect()
+}
+
+/// A `Referenced` violation of `class` for each of `arenas`.
+fn referenced(class: ArenaClass, arenas: &[&str]) -> Vec<ScopeViolation> {
+    arenas
+        .iter()
+        .map(|arena| ScopeViolation::Referenced {
+            class,
+            arena: ArenaName::parse(arena).unwrap(),
+        })
+        .collect()
 }
 
 #[test]

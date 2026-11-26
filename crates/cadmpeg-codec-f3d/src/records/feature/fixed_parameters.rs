@@ -80,11 +80,20 @@ mod tests {
             "carrier": "distance_construction",
             "scalar": { "value": 1.0, "record_index": 1, "value_offset": 2 }
         });
-        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
+                .is_ok()
+        );
         wire["scalar"]["value"] = serde_json::json!(0.0);
-        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
+                .is_err()
+        );
         wire["scalar"]["value"] = serde_json::json!(-1.0);
-        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire)
+                .is_err()
+        );
     }
 
     #[test]
@@ -93,9 +102,15 @@ mod tests {
             "carrier": "fixed_scalar",
             "scalar": { "value": -1.0, "record_index": 1, "value_offset": 2 }
         });
-        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
+                .is_ok()
+        );
         wire["scalar"]["value"] = serde_json::json!(0.0);
-        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire)
+                .is_err()
+        );
     }
 
     fn group(variable: bool, tangency: bool) -> DesignFixedFilletGroup {
@@ -119,7 +134,7 @@ mod tests {
             wire["tangency_weight"] =
                 serde_json::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
         }
-        serde_json::from_value(wire).unwrap()
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
     }
 
     #[test]
@@ -129,8 +144,8 @@ mod tests {
                 let group = group(variable, tangency);
                 let owned = DesignFixedFilletGroupWire::from(group.clone());
                 assert_eq!(
-                    serde_json::to_vec(&group).unwrap(),
-                    serde_json::to_vec(&owned).unwrap()
+                    cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
                 );
             }
         }

@@ -873,19 +873,22 @@ fn link_group_retains_element_list_on_the_native_wire() {
     };
     assert_eq!(group.element_objects(), ["fcstd:native:object#Member"]);
     assert!(matches!(group.node, native::ProductNode::LinkGroup { .. }));
-    let wire = serde_json::to_value(group).expect("link group wire");
+    let wire = cadmpeg_core::serde_erase::json::to_value(group).expect("link group wire");
     assert_eq!(wire["kind"], "link_group");
     assert_eq!(
         wire["element_objects"],
         serde_json::json!(["fcstd:native:object#Member"])
     );
     assert_eq!(
-        serde_json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(wire.clone())
+            .unwrap(),
         *group
     );
     let mut invalid = wire;
     invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
-    assert!(serde_json::from_value::<native::ProductNodeRecord>(invalid).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(invalid).is_err()
+    );
 }
 
 #[test]
@@ -1672,7 +1675,7 @@ fn preserves_unknown_numeric_copy_on_change_index() {
         .expect("product nodes");
     assert_eq!(records[0].copy_on_change(), Some("99"));
     let restored = cadmpeg_ir::CadIr::from_json(
-        &serde_json::to_string(result.ir()).expect("CADIR serialization"),
+        &cadmpeg_core::serde_erase::json::to_string(result.ir()).expect("CADIR serialization"),
     )
     .expect("complete CADIR admission");
     let restored_records = restored

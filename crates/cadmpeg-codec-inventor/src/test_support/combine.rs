@@ -9,7 +9,7 @@ use super::test_fixtures::{
 };
 
 fn guid(value: &str) -> [u8; 16] {
-    serde_json::from_value::<NativeBytes<[u8; 16]>>(json!(value))
+    cadmpeg_core::serde_erase::json::from_value::<NativeBytes<[u8; 16]>>(json!(value))
         .expect("synthetic GUID")
         .into_inner()
 }

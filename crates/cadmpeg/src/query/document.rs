@@ -128,7 +128,7 @@ impl CadirDocument {
     }
 
     pub(super) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
-        let root: Value = serde_json::from_slice(bytes)
+        let root: Value = cadmpeg_core::serde_erase::json::from_slice(bytes)
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
         Ok(Self::from_value(root))
     }

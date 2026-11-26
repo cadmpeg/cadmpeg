@@ -162,7 +162,7 @@ mod tests {
     fn feature_parent_validation_accepts_one_feature() {
         let model = model();
         validate(&[&model]).unwrap();
-        assert!(serde_json::to_value(&model)
+        assert!(cadmpeg_core::serde_erase::json::to_value(&model)
             .unwrap()
             .get("features")
             .is_none());

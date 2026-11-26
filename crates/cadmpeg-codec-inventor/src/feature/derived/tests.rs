@@ -101,8 +101,9 @@ fn source_ends_after_one_component_reference() {
 #[test]
 fn property_wire_keeps_all_source_references() {
     let parsed = parsed(&component(), false, 19).expect("component");
-    let wire = serde_json::to_vec(&parsed).expect("serialize");
-    let read: PmDcFeaturePropertyPayload = serde_json::from_slice(&wire).expect("deserialize");
+    let wire = cadmpeg_core::serde_erase::json::to_vec(&parsed).expect("serialize");
+    let read: PmDcFeaturePropertyPayload =
+        cadmpeg_core::serde_erase::json::from_slice(&wire).expect("deserialize");
     assert_eq!(read, parsed);
     let PmDcFeaturePropertyKind::Derived { definition } = &read.kind else {
         panic!("derived form");
@@ -149,9 +150,11 @@ fn unsupported_component_versions_lengths_and_lists_remain_untyped() {
 #[test]
 fn native_component_wire_cannot_add_an_unchecked_list_count() {
     let value = parsed(&component(), false, 19).expect("component");
-    let mut wire = serde_json::to_value(value).expect("serialize");
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(value).expect("serialize");
     wire["kind"]["definition"]["count"] = 1.into();
-    assert!(serde_json::from_value::<PmDcFeaturePropertyPayload>(wire).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<PmDcFeaturePropertyPayload>(wire).is_err()
+    );
 }
 
 #[test]

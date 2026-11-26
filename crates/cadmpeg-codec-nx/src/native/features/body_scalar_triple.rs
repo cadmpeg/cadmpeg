@@ -128,11 +128,16 @@ mod tests {
     #[test]
     fn body_scalar_triple_borrowed_wire_preserves_bytes() {
         let record: FeatureOperationBodyScalarTriple = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeatureOperationBodyScalarTripleWire::from(record.clone()))
-                .unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            WIRE.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&FeatureOperationBodyScalarTripleWire::from(
+                record.clone()
+            ))
+            .unwrap()
         );
     }
 
@@ -160,14 +165,19 @@ mod tests {
             [u64::MAX - 12, u64::MAX - 11, u64::MAX - 7],
         ] {
             wire["source_offsets"] = serde_json::json!(offsets);
-            let error = serde_json::from_value::<FeatureOperationBodyScalarTriple>(wire.clone())
-                .unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<
+                FeatureOperationBodyScalarTriple,
+            >(wire.clone())
+            .unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         wire["source_offsets"] = serde_json::json!([u64::MAX - 13, u64::MAX - 12, u64::MAX - 8]);
         let triple: FeatureOperationBodyScalarTriple =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&triple).unwrap(), wire);
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&triple).unwrap(),
+            wire
+        );
         assert!(triple.scalars.relocate(1).is_none());
     }
 }

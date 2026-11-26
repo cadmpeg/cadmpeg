@@ -413,11 +413,14 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     for state in history.states() {
         assert!(history.topology(state).is_some());
         let transition = state.transition.as_ref().unwrap();
-        let bytes = serde_json::to_vec(transition).unwrap();
-        assert_eq!(*transition, serde_json::from_slice(&bytes).unwrap());
+        let bytes = cadmpeg_core::serde_erase::json::to_vec(transition).unwrap();
+        assert_eq!(
+            *transition,
+            cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap()
+        );
     }
-    let bytes = serde_json::to_vec(&history).unwrap();
-    let decoded: AsmHistory = serde_json::from_slice(&bytes).unwrap();
+    let bytes = cadmpeg_core::serde_erase::json::to_vec(&history).unwrap();
+    let decoded: AsmHistory = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
     assert_eq!(decoded, history);
     assert!(decoded.materialized.states.get().is_none());
     for state in decoded.states() {
@@ -1105,8 +1108,10 @@ fn carrier_groups_preserve_membership_multiplicity_changes() {
             );
             assert_eq!(transition.rows.surface_repeats.removed, [2]);
         }
-        let mut decoded: AsmHistoricalTransition =
-            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+        let mut decoded: AsmHistoricalTransition = cadmpeg_core::serde_erase::json::from_slice(
+            &cadmpeg_core::serde_erase::json::to_vec(&transition).unwrap(),
+        )
+        .unwrap();
         decoded.apply_versions(&mut materialized_versions).unwrap();
         decoded.apply_topology(&mut materialized).unwrap();
         assert_eq!(materialized, topologies[index]);
@@ -1182,8 +1187,10 @@ fn shared_carrier_slot_rows_change_as_groups() {
             assert_eq!(transition.rows.surface_cylinders.removed, [2]);
             assert_eq!(transition.rows.surface_axes.removed, [2]);
         }
-        let decoded: AsmHistoricalTransition =
-            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+        let decoded: AsmHistoricalTransition = cadmpeg_core::serde_erase::json::from_slice(
+            &cadmpeg_core::serde_erase::json::to_vec(&transition).unwrap(),
+        )
+        .unwrap();
         decoded.apply_topology(&mut materialized).unwrap();
         assert_eq!(materialized, topologies[index], "state {index}");
         memberships.apply(&decoded).unwrap();

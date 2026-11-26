@@ -7,10 +7,14 @@ use super::{ExpressionDeclaration, ExpressionDeclarationWire, ExpressionWire, Pa
 fn expression_declaration_borrowed_wire_preserves_bytes() {
     let json = r#"{"id":"nx:om:expression-declaration#test","object_id":4,"record":"record","name":"p12_angle","parameter_index":12,"qualifier":"angle","literal":"literal","source_entry":"entry","source_offset":10}"#;
     let record: ExpressionDeclaration = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&ExpressionDeclarationWire::from(record.clone())).unwrap()
+        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+        json.as_bytes()
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+        cadmpeg_core::serde_erase::json::to_vec(&ExpressionDeclarationWire::from(record.clone()))
+            .unwrap()
     );
 }
 
@@ -28,10 +32,13 @@ fn expression_declaration_native_limit_refuses_before_clone() {
 fn expression_borrowed_wire_preserves_bytes() {
     let json = r#"{"id":"nx:om:expression#test","object_id":4,"record":"record","declaration":"declaration","name":"p12_angle","parameter_index":12,"qualifier":"angle","unit":"millimeter","expression":"3.25","value":3.25,"source_entry":"entry","source_table":"table","source_offset":10}"#;
     let record: ParameterFormula = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&ExpressionWire::from(record.clone())).unwrap()
+        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+        json.as_bytes()
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+        cadmpeg_core::serde_erase::json::to_vec(&ExpressionWire::from(record.clone())).unwrap()
     );
 }
 

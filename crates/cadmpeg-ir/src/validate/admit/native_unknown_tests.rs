@@ -61,7 +61,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
         builder.derived(new_id, path).unwrap();
     }
     let annotations = builder.build();
-    let before = serde_json::to_value(&ir).unwrap();
+    let before = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     let actual = admit_with_native_unknowns(
         &ctx,
         &ir,
@@ -84,10 +84,13 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
     let expected =
         admit_with_annotations(&ctx, &projected, &annotations, RHINO_DRAFT, Vec::new()).unwrap();
     assert_eq!(
-        serde_json::to_value(&actual).unwrap(),
-        serde_json::to_value(&expected).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(&actual).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&expected).unwrap()
     );
-    assert_eq!(serde_json::to_value(&ir).unwrap(), before);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&ir).unwrap(),
+        before
+    );
     assert_eq!(raw[0].data().unwrap().as_ptr(), pointer);
     assert_eq!(
         actual
@@ -237,8 +240,8 @@ fn native_unknown_annotation_collision_preserves_first_native_arena() {
             admit_with_annotations(&ctx, &projected, &annotations, RHINO_DRAFT, Vec::new())
                 .unwrap();
         assert_eq!(
-            serde_json::to_value(actual).unwrap(),
-            serde_json::to_value(expected).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(actual).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(expected).unwrap(),
             "{native_format}"
         );
     }
@@ -282,8 +285,8 @@ fn native_unknown_admission_preserves_sorted_source_finding_order() {
         .unwrap();
     let expected = super::admit(&ctx, &projected, NATIVE_LINKS_AND_ORDER, Vec::new()).unwrap();
     assert_eq!(
-        serde_json::to_value(&actual).unwrap(),
-        serde_json::to_value(expected).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(&actual).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(expected).unwrap()
     );
     assert_eq!(
         actual.findings[2].entity.as_deref(),
