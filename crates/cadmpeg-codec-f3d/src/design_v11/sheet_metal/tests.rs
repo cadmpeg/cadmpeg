@@ -81,7 +81,7 @@ fn fixture(ctx: &DecodeContext<'_>, rule_thickness: Option<f64>) -> CadIr {
         .set_arena(ctx, "design_parameter_scopes", &[scope])
         .unwrap();
     if let Some(value) = rule_thickness {
-        let settings: DesignSheetMetalSettings = json::from_value(serde_json::json!({
+        let settings: DesignSheetMetalSettings = json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-sheet-metal-settings#300"),
             "record_index": 103, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
             "inputs": {"version": "v2", "slots": [null, null, null, null, null, null, null]},
@@ -186,7 +186,7 @@ fn same_numbered_settings_in_another_stream_preserve_the_scope_thickness() {
             .unwrap();
         let mut value = json::to_value(&settings[0]).unwrap();
         value["id"] =
-            serde_json::json!("f3d:other/Design1/BulkStream.dat:design-sheet-metal-settings#300");
+            cadmpeg_core::json!("f3d:other/Design1/BulkStream.dat:design-sheet-metal-settings#300");
         let foreign: DesignSheetMetalSettings = json::from_value(value).unwrap();
         ir.native
             .namespace_mut(cadmpeg_ir::codec_id!("f3d"))

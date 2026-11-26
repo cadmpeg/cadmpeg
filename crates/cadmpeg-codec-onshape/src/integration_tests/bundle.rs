@@ -8,16 +8,17 @@ use std::path::Path;
 
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
+pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
     let mut report = Report::default();
     let model = read_bytes(Path::new("test.onshape-bundle"), bytes, &mut report)?;
     Ok((model, report))
 }
 
-fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
+pub(super) fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
@@ -39,7 +40,7 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-fn timeline(model: &Model) -> Value {
+pub(super) fn timeline(model: &Model) -> Value {
     let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir);
     wire["model"]["features"]
         .as_array_mut()
@@ -48,7 +49,7 @@ fn timeline(model: &Model) -> Value {
     wire
 }
 
-fn kinds(model: &Model) -> Vec<String> {
+pub(super) fn kinds(model: &Model) -> Vec<String> {
     timeline(model)["model"]["features"]
         .as_array()
         .unwrap()

@@ -350,7 +350,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(dimension.offset),
             "section_dimension",

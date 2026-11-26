@@ -231,7 +231,7 @@ mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": record.id,
                 "content": serde_json::from_str::<serde_json::Value>(TWO_BLOCKS).unwrap(),
             }),

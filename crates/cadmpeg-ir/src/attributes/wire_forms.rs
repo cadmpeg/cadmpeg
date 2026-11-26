@@ -4,11 +4,12 @@
 //! `value` on a unit arm, and a restated object key.
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::bounds::MAX_DOCUMENT_DEPTH;

@@ -5,8 +5,8 @@ use super::super::{
     },
     references::DesignClassTag,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn draft() -> DesignParameterDraft {
     DesignParameterDraft {

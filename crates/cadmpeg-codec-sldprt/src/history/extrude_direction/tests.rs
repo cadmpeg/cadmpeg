@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::math::Point3;
-use serde_json::json;
 
 fn model(start: f64, normal: f64) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("synthetic cube");

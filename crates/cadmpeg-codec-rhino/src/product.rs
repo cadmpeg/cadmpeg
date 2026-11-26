@@ -453,7 +453,7 @@ mod tests {
             assert_eq!(occurrence["transform_units"], expected_units);
             assert_eq!(
                 occurrence["transform"],
-                serde_json::json!([
+                cadmpeg_core::json!([
                     [2.0, 1.0, 0.0, expected_translation[0]],
                     [0.0, 1.0, 0.0, expected_translation[1]],
                     [0.0, 0.0, 1.0, expected_translation[2]],
@@ -462,7 +462,7 @@ mod tests {
             );
             assert_eq!(
                 occurrence["links"],
-                serde_json::json!(["rhino:object:record#000000"])
+                cadmpeg_core::json!(["rhino:object:record#000000"])
             );
             assert_eq!(
                 decoded
@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(
             records[0].field("source_offset"),
-            Some(serde_json::json!(scan.objects[3].range().start))
+            Some(cadmpeg_core::json!(scan.objects[3].range().start))
         );
         let losses = decoded
             .report()

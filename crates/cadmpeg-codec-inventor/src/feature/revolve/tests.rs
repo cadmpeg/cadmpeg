@@ -178,8 +178,8 @@ fn dimension_annotation_data_precedes_the_parameter_tail() {
 
 mod axis_side {
     use super::*;
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     /// A square loop in the plane whose u axis is -X and whose v axis is +Z,
     /// with u in `[left, 4]` and v in `[0, 5]`.

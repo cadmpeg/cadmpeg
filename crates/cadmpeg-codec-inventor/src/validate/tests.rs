@@ -56,7 +56,7 @@ fn annotation(native: String) -> Feature {
 }
 
 fn property(kind: &PmDcFeaturePropertyKind, type_id: [u8; 16]) -> TestResult<PmDcFeatureProperty> {
-    Ok(json::from_value(serde_json::json!({
+    Ok(json::from_value(cadmpeg_core::json!({
         "id": "inventor:pmdc:feature-property#generated-0",
         "segment_token": "generated",
         "record_ordinal": 0,
@@ -295,7 +295,7 @@ fn thread_data() -> TestResult<super::NativeData> {
     )
     .ok_or("invalid Thread property fixture list")?;
     data.pm_dc_features
-        .push(json::from_value(serde_json::json!({
+        .push(json::from_value(cadmpeg_core::json!({
             "id": "inventor:pmdc:feature#generated-4",
             "segment_token": "generated", "record_ordinal": 4,
             "type_id": "914d8790d011f8d10008cabc0663dc09",
@@ -303,7 +303,7 @@ fn thread_data() -> TestResult<super::NativeData> {
             "state": 69, "outline_value": 0, "properties": slots, "value": 0
         }))?);
     data.pm_dc_feature_labels.push(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "inventor:pmdc:feature-label#generated-8",
             "segment_token": "generated", "record_ordinal": 8,
             "type_id": "2ba4482bd2115864600074b79b49ebb0",
@@ -356,7 +356,7 @@ fn thread_data() -> TestResult<super::NativeData> {
         )
         .chain(data.pm_dc_parameters.iter().map(|record| &record.identity))
     {
-        data.records.push(json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#generated-{}", identity.record_ordinal),
             "token": "generated", "ordinal": identity.record_ordinal,
             "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
@@ -395,7 +395,7 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
     );
     data.pm_dc_parameters.push(parameter);
     let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
-    label["class_id"] = serde_json::json!("00000000000000000000000000000000");
+    label["class_id"] = cadmpeg_core::json!("00000000000000000000000000000000");
     data.pm_dc_feature_labels[0] = json::from_value(label)?;
     findings.clear();
     super::validate_features(&ctx, &ir, &data, &mut findings)?;
@@ -445,7 +445,7 @@ fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestRe
     ] {
         let mut data = thread_data()?;
         let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
-        label["class_id"] = serde_json::json!(class);
+        label["class_id"] = cadmpeg_core::json!(class);
         data.pm_dc_feature_labels[0] = json::from_value(label)?;
         for (reference, invalid) in [(0, false), (1, true)] {
             let source = &data.pm_dc_features[0];
@@ -484,13 +484,13 @@ fn sketch_point(
     let serde_json::Value::Object(tail) = tail else {
         return Err("point tail".into());
     };
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-    let mut kind = serde_json::json!({
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
+    let mut kind = cadmpeg_core::json!({
         "form": "point", "position": [0.0, 0.0], "endpoint_of": list, "center_of": list
     });
     kind.as_object_mut().ok_or("point kind")?.extend(tail);
     let mut payload: crate::sketch::PmDcSketchEntityPayload =
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "save_version_major": version,
             "header": {
                 "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
@@ -514,7 +514,7 @@ fn sketch_point(
 }
 
 fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "state": 2, "associations": null,
         "paired": {
             "scalar_metadata": [2, 0], "scalars": [0.25, 0.75],
@@ -526,7 +526,7 @@ fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
 fn sketch_records(data: &mut super::NativeData) -> TestResult {
     for entity in &data.pm_dc_sketch_entities {
         let ordinal = entity.identity.record_ordinal;
-        data.records.push(json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#generated-{ordinal}"),
             "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
             "type_id": entity.identity.type_id.as_str(),
@@ -553,7 +553,7 @@ fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestRe
             data.pm_dc_sketch_entities.push(sketch_point(
                 25,
                 ordinal,
-                serde_json::json!({"state": null, "associations": null}),
+                cadmpeg_core::json!({"state": null, "associations": null}),
             )?);
         }
         sketch_records(&mut data)?;
@@ -579,23 +579,23 @@ fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestRe
 
 #[test]
 fn native_validation_checks_point_tail_save_version() -> TestResult {
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
     for version in [23, 25, 31] {
         for (tail, valid) in [
             (
-                serde_json::json!({"state": null, "associations": null}),
+                cadmpeg_core::json!({"state": null, "associations": null}),
                 true,
             ),
             (
-                serde_json::json!({"state": 0, "associations": list}),
+                cadmpeg_core::json!({"state": 0, "associations": list}),
                 version < 25,
             ),
             (
-                serde_json::json!({"state": 0, "associations": list, "links": list}),
+                cadmpeg_core::json!({"state": 0, "associations": list, "links": list}),
                 version >= 25,
             ),
             (
-                serde_json::json!({"state": 2, "associations": list}),
+                cadmpeg_core::json!({"state": 2, "associations": list}),
                 version < 25,
             ),
             (paired_tail([1, 1]), version >= 25),

@@ -157,7 +157,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
 }
 
 /// The projected parameters whose signature declares no kind.
-pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&str> {
+pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&ParameterId> {
     let projected = ir
         .design
         .parameters
@@ -170,7 +170,7 @@ pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&str> {
         .filter(|parameter| {
             projected.contains(parameter.id.as_str()) && property(parameter, "value_type").is_none()
         })
-        .map(|parameter| parameter.id.as_str())
+        .map(|parameter| &parameter.id)
         .collect()
 }
 

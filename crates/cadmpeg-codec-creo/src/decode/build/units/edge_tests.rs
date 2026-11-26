@@ -1,7 +1,7 @@
 use super::*;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
-use serde_json::json;
 
 #[test]
 fn edge_partial_lengths_scale_independently_and_keep_zero_radius() {

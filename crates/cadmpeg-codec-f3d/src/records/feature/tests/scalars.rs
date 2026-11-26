@@ -28,14 +28,14 @@ fn checked_scalars_reject_nonfinite_deserializer_values() {
 fn positive_operation_fields_reject_zero_and_negative_values() {
     for value in [0.0, -0.0, -1.0] {
         assert!(
-            json::from_value::<DesignSurfaceStitchOperation>(serde_json::json!({
+            json::from_value::<DesignSurfaceStitchOperation>(cadmpeg_core::json!({
                 "gap_tolerance": value, "gap_tolerance_offset": 40,
                 "tolerance_record_index": 1, "settings_record_index": 2,
             }))
             .is_err()
         );
         assert!(
-            json::from_value::<DesignBaseFlangeOperation>(serde_json::json!({
+            json::from_value::<DesignBaseFlangeOperation>(cadmpeg_core::json!({
                 "thickness": value, "thickness_offset": 123,
                 "profile_group_record_index": 1, "profile_record_index": 2,
                 "thickness_record_index": 3, "settings_record_index": 4,
@@ -43,7 +43,7 @@ fn positive_operation_fields_reject_zero_and_negative_values() {
             .is_err()
         );
         assert!(
-            json::from_value::<DesignRevolveConstruction>(serde_json::json!({
+            json::from_value::<DesignRevolveConstruction>(cadmpeg_core::json!({
                 "operation": "join", "operation_offset": 12,
                 "angle": value, "angle_record_index": 3, "angle_offset": 40,
             }))
@@ -57,7 +57,7 @@ fn positive_operation_fields_reject_zero_and_negative_values() {
 #[test]
 fn draft_angle_preserves_signed_values_and_holds_one_zero() {
     let wire = |angle: f64| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "angle": angle, "angle_record_index": 3, "angle_offset": 40,
             "opposite_angle_record_index": 4, "opposite_angle_offset": 80,
         })

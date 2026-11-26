@@ -9,10 +9,10 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{

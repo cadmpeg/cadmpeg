@@ -150,12 +150,18 @@ loss_codes! {
     WriterSupportGeometryNotRepresented => "writer.support-geometry-not-represented",
     /// A body name cannot be encoded as a Type 406 Form 15 name.
     WriterBodyNameNotRepresented => "writer.body-name-not-represented",
-    /// A body has no owning Directory Entry for its color.
+    /// A body has no owning Directory Entry for its color, or the Directory
+    /// Entry of a trimmed surface states the color of its face.
     WriterBodyColorNotRepresented => "writer.body-color-not-represented",
     /// IGES Directory color cannot carry a body opacity value.
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// IGES Directory color cannot carry a face opacity value.
+    WriterFaceOpacityNotRepresented => "writer.face-opacity-not-represented",
+    /// An appearance or an appearance binding that the written file does not
+    /// state.
+    WriterAppearanceNotRepresented => "writer.appearance-not-represented",
     /// A face the writer cannot write was dropped with the records only it uses.
     WriterFaceOmitted => "writer.face-omitted",
     /// A body the writer cannot write was dropped with the records only it uses.
@@ -242,6 +248,8 @@ impl IgesLossCode {
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
+            | Self::WriterFaceOpacityNotRepresented
+            | Self::WriterAppearanceNotRepresented
             | Self::WriterEdgeRangeAssumed
             | Self::WriterPcurveOmitted
             | Self::WriterLoopClassificationOmitted
@@ -318,9 +326,10 @@ impl IgesLossCode {
             Self::WriterMinimumResolutionAdjusted
             | Self::WriterGlobalFieldNotRestated
             | Self::WriterBodyNameNotRepresented => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterBodyColorNotRepresented | Self::WriterBodyOpacityNotRepresented => {
-                LossTaxonomy::MaterialNotTransferred
-            }
+            Self::WriterBodyColorNotRepresented
+            | Self::WriterBodyOpacityNotRepresented
+            | Self::WriterFaceOpacityNotRepresented
+            | Self::WriterAppearanceNotRepresented => LossTaxonomy::MaterialNotTransferred,
             Self::WriterBodyVisibilityNotRepresented => LossTaxonomy::MetadataNotTransferred,
         }
     }
@@ -439,6 +448,8 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "writer.face-opacity-not-represented",
+                "writer.appearance-not-represented",
                 "writer.face-omitted",
                 "writer.body-omitted",
                 "writer.open-shell-unjoined",

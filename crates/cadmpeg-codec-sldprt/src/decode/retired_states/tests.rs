@@ -4,6 +4,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::annotations::{AnnotationKey, AnnotationTarget, Annotations, StreamHandle};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
 use cadmpeg_ir::design::evaluation::{
@@ -25,7 +26,6 @@ use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
-use serde_json::json;
 
 use crate::loss::SldprtLossCode;
 
@@ -213,8 +213,8 @@ fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
     });
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("Config-0-Partition"));
     let mut builder = AnnotationBuilder::new();
-    builder.note(id.as_str(), &stream, 40, Some("point"));
-    builder.exactness(id.as_str(), Exactness::Inferred);
+    builder.note(&id, &stream, 40, Some("point"));
+    builder.exactness(&id, Exactness::Inferred);
     let mut annotations = builder.build();
 
     let retired = BTreeMap::from([(id.as_str().to_owned(), configuration)]);

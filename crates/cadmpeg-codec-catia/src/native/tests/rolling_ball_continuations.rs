@@ -15,11 +15,11 @@ fn native_rolling_ball_continuation_preserves_current_and_maximal_limits() {
     assert_eq!(rows.len(), 1);
     assert_eq!(
         rows[0]["current_u_bits"],
-        serde_json::json!([0.25_f64.to_bits(), 0.75_f64.to_bits()])
+        cadmpeg_core::json!([0.25_f64.to_bits(), 0.75_f64.to_bits()])
     );
     assert_eq!(
         rows[0]["maximal_u_bits"],
-        serde_json::json!([0.0_f64.to_bits(), 1.0_f64.to_bits()])
+        cadmpeg_core::json!([0.0_f64.to_bits(), 1.0_f64.to_bits()])
     );
     assert_eq!(rows[0]["current_v_bits"][0], (-0.0_f64).to_bits());
     assert_eq!(rows[0]["raw_control"], 3);
@@ -27,7 +27,10 @@ fn native_rolling_ball_continuation_preserves_current_and_maximal_limits() {
         rows[0]["reference_scalar_repeat_bits"],
         serde_json::Value::Null
     );
-    assert_eq!(rows[0]["scalar_jet"], serde_json::json!({"kind":"absent"}));
+    assert_eq!(
+        rows[0]["scalar_jet"],
+        cadmpeg_core::json!({"kind":"absent"})
+    );
     assert_eq!(rows[0]["tail_offset"], u64::try_from(tail).expect("offset"));
 }
 
@@ -46,7 +49,7 @@ fn native_rolling_ball_continuation_keeps_explicit_scalar_jet_unbound() {
     assert_eq!(rows[0]["scalar_jet"]["terminal"], 1);
     assert_eq!(
         rows[0]["scalar_jet"]["values_bits"],
-        serde_json::json!([2.0_f64.to_bits(), 1.0_f64.to_bits()])
+        cadmpeg_core::json!([2.0_f64.to_bits(), 1.0_f64.to_bits()])
     );
     assert!(rows[0].get("source_curve").is_none());
     assert!(rows[0].get("sense").is_none());
@@ -78,15 +81,15 @@ fn native_rolling_ball_continuation_keeps_sheet_scalar_jet_unbound() {
         if matches!(form, SheetTailForm::Explicit) {
             assert_eq!(
                 scalar["values_bits"],
-                serde_json::json!([2.0_f64.to_bits(), 1.0_f64.to_bits()])
+                cadmpeg_core::json!([2.0_f64.to_bits(), 1.0_f64.to_bits()])
             );
             assert_eq!(
                 scalar["first_derivative_bits"],
-                serde_json::json!(vec![(-1.0_f64).to_bits(); 2])
+                cadmpeg_core::json!(vec![(-1.0_f64).to_bits(); 2])
             );
             assert_eq!(
                 scalar["second_derivative_bits"],
-                serde_json::json!(vec![(-0.0_f64).to_bits(); 2])
+                cadmpeg_core::json!(vec![(-0.0_f64).to_bits(); 2])
             );
         } else {
             assert_eq!(scalar["kind"], "absent");

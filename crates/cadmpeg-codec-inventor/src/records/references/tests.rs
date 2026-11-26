@@ -68,13 +68,13 @@ fn fixed_entry_length_retains_untagged_tables() {
 fn native_entries_reject_unknown_forms_and_wrong_identifier_widths() {
     for form in ["identifier1", "identifier2"] {
         for value in ["", "00", "zz", "0000000000000000000000000000000000ff"] {
-            let wire = serde_json::json!({"key": 7, "value": {"form": form, "value": value}});
+            let wire = cadmpeg_core::json!({"key": 7, "value": {"form": form, "value": value}});
             assert!(json::from_value::<Entry>(wire).is_err());
         }
     }
     for wire in [
-        serde_json::json!({"key": 7, "value": {"form": "unknown", "value": [0, 0]}}),
-        serde_json::json!({"key": 7, "value": {"form": "pair3", "value": [0]}}),
+        cadmpeg_core::json!({"key": 7, "value": {"form": "unknown", "value": [0, 0]}}),
+        cadmpeg_core::json!({"key": 7, "value": {"form": "pair3", "value": [0]}}),
     ] {
         assert!(json::from_value::<Entry>(wire).is_err());
     }

@@ -3623,7 +3623,7 @@ mod tests {
         let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!([66])
+            cadmpeg_core::json!([66])
         );
         assert_eq!(wire["texture_table_reference_offset"], 31);
         assert_eq!(wire["collection_base_record"]["byte_offset"], 42);
@@ -3760,7 +3760,7 @@ mod tests {
         assert_eq!(wire["scopes"][0]["scope_body_count_offset"], start + 25);
         assert_eq!(
             wire["scope_body_reference_offsets"],
-            serde_json::json!([start + 29])
+            cadmpeg_core::json!([start + 29])
         );
         let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
@@ -3804,7 +3804,7 @@ mod tests {
         assert_eq!(super::mesh_word_losses(&features).count(), 2);
         assert_eq!(
             body_wire["transform_offsets"],
-            serde_json::json!([start + 46, start + 175])
+            cadmpeg_core::json!([start + 46, start + 175])
         );
         assert_eq!(body_wire["scope_reference_offset"], start + 512);
         assert_eq!(body_wire["wrapper_reference_offset"], start + 523);
@@ -3816,7 +3816,7 @@ mod tests {
         assert_eq!(decoded, *feature);
         let mut plain_offsets = wire;
         plain_offsets["bodies"][0]["transform_offsets"] =
-            serde_json::json!([start + 42, start + 171]);
+            cadmpeg_core::json!([start + 42, start + 171]);
         assert!(
             json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets).is_err()
         );

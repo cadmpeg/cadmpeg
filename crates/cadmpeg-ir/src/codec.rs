@@ -457,9 +457,9 @@ impl DecodeResult {
     /// position part 10 compares it with than the coincidence allowance
     /// there, and charges the pass's losses (§2.3).
     fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) {
-        let loss =
+        let losses =
             vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy);
-        self.report.losses.extend(loss);
+        self.report.losses.extend(losses);
     }
 
     /// Records the SHA-256 of the canonical JSON of the document the decode

@@ -606,6 +606,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia`    | `src/solve/missing_edge.rs`                        | `MAX_STATES`                              | `1_024`                                                 | 4    | Native-port candidate search states; its depth stops at `WorkBudget::RECURSION_DEPTH`. Reaching either marks the outcome exhausted; ambiguity stays for later paths. |
 | `cadmpeg-codec-catia`    | `src/solve/missing_edge.rs`                        | `MAX_REPEATED_EDGE_HANDLE_STEPS`          | `1 << 20`                                               | 4    | Floor of the face-handle steps of the repeated-edge trim-handle overlap per file. A row past the allowance keeps no handle face candidates and `topology.standard-search-bounded` is reported. |
 | `cadmpeg-codec-catia`    | `src/solve/missing_edge.rs`                        | `MAX_REPEATED_EDGE_HANDLE_STEPS_PER_HANDLE` | `64`                                                    | 4    | Face-handle steps allowed per edge-row or face handle entry above the `MAX_REPEATED_EDGE_HANDLE_STEPS` floor; same outcome and loss.                                                                                                                                         |
+| `cadmpeg-codec-onshape` | `src/reader.rs` | `MAX_REFERENCE_DEPTH` | `7` | 2 | Nesting of referenced Part Studios, through derived features. A feature that names a studio deeper than the limit stays Native with `history.not-supported`. |
 
 ### Work budgets without a named `MAX_*` limit
 

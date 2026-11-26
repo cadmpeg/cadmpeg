@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thin sketch projection failures preserve bundle history.
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions, Decoded};
-use serde_json::json;
 
 use super::projection::stored_thin;
 use crate::reader::id;
