@@ -606,7 +606,7 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
     let node = parse(&wire.text, &wire.refs, &wire.measures)?;
     let again = print(&node)?;
     if again.text != wire.text
-        && !read_session::repair(Repair::Spelling, || {
+        && !read_session::repair(Repair::Spelling, &|| {
             format!(
                 "expression text {:?} is restated as its canonical text {:?}",
                 wire.text, again.text
@@ -619,7 +619,7 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
         )));
     }
     if (again.refs != wire.refs || again.measures != wire.measures)
-        && !read_session::repair(Repair::Spelling, || {
+        && !read_session::repair(Repair::Spelling, &|| {
             "expression refs and measures are restated in order of first use".into()
         })
     {

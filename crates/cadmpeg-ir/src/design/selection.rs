@@ -145,7 +145,7 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
             && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
             && !cadmpeg_core::read_session::repair(
                 cadmpeg_core::read_session::Repair::Spelling,
-                || "an unordered member list states its members out of identity-key order".into(),
+                &|| "an unordered member list states its members out of identity-key order".into(),
             )
         {
             return Err("an unordered member list states its members out of identity-key order");

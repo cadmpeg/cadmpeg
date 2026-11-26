@@ -703,7 +703,7 @@ impl TryFrom<Vector3> for UnitVector3 {
                 let unit = Self::normalized(value)?;
                 cadmpeg_core::read_session::repair(
                     cadmpeg_core::read_session::Repair::Value,
-                    || {
+                    &|| {
                         format!(
                             "direction {:?} is normalized to unit length",
                             [value.x, value.y, value.z]
@@ -819,7 +819,7 @@ impl TryFrom<[f64; 2]> for UnitVector2 {
                 let unit = Self::new(direction.0.get())?;
                 cadmpeg_core::read_session::repair(
                     cadmpeg_core::read_session::Repair::Value,
-                    || format!("planar direction {value:?} is normalized to unit length"),
+                    &|| format!("planar direction {value:?} is normalized to unit length"),
                 )
                 .then_some(unit)
             })
