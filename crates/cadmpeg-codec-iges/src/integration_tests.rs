@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{IgesCodec, IgesVersion};
@@ -906,8 +907,8 @@ fn repeated_decode_is_canonical() {
         second.ir().to_canonical_json().unwrap()
     );
     assert_eq!(
-        serde_json::to_vec(first.report()).unwrap(),
-        serde_json::to_vec(second.report()).unwrap()
+        json::to_vec(first.report()).unwrap(),
+        json::to_vec(second.report()).unwrap()
     );
     assert_eq!(first.source_fidelity(), second.source_fidelity());
 }
@@ -994,12 +995,12 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
 /// Fuzzer bytes whose first control byte selects IGES 5.2 with a digest-breaking
 /// source edit. The writer plans the parsed document, writes it, and decodes the
 /// output. Decode degrades the mutated cube to ownerless support geometry, so
-/// re-planning the decoded document with its source fidelity must stop at the
-/// specified empty-model refusal instead of an earlier native-echo refusal.
+/// re-planning the decoded document with its source fidelity writes the empty
+/// file and charges `export:output.empty`.
 const WRITER_REPLAY_CRASH: &[u8] = include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
 
 #[test]
-fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
+fn writer_replay_of_degraded_decode_output_writes_the_empty_file() {
     let (control, json) = WRITER_REPLAY_CRASH
         .split_first()
         .expect("fuzzer bytes carry a control byte");
@@ -1042,11 +1043,12 @@ fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
         EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     );
-    let Err(error) = replay else {
-        panic!("degraded decode output re-planned without transferable content")
-    };
+    let replay = replay.expect("degraded decode output plans");
+    let losses = &replay.report().losses;
     assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/output.empty"),
+        "{losses:#?}"
     );
 }

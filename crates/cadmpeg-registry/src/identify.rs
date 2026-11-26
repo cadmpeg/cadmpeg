@@ -75,7 +75,6 @@ pub fn resolve_and_inspect_with(
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits: options.limits,
-        ..DecodePolicy::default()
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let prefix = read_prefix(&ctx, source)?;

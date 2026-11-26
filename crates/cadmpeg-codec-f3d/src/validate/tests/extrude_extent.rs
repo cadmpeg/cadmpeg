@@ -92,8 +92,7 @@ fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
     assert!(conflicts(&native));
     crate::test_support::with_decode_context(|decode| {
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.set_scope(cadmpeg_core::decode::DecodeDepth::Geometry.scope())
-            .unwrap();
+        ir.set_scope(cadmpeg_core::decode::DecodeDepth::Geometry.scope());
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
         super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);

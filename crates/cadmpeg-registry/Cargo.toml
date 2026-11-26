@@ -17,6 +17,7 @@ default = [
   "f3d",
   "inventor",
   "solidedge",
+  "ironcad",
   "sldprt",
   "catia",
   "creo",
@@ -33,6 +34,7 @@ default = [
 fcstd = ["dep:cadmpeg-codec-freecad"]
 f3d = ["dep:cadmpeg-codec-f3d"]
 solidedge = ["dep:cadmpeg-codec-solidedge"]
+ironcad = ["dep:cadmpeg-codec-ironcad"]
 inventor = ["dep:cadmpeg-codec-inventor"]
 sldprt = ["dep:cadmpeg-codec-sldprt"]
 catia = ["dep:cadmpeg-codec-catia"]
@@ -55,6 +57,7 @@ cadmpeg-measure.workspace = true
 serde_json.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }
 cadmpeg-codec-solidedge = { workspace = true, optional = true }
+cadmpeg-codec-ironcad = { workspace = true, optional = true }
 cadmpeg-codec-inventor = { workspace = true, optional = true }
 cadmpeg-codec-freecad = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }
@@ -76,7 +79,6 @@ thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only byte-fixture writers shared with the codec crates.
 cadmpeg-test-support = { workspace = true }
 cadmpeg-parasolid.workspace = true

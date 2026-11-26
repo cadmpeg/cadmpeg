@@ -1277,12 +1277,11 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
         .retained_records()
         .keys()
         .any(|id| id.as_str().contains(":zip-declaration#")));
-    let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-    assert!(matches!(
-        codec.decode(&mut Cursor::new(&bytes), &strict),
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
-    ));
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
+    codec
+        .decode(&mut Cursor::new(&bytes), &pinned)
+        .expect("a noncanonical archive member pins no strict floor");
 }
 
 #[test]

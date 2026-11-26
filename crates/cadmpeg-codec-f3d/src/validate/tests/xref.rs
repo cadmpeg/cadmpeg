@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::{cross_document_reference, local_reference, lp_ascii, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn attributed_legacy_placement_sources_validate_every_frame_length() {
@@ -15,7 +16,7 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         let frame =
             crate::test_support::legacy_attributed_external_placement(ROLE, attributes, transform);
         assert_eq!(frame.len(), length);
-        let reference = serde_json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#0", "ordinal":0,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":ROLE, "neutron_data":"",
@@ -143,7 +144,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
         frame.push(0);
         frame.extend(local_reference(3));
 
-        let reference = serde_json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#0", "ordinal":0,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":ROLE, "neutron_data":"",
@@ -209,7 +210,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
 
 #[test]
 fn derived_reference_native_shape_uses_required_text_validation() {
-    use serde_json::json;
+    use cadmpeg_core::json;
     let row = json!({
         "id": "f3d:derived:reference#0", "ordinal": 0,
         "from": "root.f3d", "relative_path": "source.f3d",
@@ -218,7 +219,7 @@ fn derived_reference_native_shape_uses_required_text_validation() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     crate::test_support::with_decode_context(|ctx| {
         crate::native::F3dNative::default()
-            .store(ctx, ir.native.namespace_mut("f3d"))
+            .store(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
             .unwrap();
         for field in [
             None,
@@ -231,7 +232,7 @@ fn derived_reference_native_shape_uses_required_text_validation() {
                 candidate[field] = json!("");
             }
             ir.native
-                .namespace_mut("f3d")
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
                 .set_arena(ctx, "derived_references", &[candidate])
                 .unwrap();
             let findings = super::super::validate_native(ctx, &ir).unwrap();

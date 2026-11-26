@@ -2,7 +2,7 @@
 //! Patterns, their layouts, runs, spacing, and instances.
 
 use cadmpeg_core::decode::ResourceLimits;
-use serde_json::json;
+use cadmpeg_core::json;
 use std::collections::BTreeMap;
 
 use super::{

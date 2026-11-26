@@ -2,6 +2,7 @@
 //! Validation checks, findings, and reports.
 
 use cadmpeg_core::text::NonBlankString;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -47,12 +48,14 @@ pub enum Check {
     /// members, states equal coedge senses.
     CoedgePairing,
     /// Wire topology ownership is violated: a coedge also references a wire
-    /// edge, an edge also references a free vertex, a wire edge or free vertex
-    /// does not belong to exactly one shell, or a wire body contains faces.
+    /// edge, an edge also references a free vertex, a wire edge, free vertex,
+    /// or subdivision cage does not belong to exactly one shell, a shell
+    /// repeats a member, a shell holding a cage holds anything else or is not
+    /// its body's only shell, or a wire body contains faces.
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
-    /// A face does not state every loop, or a region, shell, or body does
+    /// A face does not state its boundary in full, or a region, shell, or body does
     /// not state every child (§5.6, Unstated children).
     TopologyPartial,
     /// A surface, curve, pcurve, or point carrier is orphan: no topology or
@@ -182,6 +185,165 @@ impl fmt::Display for Check {
     }
 }
 
+/// The name of one validation rule, `[<codec>/]<area>.<detail>`: `<area>`
+/// is the validator module that states the rule, `<detail>` kebab-case words.
+/// It is stated once, where the rule is checked, and does not change when
+/// the rule's message does.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct RuleName(Cow<'static, str>);
+
+impl RuleName {
+    /// The name `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics where `name` does not have the grammar of a rule name; in a
+    /// constant, as [`rule_name!`](crate::rule_name) builds it, the crate
+    /// does not build.
+    #[must_use]
+    pub const fn from_static(name: &'static str) -> Self {
+        assert!(
+            is_rule_name(name.as_bytes()),
+            "a rule name is [<codec>/]<area>.<detail>"
+        );
+        Self(Cow::Borrowed(name))
+    }
+
+    /// The name as text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// `[<codec>/]<area>.<detail>`: an optional kebab-case codec and `/`, an
+/// area of lower-case letters, digits, and `_` that starts with a letter, a
+/// `.`, and kebab-case words of lower-case letters and digits.
+const fn is_rule_name(bytes: &[u8]) -> bool {
+    const fn word(byte: u8) -> bool {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit()
+    }
+    const fn kebab(bytes: &[u8], start: usize, end: usize) -> bool {
+        if start >= end || bytes[start] == b'-' || bytes[end - 1] == b'-' {
+            return false;
+        }
+        let mut index = start;
+        while index < end {
+            let byte = bytes[index];
+            if !(word(byte) || byte == b'-' && bytes[index - 1] != b'-') {
+                return false;
+            }
+            index += 1;
+        }
+        true
+    }
+    let mut slash = None;
+    let mut dot = None;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'/' if slash.is_none() && dot.is_none() => slash = Some(index),
+            b'.' if dot.is_none() => dot = Some(index),
+            _ => {}
+        }
+        index += 1;
+    }
+    let Some(dot) = dot else {
+        return false;
+    };
+    let area = match slash {
+        Some(slash) => {
+            if !kebab(bytes, 0, slash) {
+                return false;
+            }
+            slash + 1
+        }
+        None => 0,
+    };
+    if area >= dot || !bytes[area].is_ascii_lowercase() {
+        return false;
+    }
+    let mut index = area;
+    while index < dot {
+        let byte = bytes[index];
+        if !(word(byte) || byte == b'_') {
+            return false;
+        }
+        index += 1;
+    }
+    kebab(bytes, dot + 1, bytes.len())
+}
+
+impl fmt::Display for RuleName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for RuleName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        if is_rule_name(name.as_bytes()) {
+            Ok(Self(Cow::Owned(name)))
+        } else {
+            Err(serde::de::Error::custom(format_args!(
+                "`{name}` is not a rule name"
+            )))
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for RuleName {
+    fn schema_name() -> Cow<'static, str> {
+        "RuleName".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": r"^([a-z0-9]+(-[a-z0-9]+)*/)?[a-z][a-z0-9_]*\.[a-z0-9]+(-[a-z0-9]+)*$"
+        })
+    }
+}
+
+/// A finding's message and the rule it reports. [`rule!`](crate::rule)
+/// builds one.
+#[derive(Debug, Clone, Copy)]
+pub struct Ruled<'a> {
+    /// The rule.
+    pub rule: &'a RuleName,
+    /// The message.
+    pub message: fmt::Arguments<'a>,
+}
+
+/// A rule name from a literal, checked when the crate builds.
+///
+/// ```compile_fail
+/// # fn main() {
+/// let _ = cadmpeg_ir::rule_name!("Not A Rule");
+/// # }
+/// ```
+#[macro_export]
+macro_rules! rule_name {
+    ($name:literal) => {
+        const { $crate::report::check::RuleName::from_static($name) }
+    };
+}
+
+/// A finding's message with the rule it reports: `rule!("area.detail",
+/// "message {}", value)`.
+#[macro_export]
+macro_rules! rule {
+    ($name:literal, $($message:tt)+) => {
+        $crate::report::check::Ruled {
+            rule: &$crate::rule_name!($name),
+            message: format_args!($($message)+),
+        }
+    };
+}
+
 /// A single validation finding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -189,6 +351,8 @@ impl fmt::Display for Check {
 pub struct Finding {
     /// Which check produced this finding.
     pub check: Check,
+    /// The rule the finding reports.
+    pub rule: RuleName,
     /// Severity.
     pub severity: Severity,
     /// Human-readable explanation.
@@ -249,20 +413,59 @@ cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");
 mod tests {
     use super::{Check, Finding};
     use crate::report::Severity;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "check": "referential_integrity",
+            "rule": "test.invalid-reference",
             "severity": "error",
             "message": "invalid reference",
             "entity": "test:model:feature#consumer",
             "related": []
         });
-        let finding: Finding = serde_json::from_value(wire.clone())?;
+        let finding: Finding = json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());
-        assert_eq!(serde_json::to_value(finding)?, wire);
+        assert_eq!(json::to_value(finding)?, wire);
         Ok(())
+    }
+
+    #[test]
+    fn a_finding_names_its_rule_in_the_rule_grammar() {
+        let wire = |rule: &str| {
+            cadmpeg_core::json!({
+                "check": "referential_integrity",
+                "rule": rule,
+                "severity": "error",
+                "message": "invalid reference",
+                "related": []
+            })
+        };
+        for good in [
+            "topology.free-vertex",
+            "f3d/links.native-ref",
+            "design_x.a1",
+        ] {
+            let finding: Finding = json::from_value(wire(good)).expect(good);
+            assert_eq!(finding.rule.as_str(), good);
+        }
+        for bad in [
+            "topology",
+            "Topology.x",
+            "topology.-x",
+            "a/b/c.d",
+            "topology.x_y",
+            "",
+        ] {
+            assert!(json::from_value::<Finding>(wire(bad)).is_err(), "{bad}");
+        }
+        let mut missing = wire("topology.free-vertex");
+        missing
+            .as_object_mut()
+            .expect("a finding is an object")
+            .remove("rule");
+        assert!(json::from_value::<Finding>(missing).is_err());
     }
 
     #[test]
@@ -274,9 +477,9 @@ mod tests {
             (Check::MeasurementIncomplete, "measurement_incomplete"),
             (Check::DeclaredMeasure, "declared_measure"),
         ] {
-            assert_eq!(serde_json::to_value(check)?, name);
+            assert_eq!(json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);
-            assert_eq!(serde_json::from_value::<Check>(name.into())?, check);
+            assert_eq!(json::from_value::<Check>(name.into())?, check);
         }
         Ok(())
     }
@@ -284,6 +487,7 @@ mod tests {
     #[test]
     fn finding_round_trips_related_ids_in_order() -> Result<(), serde_json::Error> {
         let finding = Finding {
+            rule: crate::rule_name!("test.invalid-dependencies"),
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: "invalid dependencies".into(),
@@ -293,9 +497,9 @@ mod tests {
                 "test:model:feature#first".into(),
             ],
         };
-        let wire = serde_json::to_value(&finding)?;
-        assert_eq!(wire["related"], serde_json::json!(finding.related));
-        assert_eq!(serde_json::from_value::<Finding>(wire)?, finding);
+        let wire = json::to_value(&finding)?;
+        assert_eq!(wire["related"], cadmpeg_core::json!(finding.related));
+        assert_eq!(json::from_value::<Finding>(wire)?, finding);
         Ok(())
     }
 }

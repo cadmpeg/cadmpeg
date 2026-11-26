@@ -110,7 +110,7 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                 .retained_records()
                 .iter()
                 .map(|(id, record)| {
-                    serde_json::json!({
+                    cadmpeg_core::json!({
                         "id": id,
                         "stream": record.stream(),
                         "offset": record.offset(),
@@ -120,9 +120,11 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                     })
                 })
                 .collect();
-            let value = serde_json::json!({
+            let value = cadmpeg_core::json!({
                 "decode_digest": payload.decode_digest,
                 "file_digests": payload.file_digests,
+                "content_digest": payload.content_digest,
+                "codec_digests": payload.codec_digests,
                 "unrepresented": class_names(&payload.unrepresented()),
                 "annotations": {
                     "streams": payload.annotations.stream_count(),

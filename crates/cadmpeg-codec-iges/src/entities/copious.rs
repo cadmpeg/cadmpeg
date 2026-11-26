@@ -24,13 +24,8 @@ use std::fmt;
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-fn push_copious_loss(
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) {
-    push_attributed_loss(
-        losses,
+fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {
+    super::attributed_note(
         entry,
         if presentation_form(entry.form) {
             crate::loss::IgesLossCode::EntityNotProjected
@@ -41,7 +36,17 @@ fn push_copious_loss(
             "IGES entity type {} form {} was not projected: {reason}",
             entry.entity_type, entry.form
         ),
-    );
+    )
+}
+
+/// Pushes the loss of a copious entity that the projection gives up, with
+/// its `record.unreadable`.
+fn push_copious_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    super::give_up(losses, entry, copious_note(entry, reason));
 }
 
 pub(super) struct CopiousProjectionOutcome {
@@ -308,7 +313,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_copious_loss(&mut losses, entry, format_args!("{message}"));
+                super::give_up_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    copious_note(entry, format_args!("{message}")),
+                );
                 continue;
             }
         };

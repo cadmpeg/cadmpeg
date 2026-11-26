@@ -7,6 +7,7 @@ use crate::records::{
     },
     identity::Located,
 };
+use cadmpeg_core::serde_erase::json;
 use std::num::NonZeroU32;
 
 fn draft(first: Option<NonZeroU32>, base: u64, length: u64) -> Draft {
@@ -48,8 +49,8 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
         let payload = draft(first, 100, length);
         let pair = Pair::try_new(payload.clone()).unwrap();
         assert_eq!(pair.clone().into_draft(), payload);
-        let wire = serde_json::to_value(&pair).unwrap();
-        assert_eq!(serde_json::from_value::<Pair>(wire).unwrap(), pair);
+        let wire = json::to_value(&pair).unwrap();
+        assert_eq!(json::from_value::<Pair>(wire).unwrap(), pair);
         let mut short = payload;
         short.frame_length -= 1;
         short.paired_byte_offset -= 1;
@@ -68,7 +69,7 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
 fn locus_pair_rejects_stale_wire_offsets_and_missing_geometry() {
     for first in [None, NonZeroU32::new(40)] {
         let pair = Pair::try_new(draft(first, 100, 80)).unwrap();
-        let wire = serde_json::to_value(&pair).unwrap();
+        let wire = json::to_value(&pair).unwrap();
         for field in [
             "opaque_index_offset",
             "first_geometry_reference_offset",
@@ -82,14 +83,14 @@ fn locus_pair_rejects_stale_wire_offsets_and_missing_geometry() {
             }
             let mut invalid = wire.clone();
             invalid[field] = 0.into();
-            assert!(serde_json::from_value::<Pair>(invalid)
+            assert!(json::from_value::<Pair>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains(field));
         }
         let mut invalid = wire;
         invalid["second_geometry_record_index"] = 0.into();
-        assert!(serde_json::from_value::<Pair>(invalid)
+        assert!(json::from_value::<Pair>(invalid)
             .unwrap_err()
             .to_string()
             .contains("second_geometry_record_index"));

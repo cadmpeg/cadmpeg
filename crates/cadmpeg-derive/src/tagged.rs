@@ -27,6 +27,10 @@ struct Enumeration {
     variants: Vec<Variant>,
 }
 
+/// The bound each type parameter of an enum without `#[serde(bound = "")]`
+/// takes.
+const OWNED: &str = "::serde::de::DeserializeOwned";
+
 struct Param {
     name: String,
     bounds: String,
@@ -109,7 +113,7 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
         deserialize_name: None,
         variants: Vec::new(),
     };
-    let mut bound_stated = false;
+    let mut stated_bound = None;
     for item in container.into_iter().flatten() {
         match item.key.as_str() {
             "tag" => enumeration.tag = literal(&item)?,
@@ -118,7 +122,7 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
             "deny_unknown_fields" if item.value.is_none() => enumeration.deny_unknown_fields = true,
             "expecting" => enumeration.expecting = Some(literal(&item)?),
             "rename" => enumeration.deserialize_name = Some(literal(&item)?),
-            "bound" if literal(&item).is_ok_and(|bound| bound.is_empty()) => bound_stated = true,
+            "bound" => stated_bound = deserialize_bound(&item)?,
             key => {
                 return Err(format!(
                     "DeserializeTagged reads {}; it does not read serde `{key}` on the enum",
@@ -130,20 +134,99 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
     if enumeration.tag.is_empty() {
         return Err("DeserializeTagged reads an enum that states serde `tag`".to_owned());
     }
-    if !enumeration.params.is_empty() && !bound_stated {
-        return Err(format!(
-            "DeserializeTagged reads each payload from owned text; the generic enum {} \
-             states `#[serde(bound = \"\")]` and bounds its parameters by traits that make \
-             each payload readable",
-            enumeration.name
-        ));
-    }
+    bound_params(&mut enumeration, stated_bound.as_deref())?;
     enumeration.variants = variants(&enumeration.name, body)?;
     Ok(enumeration)
 }
 
+/// The deserialize bound that a serde `bound` argument states: the string
+/// of `bound = "..."`, or of `deserialize = "..."` in `bound(...)`.
+fn deserialize_bound(item: &Item) -> Result<Option<String>, String> {
+    if let Ok(text) = literal(item) {
+        return Ok(Some(text));
+    }
+    let Some(TokenTree::Group(group)) = item.value.as_ref().map(unwrapped) else {
+        return Err("DeserializeTagged cannot read serde `bound`".to_owned());
+    };
+    for inner in items(group.stream())? {
+        if inner.key == "deserialize" {
+            return literal(&inner).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+/// Bounds each type parameter of `enumeration` so that every payload reads
+/// from owned text. With no deserialize bound stated, each parameter takes
+/// `DeserializeOwned`, where serde infers `Deserialize<'de>`. A stated bound
+/// takes the place of serde's, each `Deserialize<'de>` in it read as
+/// `DeserializeOwned`; `#[serde(bound = "")]` leaves the parameters' own
+/// bounds alone.
+fn bound_params(enumeration: &mut Enumeration, stated: Option<&str>) -> Result<(), String> {
+    let Some(stated) = stated else {
+        for param in &mut enumeration.params {
+            add_bound(param, OWNED);
+        }
+        return Ok(());
+    };
+    let owned = stated
+        .replace("::serde::Deserialize<'de>", OWNED)
+        .replace("serde::Deserialize<'de>", OWNED)
+        .replace("Deserialize<'de>", OWNED);
+    for predicate in split_predicates(&owned) {
+        let Some((name, bounds)) = predicate.split_once(':') else {
+            return Err(format!(
+                "DeserializeTagged cannot read the bound `{predicate}` of {}",
+                enumeration.name
+            ));
+        };
+        let name = name.trim();
+        let Some(param) = enumeration
+            .params
+            .iter_mut()
+            .find(|param| param.name == name)
+        else {
+            return Err(format!(
+                "DeserializeTagged reads a bound on a type parameter of {}; `{name}` is none",
+                enumeration.name
+            ));
+        };
+        add_bound(param, bounds.trim());
+    }
+    Ok(())
+}
+
+fn add_bound(param: &mut Param, bound: &str) {
+    param.bounds = if param.bounds.is_empty() {
+        bound.to_owned()
+    } else {
+        format!("{} + {bound}", param.bounds)
+    };
+}
+
+/// `text` split at each comma outside angle brackets, without empty parts.
+fn split_predicates(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0_usize;
+    let mut start = 0;
+    for (index, character) in text.char_indices() {
+        match character {
+            '<' => depth += 1,
+            '>' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts.retain(|part| !part.trim().is_empty());
+    parts
+}
+
 /// `token` without the invisible group a `macro_rules!` fragment arrives in.
-fn unwrapped(token: &TokenTree) -> TokenTree {
+pub(super) fn unwrapped(token: &TokenTree) -> TokenTree {
     let mut tokens = transparent(token.clone().into()).into_iter();
     match (tokens.next(), tokens.next()) {
         (Some(only), None) => only,
@@ -233,7 +316,7 @@ fn literal(item: &Item) -> Result<String, String> {
 
 /// Splits `tokens` at each comma outside angle brackets. With `angles`
 /// false, angle brackets are not tracked.
-fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
+pub(super) fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
     let mut parts = Vec::new();
     let mut depth = 0_usize;
     let mut start = 0;
@@ -260,7 +343,7 @@ fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
 }
 
 /// The index of the `>` that closes the `<` at `tokens[open]`.
-fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
+pub(super) fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
     let mut depth = 0_usize;
     let mut arrow = false;
     for (index, token) in tokens.iter().enumerate().skip(open) {
@@ -313,7 +396,7 @@ fn generics(owner: &str, tokens: &[TokenTree]) -> Result<Vec<Param>, String> {
 
 /// The index of the `=` that starts a parameter's default, outside angle
 /// brackets.
-fn default_at(tokens: &[TokenTree]) -> Option<usize> {
+pub(super) fn default_at(tokens: &[TokenTree]) -> Option<usize> {
     let mut depth = 0_usize;
     for (index, token) in tokens.iter().enumerate() {
         if let TokenTree::Punct(punct) = token {
@@ -661,6 +744,124 @@ fn expand(enumeration: &Enumeration) -> String {
     let items = items.concat();
     let arms = arms.concat();
     let read_tag = "__name.read::<__Tag>()?";
+    if params.is_empty() {
+        return match content {
+            None => {
+                let enum_expecting = expecting
+                    .clone()
+                    .unwrap_or_else(|| format!("internally tagged enum {name}"));
+                format!(
+                    r"
+const _: () = {{
+    {items}
+
+    fn __read_tag(
+        __slot: &mut ::core::option::Option<__Tag>,
+        __name: ::cadmpeg_core::tagged::Tag<'_>,
+    ) -> ::core::result::Result<(), ::std::string::String> {{
+        *__slot = ::core::option::Option::Some({read_tag});
+        ::core::result::Result::Ok(())
+    }}
+
+    fn __payload(__tag: __Tag, __text: &str) -> ::core::result::Result<{this}, ::std::string::String> {{
+        match __tag {{
+            {arms}
+        }}
+    }}
+
+    #[automatically_derived]
+    impl<'de> ::serde::Deserialize<'de> for {this} {{
+        fn deserialize<__D>(__deserializer: __D) -> ::core::result::Result<Self, __D::Error>
+        where
+            __D: ::serde::Deserializer<'de>,
+        {{
+            let mut __tag: ::core::option::Option<__Tag> = ::core::option::Option::None;
+            let __rest = ::cadmpeg_core::tagged::internally(
+                __deserializer,
+                {tag:?},
+                {enum_expecting:?},
+                &mut |__name| __read_tag(&mut __tag, __name),
+            )?;
+            match __tag {{
+                ::core::option::Option::Some(__read) => __payload(__read, &__rest)
+                    .map_err(<__D::Error as ::serde::de::Error>::custom),
+                ::core::option::Option::None => ::core::result::Result::Err(
+                    <__D::Error as ::serde::de::Error>::missing_field({tag:?}),
+                ),
+            }}
+        }}
+    }}
+}};
+"
+                )
+            }
+            Some(content) => {
+                let enum_expecting = expecting
+                    .clone()
+                    .unwrap_or_else(|| format!("adjacently tagged enum {name}"));
+                let struct_name = deserialize_name.clone().unwrap_or_else(|| name.clone());
+                format!(
+                    r"
+const _: () = {{
+    {items}
+
+    fn __payload(__tag: __Tag, __content: ::core::option::Option<&str>) -> ::core::result::Result<{this}, ::std::string::String> {{
+        match (__tag, __content) {{
+            {arms}
+        }}
+    }}
+
+    fn __step(
+        __tag: &mut ::core::option::Option<__Tag>,
+        __value: &mut ::core::option::Option<{this}>,
+        __event: ::cadmpeg_core::tagged::Event<'_>,
+    ) -> ::core::result::Result<(), ::std::string::String> {{
+        match __event {{
+            ::cadmpeg_core::tagged::Event::Tag(__name) => {{
+                *__tag = ::core::option::Option::Some({read_tag});
+            }}
+            ::cadmpeg_core::tagged::Event::Content(__content) => {{
+                let ::core::option::Option::Some(__read) = __tag.take() else {{
+                    return ::core::result::Result::Err(
+                        ::cadmpeg_core::tagged::missing_field({tag:?}),
+                    );
+                }};
+                *__value = ::core::option::Option::Some(__payload(__read, __content)?);
+            }}
+        }}
+        ::core::result::Result::Ok(())
+    }}
+
+    #[automatically_derived]
+    impl<'de> ::serde::Deserialize<'de> for {this} {{
+        fn deserialize<__D>(__deserializer: __D) -> ::core::result::Result<Self, __D::Error>
+        where
+            __D: ::serde::Deserializer<'de>,
+        {{
+            let mut __tag: ::core::option::Option<__Tag> = ::core::option::Option::None;
+            let mut __value: ::core::option::Option<Self> = ::core::option::Option::None;
+            ::cadmpeg_core::tagged::adjacently(
+                __deserializer,
+                &::cadmpeg_core::tagged::Adjacent {{
+                    rust_name: {name:?},
+                    name: {struct_name:?},
+                    tag: {tag:?},
+                    content: {content:?},
+                    fields: &[{tag:?}, {content:?}],
+                    deny_unknown_fields: {deny_unknown_fields},
+                    expecting: {enum_expecting:?},
+                }},
+                &mut |__event| __step(&mut __tag, &mut __value, __event),
+            )?;
+            __value.ok_or_else(|| <__D::Error as ::serde::de::Error>::missing_field({tag:?}))
+        }}
+    }}
+}};
+"
+                )
+            }
+        };
+    }
     let body = match content {
         None => {
             let enum_expecting = expecting

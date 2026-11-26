@@ -31,7 +31,7 @@ pub(crate) fn validate_native(
     if !namespace
         .arenas()
         .keys()
-        .any(|name| name.starts_with("drawing_"))
+        .any(|name| name.as_str().starts_with("drawing_"))
     {
         return Ok(());
     }
@@ -276,6 +276,7 @@ fn finding(message: String, entity: Option<String>) -> Finding {
     Finding {
         related: Vec::new(),
         check: Check::NativeLinks,
+        rule: cadmpeg_ir::rule_name!("inventor/validate.drawing-records"),
         severity: Severity::Error,
         message,
         entity,

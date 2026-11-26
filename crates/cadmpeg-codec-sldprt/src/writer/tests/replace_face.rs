@@ -38,7 +38,7 @@ fn replace_face_writer_keeps_stored_tangent_chain_settings_it_cannot_encode() {
                 };
                 *operands = operands.clone().with_tangent_chain(tangent_chain);
             });
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert_eq!(
             unwritten.is_empty(),

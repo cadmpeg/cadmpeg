@@ -45,7 +45,9 @@ fn traversal_decode(bytes: &[u8], options: &DecodeOptions) -> Result<DecodeResul
     let result = session
         .compose_in_traversal_for_test(&ctx)
         .map_err(DecodeFailure::from)
-        .and_then(|decoded| DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d")));
+        .and_then(|decoded| {
+            DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), &options.strictness)
+        });
     ctx.finish_session()?;
     result
 }
@@ -68,6 +70,7 @@ fn archive_session_parallel_decode_matches_traversal_and_arrival_orders() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         ),
     );
     let before = session.composition_reexecutions();
@@ -88,7 +91,13 @@ fn archive_session_parallel_decode_matches_traversal_and_arrival_orders() {
             .map(|handle| handle.join().unwrap())
             .collect::<Vec<_>>()
     });
-    assert_equal(&baseline, &session.compose(members));
+    assert_equal(
+        &baseline,
+        &session.compose(
+            members,
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        ),
+    );
     assert_eq!(session.composition_reexecutions(), before);
     for order in 0..3 {
         let mut ids = session
@@ -108,7 +117,13 @@ fn archive_session_parallel_decode_matches_traversal_and_arrival_orders() {
             .into_iter()
             .map(|id| session.decode_member(id).unwrap())
             .collect::<Vec<_>>();
-        assert_equal(&baseline, &session.compose(members));
+        assert_equal(
+            &baseline,
+            &session.compose(
+                members,
+                &cadmpeg_ir::report::strictness::Strictness::default(),
+            ),
+        );
         assert_eq!(session.composition_reexecutions(), before);
     }
     println!("existing archive: original-space reexecutions={before}, relocated reexecutions=0");
@@ -122,19 +137,28 @@ fn archive_session_refuses_missing_duplicate_and_foreign_results() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodeOptions::default().policy).unwrap();
     let session = F3dCodec.open_archive(&ctx, root).unwrap();
     let foreign = F3dCodec.open_archive(&ctx, root).unwrap();
-    assert!(session.compose(Vec::new()).is_err());
     assert!(session
-        .compose([
-            session.decode_member("root.f3d").unwrap(),
-            session.decode_member("root.f3d").unwrap()
-        ])
+        .compose(
+            Vec::new(),
+            &cadmpeg_ir::report::strictness::Strictness::default()
+        )
+        .is_err());
+    assert!(session
+        .compose(
+            [
+                session.decode_member("root.f3d").unwrap(),
+                session.decode_member("root.f3d").unwrap()
+            ],
+            &cadmpeg_ir::report::strictness::Strictness::default()
+        )
         .is_err());
     assert!(session
         .compose(
             foreign
                 .members()
                 .iter()
-                .map(|member| foreign.decode_member(member.id()).unwrap())
+                .map(|member| foreign.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
         .is_err());
 }
@@ -180,11 +204,10 @@ fn archive_session_repeated_member_refuses_at_the_original_entity_charge() {
                 max_entities: u64::MAX,
                 ..cadmpeg_core::decode::ResourceLimits::default()
             },
-            ..cadmpeg_core::decode::DecodePolicy::default()
         },
         ..DecodeOptions::default()
     };
-    let operation = "F3Z repeated member occurrences and joints";
+    let operation = "F3Z repeated member occurrences";
     let error = cadmpeg_core::decode::test_support::at_charge(
         ResourceDimension::Entities,
         operation,
@@ -209,16 +232,14 @@ fn archive_session_depth_and_strict_policy_match_direct_traversal() {
         cadmpeg_core::decode::DecodeDepth::Geometry,
         cadmpeg_core::decode::DecodeDepth::Container,
     ] {
-        for mode in [
-            cadmpeg_core::decode::DecodeMode::Salvage,
-            cadmpeg_core::decode::DecodeMode::Strict,
-        ] {
+        for pinned in [false, true] {
             let options = DecodeOptions {
                 depth,
-                policy: cadmpeg_core::decode::DecodePolicy {
-                    mode,
-                    ..cadmpeg_core::decode::DecodePolicy::default()
+                strictness: cadmpeg_ir::report::strictness::Strictness {
+                    pinned,
+                    ..Default::default()
                 },
+                ..DecodeOptions::default()
             };
             assert_equal(
                 &traversal_decode(&bytes, &options),

@@ -65,6 +65,7 @@ fn plan(components: Vec<Vec<SheetLine>>) -> SheetPlan {
 
 fn validate(ir: &mut CadIr, annotations: &AnnotationBuilder) {
     ir.finalize();
+    cadmpeg_ir::examples::add_document_root(ir);
     let report = cadmpeg_ir::validate::validate_neutral_with_annotations(
         ir,
         annotations.annotations(),

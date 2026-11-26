@@ -8,6 +8,12 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::{test_support, SolidEdgeCodec};
 
+const EPS_SPHERE_RADIUS_MM: f64 = 1.0e-12;
+const EPS_RESOLUTION_MM: f64 = 1.0e-15;
+const EPS_RING_VERTEX_MM: f64 = 1.0e-9;
+/// The null real of the kernel's binary encoding.
+const NULL_REAL: f64 = -3.14158e13;
+
 #[test]
 fn directory_signature_detects_solid_edge() {
     let bytes = test_support::compound();
@@ -135,5 +141,757 @@ fn full_decode_reports_pending_bodies() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir().geometry.bodies.is_empty());
-    assert!(!result.report().losses.is_empty());
+    for code in [
+        crate::loss::SolidEdgeLossCode::BodiesPending,
+        crate::loss::SolidEdgeLossCode::FeaturesPending,
+        crate::loss::SolidEdgeLossCode::AttributesPending,
+    ] {
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.note("").code));
+    }
+}
+
+#[test]
+fn primary_partition_projects_an_exact_sphere_in_millimetres() {
+    let bytes = test_support::with_partitions(&[test_support::sphere_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.report().geometry_transferred());
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 1);
+    assert_eq!(ir.geometry.shells.len(), 1);
+    assert_eq!(
+        ir.geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Sphere(sphere),
+    ) = &ir.geometry.surfaces[0].geometry
+    else {
+        panic!("sphere carrier");
+    };
+    assert!((sphere.radius().get() - 7.0).abs() < EPS_SPHERE_RADIUS_MM);
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn the_document_root_lists_the_bodies_of_every_partition() {
+    let bytes = test_support::with_partitions(&[
+        test_support::sphere_partition(),
+        test_support::two_solid_regions_partition(),
+    ]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one product definition");
+    };
+    assert!(root.is_root());
+    let bodies: std::collections::BTreeSet<_> =
+        ir.geometry.bodies.iter().map(|body| &body.id).collect();
+    assert_eq!(root.bodies.len(), bodies.len());
+    assert_eq!(
+        root.bodies
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        bodies
+    );
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn one_body_with_two_solid_regions_stays_one_body() {
+    let bytes = test_support::with_partitions(&[test_support::two_solid_regions_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    for region in &ir.geometry.regions {
+        assert_eq!(region.body, ir.geometry.bodies[0].id);
+        assert_eq!(region.stated_shells().count(), 1);
+    }
+    assert_ne!(ir.geometry.regions[0].id, ir.geometry.regions[1].id);
+    assert_geometry_valid(ir);
+}
+
+fn decode_partition(partition: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    let bytes = test_support::with_partitions(&[partition]);
+    SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+fn charged(result: &cadmpeg_ir::codec::DecodeResult, code: crate::loss::SolidEdgeLossCode) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.note("").code)
+}
+
+#[test]
+fn void_region_that_owns_a_face_transfers_as_its_own_region() {
+    let result = decode_partition(test_support::solid_with_cavity_partition());
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    // The solid region and the cavity region; the exterior void region owns
+    // no face and transfers no region.
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    for region in &ir.geometry.regions {
+        assert_eq!(region.body, ir.geometry.bodies[0].id);
+        assert_eq!(region.stated_shells().count(), 1);
+    }
+    for shell in &ir.geometry.shells {
+        assert!(ir
+            .geometry
+            .regions
+            .iter()
+            .any(|region| region.id == shell.region
+                && region.stated_shells().any(|stated| stated == &shell.id)));
+    }
+    for face in &ir.geometry.faces {
+        assert!(ir
+            .geometry
+            .shells
+            .iter()
+            .any(|shell| shell.id == face.shell));
+    }
+    assert!(!charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn exterior_void_region_with_a_faceless_shell_transfers_no_region() {
+    let result = decode_partition(test_support::solid_regions_with_void_shell_partition());
+    let ir = result.ir();
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    assert!(!charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
+    let mut partition = test_support::solid_with_cavity_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| {
+            node.kind() == cadmpeg_parasolid::records::node_type::FACE && node.index() == 7
+        })
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let result = decode_partition(partition);
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
+    ));
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_face_that_states_no_orientation() {
+    let mut partition = test_support::solid_with_cavity_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| {
+            node.kind() == cadmpeg_parasolid::records::node_type::FACE && node.index() == 7
+        })
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+
+    let admitted = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(charged(
+        &admitted,
+        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
+    ));
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .flat_map(|loss| loss.message.split_whitespace())
+        .find(|token| token.starts_with("solidedge:brep:face#"))
+        .expect("record.unreadable names the face")
+        .to_owned();
+    assert!(admitted
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .all(|face| face.id.as_str() != given_up));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses a given-up face");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == given_up));
+}
+
+#[test]
+fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    assert!(
+        charge.starts_with("record solidedge:brep:face#"),
+        "{charge}"
+    );
+    let dropped = charge
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the face's charge names the records dropped with it");
+    for kind in ["solidedge:brep:loop#", "solidedge:brep:coedge#"] {
+        assert!(dropped.iter().any(|id| id.starts_with(kind)), "{charge}");
+    }
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 5);
+    assert!(dropped.iter().all(|id| {
+        geometry.loops.iter().all(|loop_| loop_.id.as_str() != *id)
+            && geometry
+                .coedges
+                .iter()
+                .all(|coedge| coedge.id.as_str() != *id)
+    }));
+}
+
+fn surfaceless_face(sense: u8) -> cadmpeg_ir::codec::DecodeResult {
+    let mut partition = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let face = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap();
+    let surface = face.field_range("surface").unwrap();
+    let sense_range = face.field_range("sense").unwrap();
+    partition[surface].copy_from_slice(&1u16.to_be_bytes());
+    partition[sense_range].copy_from_slice(&[sense]);
+    decode_partition(partition)
+}
+
+#[test]
+fn face_without_a_surface_keeps_its_stored_orientation() {
+    for (sense, expected) in [
+        (b'-', cadmpeg_ir::topology::Sense::Reversed),
+        (b'+', cadmpeg_ir::topology::Sense::Forward),
+    ] {
+        let result = surfaceless_face(sense);
+        let ir = result.ir();
+        assert_eq!(ir.geometry.faces.len(), 1);
+        assert_eq!(ir.geometry.faces[0].sense, expected);
+        assert!(charged(
+            &result,
+            crate::loss::SolidEdgeLossCode::SurfaceUnresolved
+        ));
+        assert_geometry_valid(ir);
+    }
+}
+
+#[test]
+fn body_that_names_an_instance_keeps_its_coordinates_with_a_loss() {
+    let plain = decode_partition(test_support::sphere_partition());
+    assert!(!charged(
+        &plain,
+        crate::loss::SolidEdgeLossCode::BodyPlacementUnread
+    ));
+    assert!(plain.ir().geometry.bodies[0].transform.is_none());
+    let mut partition = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+        .unwrap()
+        .field_range("ref_instance")
+        .unwrap();
+    partition[range].copy_from_slice(&9u16.to_be_bytes());
+    let result = decode_partition(partition);
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::BodyPlacementUnread
+    ));
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn unreadable_partition_preserves_another_partition() {
+    let bytes =
+        test_support::with_partitions(&[b"broken".to_vec(), test_support::sphere_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::PartitionUnreadable
+            .note("")
+            .code));
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect();
+    let [given_up] = given_up.as_slice() else {
+        panic!("one given-up partition: {given_up:?}");
+    };
+    assert!(
+        given_up
+            .message
+            .starts_with("part partition stream=\"solidedge:"),
+        "{given_up:?}"
+    );
+    let stubs = result.ir().native_unknowns("solidedge").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
+    let (_, _, fidelity) = result.into_parts();
+    let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
+    let mut stream = b"broken".to_vec();
+    stream.resize(4096, 0);
+    assert_eq!(retained.data(), Some(stream.as_slice()));
+}
+
+#[test]
+fn partition_indices_have_separate_identity_spaces() {
+    let partition = test_support::sphere_partition();
+    let bytes = test_support::with_partitions(&[partition.clone(), partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_ne!(ir.geometry.bodies[0].id, ir.geometry.bodies[1].id);
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn missing_terminator_keeps_framed_body_nodes() {
+    let mut partition = test_support::sphere_partition();
+    partition.truncate(partition.len() - 4);
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::PartitionIncomplete
+            .note("")
+            .code));
+}
+
+#[test]
+fn carrier_reference_order_preserves_a_closed_cube() {
+    let bytes = test_support::with_partitions(&[test_support::cube_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.edges.len(), 12);
+    assert_eq!(ir.geometry.vertices.len(), 8);
+    assert_eq!(ir.geometry.coedges.len(), 24);
+    assert_geometry_valid(ir);
+    assert!(!result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::PartitionUnreadable
+            .note("")
+            .code));
+}
+
+#[test]
+fn invalid_tolerance_keeps_body_geometry_with_a_loss() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("tolerance")
+        .unwrap();
+    partition[range].copy_from_slice(&(-1.0f64).to_be_bytes());
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().geometry.faces.len(), 6);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::TopologyToleranceInvalid
+            .note("")
+            .code));
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn dangling_face_surface_keeps_the_other_faces() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("surface")
+        .unwrap();
+    partition[range].copy_from_slice(&4000u16.to_be_bytes());
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(
+        ir.geometry
+            .surfaces
+            .iter()
+            .filter(|surface| matches!(
+                surface.geometry,
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+                )
+            ))
+            .count(),
+        1
+    );
+    let codes: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect();
+    assert!(codes.contains(
+        &crate::loss::SolidEdgeLossCode::SurfaceUnresolved
+            .note("")
+            .code
+    ));
+    assert!(!codes.contains(
+        &crate::loss::SolidEdgeLossCode::PartitionUnreadable
+            .note("")
+            .code
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn edge_naming_a_fin_outside_any_loop_reads_through_its_radial_fin() {
+    use cadmpeg_parasolid::records::node_type;
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let edge = records
+        .nodes()
+        .find(|node| node.kind() == node_type::EDGE)
+        .unwrap();
+    let named = edge.pointer("halfedge").unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == node_type::FIN && node.index() == named)
+        .unwrap()
+        .field_range("backward")
+        .unwrap();
+    partition[range].copy_from_slice(&1u16.to_be_bytes());
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.edges.len(), 12);
+    assert_eq!(ir.geometry.coedges.len(), 24);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SolidEdgeLossCode::LoopUnreadable.note("").code));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn face_with_no_loop_on_a_plane_is_stated_partial() {
+    let mut partition = test_support::disc_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("loop")
+        .unwrap();
+    partition[range].copy_from_slice(&1u16.to_be_bytes());
+    let result = decode_partition(partition);
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    let face = &ir.geometry.faces[0];
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::TopologyFaceBoundaryUnstated
+            .note("")
+            .code
+        && loss.message.contains(face.id.as_str())));
+    assert_geometry_valid(ir);
+}
+
+fn assert_geometry_valid(ir: &cadmpeg_ir::CadIr) {
+    let mut geometry = ir.clone();
+    geometry.source = None;
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&geometry, Vec::new())
+            .unwrap()
+            .is_ok()
+    );
+}
+
+#[test]
+fn body_resolution_sets_document_linear_tolerance_in_millimetres() {
+    let partitions: Vec<_> = [2.0e-8_f64, 4.0e-8]
+        .into_iter()
+        .map(|resolution| {
+            let mut partition = test_support::sphere_partition();
+            let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+                .unwrap()
+                .unwrap();
+            let range = records
+                .nodes()
+                .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+                .unwrap()
+                .field_range("res_linear")
+                .unwrap();
+            partition[range].copy_from_slice(&resolution.to_be_bytes());
+            partition
+        })
+        .collect();
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&partitions)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let expected_mm = 4.0e-5;
+    assert!((result.ir().tolerances.linear.get() - expected_mm).abs() < EPS_RESOLUTION_MM);
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn invalid_body_resolution_keeps_geometry_and_reports_a_loss() {
+    let mut partition = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+        .unwrap()
+        .field_range("res_linear")
+        .unwrap();
+    partition[range].copy_from_slice(&0.0f64.to_be_bytes());
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&[partition])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(
+        result.ir().tolerances.linear,
+        cadmpeg_ir::CadIr::empty().tolerances.linear
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::BodyResolutionInvalid
+            .note("")
+            .code));
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn empty_partition_preserves_stated_body_resolution() {
+    let mut partition = test_support::sphere_partition();
+    let (resolution, first_node) = {
+        let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+            .unwrap()
+            .unwrap();
+        let body = records
+            .nodes()
+            .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+            .unwrap();
+        (body.field_range("res_linear").unwrap(), body.range().start)
+    };
+    let mut empty = partition[..first_node].to_vec();
+    empty.extend_from_slice(&[0, 1, 0, 1]);
+    partition[resolution].copy_from_slice(&1.0e-12_f64.to_be_bytes());
+    for partitions in [[partition.clone(), empty.clone()], [empty, partition]] {
+        let result = SolidEdgeCodec
+            .decode(
+                &mut Cursor::new(test_support::with_partitions(&partitions)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert!((result.ir().tolerances.linear.get() - 1.0e-9).abs() < EPS_RESOLUTION_MM);
+        assert_geometry_valid(result.ir());
+    }
+}
+
+#[test]
+fn vertexless_ring_edge_is_bounded_by_one_vertex_on_its_carrier() {
+    let bytes = test_support::with_partitions(&[test_support::disc_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 1);
+    assert_eq!(ir.geometry.vertices.len(), 1);
+    assert_eq!(ir.geometry.points.len(), 1);
+    let ends = ir.geometry.edges[0].ends.as_ref().expect("bounded ring");
+    assert_eq!(ends.start, ends.end);
+    assert_eq!(ends.start, ir.geometry.vertices[0].id);
+    let position = ir.geometry.points[0].position().get();
+    let radius_mm = 5.0;
+    let distance = (position.x * position.x + position.y * position.y).sqrt();
+    assert!((distance - radius_mm).abs() < EPS_RING_VERTEX_MM);
+    assert!(position.z.abs() < EPS_RING_VERTEX_MM);
+    let range = ir.geometry.edges[0]
+        .carrier
+        .param_range()
+        .expect("ring range")
+        .get();
+    assert!((range[1] - range[0] - std::f64::consts::TAU).abs() < EPS_RING_VERTEX_MM);
+    assert_geometry_valid(ir);
+}
+
+fn swept_ring_direction(scale: f64) -> f64 {
+    let bytes = test_support::with_partitions(&[test_support::swept_ring_partition(scale)]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &result.ir().geometry;
+    let surface = geometry
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == geometry.faces[0].surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
+    else {
+        panic!("a swept surface is a procedural surface");
+    };
+    let procedural = geometry
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction)
+        .unwrap();
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+        procedural.definition()
+    else {
+        panic!("a swept surface is a linear sweep");
+    };
+    let direction = sweep.direction().get();
+    assert!(direction.x.abs() < EPS_RING_VERTEX_MM && direction.y.abs() < EPS_RING_VERTEX_MM);
+    assert_eq!(Some(sweep.directrix()), geometry.edges[0].carrier.curve());
+    assert_eq!(geometry.curves.len(), 1);
+    assert_geometry_valid(result.ir());
+    direction.z
+}
+
+#[test]
+fn swept_surface_with_a_stated_scale_keeps_an_unsupported_carrier() {
+    let bytes = test_support::with_partitions(&[test_support::swept_ring_partition(0.01)]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::SurfaceUnsupported
+            .note("")
+            .code));
+}
+
+#[test]
+fn swept_surface_with_a_null_scale_sweeps_at_unit_parameter_speed() {
+    assert!((swept_ring_direction(NULL_REAL) - 1.0).abs() < EPS_RING_VERTEX_MM);
 }

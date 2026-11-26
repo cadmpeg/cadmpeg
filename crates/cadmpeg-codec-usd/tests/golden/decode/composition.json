@@ -1049,17 +1049,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -1225,7 +1219,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -1246,12 +1239,10 @@
             "usd:stage:occurrence#/Scene/Box"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Scene",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1264,12 +1255,10 @@
           "native_ref": "/Scene/Box",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1282,12 +1271,10 @@
             "usd:stage:occurrence#/Scene/Robot:arc0"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Robot",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1300,12 +1287,10 @@
             "usd:stage:occurrence#/Scene/Shelf:arc0"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Shelf",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1314,14 +1299,12 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "./robot/payload.usd",
           "storage": {
             "kind": "external",
             "object": "/Robot",
             "path": "./robot/payload.usd"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1330,13 +1313,11 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "shelf.usda",
           "storage": {
             "kind": "external",
             "path": "shelf.usda"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1347,24 +1328,15 @@
             "usd:stage:occurrence#/Scene"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1480,8 +1452,7 @@
           "value": {
             "code": "composition.over-undefined",
             "kind": "reference_graph_not_closed",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "1 prims have only `over` specifications in this layer and were not composed: /Unrelated",
@@ -1538,6 +1509,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "50cacae3e12f652119a429b181ac2b104f0807185afe73d6549bae373a1dd726",
     "file_digests": {},
     "retained_records": {},

@@ -41,11 +41,11 @@ impl NativeRecordNamespace {
         }
     }
 
-    pub(super) fn rewrite<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    pub(super) fn rewrite(
         self,
         kind: &str,
         record_index: u32,
-        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let source = self.serialized_id(kind, record_index).to_string();
         let mut target = map.identity(&source)?;
@@ -117,6 +117,7 @@ impl serde::Serialize for NativeRecordIdentity<'_> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use serde::{de::DeserializeOwned, Serialize};
 
     #[test]
@@ -153,29 +154,29 @@ mod tests {
         for namespace in [
             "f3d:asm",
             "sat:asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/xref/child/asm",
-            "custom-format:native%20scope",
+            "f3d:role-part/reference-1/occurrence-0@asm",
+            "f3d:role-part/reference-1/occurrence-0/xref/child@asm",
+            "custom:native%20scope",
         ] {
             let id = format!("{namespace}:{kind}#1");
             wire["id"] = id.clone().into();
-            let typed: T = serde_json::from_value(wire.clone()).expect("valid scoped record");
-            assert_eq!(serde_json::to_value(&typed).unwrap(), wire);
+            let typed: T = json::from_value(wire.clone()).expect("valid scoped record");
+            assert_eq!(json::to_value(&typed).unwrap(), wire);
             let mut document = cadmpeg_ir::CadIr::empty();
             document
                 .native
-                .namespace_mut("f3d")
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
                 .set_arena(&ctx, "namespace_probe", &[typed])
                 .unwrap();
             let document: cadmpeg_ir::CadIr =
-                serde_json::from_value(serde_json::to_value(document).unwrap()).unwrap();
+                json::from_value(json::to_value(document).unwrap()).unwrap();
             let admitted: Vec<T> = document
                 .native
                 .namespace("f3d")
                 .unwrap()
                 .arena_as("namespace_probe")
                 .unwrap();
-            assert_eq!(serde_json::to_value(&admitted[0]).unwrap(), wire);
+            assert_eq!(json::to_value(&admitted[0]).unwrap(), wire);
         }
         for namespace in [
             "",
@@ -186,9 +187,11 @@ mod tests {
             "f3d:bad scope",
             "f3d:bad\u{2003}scope",
             "f3d:bad#scope",
+            "custom-format:asm",
+            "F3d:asm",
         ] {
             wire["id"] = format!("{namespace}:{kind}#1").into();
-            let error = serde_json::from_value::<T>(wire.clone())
+            let error = json::from_value::<T>(wire.clone())
                 .err()
                 .expect("malformed namespace must fail typed admission")
                 .to_string();
@@ -196,7 +199,7 @@ mod tests {
         }
         for id in [format!("f3d:asm:{kind}#2"), "f3d:asm:other-kind#1".into()] {
             wire["id"] = id.into();
-            let error = serde_json::from_value::<T>(wire.clone())
+            let error = json::from_value::<T>(wire.clone())
                 .err()
                 .expect("identity must agree with kind and record index")
                 .to_string();
@@ -208,7 +211,7 @@ mod tests {
     fn macro_record_namespace_is_admitted_before_typed_construction() {
         namespace_controls::<super::super::EdgeContinuity>(
             "edge-continuity",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "f3d:asm:edge-continuity#1", "record_index": 1,
                 "edge": "f3d:brep:entity#1", "sense": "forward", "continuity": "tangent"
             }),
@@ -219,7 +222,7 @@ mod tests {
     fn face_record_namespace_is_admitted_before_typed_construction() {
         namespace_controls::<super::super::FaceSidedness>(
             "face-sidedness",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "f3d:asm:face-sidedness#1", "record_index": 1,
                 "face": "f3d:brep:entity#1", "native_sense": "forward", "normalized_sense": "forward"
             }),

@@ -302,7 +302,7 @@ fn state_native_occurrence_key(ir: &mut CadIr, native_id: &str, key: &str) {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_component_occurrences", &[carrier])
         .unwrap();
 }
@@ -342,7 +342,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_component_occurrences", &[carrier])
         .unwrap();
     let mut scoped = ir.clone();
@@ -371,7 +371,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
     }
     scoped
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_parameter_scopes", &[scope])
         .unwrap();
     for row in scoped
@@ -623,8 +623,8 @@ fn expanding_restates_the_decoder_instances() {
 
 #[test]
 fn an_archive_member_placed_twice_is_its_root_component_once() {
-    const MEMBER: &str = "f3d:xref/s1/archive:product-definition#0";
-    const MEMBER_ROOT: &str = "f3d:xref/s1/model:component#root";
+    const MEMBER: &str = "f3d:xref:product-definition#s1";
+    const MEMBER_ROOT: &str = "f3d:s1@model:component#root";
     let mut ir = CadIr::empty();
     let mut member = ProductDefinition::new(
         definition_id(MEMBER),
@@ -642,8 +642,8 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
     );
     member.label = Some("Part".to_owned());
     member.occurrences = [
-        "f3d:xref/s1/model:occurrence#root-c",
-        "f3d:xref/s2/model:occurrence#root-c",
+        "f3d:s1@model:occurrence#root-c",
+        "f3d:s2@model:occurrence#root-c",
     ]
     .iter()
     .map(|id| occurrence_id(id))
@@ -656,10 +656,7 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
         member,
         component(
             MEMBER_ROOT,
-            &[
-                "f3d:xref/s1/model:occurrence#g",
-                "f3d:xref/s2/model:occurrence#g",
-            ],
+            &["f3d:s1@model:occurrence#g", "f3d:s2@model:occurrence#g"],
         ),
         component(BOLT, &[]),
     ];
@@ -671,19 +668,19 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
     ir.model.occurrences = vec![
         occurrence("f3d:model:occurrence#xref-0-0", MEMBER, 1.0),
         occurrence("f3d:model:occurrence#xref-0-1", MEMBER, 2.0),
-        identity("f3d:xref/s1/model:occurrence#root-c"),
-        identity("f3d:xref/s2/model:occurrence#root-c"),
-        occurrence("f3d:xref/s1/model:occurrence#g", BOLT, 4.0),
-        occurrence("f3d:xref/s2/model:occurrence#g", BOLT, 6.0),
+        identity("f3d:s1@model:occurrence#root-c"),
+        identity("f3d:s2@model:occurrence#root-c"),
+        occurrence("f3d:s1@model:occurrence#g", BOLT, 4.0),
+        occurrence("f3d:s2@model:occurrence#g", BOLT, 6.0),
     ];
     let scopes = BTreeMap::from([
         (
             occurrence_id("f3d:model:occurrence#xref-0-0"),
-            "f3d:xref/s1".to_owned(),
+            "f3d:s1".to_owned(),
         ),
         (
             occurrence_id("f3d:model:occurrence#xref-0-1"),
-            "f3d:xref/s2".to_owned(),
+            "f3d:s2".to_owned(),
         ),
     ]);
     let mut referenced = ir.clone();
@@ -698,7 +695,7 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
         row.native_ref = Some(native_id.to_owned());
     }
     state_native_occurrence_key(&mut referenced, native_id, native_key);
-    reference_bolt(&mut referenced, "f3d:xref/s2/model:occurrence#g");
+    reference_bolt(&mut referenced, "f3d:s2@model:occurrence#g");
     assert!(own_once(&mut referenced, &scopes).is_empty());
     assert_eq!(
         referenced.model.assembly_joints[0]
@@ -713,7 +710,7 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
         }
     );
     own_once(&mut ir, &scopes);
-    let member_root = definition(&ir, MEMBER_ROOT);
+    let member_root = definition(&ir, MEMBER);
     assert!(
         matches!(
             &member_root.storage,
@@ -725,24 +722,24 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
         "§8.1: an archive member's root component is the member file's definition"
     );
     assert_eq!(member_root.label.as_deref(), Some("Part"));
-    assert_eq!(listed(member_root), ["f3d:xref/s1/model:occurrence#g"]);
+    assert_eq!(listed(member_root), ["f3d:s1@model:occurrence#g"]);
     assert!(ir
         .model
         .product_definitions
         .iter()
-        .all(|definition| definition.id.as_str() != MEMBER));
+        .all(|definition| definition.id.as_str() != MEMBER_ROOT));
     for id in [
         "f3d:model:occurrence#xref-0-0",
         "f3d:model:occurrence#xref-0-1",
     ] {
-        assert_eq!(placed(&ir, id).prototype.as_str(), MEMBER_ROOT);
+        assert_eq!(placed(&ir, id).prototype.as_str(), MEMBER);
     }
     assert!(placed(&ir, "f3d:model:occurrence#xref-0-0")
         .overrides
         .is_empty());
     let second = &placed(&ir, "f3d:model:occurrence#xref-0-1").overrides;
     assert_eq!(second.len(), 1);
-    assert_eq!(path(&second[0]), ["f3d:xref/s1/model:occurrence#g"]);
+    assert_eq!(path(&second[0]), ["f3d:s1@model:occurrence#g"]);
     assert_eq!(second[0].transform, Some(translated(6.0)));
     assert_eq!(ir.model.occurrences.len(), 3);
 }

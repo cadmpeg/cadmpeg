@@ -4,6 +4,7 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -151,9 +152,13 @@ pub(super) fn decode(
         };
         let parameters = source_parameters(record, name);
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DrawingRecordTooFewParameters.note(format!(
+                    "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
+                )),
+            ));
             continue;
         }
 
@@ -281,9 +286,13 @@ pub(super) fn decode(
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
-            losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
-                "drawing #{id} position in the stored order exceeds the stated order width"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DrawingOrderUnstatable.note(format!(
+                    "drawing #{id} position in the stored order exceeds the stated order width"
+                )),
+            ));
             continue;
         };
 
@@ -461,9 +470,9 @@ fn add_source_typed_targets(
     }
     let native_targets =
         cadmpeg_ir::native::arena_from(ctx, native_targets.into_iter().map(Ok::<_, CodecError>))?;
-    let namespace = ir.native.namespace_mut("step");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("step"));
     let arenas = namespace.arenas_mut();
-    let arena_key = String::from("drawing_targets");
+    let arena_key = cadmpeg_core::nonblank_literal!("drawing_targets");
 
     let target_arena = arenas.entry(arena_key).or_default();
 

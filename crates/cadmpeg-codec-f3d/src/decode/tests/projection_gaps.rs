@@ -6,11 +6,12 @@ use super::super::{
     unresolved_dimension_companion_count, DesignProjectionGaps, DimensionCompanionSources,
 };
 use crate::native::F3dNative;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn surface_untrim_gaps_count_both_face_and_manual_loop_selections() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features.push(serde_json::from_value(serde_json::json!({
+    ir.model.features.push(json::from_value(cadmpeg_core::json!({
         "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false,
         "definition": {"kind": "operation", "value": {"kind": "untrim_surface", "value": {"faces": {"kind": "native", "value": "native:faces"}, "loops": {"kind": "selected", "edges": {"kind": "native", "value": "native:loops"}}, "extension": 3.0}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
     let gaps = design_projection_gaps(&ir, &F3dNative::default());
@@ -93,9 +94,9 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
 fn design_projection_gaps_count_cosmetic_thread_faces() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (ordinal, face) in [
-        serde_json::json!({"kind": "native", "value": "native:thread-face"}),
-        serde_json::json!({"kind": "unresolved"}),
-        serde_json::json!({
+        cadmpeg_core::json!({"kind": "native", "value": "native:thread-face"}),
+        cadmpeg_core::json!({"kind": "unresolved"}),
+        cadmpeg_core::json!({
             "kind": "historical",
             "value": {
                 "state": "test:model:feature-input#thread",
@@ -108,7 +109,7 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
     .enumerate()
     {
         ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("test:model:feature#thread-{ordinal}"),
                 "ordinal": ordinal,
                 "definition": {"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {"face": face,
@@ -163,7 +164,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native_dimension.native_ref = Some("native:dimension-companion".into());
     ir.model.sketch_constraints.push(native_dimension);
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#extrude",
             "ordinal": 0,
             "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {
@@ -185,7 +186,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("Extrude feature"),
     );
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#sweep",
             "ordinal": 1,
             "definition": {"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
@@ -202,7 +203,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("Sweep feature"),
     );
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#fillet",
             "ordinal": 2,
             "definition": {"kind": "operation", "value": {"kind": "fillet", "value": {"groups": [
@@ -233,7 +234,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("Fillet feature"),
     );
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#suppressed-fillet",
             "ordinal": 2,
             "suppressed": true,
@@ -244,7 +245,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("suppressed Fillet feature"),
     );
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
             "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "unsupported",
@@ -252,7 +253,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("native feature"),
     );
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
             "definition": {"kind": "operation", "value": {"kind": "pattern", "value": {"seeds": [],
@@ -478,7 +479,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
 
     native.design_construction_operand_groups.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "native:partial-edges",
             "scope_record_index": 1,
             "scope_reference_ordinal": 0,
@@ -571,7 +572,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     assert_eq!(gaps.unprojected_sketch_curves, 0);
 
     ir.model.parameters.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "synthetic:test:id#parameter-2",
             "ordinal": 2,
             "name": "d2",
@@ -643,7 +644,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .design_parameter_scopes
         .iter()
         .map(|scope| {
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
                 "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "Unsupported",
@@ -827,7 +828,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         1
     );
     ir.model.sketch_constraints.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:model:sketch-constraint#dimension",
             "sketch": "f3d:model:sketch#1",
             "definition": {
@@ -1010,6 +1011,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
             .expect("valid identity"),
         target: target.into(),
         appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1067,11 +1069,11 @@ fn design_projection_gaps_count_canvas_images_with_a_cleared_flag() {
         0
     );
     let mut cleared = crate::test_support::canvas::canvas_wire_fixture();
-    cleared["id"] = serde_json::json!("f3d:native:canvas#1");
-    cleared["second_boundary_flag"] = serde_json::json!(false);
+    cleared["id"] = cadmpeg_core::json!("f3d:native:canvas#1");
+    cleared["second_boundary_flag"] = cadmpeg_core::json!(false);
     native
         .design_canvas_images
-        .push(serde_json::from_value(cleared).unwrap());
+        .push(json::from_value(cleared).unwrap());
     assert_eq!(
         design_projection_gaps(&ir, &native).assumed_reference_image_flags,
         1
@@ -1083,31 +1085,31 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (ordinal, (seeds, pattern)) in [
         (
-            serde_json::json!([{"kind": "faces", "value": {"kind": "native", "value": "native:seed-faces"}}]),
-            serde_json::json!({"kind": "unresolved", "form": "curve_driven"}),
+            cadmpeg_core::json!([{"kind": "faces", "value": {"kind": "native", "value": "native:seed-faces"}}]),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "curve_driven"}),
         ),
         (
-            serde_json::json!([{"kind": "faces", "value": {"kind": "unresolved"}}]),
-            serde_json::json!({"kind": "unresolved", "form": "linear"}),
+            cadmpeg_core::json!([{"kind": "faces", "value": {"kind": "unresolved"}}]),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "linear"}),
         ),
         (
-            serde_json::json!([{"kind": "bodies", "value": {"kind": "native", "value": "native:seed-bodies"}}]),
-            serde_json::json!({"kind": "unresolved", "form": "circular"}),
+            cadmpeg_core::json!([{"kind": "bodies", "value": {"kind": "native", "value": "native:seed-bodies"}}]),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "circular"}),
         ),
         (
-            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
-            serde_json::json!({"kind": "mirror_reference", "plane": {"kind": "native", "value": "native:plane"}}),
+            cadmpeg_core::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            cadmpeg_core::json!({"kind": "mirror_reference", "plane": {"kind": "native", "value": "native:plane"}}),
         ),
         (
-            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
-            serde_json::json!({"kind": "curve_driven", "path": {"kind": "native", "value": "native:path"}, "spacing": 25.0, "count": 4}),
+            cadmpeg_core::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            cadmpeg_core::json!({"kind": "curve_driven", "path": {"kind": "native", "value": "native:path"}, "spacing": 25.0, "count": 4}),
         ),
     ]
     .into_iter()
     .enumerate()
     {
         ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("test:model:feature#pattern-{ordinal}"),
                 "ordinal": ordinal,
                 "definition": {"kind": "operation", "value": {"kind": "pattern", "value": {"seeds": seeds,
@@ -1139,7 +1141,7 @@ fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
     ] {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:feature#unstitch",
                 "ordinal": 0,
                 "definition": FeatureDefinition::Operation(FeatureOperation::UnstitchFaces { faces }), "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))

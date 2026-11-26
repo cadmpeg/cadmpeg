@@ -6,6 +6,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_bytes::zlib_compress;
@@ -992,21 +993,20 @@ fn snapshot(bytes: &[u8]) -> String {
     let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
-                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(result.source_fidelity())
-                    .expect("serialize source_fidelity"),
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+        Err(err) => cadmpeg_core::json!({ "decode_error": err.to_string() }),
     };
     let inspect =
         match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect"),
+            Err(err) => cadmpeg_core::json!({ "inspect_error": err.to_string() }),
         };
-    snapshot_text(&serde_json::json!({ "decode": decode, "inspect": inspect }))
+    snapshot_text(&cadmpeg_core::json!({ "decode": decode, "inspect": inspect }))
 }
 
 #[test]
@@ -1044,7 +1044,7 @@ static COVERED_ARENAS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
         if let Some(namespace) = result.ir().native.namespace("nx") {
             for (arena, records) in namespace.arenas() {
                 if !records.is_empty() {
-                    covered.insert(arena.clone());
+                    covered.insert(arena.to_string());
                 }
             }
         }

@@ -439,6 +439,7 @@ fn reused_native_faces_keep_distinct_owner_occurrences() {
     assert_eq!(ir.geometry.bodies.len(), 2);
     assert_eq!(ir.geometry.faces.len(), 4);
     assert_eq!(ir.geometry.edges.len(), 14);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate owner occurrences");
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
@@ -471,6 +472,7 @@ fn disconnected_recovered_shells_keep_their_native_body_owner() {
     assert_eq!(ir.geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(ir.geometry.regions[0].body, ir.geometry.bodies[0].id);
     assert_eq!(ir.geometry.faces.len(), 2);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate ownership");
     assert!(report.is_ok(), "{:?}", report.findings);
 }
@@ -501,6 +503,7 @@ fn one_native_body_keeps_multiple_face_rosters() {
     assert_eq!(ir.geometry.regions.len(), 1);
     assert_eq!(ir.geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(ir.geometry.faces.len(), 2);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate body ownership");
     assert!(report.is_ok(), "{:?}", report.findings);
 }
@@ -525,6 +528,7 @@ fn reused_face_roster_keeps_each_native_body_instance() {
     assert_eq!(ir.geometry.regions.len(), 2);
     assert_eq!(ir.geometry.faces.len(), 4);
     assert_eq!(ir.geometry.edges.len(), 14);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate roster instances");
     assert!(report.is_ok(), "{:?}", report.findings);
 }

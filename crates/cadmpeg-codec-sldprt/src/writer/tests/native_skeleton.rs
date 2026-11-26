@@ -20,7 +20,7 @@ use crate::SldprtCodec;
 /// Writes `ir` as a generated part: no retained source.
 fn write(ir: &cadmpeg_ir::CadIr) -> (Vec<u8>, Vec<LossNote>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap();
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
@@ -134,7 +134,7 @@ fn a_solidworks_feature_history_keeps_the_skeleton_off() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .unwrap();
     let (bytes, losses) = write(&ir);

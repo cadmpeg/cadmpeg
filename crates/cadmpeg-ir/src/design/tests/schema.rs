@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The schema feature generates a schema for every design type.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use schemars::{schema_for, JsonSchema, SchemaGenerator};
 
@@ -195,7 +196,7 @@ fn every_design_type_has_a_schema() {
 
 #[test]
 fn a_neutral_schema_is_its_wire_form() {
-    let schema = serde_json::to_value(schema_for!(Neutral<ParameterRef>)).unwrap();
+    let schema = json::to_value(schema_for!(Neutral<ParameterRef>)).unwrap();
     let properties = &schema["properties"];
     for field in ["text", "refs", "measures"] {
         assert!(properties.get(field).is_some(), "{field}: {schema}");
@@ -242,6 +243,7 @@ fn every_design_root_type_has_a_schema() {
     generates::<configuration::Arrangement>(&mut generator);
     generates::<configuration::ArrangementKind>(&mut generator);
     generates::<configuration::ArrangementAppearance>(&mut generator);
+    generates::<configuration::InstanceAppearance>(&mut generator);
     generates::<configuration::ArrangementMove>(&mut generator);
     generates::<configuration::NestedArrangement>(&mut generator);
     generates::<configuration::ArrangementRef>(&mut generator);

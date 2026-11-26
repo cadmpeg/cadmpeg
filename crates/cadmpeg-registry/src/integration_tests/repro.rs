@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::repro::*;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{math::Point3, report::check::Check, CadIr};
 use std::time::Duration;
 
@@ -47,8 +48,7 @@ fn repro_composed_check_and_shrink_keep_signature_and_reduce_rows() {
     assert!(check(&reduced)
         .iter()
         .all(|finding| finding.check != Check::ReferentialIntegrity));
-    let parsed: CadIr =
-        serde_json::from_value(serde_json::to_value(&reduced.document).unwrap()).unwrap();
+    let parsed: CadIr = json::from_value(json::to_value(&reduced.document).unwrap()).unwrap();
     assert!(parsed.fragment);
 }
 
@@ -96,6 +96,9 @@ fn repro_shrink_elapsed_budget_stops_search() {
 fn repro_nonreproducing_cut_retains_rows_and_reason() {
     let document = cadmpeg_ir::examples::unit_cube().unwrap();
     let finding = cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!(
+            "registry/test.synthetic-finding-requiring-additional-context"
+        ),
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
         entity: Some(document.geometry.bodies[0].id.to_string()),
@@ -109,7 +112,7 @@ fn repro_nonreproducing_cut_retains_rows_and_reason() {
         bundle.document.geometry.faces.len(),
         document.geometry.faces.len()
     );
-    let parsed: Bundle = serde_json::from_slice(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+    let parsed: Bundle = json::from_slice(&json::to_vec(&bundle).unwrap()).unwrap();
     assert_eq!(parsed, bundle);
     assert!(check(&bundle)
         .iter()

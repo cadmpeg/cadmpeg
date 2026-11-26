@@ -36,7 +36,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
     let native_path = directory.path().join("source.prt");
     std::fs::write(&native_path, PRT).unwrap();
     let catalog = InputCatalog::with_builtins();
-    let decoded = load_artifact(&catalog, &native_path, DecodeOptions::default(), None).unwrap();
+    let decoded = load_artifact(&catalog, &native_path, &DecodeOptions::default(), None).unwrap();
     let original_report = decoded.decode_report().unwrap();
     let fidelity = decoded.fidelity().unwrap();
     assert!(
@@ -52,7 +52,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
         load_artifact(
             &catalog,
             &path,
-            DecodeOptions::default(),
+            &DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .unwrap()
@@ -76,7 +76,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
         .all(|finding| finding.check != Check::NativeLinks));
 
     let mut edited = restored.ir;
-    let namespace = edited.native.namespace_mut("nx");
+    let namespace = edited.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     let mut schemas = namespace
         .arena_as::<serde_json::Value>("parasolid_deltas_schemas")
         .unwrap();
@@ -85,7 +85,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
         .find(|schema| schema["definition"]["kind"] == 240)
         .unwrap();
     assert_eq!(schema["custom_name"], "MY_KIND");
-    schema["custom_name"] = serde_json::json!("EDITED_KIND");
+    schema["custom_name"] = cadmpeg_core::json!("EDITED_KIND");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

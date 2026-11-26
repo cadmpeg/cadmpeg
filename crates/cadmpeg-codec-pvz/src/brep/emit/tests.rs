@@ -78,12 +78,7 @@ fn cube_becomes_a_valid_outward_solid() {
         ),
         (12, 8, 24)
     );
-    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
-    let serious: Vec<_> = report
-        .findings
-        .iter()
-        .filter(|finding| finding.severity >= Severity::Warning)
-        .collect();
+    let serious = serious_findings(&ir);
     assert!(serious.is_empty(), "{serious:?}");
     let centre_mm = CUBE_SIZE * 1000.0 / 2.0;
     for face in &geometry.faces {
@@ -259,7 +254,9 @@ fn exhausted_nesting_is_reported() {
 
 /// Warnings and worse of the neutral validation of `ir`.
 fn serious_findings(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-    cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+    let mut ir = ir.clone();
+    cadmpeg_ir::examples::add_document_root(&mut ir);
+    cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
         .unwrap()
         .findings
         .into_iter()

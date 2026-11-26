@@ -12,6 +12,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::serde_erase::json as json_wire;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -49,7 +50,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_face_operands.push(
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -104,7 +105,7 @@ fn sketch_geometry_flag_is_retained_with_a_loss_note() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_sketch_placements.push(
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:native:sketch-placement#0",
             "entity_id": "0_35",
             "byte_offset": 100,
@@ -201,7 +202,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     let mut operand: crate::records::topology::face::DesignFaceOperand =
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -369,7 +370,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
-        scopeless_tessellations: Vec::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);
@@ -557,7 +557,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
     let extrude = |profile: serde_json::Value,
                    start: serde_json::Value,
                    termination: serde_json::Value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": profile,
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": profile,
                 "direction": {"kind": "profile_normal"},
                 "start": start,
                 "extent": {
@@ -568,12 +568,12 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
                 "op": "new_body"}}}))
             .expect("Extrude definition")
     };
-    let sketch_profile = serde_json::json!({"kind": "planar", "value": {
+    let sketch_profile = cadmpeg_core::json!({"kind": "planar", "value": {
         "kind": "sketch_profiles",
         "value": {"sketch": "test:model:sketch#1", "profiles": [0]}
     }});
-    let profile_start = serde_json::json!({"kind": "profile_plane"});
-    let blind = serde_json::json!({"kind": "blind", "length": 10.0});
+    let profile_start = cadmpeg_core::json!({"kind": "profile_plane"});
+    let blind = cadmpeg_core::json!({"kind": "blind", "length": 10.0});
 
     assert!(!feature_definition_is_incomplete(&extrude(
         sketch_profile.clone(),
@@ -581,26 +581,26 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
         blind.clone(),
     )));
     assert!(feature_definition_is_incomplete(&extrude(
-        serde_json::json!({"kind": "planar", "value": {"kind": "native", "value": "native:profile"}}),
+        cadmpeg_core::json!({"kind": "planar", "value": {"kind": "native", "value": "native:profile"}}),
         profile_start.clone(),
         blind.clone(),
     )));
     assert!(feature_definition_is_incomplete(&extrude(
         sketch_profile.clone(),
-        serde_json::json!({"kind": "unresolved"}),
+        cadmpeg_core::json!({"kind": "unresolved"}),
         blind,
     )));
     assert!(feature_definition_is_incomplete(&extrude(
         sketch_profile,
         profile_start,
-        serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
+        cadmpeg_core::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
     )));
 }
 
 #[test]
 fn hole_completeness_requires_support_placement_size_and_extent() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
-        serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {"face": {"kind": "faces", "value": ["test:model:face#support"]},
+        json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "hole", "value": {"face": {"kind": "faces", "value": ["test:model:face#support"]},
             "placements": [{
                 "kind": "directed",
                 "position": {"x": 1.0, "y": 2.0, "z": 3.0},
@@ -727,19 +727,19 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
 #[test]
 fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("sheet-metal definition")
     };
     let base_flange = |profile| {
         definition(
-            serde_json::json!({"kind": "operation", "value": {"kind": "sheet_metal_base_flange", "value": {"profile": profile,
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sheet_metal_base_flange", "value": {"profile": profile,
             "thickness": 2.5,
             "side": "forward"}}}),
         )
     };
     let edge_flange = |edges| {
         definition(
-            serde_json::json!({"kind": "operation", "value": {"kind": "sheet_metal_edge_flange", "value": {"edges": edges,
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sheet_metal_edge_flange", "value": {"edges": edges,
             "height": {"kind": "distance", "value": 25.0},
             "angle": std::f64::consts::FRAC_PI_2,
             "height_datum": "outer_faces",
@@ -750,7 +750,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     };
     let hem = |edges| {
         definition(
-            serde_json::json!({"kind": "operation", "value": {"kind": "sheet_metal_hem", "value": {"edges": edges,
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sheet_metal_hem", "value": {"edges": edges,
             "bend_position": "adjacent",
             "form": {"kind": "flat", "length": 10.0},
             "direction": "forward",
@@ -759,34 +759,34 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     };
 
     assert!(!feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
+        cadmpeg_core::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
     )));
     assert!(feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "native", "value": "native:profile"}),
+        cadmpeg_core::json!({"kind": "native", "value": "native:profile"}),
     )));
     assert!(!feature_definition_is_incomplete(&edge_flange(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
+        cadmpeg_core::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&edge_flange(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
+        cadmpeg_core::json!({"kind": "native", "value": "native:edges"}),
     )));
     assert!(!feature_definition_is_incomplete(&hem(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
+        cadmpeg_core::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&hem(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
+        cadmpeg_core::json!({"kind": "native", "value": "native:edges"}),
     )));
 }
 
 #[test]
 fn selected_face_and_edge_features_require_neutral_operands() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("selected feature definition")
     };
     let fillet = |edges| {
         definition(
-            serde_json::json!({"kind": "operation", "value": {"kind": "fillet", "value": {"groups": [{
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "fillet", "value": {"groups": [{
                 "edges": edges,
                 "radius": {"kind": "constant", "radius": 5.0},
                 "tangency_weight": 1.0
@@ -795,43 +795,43 @@ fn selected_face_and_edge_features_require_neutral_operands() {
     };
 
     assert!(!feature_definition_is_incomplete(&fillet(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
+        cadmpeg_core::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
     )));
     assert!(feature_definition_is_incomplete(&fillet(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
+        cadmpeg_core::json!({"kind": "native", "value": "native:edges"}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "delete_face", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]},
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "delete_face", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]},
             "heal": true}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "delete_face", "value": {"faces": {"kind": "native", "value": "native:faces"},
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "delete_face", "value": {"faces": {"kind": "native", "value": "native:faces"},
             "heal": true}}}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "offset_surface", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]},
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "offset_surface", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]},
             "distance": 2.0}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "offset_surface", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]}}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "offset_surface", "value": {"faces": {"kind": "faces", "value": ["test:model:face#1"]}}}}),
     )));
 }
 
 #[test]
 fn form_and_primitive_completeness_requires_construction_payloads() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("construction definition")
     };
 
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": ["test:model:subd#1"]}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": ["test:model:subd#1"]}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": []}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": []}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "block", "value": {"dimensions": [30.0, 40.0, 20.0],
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "block", "value": {"dimensions": [30.0, 40.0, 20.0],
             "placement": [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -840,11 +840,11 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
             "op": "join"}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "block", "value": {"dimensions": [30.0, 40.0, 20.0],
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "block", "value": {"dimensions": [30.0, 40.0, 20.0],
             "op": "join"}}}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "primitive", "value": {"solid": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "primitive", "value": {"solid": {
                 "kind": "cylinder",
                 "radius": 15.0,
                 "height": 7.0,
@@ -853,7 +853,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
             "op": "join"}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "primitive", "value": {"solid": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "primitive", "value": {"solid": {
                 "kind": "cylinder",
                 "radius": 15.0,
                 "height": 7.0,
@@ -866,12 +866,12 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
 #[test]
 fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("profile or Boolean definition")
     };
 
     let sweep = definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
             "kind": "solid",
             "sections": [],
             "op": "join",
@@ -885,7 +885,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     );
     assert!(!feature_definition_is_incomplete(&sweep));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sweep", "value": {"shape": {
                 "kind": "solid",
             "sections": [],
                 "op": "join",
@@ -899,21 +899,21 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     )));
 
     let chamfer = definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups": [{
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups": [{
             "edges": {"kind": "edges", "value": ["test:model:edge#1"]},
             "spec": {"kind": "distance", "distance": 2.0}
         }], "flip_direction": false}}}),
     );
     assert!(!feature_definition_is_incomplete(&chamfer));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups": [{
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups": [{
                 "edges": {"kind": "native", "value": "native:edges"},
                 "spec": {"kind": "distance", "distance": 2.0}
             }], "flip_direction": false}}}),
     )));
 
     let combine = definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "combine", "value": {"operands": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "combine", "value": {"operands": {
             "target": {"kind": "bodies", "value": ["test:model:body#target"]},
             "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
         },
@@ -921,7 +921,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     );
     assert!(!feature_definition_is_incomplete(&combine));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "combine", "value": {"operands": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "combine", "value": {"operands": {
                 "target": {"kind": "native", "value": "native:target"},
                 "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
             },
@@ -929,7 +929,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     )));
 
     let revolve = definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "revolve", "value": {"construction": {"kind": "resolved", "value": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "revolve", "value": {"construction": {"kind": "resolved", "value": {
             "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -944,7 +944,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     );
     assert!(!feature_definition_is_incomplete(&revolve));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "revolve", "value": {"construction": {"kind": "resolved", "value": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "revolve", "value": {"construction": {"kind": "resolved", "value": {
                 "profile": {"kind": "native", "value": "native:profile"},
                 "axis": {
                     "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -962,26 +962,26 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
 #[test]
 fn datum_point_completeness_requires_a_resolved_construction_rule() {
     let definition = |construction: Option<serde_json::Value>| {
-        let mut value = serde_json::json!({"kind": "operation", "value": {"kind": "datum_point", "value": {"position": {"x": 1.0, "y": 2.0, "z": 3.0}}}});
+        let mut value = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_point", "value": {"position": {"x": 1.0, "y": 2.0, "z": 3.0}}}});
         if let Some(construction) = construction {
             value["value"]["value"]
                 .as_object_mut()
                 .expect("DatumPoint object")
                 .insert("construction".into(), construction);
         }
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("DatumPoint definition")
     };
 
     assert!(!feature_definition_is_incomplete(&definition(Some(
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "circle_center",
             "edge": {"kind": "edges", "value": ["test:model:edge#1"]}
         }),
     ))));
     assert!(feature_definition_is_incomplete(&definition(None)));
     assert!(feature_definition_is_incomplete(&definition(Some(
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "distance_on_edge",
             "edge": {"kind": "native", "value": "native:edge"},
             "fraction": 0.5
@@ -992,19 +992,19 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
 #[test]
 fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("datum-plane definition")
     };
 
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "datum_plane", "value": {"frame": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_plane", "value": {"frame": {
             "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
             "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
         }}}}),
     )));
     let three_point = |points: [serde_json::Value; 3]| {
-        serde_json::json!({"kind": "operation", "value": {"kind": "datum_three_point_plane", "value": {"frame": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_three_point_plane", "value": {"frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
                 "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
@@ -1012,7 +1012,7 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
             "points": points}}})
     };
     assert!(!feature_definition_is_incomplete(&definition(three_point(
-        std::array::from_fn(|index| serde_json::json!({
+        std::array::from_fn(|index| cadmpeg_core::json!({
             "kind": "historical",
             "value": {
                 "state": "test:model:feature-input#state:1",
@@ -1023,18 +1023,18 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     ))));
     assert!(feature_definition_is_incomplete(&definition(three_point(
         std::array::from_fn(
-            |index| serde_json::json!({"kind": "native", "value": format!("native:{index}")})
+            |index| cadmpeg_core::json!({"kind": "native", "value": format!("native:{index}")})
         ),
     ))));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "datum_principal_plane", "value": {"plane": "top"}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_principal_plane", "value": {"plane": "top"}}}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "datum_offset_plane", "value": {"reference": {"kind": "feature", "feature": "test:model:feature#plane"},
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_offset_plane", "value": {"reference": {"kind": "feature", "feature": "test:model:feature#plane"},
             "distance": 5.0}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "datum_offset_plane", "value": {"distance": 5.0}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "datum_offset_plane", "value": {"distance": 5.0}}}),
     )));
 }
 
@@ -1143,7 +1143,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 #[test]
 fn draft_completeness_requires_material_side() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
-        serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "draft", "value": {"faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
+        json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "draft", "value": {"faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
             "anchor": {
                 "kind": "neutral_plane",
                 "plane": {"kind": "faces", "value": ["test:model:face#neutral"]}
@@ -1166,7 +1166,7 @@ fn draft_completeness_requires_material_side() {
 
 #[test]
 fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
-    let resolved: FeatureDefinition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
+    let resolved: FeatureDefinition = json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
             {"kind": "profile", "value": {
                 "kind": "spatial_sketch_profiles",
                 "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [2, 3]}
@@ -1185,7 +1185,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
     .expect("resolved Loft definition");
     assert!(!feature_definition_is_incomplete(&resolved));
 
-    let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
+    let unresolved: FeatureDefinition = json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
             {"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:profile"}}},
             {"kind": "profile", "value": {
                 "kind": "spatial_sketch_profiles",
@@ -1541,7 +1541,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
             draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
-                serde_json::from_value(serde_json::json!({
+                json_wire::from_value(cadmpeg_core::json!({
                     "control_words": [7, 9], "native_pair": [17, 23],
                     "depth_owner": {"value": 60, "offset": 29},
                     "auxiliary_group": {"value": 72, "offset": 40},
@@ -1671,7 +1671,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
 #[test]
 fn typed_profile_ambiguous_selection_retains_profile_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let definition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": "synthetic:profile"}},
+    let definition = json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": "synthetic:profile"}},
         "direction": {"kind": "profile_normal"},
         "start": {"kind": "profile_plane"},
         "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 7.0}}},
@@ -1808,7 +1808,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
 #[test]
 fn counted_partial_profile_selection_reports_one_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let definition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch_selection", "value": {
+    let definition = json_wire::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch_selection", "value": {
             "sketch": "synthetic:test:sketch#42", "selections": ["f3d:Design/BulkStream.dat:scope#10"]
         }}},
         "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
@@ -1890,10 +1890,10 @@ fn refused_assemble_payloads_report_the_retained_scope_loss() {
 #[test]
 fn native_mesh_face_group_sources_remain_incomplete() {
     for definition in [
-        serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":{"method":"fast", "angle_threshold":0.73,"minimum_area_fraction":0.17}}}),
-        serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh", "members":["first", "second"]}}}}),
+        cadmpeg_core::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":{"method":"fast", "angle_threshold":0.73,"minimum_area_fraction":0.17}}}),
+        cadmpeg_core::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh", "members":["first", "second"]}}}}),
     ] {
-        let operation: FeatureOperation = serde_json::from_value(definition).unwrap();
+        let operation: FeatureOperation = json_wire::from_value(definition).unwrap();
         assert!(feature_definition_is_incomplete(
             &FeatureDefinition::Operation(operation)
         ));
@@ -1901,28 +1901,37 @@ fn native_mesh_face_group_sources_remain_incomplete() {
 }
 
 #[test]
-fn scopeless_member_mesh_tessellations_belong_to_the_member_file_root() {
-    const MESH: &str = "test:model:tessellation#scopeless-body";
+fn file_root_mesh_bodies_belong_to_the_stated_root() {
+    use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh};
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let mut model = cadmpeg_ir::document::Model::default();
-    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[MESH.to_owned()])
-        .unwrap();
-    let [root] = model.product_definitions.as_slice() else {
-        panic!("one root definition");
-    };
-    assert_eq!(root.id, crate::tree::file_root_id());
-    assert_eq!(
-        root.tessellations
-            .iter()
-            .map(cadmpeg_ir::tessellation::TessellationId::as_str)
-            .collect::<Vec<_>>(),
-        [MESH]
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let root: cadmpeg_ir::ids::ProductDefinitionId =
+        "f3d:test:product-definition#component".try_into().unwrap();
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition::root(
+            root.clone(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        ));
+    ir.model.tessellations.push(
+        Tessellation::new(
+            "f3d:test:mesh-body#0".try_into().unwrap(),
+            TessellationMesh::List {
+                vertices: vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap()
+        .with_of(Meshed::definition(crate::tree::file_root_id())),
     );
-    assert!(root.bodies.is_empty());
-
-    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[]).unwrap();
-    assert_eq!(model.product_definitions.len(), 1);
-    assert_eq!(model.product_definitions[0].tessellations.len(), 1);
+    crate::tree::state_root_definition(&ctx, &mut ir).unwrap();
+    assert_eq!(ir.model.product_definitions.len(), 1);
+    assert_eq!(ir.model.tessellations[0].of, Meshed::definition(root));
 }
 
 #[test]

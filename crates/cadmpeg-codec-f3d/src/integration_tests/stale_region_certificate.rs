@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted partial-curve selections bind trimmed neutral Extrude regions.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchPlacement};
-use serde_json::json;
 
 use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::{
@@ -47,7 +48,7 @@ fn fixture_with_flags(
         entities.push(SketchEntity::new(
             crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
             sketch_id.clone(),
-            serde_json::from_value::<SketchGeometry>(geometry).unwrap(),
+            json::from_value::<SketchGeometry>(geometry).unwrap(),
         ));
         curves.push(SketchCurveIdentity {
             id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
@@ -85,7 +86,7 @@ fn fixture_with_flags(
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: serde_json::from_value(json!(profiles)).unwrap(),
+        profiles: json::from_value(json!(profiles)).unwrap(),
         native_ref: None,
     };
     let members = members
@@ -99,7 +100,7 @@ fn fixture_with_flags(
             })
         })
         .collect::<Vec<_>>();
-    let operand: DesignSketchProfileOperand = serde_json::from_value(json!({
+    let operand: DesignSketchProfileOperand = json::from_value(json!({
         "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 10,
         "class_tag": "301", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
         "asset_id_offset": 20, "entity_id": "0_42", "entity_suffix": 42,
@@ -404,7 +405,7 @@ fn bind_cut(both: bool, surviving: u32) -> (ProfileRef, Vec<LossNote>, Vec<Sketc
         &[(13, true, left), (15, false, 0.0), (16, false, 2.0)],
     );
     let history = cut_history(before, after);
-    let mut feature: Feature = serde_json::from_value(json!({
+    let mut feature: Feature = json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false, "native_ref": scope.id,
         "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
         "direction": {"kind": "reversed_profile_normal"}, "start": {"kind": "profile_plane"},

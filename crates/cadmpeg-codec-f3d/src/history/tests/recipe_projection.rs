@@ -14,6 +14,7 @@
 use crate::history::discard_projection_caches;
 use crate::history::face_boundaries::{side_one_common_edge, side_one_recipe_edge};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn projection_caches_end_after_history_consumers() {
@@ -266,12 +267,12 @@ fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback
 
 #[test]
 fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
-    let document = serde_json::json!({
+    let document = cadmpeg_core::json!({
         "id": "history",
         "byte_offset": 0,
         "states": []
     });
-    let history: AsmHistory = serde_json::from_value(document).unwrap();
+    let history: AsmHistory = json::from_value(document).unwrap();
     assert!(history.states().is_empty());
     assert!(!crate::history::projection_was_finalized(
         std::slice::from_ref(&history)

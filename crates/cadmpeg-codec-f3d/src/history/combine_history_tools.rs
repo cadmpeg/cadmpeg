@@ -4,7 +4,8 @@
 //! A tool body that a component builds in its own BREP history is not a body
 //! of the history that holds the `Combine` state. Its browser node still names
 //! the body-map entity of the tool and the scope that creates it, and the
-//! body-map pair of that entity is a history-only pair.
+//! body-map pair of that entity is a history-only pair, or a live pair when
+//! that history keeps the body unchanged after its creation.
 
 use std::collections::HashMap;
 
@@ -13,15 +14,25 @@ use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
 use crate::records::bodies::DesignBodyBinding;
 use crate::records::feature::combine::{DesignCombineBodySelection, DesignCombineForm};
 use crate::records::feature::scope::DesignParameterScope;
 
-/// One proven tool: its generating feature and body identity.
+/// The body of one proven tool.
+#[derive(PartialEq)]
+enum ToolBody {
+    /// The body-map pair identity of a history-only body.
+    Generated(String),
+    /// The solved model body of a live pair.
+    Model(cadmpeg_ir::ids::BodyId),
+}
+
+/// One proven tool: its generating feature and body.
 struct ResolvedTool {
     generator: FeatureId,
-    local_id: String,
+    body: ToolBody,
 }
 
 /// Resolve one tool to the feature that generates its history-only body, or
@@ -29,7 +40,7 @@ struct ResolvedTool {
 fn resolve_tool(
     tool: &DesignCombineBodySelection,
     stream: Option<&str>,
-    combine_ordinal: u64,
+    (combine_ordinal, combine_history): (u64, Option<&str>),
     inputs: &Inputs<'_>,
 ) -> Result<ResolvedTool, &'static str> {
     let Some(node) = tool.body_node else {
@@ -42,9 +53,6 @@ fn resolve_tool(
     let (Some(pair), None) = (pairs.next(), pairs.next()) else {
         return Err("its body entity has no single body-map pair");
     };
-    if !pair.history_only {
-        return Err("its body-map pair is not history-only");
-    }
     let mut creators = inputs.scopes.iter().filter(|candidate| {
         candidate.record_index == node.creating_scope_record_index
             && crate::ids::native_stream(&candidate.id) == stream
@@ -58,10 +66,58 @@ fn resolve_tool(
     if feature.ordinal >= combine_ordinal {
         return Err("its generating feature does not precede the Combine");
     }
+    let body = if pair.history_only {
+        ToolBody::Generated(pair.id().clone())
+    } else {
+        ToolBody::Model(live_tool_body(pair, creator, combine_history, inputs)?)
+    };
     Ok(ResolvedTool {
         generator: feature.id.clone(),
-        local_id: pair.id().clone(),
+        body,
     })
+}
+
+/// The solved body of a live pair whose creating scope reads a history other
+/// than `combine_history`, when the creating state inserts one body slot and
+/// no later transition of that history updates or deletes the slot.
+fn live_tool_body(
+    pair: &DesignBodyBinding,
+    creator: &DesignParameterScope,
+    combine_history: Option<&str>,
+    inputs: &Inputs<'_>,
+) -> Result<cadmpeg_ir::ids::BodyId, &'static str> {
+    let history = super::history_states::bound_scope_history(
+        &creator.id,
+        inputs.scope_histories,
+        inputs.histories,
+    )
+    .ok_or("its live body-map pair has a creating scope with no bound history")?;
+    if combine_history == Some(history.id.as_str()) {
+        return Err("its live body-map pair is a body of the Combine history");
+    }
+    let state_id = creator
+        .history_state_id()
+        .ok_or("its creating scope has no history state")?;
+    let mut states = history
+        .states()
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let (Some(state), None) = (states.next(), states.next()) else {
+        return Err("its creating history state is not unique");
+    };
+    let [slot] = state.transition.as_ref().map_or(&[][..], |transition| {
+        &transition.topology.bodies.inserted[..]
+    }) else {
+        return Err("its creating state does not insert exactly one body");
+    };
+    let later = super::generated_bodies::later_body_changes(history, creator)
+        .ok_or("its creating state has no unique place in the history's state order")?;
+    if later.contains(slot) {
+        return Err("a later transition of its history changes the body");
+    }
+    pair.body
+        .clone()
+        .ok_or("its live body-map pair names no solved body")
 }
 
 /// Resolve every tool body of `scope` by its tool ordinal. Each entry is the
@@ -70,7 +126,7 @@ fn resolve_tool(
 fn resolve_tools(
     operation: &crate::records::feature::combine::DesignCombineOperation,
     stream: Option<&str>,
-    combine_ordinal: u64,
+    (combine_ordinal, combine_history): (u64, Option<&str>),
     inputs: &Inputs<'_>,
 ) -> Vec<(usize, Result<ResolvedTool, &'static str>)> {
     let mut resolved = Vec::<(usize, Result<ResolvedTool, &'static str>)>::new();
@@ -82,12 +138,12 @@ fn resolve_tools(
         {
             continue;
         }
-        let mut entry = resolve_tool(tool, stream, combine_ordinal, inputs);
+        let mut entry = resolve_tool(tool, stream, (combine_ordinal, combine_history), inputs);
         if let Ok(candidate) = &entry {
             let repeated = resolved.iter().any(|(_, existing)| {
                 existing
                     .as_ref()
-                    .is_ok_and(|existing| existing.local_id == candidate.local_id)
+                    .is_ok_and(|existing| existing.body == candidate.body)
             });
             if repeated {
                 entry = Err("another tool names the same body");
@@ -101,20 +157,25 @@ fn resolve_tools(
 struct Inputs<'a> {
     scopes: &'a [DesignParameterScope],
     bindings: &'a [DesignBodyBinding],
+    histories: &'a [AsmHistory],
+    scope_histories: &'a HashMap<String, String>,
     by_native: HashMap<&'a str, &'a Feature>,
 }
 
-/// Bind the tools of each operand-list `Combine` that name history-only bodies.
+/// Bind the tools of each operand-list `Combine` that name history-only bodies
+/// or bodies whose creating scope reads another history.
 ///
 /// Every proven tool adds its generating feature to the `Combine`
 /// dependencies and records `combine:tool:<ordinal>:generator`; the product
 /// definition of that feature owns the tool body. The tools become generated
-/// bodies only when every tool is proven. Return the losses and the native
+/// bodies when every tool is a proven history-only body, and model bodies
+/// when every tool is a proven live body. Return the losses and the native
 /// tools that each bound `Combine` replaces.
 pub(crate) fn bind(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     bindings: &[DesignBodyBinding],
+    (histories, scope_histories): (&[AsmHistory], &HashMap<String, String>),
 ) -> (Vec<LossNote>, Vec<ReplacedTools>) {
     let mut losses = Vec::new();
     let mut replaced = Vec::new();
@@ -123,6 +184,8 @@ pub(crate) fn bind(
         let inputs = Inputs {
             scopes,
             bindings,
+            histories,
+            scope_histories,
             by_native: features
                 .iter()
                 .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
@@ -163,12 +226,29 @@ pub(crate) fn bind(
                     })
                 })
             });
-            if !names_history_only_pair {
+            let combine_history = combine_history(scope, &inputs);
+            let names_other_history = operation.tools.iter().any(|tool| {
+                tool.body_node.is_some_and(|node| {
+                    scopes.iter().any(|candidate| {
+                        candidate.record_index == node.creating_scope_record_index
+                            && crate::ids::native_stream(&candidate.id) == stream
+                            && scope_histories
+                                .get(&candidate.id)
+                                .is_some_and(|bound| Some(bound.as_str()) != combine_history)
+                    })
+                })
+            });
+            if !names_history_only_pair && !names_other_history {
                 continue;
             }
             updates.push((
                 index,
-                resolve_tools(operation, stream, feature.ordinal, &inputs),
+                resolve_tools(
+                    operation,
+                    stream,
+                    (feature.ordinal, combine_history),
+                    &inputs,
+                ),
             ));
         }
     }
@@ -202,15 +282,7 @@ pub(crate) fn bind(
         let Some(native) = feature.native_ref.clone() else {
             continue;
         };
-        let refs = tools
-            .into_iter()
-            .filter_map(|(_, tool)| tool.ok())
-            .map(|tool| GeneratedBodyRef::new(tool.generator, tool.local_id))
-            .collect::<Result<Vec<_>, _>>();
-        let Some(selection) = refs
-            .ok()
-            .and_then(|refs| BodySelection::generated(refs, native).ok())
-        else {
+        let Some(selection) = tool_selection(tools, native) else {
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
                 "feature {} retains its native Combine tools: the generated-body selection is not admitted",
                 feature.id
@@ -245,6 +317,55 @@ pub(crate) fn bind(
         }
     }
     (losses, replaced)
+}
+
+/// The history that holds the state of the `Combine` scope: its bound
+/// history, else the one history that holds its state pair.
+fn combine_history<'a>(scope: &DesignParameterScope, inputs: &Inputs<'a>) -> Option<&'a str> {
+    if let Some(bound) = inputs.scope_histories.get(&scope.id) {
+        return Some(bound.as_str());
+    }
+    let state = scope.history_state_id()?;
+    let previous =
+        super::history_states::effective_scope_previous_history_state_id(scope, inputs.histories)?;
+    super::history_states::unique_history_state_pair(inputs.histories, state, previous)
+        .map(|(history, _, _)| history.id.as_str())
+}
+
+/// The selection of proven tools: generated bodies when every tool is a
+/// history-only body, model bodies when every tool is a live body.
+fn tool_selection(
+    tools: Vec<(usize, Result<ResolvedTool, &'static str>)>,
+    native: String,
+) -> Option<BodySelection> {
+    let tools = tools
+        .into_iter()
+        .map(|(_, tool)| tool.ok())
+        .collect::<Option<Vec<_>>>()?;
+    if tools
+        .iter()
+        .all(|tool| matches!(tool.body, ToolBody::Model(_)))
+    {
+        let bodies = tools
+            .into_iter()
+            .filter_map(|tool| match tool.body {
+                ToolBody::Model(body) => Some(body),
+                ToolBody::Generated(_) => None,
+            })
+            .collect::<Vec<_>>();
+        return Some(BodySelection::Resolved {
+            bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies).ok()?,
+            native,
+        });
+    }
+    let refs = tools
+        .into_iter()
+        .map(|tool| match tool.body {
+            ToolBody::Generated(local_id) => GeneratedBodyRef::new(tool.generator, local_id).ok(),
+            ToolBody::Model(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    BodySelection::generated(refs, native).ok()
 }
 
 /// The native tools of a `Combine` that [`bind`] replaced with generated

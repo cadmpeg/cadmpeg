@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+mod final_bodies;
 mod historical_split;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
@@ -300,7 +301,7 @@ fn run_roles(
     fill_history(
         &ctx,
         bytes,
-        &history,
+        (&history, None),
         &wants,
         &mut bodies,
         &WorkBudget::new(work),
@@ -522,7 +523,13 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         )
         .unwrap();
         let mut scratch = CadIr::empty();
-        cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
+        cadmpeg_asm::brep::transfer::transfer_into_ir(
+            &ctx,
+            &mut scratch,
+            cadmpeg_ir::codec_id!("f3d"),
+            brep,
+        )
+        .unwrap();
         let body = &scratch.geometry.bodies[0];
         let Extract::Nest(topology) = extract(&ctx, &scratch.geometry, body.id.as_str()).unwrap()
         else {
@@ -540,6 +547,7 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
             id: HistoryBodyId::mint("test:history-body:nest#shared-vertex").unwrap(),
             produced_by: Some(feature("base").id),
             consumed_by: None,
+            state_of: None,
             state: HistoryStateRef {
                 ordinal: 0,
                 identifier: 12,
@@ -623,7 +631,7 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
             fill_history(
                 &ctx,
                 &bytes,
-                &history,
+                (&history, None),
                 &[Want {
                     origin: &cut,
                     producer: None,
@@ -990,7 +998,7 @@ fn a_captured_derived_result_preserves_the_current_body() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             origin: &feature,
             producer: Some(&feature),
@@ -1145,6 +1153,7 @@ fn cube_candidate() -> HistoryBody {
         id: HistoryBodyId::mint("test:history-body:nest#cube").expect("identity"),
         produced_by: Some(feature("base").id),
         consumed_by: None,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: 0,
             identifier: 1,
@@ -1157,6 +1166,33 @@ fn cube_candidate() -> HistoryBody {
 fn admission_preserves_a_valid_nest_and_its_producer() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let candidate = cube_candidate();
+    let expected = candidate.clone();
+    assert_eq!(
+        admit(&ctx, candidate, &feature("base")).expect("admission"),
+        Some(expected)
+    );
+}
+
+/// A finding outside the topology checks does not drop a usable nest: its
+/// records out of identity order are an `ArenaOrder` Error of the document,
+/// and the nest is admitted.
+#[test]
+fn admission_ignores_findings_outside_the_topology_checks() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut candidate = cube_candidate();
+    candidate.topology.faces.reverse();
+    let mut document = CadIr::empty();
+    document.model.features.push(feature("base"));
+    document.model.history_bodies.push(candidate.clone());
+    let report = cadmpeg_ir::validate_neutral(&document, Vec::new()).expect("validation runs");
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::ArenaOrder
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+        }),
+        "{:?}",
+        report.findings
+    );
     let expected = candidate.clone();
     assert_eq!(
         admit(&ctx, candidate, &feature("base")).expect("admission"),
@@ -1590,7 +1626,7 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
     fill_history(
         &ctx,
         &bytes,
-        &history,
+        (&history, None),
         &[Want {
             origin: &feature,
             producer: None,
@@ -1618,6 +1654,7 @@ fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i
     HistoryBody {
         produced_by: produced_by.map(|native| feature(native).id),
         consumed_by: consumed_by.map(|native| feature(native).id),
+        state_of: None,
         state: HistoryStateRef {
             ordinal: u32::try_from(state).expect("small"),
             identifier: state,

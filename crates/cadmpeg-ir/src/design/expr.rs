@@ -17,7 +17,7 @@ mod tree;
 #[cfg(feature = "schema")]
 use std::borrow::Cow;
 
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::read_session::{self, Repair};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -28,13 +28,12 @@ pub use self::parse::parse;
 pub use self::print::{format_number, print};
 use super::construction::FrameAxis;
 use super::dimension::ParameterRef;
-use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
 use super::units::Unit;
 use crate::scalar::{FiniteReal, NonNegativeReal};
 
 /// An expression: a neutral typed tree or the source's own text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -43,7 +42,7 @@ use crate::scalar::{FiniteReal, NonNegativeReal};
     deny_unknown_fields,
     bound(
         serialize = "R: Serialize + PartialEq + Clone",
-        deserialize = "R: Deserialize<'de> + PartialEq + Clone"
+        deserialize = "R: ::serde::de::DeserializeOwned + PartialEq + Clone"
     )
 )]
 pub enum Expression<R = ParameterRef> {
@@ -64,19 +63,22 @@ pub enum Expression<R = ParameterRef> {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "NeutralWire<R>",
-    bound(deserialize = "R: Deserialize<'de> + PartialEq + Clone")
+    bound(deserialize = "R: ::serde::de::DeserializeOwned + PartialEq + Clone")
 )]
 pub struct Neutral<R = ParameterRef>(pub Node<R>);
 
 /// One token of source expression text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "R: Serialize", deserialize = "R: Deserialize<'de>")
+    bound(
+        serialize = "R: Serialize",
+        deserialize = "R: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum ExpressionToken<R> {
     /// Source text the decoder does not resolve.
@@ -127,16 +129,38 @@ pub enum ExpressionDialect {
     Native(NonBlankString),
 }
 
+impl ExpressionDialect {
+    /// The expression language of the sources the codec `codec` reads: the
+    /// language of their process records where `process`, and of their
+    /// design otherwise. `None` where `codec` is blank.
+    pub(crate) fn of_codec(codec: &str, process: bool) -> Option<Self> {
+        Some(match (codec, process) {
+            ("catia", _) => Self::Catia,
+            ("creo", _) => Self::Creo,
+            ("f3d", false) => Self::Fusion,
+            ("f3d", true) => Self::FusionCam,
+            ("fcstd", _) => Self::FreeCad,
+            ("inventor", _) => Self::Inventor,
+            ("nx", _) => Self::Nx,
+            ("sldprt", _) => Self::SolidWorks,
+            (codec, _) => Self::Native(NonBlankString::new(codec)?),
+        })
+    }
+}
+
 /// A node of a neutral expression tree. Its clone, comparison, and drop
 /// walk the tree without recursion.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "R: Serialize", deserialize = "R: Deserialize<'de>")
+    bound(
+        serialize = "R: Serialize",
+        deserialize = "R: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Node<R> {
     /// A literal in its authored unit. A number has no sign of its own: a
@@ -564,18 +588,10 @@ pub struct NeutralWire<R> {
 /// Why expression text does not read as a [`Neutral`].
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ExprError {
-    /// The text is not canonical text of a tree over its side lists.
+    /// The text is not canonical text of a tree over its side lists, or its
+    /// tree is deeper than an expression's bound (§2.5).
     #[error("{0}")]
     Malformed(String),
-    /// The text nests past the expression ceiling.
-    #[error("{} exceeds the ceiling of {}", .0.operation, .0.limit)]
-    ResourceLimit(ResourceLimit),
-}
-
-impl From<ResourceLimit> for ExprError {
-    fn from(limit: ResourceLimit) -> Self {
-        Self::ResourceLimit(limit)
-    }
 }
 
 /// Reads a wire payload: parses the text, then requires that printing the
@@ -583,20 +599,30 @@ impl From<ResourceLimit> for ExprError {
 ///
 /// # Errors
 ///
-/// Returns [`ExprError::Malformed`] for text that does not parse, that is
-/// not canonical, or whose side lists are not each stated once in order of
-/// first use, and [`ExprError::ResourceLimit`] for text nested past the
-/// expression ceiling.
+/// Returns [`ExprError::Malformed`] for text that does not parse, whose tree
+/// is deeper than an expression's bound, that is not canonical, or whose side
+/// lists are not each stated once in order of first use.
 pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, ExprError> {
     let node = parse(&wire.text, &wire.refs, &wire.measures)?;
     let again = print(&node)?;
-    if again.text != wire.text {
+    if again.text != wire.text
+        && !read_session::repair(Repair::Spelling, &|| {
+            format!(
+                "expression text {:?} is restated as its canonical text {:?}",
+                wire.text, again.text
+            )
+        })
+    {
         return Err(ExprError::Malformed(format!(
             "text {:?} is not canonical; it prints as {:?}",
             wire.text, again.text
         )));
     }
-    if again.refs != wire.refs || again.measures != wire.measures {
+    if (again.refs != wire.refs || again.measures != wire.measures)
+        && !read_session::repair(Repair::Spelling, &|| {
+            "expression refs and measures are restated in order of first use".into()
+        })
+    {
         return Err(ExprError::Malformed(
             "refs and measures are not each stated once in order of first use".into(),
         ));
@@ -604,8 +630,14 @@ pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, Expr
     Ok(node)
 }
 
+/// Writes the tree's canonical text. A tree deeper than an expression's bound
+/// still writes, and is noted for the decode wrapper, which gives up the
+/// record that holds it (§2.5).
 impl<R: Serialize + PartialEq + Clone> Serialize for Neutral<R> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0.depth() > crate::bounds::MAX_EXPRESSION_DEPTH {
+            crate::bounds::note_expression_past();
+        }
         print(&self.0)
             .map_err(serde::ser::Error::custom)?
             .serialize(serializer)
@@ -629,37 +661,6 @@ impl<R: JsonSchema> JsonSchema for Neutral<R> {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         NeutralWire::<R>::json_schema(generator)
-    }
-}
-
-fn level() -> Result<read::Depth, ExprError> {
-    Ok(read::enter(Ceiling::Expression)?)
-}
-
-/// The levels a left-associative chain (`or`, `and`, `+ -`, `* /`) holds
-/// while it is read or printed. Its tree is one level deeper for each operand
-/// past its second, so each such operand enters a level, held to the chain's
-/// end.
-struct Chain {
-    operands: usize,
-    levels: Vec<read::Depth>,
-}
-
-impl Chain {
-    const fn new() -> Self {
-        Self {
-            operands: 1,
-            levels: Vec::new(),
-        }
-    }
-
-    /// Enters the chain's next operand.
-    fn next(&mut self) -> Result<(), ExprError> {
-        self.operands += 1;
-        if self.operands > 2 {
-            self.levels.push(level()?);
-        }
-        Ok(())
     }
 }
 
