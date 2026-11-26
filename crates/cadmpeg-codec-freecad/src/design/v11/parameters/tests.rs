@@ -3,8 +3,8 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
-use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral};
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+use cadmpeg_ir::design::expr::{Expression, Neutral};
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -78,24 +78,30 @@ fn a_property_bound_to_a_named_constraint_is_a_neutral_expression() {
 }
 
 #[test]
-fn a_reference_outside_every_body_stays_source_text() {
+fn a_reference_to_a_sheet_alias_names_the_cell_parameter() {
     let ir = decode(SHEET_BOUND);
-    let ParameterDefinition::Expression(Expression::Source { dialect, tokens }) =
-        &parameter(&ir, "fcstd:design:parameter#Pad:Length").definition
-    else {
-        panic!();
-    };
-    assert_eq!(*dialect, ExpressionDialect::FreeCad);
-    assert_eq!(
-        tokens.as_slice(),
-        [ExpressionToken::Text("Parameters.plate_w / 2".to_owned())]
-    );
-    assert!(ir
+    let sheet = cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Parameters").unwrap();
+    let cell = ir
         .design
         .parameters
         .iter()
-        .all(|parameter| !parameter.id.as_str().contains("Parameters:cell")));
-    assert!(ir.design.spreadsheets.is_empty());
+        .find(|parameter| {
+            parameter.owner == Some(ParameterOwner::Feature(sheet.clone()))
+                && parameter
+                    .name
+                    .as_ref()
+                    .is_some_and(|name| name.as_str() == "plate_w")
+        })
+        .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
+    assert!(
+        cell.id.as_str().contains("Parameters:cell:"),
+        "{}",
+        cell.id.as_str()
+    );
+    assert_eq!(
+        neutral(parameter(&ir, "fcstd:design:parameter#Pad:Length")),
+        ("$0 / 2".to_owned(), vec![cell.id.as_str().to_owned()])
+    );
 }
 
 #[test]

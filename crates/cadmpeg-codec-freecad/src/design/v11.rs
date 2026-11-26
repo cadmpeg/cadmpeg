@@ -4,13 +4,14 @@
 //! The document is one scope at its root definition. Each `PartDesign::Body`
 //! is an ordered `Body` container, a root of the scope, whose `Tip` is its
 //! rollback, and each of its members is one feature, except the stages a
-//! `MultiTransform` lists, which are its layout (§6.5). An object outside
-//! every Body has no design record: its shape is unproduced (§5.5). A
-//! document whose Bodies hold no member and no parameter has no scope (§5.1).
+//! `MultiTransform` lists, which are its layout (§6.5). Each design object
+//! outside every Body is one feature, a member of the scope's root unordered
+//! `Group` (§5.2), whose own result is its current state (§5.3). A document
+//! with no design object and no parameter has no scope (§5.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -50,15 +51,17 @@ pub(crate) fn project(
 ) {
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
-    if history.bodies.is_empty() {
-        return;
-    }
-    let mut features = Vec::new();
-    for member in &history.contained {
-        if let Some(legacy) = history.features.get(member) {
-            features.push(feature(legacy, &source));
-        }
-    }
+    let mut features = history
+        .features
+        .values()
+        .map(|legacy| feature(legacy, &source))
+        .collect::<Vec<_>>();
+    let grouped = history
+        .features
+        .keys()
+        .filter(|id| !history.contained.contains(**id))
+        .map(|id| Member::Feature((*id).clone()))
+        .collect::<BTreeSet<_>>();
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
     let mut roots = Vec::new();
@@ -98,19 +101,14 @@ pub(crate) fn project(
                 None => (None, Position::After(Member::Container(id.clone()))),
             },
         };
-        let touched = body
-            .native_ref
-            .as_deref()
-            .is_some_and(|object| source.touched.contains(object));
         current.push(CurrentState {
             at,
             bodies: body.outputs.clone(),
             poses: BTreeMap::default(),
-            status: if touched {
-                EvaluationStatus::Stale
-            } else {
-                EvaluationStatus::Current
-            },
+            status: body
+                .native_ref
+                .as_deref()
+                .map_or(EvaluationStatus::Current, |object| source.status(object)),
             native_ref: body.native_ref.clone(),
         });
         roots.push(id.clone());
@@ -122,6 +120,18 @@ pub(crate) fn project(
             folders: Vec::new(),
             rollback,
             placement: None,
+        });
+    }
+    if !grouped.is_empty() {
+        let id = ContainerId::from(Identity::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "design", "container"),
+            cadmpeg_ir::identity_key!("document:group"),
+        ));
+        roots.push(id.clone());
+        containers.push(Container::Unordered {
+            id,
+            kind: UnorderedKind::Group,
+            members: grouped.clone(),
         });
     }
     containers.sort_by(|a, b| a.id().cmp(b.id()));
@@ -144,6 +154,28 @@ pub(crate) fn project(
     ir.design.containers = containers;
     ir.design.features = features;
     ir.design.parameters = parameters;
+    // A member of the Group that changes state has its own result, the
+    // bodies of its shape (§5.3).
+    for member in grouped {
+        let Member::Feature(id) = &member else {
+            continue;
+        };
+        let legacy = history.features[id];
+        let bodies = legacy.evaluation.outputs();
+        if bodies.is_empty() || ir.is_stateless(id, None).unwrap_or(true) {
+            continue;
+        }
+        current.push(CurrentState {
+            at: Position::After(member.clone()),
+            bodies: bodies.clone(),
+            poses: BTreeMap::default(),
+            status: legacy
+                .native_ref
+                .as_deref()
+                .map_or(EvaluationStatus::Current, |object| source.status(object)),
+            native_ref: legacy.native_ref.clone(),
+        });
+    }
     ir.design.scopes.push(DesignScope {
         definition,
         roots,
@@ -280,6 +312,16 @@ impl<'a> Source<'a> {
             .native_ref
             .as_deref()
             .is_some_and(|object| self.stored.contains(&(object, name)))
+    }
+
+    /// The status of a state object `object` stores: `Stale` where `FreeCAD`
+    /// marks the object `Touched` (§5.4).
+    fn status(&self, object: &str) -> EvaluationStatus {
+        if self.touched.contains(object) {
+            EvaluationStatus::Stale
+        } else {
+            EvaluationStatus::Current
+        }
     }
 
     fn is_stage(&self, legacy: &LegacyFeature) -> bool {
@@ -447,6 +489,10 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
             }
         }
         LegacyOperation::Sketch { .. } => OperationFamily::Sketch,
+        LegacyOperation::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            ..
+        } => OperationFamily::Spreadsheet,
         LegacyOperation::SpatialSketch { .. } => OperationFamily::SpatialSketch,
         LegacyOperation::DatumPrincipalPlane { .. }
         | LegacyOperation::DatumPlane { .. }

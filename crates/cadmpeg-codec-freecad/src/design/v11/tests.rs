@@ -6,9 +6,10 @@ use std::io::Cursor;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFamily};
+use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -60,6 +61,50 @@ fn root_bodies(ir: &CadIr) -> BTreeSet<String> {
 
 fn feature(id: &str) -> Member {
     Member::Feature(cadmpeg_ir::features::FeatureId::mint(id).unwrap())
+}
+
+const GROUP: &str = "fcstd:design:container#document:group";
+
+/// The CADIR write of `ir` read back, and each record id an `arena.omitted`
+/// loss of the write names.
+fn cadir_round_trip(ir: &CadIr) -> (CadIr, BTreeSet<String>) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .unwrap();
+    let omitted = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "arena.omitted")
+        .filter_map(|loss| loss.message.split_once("omitted: "))
+        .flat_map(|(_, ids)| ids.split(", ").map(str::to_owned))
+        .collect();
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    (written, omitted)
+}
+
+/// The members of the scope's root `Group`.
+fn group_members(ir: &CadIr) -> BTreeSet<Member> {
+    let Some(Container::Unordered {
+        kind: UnorderedKind::Group,
+        members,
+        ..
+    }) = ir
+        .design
+        .containers
+        .iter()
+        .find(|container| container.id().as_str() == GROUP)
+    else {
+        panic!("{:?}", ir.design.containers);
+    };
+    assert!(ir.design.scopes[0]
+        .roots
+        .iter()
+        .any(|root| root.as_str() == GROUP));
+    members.clone()
 }
 
 #[test]
@@ -199,22 +244,43 @@ fn a_geometry_decode_states_the_root_and_no_design() {
 }
 
 #[test]
-fn an_object_outside_every_body_has_no_design_record() {
+fn an_object_of_a_document_with_no_body_is_a_member_of_the_root_group() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let design = &decoded.ir().design;
-    assert!(design.scopes.is_empty());
-    assert!(design.containers.is_empty());
-    assert!(design.features.is_empty());
-    assert!(design.parameters.is_empty());
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("{:?}", ir.design.scopes);
+    };
+    assert!(ir
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| definition.is_root() && definition.id == scope.definition));
+    assert_eq!(
+        scope
+            .roots
+            .iter()
+            .map(cadmpeg_ir::design::ids::ContainerId::as_str)
+            .collect::<Vec<_>>(),
+        [GROUP]
+    );
+    assert_eq!(
+        group_members(&ir),
+        BTreeSet::from([feature("fcstd:design:feature#Stored")])
+    );
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Stored { .. }
+    ));
+    let (written, omitted) = cadir_round_trip(&ir);
+    assert!(
+        !omitted.contains("fcstd:design:feature#Stored"),
+        "{omitted:?}"
+    );
+    assert_eq!(written.design.features, ir.design.features);
+    assert_eq!(written.design.containers, ir.design.containers);
 }
 
 #[test]
@@ -426,12 +492,108 @@ fn a_scoped_root_owns_its_current_states_and_unproduced_shapes_at_every_depth() 
 }
 
 #[test]
-fn an_unscoped_root_owns_every_top_level_shape() {
+fn a_group_member_shape_is_its_current_state() {
     let ir = decode(BINARY_EXACT_SHAPE, DecodeDepth::Design);
-    assert!(ir.design.scopes.is_empty());
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("{:?}", ir.design.scopes);
+    };
+    let carrier = feature("fcstd:design:feature#BinaryCarrier");
+    assert_eq!(group_members(&ir), BTreeSet::from([carrier.clone()]));
+    let [state] = scope.current.as_slice() else {
+        panic!("{:?}", scope.current);
+    };
+    assert_eq!(state.at, Position::After(carrier));
     let bodies = root_bodies(&ir);
     assert!(!bodies.is_empty());
-    assert!(bodies
+    assert_eq!(
+        state
+            .bodies
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect::<BTreeSet<_>>(),
+        bodies
+    );
+    assert!(scope.unproduced.is_empty(), "{:?}", scope.unproduced);
+    let (written, omitted) = cadir_round_trip(&ir);
+    assert!(
+        !omitted.contains("fcstd:design:feature#BinaryCarrier"),
+        "{omitted:?}"
+    );
+    assert_eq!(written.design.scopes, ir.design.scopes);
+}
+
+#[test]
+fn objects_outside_a_body_are_group_members_with_their_parameters() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="Part::Feature" name="First" id="2"/>
+ <Object type="Part::Box" name="Box" id="3"/>
+ <Object type="Spreadsheet::Sheet" name="Sheet" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="First"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="First"/></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Box"><Properties Count="1">
+  <Property name="Length" type="App::PropertyLength"><Float value="10.0000000000000000"/></Property>
+ </Properties></Object>
+ <Object name="Sheet"><Properties Count="1">
+  <Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("{:?}", ir.design.scopes);
+    };
+    assert_eq!(scope.roots.len(), 2, "{:?}", scope.roots);
+    assert!(ir.design.containers.iter().any(|container| matches!(
+        container,
+        Container::Ordered { kind: OrderedKind::Body, members, .. }
+            if members.as_slice() == [feature("fcstd:design:feature#First")]
+    )));
+    assert_eq!(
+        group_members(&ir),
+        BTreeSet::from(["fcstd:design:feature#Box", "fcstd:design:feature#Sheet"].map(feature))
+    );
+    let operation = |id: &str| {
+        ir.design
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == id)
+            .unwrap_or_else(|| panic!("{:?}", ir.design.features))
+            .definition
+            .operation
+            .clone()
+    };
+    assert_eq!(
+        operation("fcstd:design:feature#Sheet"),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Spreadsheet
+        }
+    );
+    let length = ir
+        .design
+        .parameters
         .iter()
-        .all(|body| body.starts_with("fcstd:model:body#BinaryCarrier:Shape:")));
+        .find(|parameter| parameter.id.as_str() == "fcstd:design:parameter#Box:Length")
+        .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
+    assert_eq!(
+        length.owner,
+        Some(ParameterOwner::Feature(
+            cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Box").unwrap()
+        ))
+    );
+    let (written, omitted) = cadir_round_trip(&ir);
+    for id in [
+        "fcstd:design:feature#Box",
+        "fcstd:design:feature#Sheet",
+        "fcstd:design:parameter#Box:Length",
+    ] {
+        assert!(!omitted.contains(id), "{id}: {omitted:?}");
+    }
+    assert_eq!(written.design.features, ir.design.features);
+    assert_eq!(written.design.parameters, ir.design.parameters);
 }
