@@ -123,7 +123,7 @@ fn a_written_part_keeps_the_resolution_its_bodies_store() {
         face.name = None;
     }
     let (losses, linear) = written_linear_tolerance(&ir);
-    assert!((linear - 1.0e-4).abs() <= COMPARISON_SLACK, "{linear}");
+    assert_eq!(linear, ir.tolerances.linear.get());
     assert!(!charges_linear_tolerance(&losses), "{losses:?}");
 }
 

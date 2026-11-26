@@ -333,6 +333,46 @@ fn a_refused_sketch_dimension_of_a_configuration_stream_lane_reaches_the_decode_
     }
 }
 
+/// A part decoded with a refused sketch dimension and written unchanged, with
+/// and without its decode sidecar, keeps its native records and its linear
+/// tolerance: the write states the tolerance the native records load at.
+#[test]
+fn a_part_written_unchanged_keeps_its_native_records_and_linear_tolerance() {
+    const OFF_VALUE_METRES: f64 = 1.0e-4;
+    let decoded = decode(token_dimension_part(
+        D2_DRIVING_METRES + OFF_VALUE_METRES,
+        LaneStream::ResolvedFeatures,
+    ));
+    let ir = decoded.ir();
+    for fidelity in [Some(decoded.source_fidelity()), None] {
+        let mut output = Vec::new();
+        let report = SldprtCodec
+            .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+            .unwrap()
+            .write_to(&mut output)
+            .unwrap();
+        assert!(
+            !report
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "native.records-omitted"),
+            "{:?}",
+            report.losses
+        );
+        let read_back = decode(output);
+        assert_eq!(read_back.ir().tolerances, ir.tolerances);
+        let namespace = read_back
+            .ir()
+            .native
+            .namespace("sldprt")
+            .expect("native records");
+        if fidelity.is_some() {
+            assert_eq!(Some(namespace), ir.native.namespace("sldprt"));
+        }
+        assert!(SldprtNative::load(namespace, read_back.ir().tolerances.linear).is_ok());
+    }
+}
+
 /// A part decoded with a refused sketch dimension that its points measure
 /// only beyond the decode's linear tolerance, written under a linear
 /// tolerance that measures it, holds native relation instances that the
