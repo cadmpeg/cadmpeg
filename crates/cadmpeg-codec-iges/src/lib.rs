@@ -202,6 +202,7 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "IGES";
     /// Writes B-rep and product data only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;

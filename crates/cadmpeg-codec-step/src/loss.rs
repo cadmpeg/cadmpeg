@@ -298,8 +298,6 @@ pub(crate) enum StepLossCode {
     PmiAllAroundComponentsUnresolved,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
-    /// Uninterpreted passthrough records were not represented.
-    PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
     /// A wire body's direct color alpha was omitted from RGB curve styling.
@@ -323,8 +321,6 @@ pub(crate) enum StepLossCode {
     HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
-    /// Source-native records were not represented.
-    SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
@@ -581,7 +577,6 @@ impl StepLossCode {
         Self::PmiAnnotationNotWritten,
         Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
-        Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
@@ -592,7 +587,6 @@ impl StepLossCode {
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
-        Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::RegionSolidReducedToSheet,
@@ -797,7 +791,6 @@ impl StepLossCode {
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
-            Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
@@ -808,7 +801,6 @@ impl StepLossCode {
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
-            Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
@@ -915,7 +907,6 @@ impl StepLossCode {
             | Self::OccurrenceMetadataOmitted
             | Self::InstanceDefinitionSplit
             | Self::SourceAssociationOmitted
-            | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
@@ -924,7 +915,6 @@ impl StepLossCode {
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
-            | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit
             | Self::OccurrencePlacementInferred => Severity::Info,
             _ => Severity::Warning,
@@ -1108,9 +1098,7 @@ impl StepLossCode {
             | Self::AppearanceBindingTargetConflict
             | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
-                LossTaxonomy::ParametricRecordOmitted
-            }
+            Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
             | Self::PmiAllAroundComponentsUnresolved
@@ -1122,7 +1110,6 @@ impl StepLossCode {
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-            Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
@@ -1307,7 +1294,6 @@ mod tests {
                 "pmi.annotation-not-written",
                 "pmi.all-around-components-unresolved",
                 "source.association-omitted",
-                "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
@@ -1318,7 +1304,6 @@ mod tests {
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
-                "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.region-solid-reduced-to-sheet",

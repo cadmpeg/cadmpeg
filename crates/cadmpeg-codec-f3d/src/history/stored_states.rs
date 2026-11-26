@@ -363,14 +363,9 @@ impl StateDecoder<'_, '_> {
         )
         .map(|(_, remainder)| remainder);
         let mut notes = Vec::new();
-        let admitted = remainder.and_then(|mut remainder| {
-            geometry_admission::admit_noted(
-                self.ctx,
-                &mut scratch,
-                &mut notes,
-                &mut remainder.annotation_records,
-            )
-            .map(|()| remainder.unknowns)
+        let admitted = remainder.and_then(|remainder| {
+            geometry_admission::admit_noted(self.ctx, &mut scratch, &mut notes)
+                .map(|()| remainder.unknowns)
         });
         match admitted {
             Ok(unknowns) => Ok(Ok(StateRecords {

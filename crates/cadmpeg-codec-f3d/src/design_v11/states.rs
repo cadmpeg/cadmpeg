@@ -575,6 +575,44 @@ fn marked(
 }
 
 /// `items`, separated by commas.
+/// The current bodies of each history, whose record space is the entry of
+/// `spaces` at its index, and the current bodies in no history.
+fn held<'b>(
+    bodies: &'b BTreeSet<BodyId>,
+    spaces: &[&str],
+) -> (Vec<BTreeSet<BodyId>>, BTreeSet<&'b str>) {
+    let mut held = vec![BTreeSet::new(); spaces.len()];
+    let mut inherited = BTreeSet::new();
+    for body in bodies {
+        match spaces
+            .iter()
+            .position(|space| body.as_str().starts_with(space))
+        {
+            Some(at) => {
+                held[at].insert(body.clone());
+            }
+            None => {
+                inherited.insert(body.as_str());
+            }
+        }
+    }
+    (held, inherited)
+}
+
+/// The loss of the current bodies `inherited` of the scope `definition`,
+/// which lie in no history.
+fn inherited_bodies(
+    definition: &ProductDefinitionId,
+    inherited: &BTreeSet<&str>,
+) -> Option<LossNote> {
+    (!inherited.is_empty()).then(|| {
+        F3dLossCode::HistoryStateBodyInherited.note(format!(
+            "scope {definition}: the states after its timeline items hold the current bodies {} as the current geometry does: they lie in no model blob with a history.",
+            join(inherited.iter().copied())
+        ))
+    })
+}
+
 fn join<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
     items.into_iter().collect::<Vec<_>>().join(", ")
 }
@@ -691,21 +729,11 @@ impl<'r> Reader<'r, '_> {
                     scope.definition
                 ))
             })?;
-        let mut held = vec![BTreeSet::new(); histories.len()];
-        let mut inherited = BTreeSet::new();
-        for body in &scope.bodies {
-            match histories
-                .iter()
-                .position(|history| body.as_str().starts_with(&history.space))
-            {
-                Some(at) => {
-                    held[at].insert(body.clone());
-                }
-                None => {
-                    inherited.insert(body.as_str());
-                }
-            }
-        }
+        let spaces = histories
+            .iter()
+            .map(|history| history.space.as_str())
+            .collect::<Vec<_>>();
+        let (held, inherited) = held(&scope.bodies, &spaces);
         let mut entries = Vec::new();
         for (position, member) in built.iter().enumerate() {
             let current = position + 1 == built.len();
@@ -738,13 +766,8 @@ impl<'r> Reader<'r, '_> {
         }
         self.losses
             .extend(tails_assumed(&scope.definition, &entries, &histories));
-        if !inherited.is_empty() {
-            self.losses.push(F3dLossCode::HistoryStateBodyInherited.note(format!(
-                "scope {}: the states after its timeline items hold the current bodies {} as the current geometry does: they lie in no model blob with a history.",
-                scope.definition,
-                join(inherited)
-            )));
-        }
+        self.losses
+            .extend(inherited_bodies(&scope.definition, &inherited));
         let owners = history_owners(&held, &current);
         let consumed = self.consumed(&histories, &owners, &current)?;
         let wants = wants(&entries, &planned, &consumed);

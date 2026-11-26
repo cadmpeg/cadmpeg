@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admit vertex tolerances and cache-first spring support relations.
-
-mod vertex_tolerance;
+//! Admit cache-first spring support relations.
 
 use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::DecodeContext;
@@ -23,9 +21,6 @@ pub(crate) enum Note {
     /// The spring curve `curve` keeps native support pcurves whose endpoint
     /// relation is unresolved.
     SpringPcurve { curve: String },
-    /// The tolerance of the vertex `vertex` is widened by `widening`
-    /// millimetres.
-    VertexTolerance { vertex: String, widening: f64 },
 }
 
 impl Note {
@@ -33,7 +28,6 @@ impl Note {
     pub(crate) fn record(&self) -> &str {
         match self {
             Self::SupportChart { curve, .. } | Self::SpringPcurve { curve } => curve,
-            Self::VertexTolerance { vertex, .. } => vertex,
         }
     }
 
@@ -46,44 +40,19 @@ impl Note {
             Self::SpringPcurve { .. } => F3dLossCode::SpringSupportPcurveUnresolved.note(format!(
                 "Curve {key} retains native support pcurves whose endpoint relation is unresolved"
             )),
-            Self::VertexTolerance { widening, .. } => F3dLossCode::VertexToleranceWidened.note(
-                format!("Widened the tolerance of vertex {key} by {widening:.17} mm"),
-            ),
         }
     }
 }
 
-/// Admits the geometry of `ir`, and pushes to `losses` what it leaves
-/// unstated: one loss per curve note, and one for every widened vertex
-/// tolerance.
+/// Admits the geometry of `ir`, and pushes to `losses` one loss per note.
 pub(super) fn admit(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-    annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
     let mut notes = Vec::new();
-    admit_noted(ctx, ir, &mut notes, annotations)?;
-    let widened = notes
-        .iter()
-        .filter_map(|note| match note {
-            Note::VertexTolerance { widening, .. } => Some(*widening),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if !widened.is_empty() {
-        let maximum_widening = widened.iter().copied().fold(0.0, f64::max);
-        losses.push(F3dLossCode::VertexToleranceWidened.note(format!(
-            "Widened {} vertex tolerance(s); maximum widening {maximum_widening:.17} mm",
-            widened.len()
-        )));
-    }
-    losses.extend(
-        notes
-            .iter()
-            .filter(|note| !matches!(note, Note::VertexTolerance { .. }))
-            .map(|note| note.loss(note.record())),
-    );
+    admit_noted(ctx, ir, &mut notes)?;
+    losses.extend(notes.iter().map(|note| note.loss(note.record())));
     Ok(())
 }
 
@@ -93,9 +62,7 @@ pub(crate) fn admit_noted(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     notes: &mut Vec<Note>,
-    annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
-    vertex_tolerance::admit(ctx, ir, notes, annotations)?;
     for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,

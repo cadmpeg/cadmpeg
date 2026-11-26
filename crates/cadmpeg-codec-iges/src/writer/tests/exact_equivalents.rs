@@ -20,7 +20,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
-use super::super::native_record_losses;
 use super::super::pcurve_entity;
 use super::super::records::TopologyIndex;
 use crate::test_support::decoded_with;
@@ -579,7 +578,7 @@ fn a_line_pcurve_writes_as_a_degree_1_type_126() {
 }
 
 #[test]
-fn a_native_curve_without_a_directory_sequence_names_that_cause() {
+fn a_native_curve_without_a_directory_sequence_is_listed_with_that_cause() {
     let mut ir = CadIr::empty();
     let mut fields = serde_json::Map::new();
     fields.insert("entity_type".into(), 126.into());
@@ -595,16 +594,14 @@ fn a_native_curve_without_a_directory_sequence_names_that_cause() {
         .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_records("entities", vec![record])
         .expect("a valid arena name");
-    let messages = native_record_losses(&ir)
-        .into_iter()
-        .map(|loss| loss.message)
-        .collect::<Vec<_>>();
-    assert!(
-        messages.contains(
-            &"the IGES write omits 1 native record(s) whose record states no Directory sequence that ties it to a neutral geometry record: iges:native:entity#unsequenced"
-                .to_owned()
-        ),
-        "{messages:#?}"
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        charged(&losses, "export/native.records-omitted"),
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` whose record \
+          states no Directory sequence that ties it to a neutral geometry record: \
+          iges:native:entity#unsequenced"
+        ]
     );
 }
 

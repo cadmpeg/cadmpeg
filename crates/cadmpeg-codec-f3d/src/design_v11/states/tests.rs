@@ -36,9 +36,9 @@ use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::test_support::zip_test::f3d_with_smbh;
 
 use super::{
-    bind, history_owners, marked, omitted, plan, project, step, stopped, tails_assumed, unstated,
-    wants, Chain, Consumed, Entry, History, Kind, Marks, Plan, Planned, Reader, Rule, Scope, Tail,
-    Tails,
+    bind, held, history_owners, inherited_bodies, marked, omitted, plan, project, step, stopped,
+    tails_assumed, unstated, wants, Chain, Consumed, Entry, History, Kind, Marks, Plan, Planned,
+    Reader, Rule, Scope, Tail, Tails,
 };
 
 fn point(name: &str, x: f64) -> Point {
@@ -1363,9 +1363,8 @@ fn head_bodies_and_body_map_pairs_that_no_state_joins_charge_losses() {
 #[test]
 fn an_admission_note_of_a_record_that_a_state_states_charges_a_loss_keyed_by_its_evaluation() {
     let design = design(&["a", "b", "c"], "c", Vec::new());
-    let note = |name: &str| Note::VertexTolerance {
-        vertex: point(name, 0.0).id.as_str().to_owned(),
-        widening: 0.5,
+    let note = |name: &str| Note::SpringPcurve {
+        curve: point(name, 0.0).id.as_str().to_owned(),
     };
     let state = StateRecords {
         notes: vec![note("own"), note("held")],
@@ -1399,11 +1398,34 @@ fn an_admission_note_of_a_record_that_a_state_states_charges_a_loss_keyed_by_its
     let [loss] = outcome.losses.as_slice() else {
         panic!("one loss: {:#?}", outcome.losses);
     };
-    assert_eq!(loss.code, F3dLossCode::VertexToleranceWidened.kind());
+    assert_eq!(loss.code, F3dLossCode::SpringSupportPcurveUnresolved.kind());
     assert!(
         loss.message
             .contains(&format!("{} {}", b.id, point("own", 0.0).id)),
         "{}",
         loss.message
     );
+}
+
+#[test]
+fn a_current_body_in_no_history_is_inherited_by_every_state_with_a_loss() {
+    let definition =
+        ProductDefinitionId::mint("test:design:definition#root").expect("identity grammar");
+    let bodies = [
+        body("kept", None).id,
+        BodyId::mint("f3d:mesh:entity#imported").expect("identity grammar"),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let (held, inherited) = held(&bodies, &["f3d:brep:"]);
+    assert_eq!(held, vec![BTreeSet::from([body("kept", None).id])]);
+    let loss = inherited_bodies(&definition, &inherited).expect("a loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateBodyInherited.kind());
+    assert!(
+        loss.message.contains("f3d:mesh:entity#imported")
+            && !loss.message.contains("f3d:brep:entity#kept"),
+        "{}",
+        loss.message
+    );
+    assert!(inherited_bodies(&definition, &BTreeSet::new()).is_none());
 }
