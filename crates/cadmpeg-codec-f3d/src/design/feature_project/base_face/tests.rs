@@ -71,7 +71,7 @@ fn base_face_projects_a_registered_source_and_owned_rule() {
         }))
         .unwrap();
     let settings = settings();
-    for version in [3, 4] {
+    for version in [3, 4, 7] {
         let inputs = ProjectInputs {
             design_types: &[registration(version)],
             face_source_groups: std::slice::from_ref(&group),

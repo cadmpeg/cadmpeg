@@ -257,7 +257,7 @@ impl FaceSourceType {
         registration: &crate::records::entity_header::SegmentTypeData,
     ) -> bool {
         let (guid, module, versions): (&str, &str, &[u32]) = match self {
-            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3, 4]),
+            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3, 4, 7]),
             Self::Carrier => ("CAA55628-037B-4D01-9C74-26118F70B63E", "Fusion", &[0]),
             Self::Settings => ("E75C86D6-76D8-4F1F-BC16-AB8CB74958B0", "Fusion", &[2, 3]),
             Self::Identity => (
