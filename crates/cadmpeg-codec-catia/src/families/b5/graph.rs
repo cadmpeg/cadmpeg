@@ -106,7 +106,7 @@ pub(crate) struct B5Graph {
     pub(in crate::families) edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
     /// Maximum incident endpoint residual for each logical vertex, keyed by
     /// the combined vertex index used by `edge_vertices`.
-    pub(in crate::families) vertex_tolerances: BTreeMap<usize, PositiveReal>,
+    pub(in crate::families) vertex_residuals: BTreeMap<usize, PositiveReal>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub(in crate::families) profiles: BTreeMap<u32, B5Profile>,
@@ -1399,7 +1399,7 @@ fn parse_from_records_with_class21(
     )?;
     let edge_vertices = bound_vertices.edges;
     let logical_vertices = bound_vertices.vertices;
-    let vertex_tolerances = bound_vertices.tolerances;
+    let vertex_residuals = bound_vertices.tolerances;
     let mut referenced_loops = HashSet::new();
     for face in &faces {
         for &loop_id in &face.loops {
@@ -1447,7 +1447,7 @@ fn parse_from_records_with_class21(
         vertex_incidence_links,
         vertices,
         edge_parameter_incidences,
-        vertex_tolerances,
+        vertex_residuals,
         profiles,
     }))
 }
