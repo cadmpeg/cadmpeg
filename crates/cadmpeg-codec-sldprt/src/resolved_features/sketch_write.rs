@@ -40,6 +40,7 @@ pub(super) fn sketch_brep(
             ))
         })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.tolerances = source.tolerances;
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
     let prefix = cadmpeg_ir::ids::IdentityKey::try_new(

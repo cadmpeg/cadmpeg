@@ -17,7 +17,7 @@ use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::CadIr;
 
 /// Every key under which the decoder records a codec digest.
-pub(crate) const KEYS: [&str; 16] = [
+pub(crate) const KEYS: [&str; 17] = [
     "brep_local_sha256",
     "sldprt_configuration_feature_states_local_sha256",
     "sldprt_configuration_parameter_values_local_sha256",
@@ -30,6 +30,7 @@ pub(crate) const KEYS: [&str; 16] = [
     "sldprt_neutral_parameter_local_sha256",
     "sldprt_neutral_sketch_constraint_local_sha256",
     "sldprt_neutral_sketch_local_sha256",
+    crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE,
     crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE,
     crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE,
     crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE,

@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
     LoopRing, Point, Region, RegionUnstated, Sense, Shell, Unstated, Vertex,
 };
 use cadmpeg_ir::CadIr;
+use cadmpeg_parasolid::precision;
 use cadmpeg_parasolid::records::primary::Node;
 use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 
@@ -332,12 +333,14 @@ struct FaceRead {
     loops: Vec<(u32, LoopShape)>,
 }
 
+/// The document of one partition, and the `res_linear` (metres) that each of
+/// its bodies stores.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &PrimaryRecords<'_>,
     stream: u32,
     losses: &mut Vec<LossNote>,
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, BTreeMap<BodyId, Option<f64>>), CodecError> {
     let mut nodes = BTreeMap::new();
     for node in records.nodes() {
         if nodes.insert(node.index(), node).is_some() {
@@ -346,26 +349,13 @@ pub(crate) fn project(
     }
     let mut ir = CadIr::empty();
     let mut selected_shells = BTreeMap::new();
-    let mut linear: Option<PositiveLength> = None;
+    let mut stored_resolutions = BTreeMap::new();
     for body in nodes
         .values()
         .copied()
         .filter(|node| node.kind() == kind::BODY)
     {
-        if let Some(value) = body
-            .real("res_linear")
-            .and_then(|value| PositiveLength::new(value * MM_PER_METRE))
-        {
-            linear = Some(linear.map_or(
-                value,
-                |current| if current > value { current } else { value },
-            ));
-        } else {
-            losses.push(
-                SolidEdgeLossCode::BodyResolutionInvalid
-                    .note("invalid body linear resolution uses the document tolerance"),
-            );
-        }
+        stored_resolutions.insert(body_id(stream, body.index()), body.real("res_linear"));
         let body_kind = match body.byte("body_type") {
             Some(1) => BodyKind::Solid,
             Some(2) => BodyKind::Wire,
@@ -513,9 +503,11 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
-    if let Some(linear) = linear {
-        ir.tolerances.linear = linear;
-    }
+    ir.tolerances = precision::part_tolerances(
+        stored_resolutions
+            .values()
+            .filter_map(|res_linear| res_linear.and_then(precision::linear_precision)),
+    );
     let document_linear = ir.tolerances.linear.get();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
@@ -1121,7 +1113,7 @@ pub(crate) fn project(
         });
     }
     trim_edges(ctx, &mut ir, &fit_tolerances, document_linear, losses)?;
-    Ok(ir)
+    Ok((ir, stored_resolutions))
 }
 
 /// A `SWEPT_SURF` with a null scale as the linear sweep of its section curve

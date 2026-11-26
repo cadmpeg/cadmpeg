@@ -7,6 +7,7 @@ mod encode_sets;
 mod extrude_direction;
 mod mesh_bodies;
 mod native_skeleton;
+mod part_tolerances;
 mod profile_data;
 mod root_definition;
 mod saved_cadir;
