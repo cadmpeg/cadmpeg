@@ -285,6 +285,7 @@ struct LiftedPlanContext<'a> {
     vertex_indices: &'a HashMap<cadmpeg_ir::ids::VertexId, usize>,
 }
 
+#[derive(Clone, Copy)]
 struct LiftedEdgeTarget {
     edge_index: usize,
     curve_index: usize,
@@ -460,11 +461,13 @@ fn lift_pcurve_with_chart(
     Ok(fitted)
 }
 
+type LiftedEdgeCandidate<'a> = (&'a ConsolidatedRecord, Option<[f64; 2]>, Option<u64>);
+
 #[inline(never)]
 fn build_general_lifted_plan(
     env: &LiftedPlanContext<'_>,
     target: LiftedEdgeTarget,
-    candidates: &[(&ConsolidatedRecord, Option<[f64; 2]>, Option<u64>)],
+    candidates: &[LiftedEdgeCandidate<'_>],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Plan>, CodecError> {
     let LiftedPlanContext {
@@ -560,7 +563,7 @@ fn build_general_lifted_plan(
                 continue;
             };
             let Some(mut lifted) =
-                lift_pcurve_with_chart(*ctx, &pcurve_raw, &eval_surface, &chart, range, refusal)?
+                lift_pcurve_with_chart(ctx, &pcurve_raw, &eval_surface, &chart, range, refusal)?
             else {
                 continue;
             };

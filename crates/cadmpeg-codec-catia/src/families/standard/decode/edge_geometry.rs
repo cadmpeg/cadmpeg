@@ -1187,7 +1187,7 @@ pub(super) fn build_standard_edge_curve_with_deferred(
         '_,
         impl cadmpeg_ir::annotations::AnnotationStorage,
     >,
-    mut deferred_conic: Option<&mut Option<DeferredConicFallback>>,
+    deferred_conic: Option<&mut Option<DeferredConicFallback>>,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let BuildStandardEdgeCurveInputs {
         ir,
@@ -1540,9 +1540,7 @@ pub(super) fn build_standard_edge_curve_with_deferred(
                     param_range = Some(range);
                 }
             }
-            if let (Some(slot), Some((ellipse, range, gap))) =
-                (deferred_conic.as_deref_mut(), pending_conic)
-            {
+            if let (Some(slot), Some((ellipse, range, gap))) = (deferred_conic, pending_conic) {
                 let id = standard_id("curve", format_args!("{}", support.pos), CurveId::mint)?;
                 *slot = Some(DeferredConicFallback {
                     curve_id: id,

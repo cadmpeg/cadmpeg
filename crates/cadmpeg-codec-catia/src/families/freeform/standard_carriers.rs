@@ -120,7 +120,9 @@ pub(in crate::families) fn recover_missing_plane_normals(
                 }
             }
         }
-        let extents = bounds.aabb_half_extents.map(|v| v.get());
+        let extents = bounds
+            .aabb_half_extents
+            .map(cadmpeg_ir::scalar::NonNegativeLength::get);
         let zero_axes: Vec<usize> = (0..3)
             .filter(|&axis| extents[axis] <= ZERO_EXTENT_TOLERANCE_MM)
             .collect();
@@ -723,14 +725,22 @@ pub(in crate::families) fn decode_u32_jet_pcurve(
             lane.push(cadmpeg_ir::scalar::FiniteReal::new(view.f64_le()?)?);
         }
     }
-    let mut points = Vec::with_capacity(nknots);
-    let mut first = Vec::with_capacity(nknots);
-    let mut second = Vec::with_capacity(nknots);
-    for i in 0..nknots {
-        points.push([lanes[0][i].get(), lanes[1][i].get()]);
-        first.push([lanes[2][i].get(), lanes[3][i].get()]);
-        second.push([lanes[4][i].get(), lanes[5][i].get()]);
-    }
+    let [u, v, du, dv, d2u, d2v] = lanes;
+    let points: Vec<[f64; 2]> = u
+        .into_iter()
+        .zip(v)
+        .map(|(x, y)| [x.get(), y.get()])
+        .collect();
+    let first: Vec<[f64; 2]> = du
+        .into_iter()
+        .zip(dv)
+        .map(|(x, y)| [x.get(), y.get()])
+        .collect();
+    let second: Vec<[f64; 2]> = d2u
+        .into_iter()
+        .zip(d2v)
+        .map(|(x, y)| [x.get(), y.get()])
+        .collect();
     let range = [*raw_knots.first()?, *raw_knots.last()?];
     let pcurve = crate::assemble::quintic_jet_pcurve(
         5,
@@ -910,6 +920,7 @@ pub(super) fn decode_b2_plane(
 /// - `mask & 0x07`: omitted zero coordinates of origin `(x, y, z)`
 /// - `mask & 0x78`: U-axis zero-component mask (`0x10/0x20/0x40`) + unit flag (`0x08`)
 /// - `(layout & 0x70) | ((mask & 0x80) >> 4)`: V-axis zero-component mask + unit flag
+///
 /// Unbounded planes use `layout == 0x08`, `mask`, and `frame` where
 /// `(frame - 0x18) << 4` supplies the V-axis zero-component mask.
 fn decode_bitmask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
@@ -1109,7 +1120,13 @@ mod tests {
             payload.extend_from_slice(&(f64::from(i)).to_le_bytes());
             payload.extend_from_slice(&(f64::from(i) * 2.0).to_le_bytes());
         }
-        let mut frame = vec![0xb2, 0x03, 0x21, u8::try_from(payload.len()).unwrap(), 0x05];
+        let mut frame = vec![
+            0xb2,
+            0x03,
+            0x21,
+            u8::try_from(payload.len()).expect("payload length fits in u8"),
+            0x05,
+        ];
         frame.extend_from_slice(&payload);
         let records = crate::wire::records::consolidated_records(&frame);
         assert_eq!(records.len(), 1);

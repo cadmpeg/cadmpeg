@@ -28,17 +28,30 @@ const BOX_DISAMBIGUATION_RATIO: f64 = 10.0;
 const BOX_MAX_EXCESS_FRACTION: f64 = 0.05;
 const BOX_MAX_EXCESS_MM: f64 = 0.5;
 
+pub(in crate::families::standard::decode) struct CylindricalArcInputs<'a> {
+    pub(in crate::families::standard::decode) ir: &'a CadIr,
+    pub(in crate::families::standard::decode) bindings: &'a [(SurfaceId, bool, usize)],
+    pub(in crate::families::standard::decode) surface_indices: &'a HashMap<SurfaceId, usize>,
+    pub(in crate::families::standard::decode) curve_indices: &'a HashMap<CurveId, usize>,
+    pub(in crate::families::standard::decode) supports: &'a [StandardCurveSupport],
+    pub(in crate::families::standard::decode) face_bounds: &'a [Option<StandardFaceBounds>],
+    pub(in crate::families::standard::decode) topology: &'a StandardTopology,
+}
+
 pub(in crate::families::standard::decode) fn ranges(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    bindings: &[(SurfaceId, bool, usize)],
-    surface_indices: &HashMap<SurfaceId, usize>,
-    curve_indices: &HashMap<CurveId, usize>,
-    supports: &[StandardCurveSupport],
-    face_bounds: &[Option<StandardFaceBounds>],
-    topology: &StandardTopology,
+    inputs: &CylindricalArcInputs<'_>,
     endpoints: impl Fn(usize) -> [Point3; 2],
 ) -> Result<BTreeMap<usize, Option<[f64; 2]>>, cadmpeg_core::CodecError> {
+    let CylindricalArcInputs {
+        ir,
+        bindings,
+        surface_indices,
+        curve_indices,
+        supports,
+        face_bounds,
+        topology,
+    } = *inputs;
     let mut recovered = BTreeMap::<usize, Option<[f64; 2]>>::new();
     let mut active_ranges = BTreeMap::<usize, [f64; 2]>::new();
     let mut conflicted = BTreeSet::<usize>::new();
@@ -304,7 +317,7 @@ pub(in crate::families::standard::decode) fn ranges(
         // Pass 3: Unambiguous face-box disambiguation for unranged circular
         // edges where tessellation box shortfall prevented exact-zero fitting.
         let mut proposals = BTreeMap::<usize, Option<[f64; 2]>>::new();
-        for row in 0..ir.geometry.edges.len() {
+        for (row, incident_faces) in edge_incident_faces.iter().enumerate() {
             if active_ranges.contains_key(&row) || conflicted.contains(&row) {
                 continue;
             }
@@ -315,7 +328,7 @@ pub(in crate::families::standard::decode) fn ranges(
             if ends[0].distance(ends[1]) <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE {
                 continue;
             }
-            let bounds: Vec<StandardFaceBounds> = edge_incident_faces[row]
+            let bounds: Vec<StandardFaceBounds> = incident_faces
                 .iter()
                 .filter_map(|&f| face_bounds.get(f).and_then(|b| *b))
                 .collect();

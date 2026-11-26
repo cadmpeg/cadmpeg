@@ -6405,7 +6405,7 @@ fn align_standard_sphere_polar_axes(
                         CurveGeometry::Procedural { .. } => {
                             has_procedural = true;
                         }
-                        _ => {}
+                        CurveGeometry::Solved(_) => {}
                     }
                 }
             }
@@ -6640,13 +6640,15 @@ fn emit_standard_topology(
     };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
         ctx,
-        ir,
-        bindings,
-        surface_indices,
-        &curve_indices,
-        supports,
-        face_bounds,
-        topology,
+        &edge_geometry::cylindrical_arcs::CylindricalArcInputs {
+            ir,
+            bindings,
+            surface_indices,
+            curve_indices: &curve_indices,
+            supports,
+            face_bounds,
+            topology,
+        },
         edge_endpoints,
     )?;
     for (&row, &range) in &cylindrical_arc_ranges {
