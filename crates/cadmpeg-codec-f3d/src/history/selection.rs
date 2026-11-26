@@ -461,14 +461,24 @@ pub(super) fn bind_face_selection(
             continue;
         }
         let previous_candidates = &operand.preceding_candidate_faces;
-        let candidate = match previous_candidates.as_slice() {
-            [face] => face,
-            _ => {
-                let [face] = operand.changed_candidate_faces.as_slice() else {
-                    return;
-                };
-                face
+        let candidate = match (
+            previous_candidates.as_slice(),
+            operand.changed_candidate_faces.as_slice(),
+        ) {
+            ([face], _) | (_, [face]) => face,
+            // No candidate lane names one face, for example because the
+            // fallback face was withdrawn. A face that another rule resolved
+            // is the operand's selection.
+            _ if !operand.resolved_face_slots.is_empty() => {
+                for slot in &operand.resolved_face_slots {
+                    let resolved = crate::ids::brep_face_id(*slot);
+                    if !faces.contains(&resolved) {
+                        faces.push(resolved);
+                    }
+                }
+                continue;
             }
+            _ => return,
         };
         if termination {
             let referenced: HashSet<_> = operand
@@ -2781,3 +2791,6 @@ pub(super) fn feature_selected_input_state_id(
     }
     None
 }
+
+#[cfg(test)]
+mod tests;
