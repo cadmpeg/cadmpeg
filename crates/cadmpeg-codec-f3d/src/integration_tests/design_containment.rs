@@ -81,7 +81,7 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 }
 
 #[test]
-fn strict_mode_refuses_a_contained_design_intent_failure_through_record_unreadable() {
+fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
     inject_failure(malformed_design);
@@ -95,12 +95,12 @@ fn strict_mode_refuses_a_contained_design_intent_failure_through_record_unreadab
     };
     assert_eq!(
         rejection.loss().code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
+        F3dLossCode::DesignIntentUndecoded.kind()
     );
-    assert!(rejection.loss().message.starts_with(&format!(
-        "record {} given up: ",
-        crate::ids::DESIGN_INTENT_FAILURE_ID
-    )));
+    assert!(rejection
+        .loss()
+        .message
+        .contains("injected design-intent failure"));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -538,16 +538,10 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             rejection.loss().code,
             cadmpeg_ir::unknown::part::record_unreadable_kind()
         );
-        let record = crate::ids::native_scoped_id(
-            "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat",
-            "design-entity",
-            41,
-        );
         assert!(
-            rejection
-                .loss()
-                .message
-                .starts_with(&format!("record {record} stream=")),
+            rejection.loss().message.starts_with(
+                "part design-record stream=\"FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat\" offset="
+            ),
             "{}",
             rejection.loss().message
         );

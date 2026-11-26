@@ -703,8 +703,13 @@ pub(super) fn design_primary_frames<'a>(
         return Ok(frames);
     }
 
-    let (frames, cached) =
-        collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())?;
+    let (frames, cached) = collect_design_primary_frames_with_cache(
+        bytes,
+        meta,
+        "",
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )?;
     if cached.len() <= 16_384 {
         CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -717,23 +722,15 @@ pub(super) fn design_primary_frames<'a>(
     Ok(frames)
 }
 
-/// Resolve the frames as `design_primary_frames` does and charge one loss for
-/// each frame whose header is unread. A caller that discards `losses` leaves
-/// the charge to the prerequisite pass, which reports each frame once.
-fn collect_design_primary_frames<'a>(
-    bytes: &[u8],
-    meta: &'a crate::metastream::MetaStream,
-    stream: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    collect_design_primary_frames_with_cache(bytes, meta, stream, losses).map(|(frames, _)| frames)
-}
-
+/// Resolve the frames as `design_primary_frames` does, and give up each frame
+/// whose header is unread. A caller that discards `losses` and `given_up`
+/// leaves the charge to the prerequisite pass, which reports each frame once.
 fn collect_design_primary_frames_with_cache<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     stream: &str,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<CachedDesignPrimaryFrame>), CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
@@ -745,12 +742,12 @@ fn collect_design_primary_frames_with_cache<'a>(
     let mut cached = Vec::with_capacity(indexed.len());
     let mut frames = Vec::with_capacity(indexed.len());
     for frame in indexed {
-        if let Some((type_ordinal, primary_frame)) = super::record::recover(
+        if let Some((type_ordinal, primary_frame)) = super::record::recover_frame(
             design_primary_frame(bytes, meta, &registered_entities, &frame),
             losses,
+            given_up,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded,
-            super::record::DesignRecord::entity(stream, frame.entity_id)
-                .spanning(frame.start, frame.end),
+            super::record::RecordFrame::new(stream, frame.start, frame.end),
             format_args!(
                 "Design primary record {} at byte {} in {stream}",
                 frame.entity_id, frame.start
@@ -837,10 +834,19 @@ fn design_primary_frame<'a>(
     ))
 }
 
+/// The losses of the primary frames whose header is unread, and the frames
+/// the decode gives up for them.
 pub(crate) fn decode_primary_frame_losses(
     scan: &ContainerScan,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        Vec<super::record::GivenUpFrame>,
+    ),
+    CodecError,
+> {
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -851,13 +857,19 @@ pub(crate) fn decode_primary_frame_losses(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         // Keep structural index errors with the reader that needs this stream.
-        if let Err(error) = collect_design_primary_frames(bytes, &meta, &entry.name, &mut losses) {
+        if let Err(error) = collect_design_primary_frames_with_cache(
+            bytes,
+            &meta,
+            &entry.name,
+            &mut losses,
+            &mut given_up,
+        ) {
             if super::record::is_fatal(&error) {
                 return Err(error);
             }
         }
     }
-    Ok(losses)
+    Ok((losses, given_up))
 }
 
 pub(super) fn unambiguous_design_primary_frames<'a>(

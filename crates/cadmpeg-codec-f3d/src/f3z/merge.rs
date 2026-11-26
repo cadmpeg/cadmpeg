@@ -8,7 +8,6 @@ use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, TextReplacements};
-use cadmpeg_ir::unknown::part::record_given_up;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::de::DeserializeOwned;
@@ -363,14 +362,12 @@ impl MergeSession<'_, '_> {
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
                         ));
-                        parent_report
-                            .losses
-                            .extend(crate::decode::commit_entry_parts(
-                                self.ctx,
-                                [part],
-                                parent_ir,
-                                parent_fidelity,
-                            )?);
+                        parent_report.losses.extend(crate::decode::commit_parts(
+                            self.ctx,
+                            [part],
+                            parent_ir,
+                            parent_fidelity,
+                        )?);
                         self.failed.insert(
                             reference.relative_path.as_str().to_owned(),
                             "it is not an F3D document member".to_owned(),
@@ -414,27 +411,18 @@ impl MergeSession<'_, '_> {
                             "xref {label}: member {} failed to decode ({text}); the occurrence was not resolved",
                             reference.relative_path
                         ));
-                        match self.scan.give_up_entry(
+                        parent_report.losses.push(note);
+                        let part = self.scan.give_up_entry(
                             self.ctx,
                             reference.relative_path.as_str(),
                             error,
-                        )? {
-                            Some(part) => {
-                                parent_report.losses.push(note);
-                                parent_report
-                                    .losses
-                                    .extend(crate::decode::commit_entry_parts(
-                                        self.ctx,
-                                        [part],
-                                        parent_ir,
-                                        parent_fidelity,
-                                    )?);
-                            }
-                            None => parent_report.losses.extend(record_given_up(
-                                crate::ids::native_scope(reference.relative_path.as_str()),
-                                note,
-                            )),
-                        }
+                        )?;
+                        parent_report.losses.extend(crate::decode::commit_parts(
+                            self.ctx,
+                            part,
+                            parent_ir,
+                            parent_fidelity,
+                        )?);
                         self.failed
                             .insert(reference.relative_path.as_str().to_owned(), text);
                         continue;

@@ -882,7 +882,8 @@ fn element_map_given_up(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
             && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss
                 .message
-                .starts_with(&format!("record {map} stream=\"Document.xml\" offset="))
+                .starts_with("part property-element stream=\"Document.xml\" offset=")
+            && loss.message.ends_with(&format!("; dropped=[{map}]"))
     })
 }
 
@@ -1005,5 +1006,6 @@ fn parse(
         properties,
         entries,
         losses,
+        &mut Vec::new(),
     )
 }

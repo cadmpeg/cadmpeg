@@ -3,9 +3,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::unknown::part::record_given_up;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -74,6 +75,7 @@ pub(crate) fn parse(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
@@ -361,17 +363,31 @@ pub(crate) fn parse(
         match parsed {
             Ok(map) => maps.extend(map),
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-                let why = metadata_unresolved(&property.id, &error).with_provenance(
+                losses.push(metadata_unresolved(&property.id, &error).with_provenance(
                     cadmpeg_ir::SourceProvenance::in_stream(
                         "fcstd",
                         cadmpeg_ir::stream_name!("Document.xml"),
                         property.xml.start(),
                     ),
-                );
-                losses.extend(record_given_up(
-                    crate::native::native_child_id("element-map", &property.id, "map"),
-                    why,
                 ));
+                let identity = |id: String| Identity::new(id).map_err(CodecError::malformed);
+                // The kept property record holds the same raw XML.
+                let part = Part::at(
+                    crate::dialect::FORMAT,
+                    "property-element",
+                    property.xml.start(),
+                    property.xml.text().as_bytes(),
+                    [ArenaClass::Model],
+                )
+                .in_stream(cadmpeg_ir::stream_name!("Document.xml"))
+                .contained_in(identity(property.id.clone())?)
+                .dropping([identity(crate::native::native_child_id(
+                    "element-map",
+                    &property.id,
+                    "map",
+                ))?])
+                .digest_only();
+                given_up.push(ctx.give_up_part(part, error)?);
             }
             Err(error) => return Err(error),
         }

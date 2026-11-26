@@ -672,7 +672,14 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                given_up.push(ctx.give_up_part(part, error)?);
+                let part = ctx.give_up_part(part, error)?;
+                // Two directory entries can name one stored span.
+                if given_up
+                    .iter()
+                    .all(|kept: &GivenUpPart| kept.id() != part.id())
+                {
+                    given_up.push(part);
+                }
                 None
             }
             Err(error) => return Err(error),

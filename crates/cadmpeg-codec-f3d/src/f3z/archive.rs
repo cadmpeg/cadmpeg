@@ -319,8 +319,12 @@ pub(super) fn classify_members<'a>(
                     losses.push(note);
                     if opened {
                         if let Some(part) = scan.give_up_entry(ctx, member_path, error)? {
-                            losses.push(part.loss());
-                            given_up.push(part);
+                            let held = |kept: &GivenUpPart| kept.id() == part.id();
+                            // Two directory entries can name one stored span.
+                            if !given_up.iter().any(held) && !scan.given_up.iter().any(held) {
+                                losses.push(part.loss());
+                                given_up.push(part);
+                            }
                         }
                     }
                     members.insert(

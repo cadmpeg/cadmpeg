@@ -1008,9 +1008,24 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             assert!(decoded.scopes.is_empty());
             assert_eq!(
                 crate::test_support::loss_codes(&decoded.losses),
-                crate::test_support::given_up_codes(
-                    crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed
-                )
+                [crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()]
+            );
+            // §3.3: the record header through the paired header is the frame
+            // the decoder gives up as a part.
+            let [part] = decoded.given_up.as_slice() else {
+                panic!("one given-up part: {:?}", decoded.given_up);
+            };
+            assert_eq!(
+                part.kind(),
+                crate::design::decode::record::DESIGN_RECORD_PART
+            );
+            assert!(
+                part.loss().message.starts_with(&format!(
+                    "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=0 length={frame} record={}: ",
+                    part.id()
+                )),
+                "{}",
+                part.loss().message
             );
         });
     }

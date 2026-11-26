@@ -3674,12 +3674,11 @@ impl<'a> F3dDecodeSession<'a> {
                 None => error.to_string(),
             },
         };
-        self.report.losses.extend(record_given_up(
-            crate::ids::DESIGN_INTENT_FAILURE_ID,
-            F3dLossCode::DesignIntentUndecoded.note(format!(
+        self.report
+            .losses
+            .push(F3dLossCode::DesignIntentUndecoded.note(format!(
                 "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
-            )),
-        ));
+            )));
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -5677,22 +5676,19 @@ fn decode_result(
     );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
-    commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
-    let (entries, parts): (Vec<_>, Vec<_>) = retained
-        .given_up
-        .into_iter()
-        .partition(|part| part.kind() == container::ENTRY_PART);
-    report.losses.extend(commit_entry_parts(
+    // `header_losses` reported the losses of the scan's parts.
+    commit_parts(
         ctx,
-        entries,
+        scan.given_up.iter().cloned(),
+        &mut ir,
+        &mut source_fidelity,
+    )?;
+    report.losses.extend(commit_parts(
+        ctx,
+        retained.given_up,
         &mut ir,
         &mut source_fidelity,
     )?);
-    for part in parts {
-        report
-            .losses
-            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
-    }
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
@@ -5719,41 +5715,30 @@ fn decode_result(
     })
 }
 
-/// Commits each archive entry the scan gave up.
-/// `header_losses` already put each part's loss in the report.
-pub(crate) fn commit_given_up_parts(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-    ir: &mut CadIr,
-    fidelity: &mut cadmpeg_ir::SourceFidelity,
-) -> Result<(), CodecError> {
-    commit_entry_parts(ctx, scan.given_up.iter().cloned(), ir, fidelity).map(drop)
-}
-
-/// Commits each given-up archive entry, its stub linked to the product
-/// definition of the file that holds the archive, and returns their losses.
-pub(crate) fn commit_entry_parts(
+/// Commits each given-up part whose stub the document does not hold yet, and
+/// returns the loss of each part it commits. A part whose stub the document
+/// holds is a span already given up, as when two directory entries name one
+/// stored span: it adds no stub and no loss. The stub of an archive entry
+/// links to the product definition of the file that holds the archive.
+pub(crate) fn commit_parts(
     ctx: &DecodeContext<'_>,
     parts: impl IntoIterator<Item = GivenUpPart>,
     ir: &mut CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
-    let mut committed = std::collections::BTreeSet::new();
-    parts
-        .into_iter()
-        .map(|part| {
-            // Two directory records that name one stored span are one part.
-            if !committed.insert(part.id().clone()) {
-                return Ok(part.loss());
-            }
-            let part = match &owner {
-                Some(owner) => part.contained_in(owner.clone()),
-                None => part,
-            };
-            part.commit(ctx, ir, fidelity)
-        })
-        .collect()
+    let mut losses = Vec::new();
+    for part in parts {
+        if fidelity.retained_record(part.id().as_str()).is_some() {
+            continue;
+        }
+        let part = match &owner {
+            Some(owner) if part.kind() == container::ENTRY_PART => part.contained_in(owner.clone()),
+            _ => part,
+        };
+        losses.push(part.commit(ctx, ir, fidelity)?);
+    }
+    Ok(losses)
 }
 
 /// The definition the decoded file holds at its top: the prototype of its

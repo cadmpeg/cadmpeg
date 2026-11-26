@@ -107,13 +107,16 @@ fn unreadable_curve_geometry_keeps_its_identity_and_sibling_geometry() {
             secondary_records: Vec::new(),
         };
         let mut losses = Vec::new();
+        let mut given_up = Vec::new();
         let curves = super::super::decode_sketch_curve_identities_from_stream(
             &bytes,
             &meta,
             "Design/BulkStream.dat",
             &mut losses,
+            &mut given_up,
         )
         .unwrap();
+        assert!(given_up.is_empty());
         assert_eq!(curves.len(), 2);
         assert_eq!(curves[0].record_index, 41);
         assert!(curves[0].geometry.is_none());
@@ -128,6 +131,120 @@ fn unreadable_curve_geometry_keeps_its_identity_and_sibling_geometry() {
             crate::loss::F3dLossCode::SketchCurveUndecoded.kind()
         );
     }
+}
+
+/// A curve record whose primary id is `index`.
+fn curve_record(index: u32) -> Vec<u8> {
+    use crate::test_support::lp_ascii;
+
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [
+        ("crv_primary_id", u64::from(index)),
+        ("crv_secondary_id", 0),
+    ] {
+        lp_ascii(&mut bytes, name);
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [
+        1.0f64, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+/// Decodes two curve records stored back to back under the entity ids
+/// `first` and `second`.
+fn decode_two_curves(
+    bytes: &[u8],
+    sibling_start: usize,
+    [first, second]: [u64; 2],
+) -> (
+    Vec<super::super::SketchCurveIdentity>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
+) {
+    use crate::design::test_support::{design_type, primary_record};
+
+    let meta = crate::metastream::MetaStream {
+        types: vec![design_type(
+            "DCA267ED-D615-4934-B64F-AD805E8003E2",
+            None,
+            2,
+            "Geometry",
+            vec![first, second],
+        )],
+        records: vec![
+            primary_record(first, 0),
+            primary_record(second, sibling_start),
+        ],
+        secondary_records: Vec::new(),
+    };
+    let mut losses = Vec::new();
+    let mut given_up = Vec::new();
+    let curves = super::super::decode_sketch_curve_identities_from_stream(
+        bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
+    (curves, losses, given_up)
+}
+
+#[test]
+fn a_record_without_a_usable_curve_identity_is_no_sketch_curve() {
+    let damages: [fn(&mut Vec<u8>); 2] = [|bytes| bytes[29] = b'x', |bytes| bytes[70..78].fill(0)];
+    for damage in damages {
+        let mut bytes = curve_record(41);
+        damage(&mut bytes);
+        let sibling_start = bytes.len();
+        bytes.extend_from_slice(&curve_record(42));
+        let (curves, losses, given_up) = decode_two_curves(&bytes, sibling_start, [41, 42]);
+        assert_eq!(
+            curves
+                .iter()
+                .map(|curve| curve.record_index)
+                .collect::<Vec<_>>(),
+            [42]
+        );
+        assert!(losses.is_empty());
+        assert!(given_up.is_empty());
+    }
+}
+
+#[test]
+fn a_curve_record_whose_entity_id_exceeds_u32_gives_up_its_frame() {
+    let mut bytes = curve_record(41);
+    bytes[7..15].copy_from_slice(&(1u64 << 32).to_le_bytes());
+    let sibling_start = bytes.len();
+    bytes.extend_from_slice(&curve_record(42));
+    let (curves, losses, given_up) = decode_two_curves(&bytes, sibling_start, [1 << 32, 42]);
+    assert_eq!(
+        curves
+            .iter()
+            .map(|curve| curve.record_index)
+            .collect::<Vec<_>>(),
+        [42]
+    );
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::SketchCurveRecordUndecoded.kind()]
+    );
+    assert_eq!(
+        given_up
+            .iter()
+            .map(crate::design::decode::record::GivenUpFrame::span)
+            .collect::<Vec<_>>(),
+        [("Design/BulkStream.dat", 0..sibling_start)]
+    );
 }
 
 #[test]

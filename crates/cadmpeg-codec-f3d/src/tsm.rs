@@ -15,7 +15,7 @@ use cadmpeg_ir::subd::{
     SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
     SubdVertexGripLayout, SubdVertexTag,
 };
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
@@ -180,13 +180,8 @@ pub(crate) fn decode(
             Err(error) => {
                 let note = F3dLossCode::TsplineCageUndecoded
                     .note(format!("T-spline control cage not decoded: {error}"));
-                match scan.give_up_entry(ctx, &entry.name, error)? {
-                    Some(part) => {
-                        losses.push(note);
-                        given_up.push(part);
-                    }
-                    None => losses.extend(record_given_up(&entry.name, note)),
-                }
+                losses.push(note);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
             }
         }
     }

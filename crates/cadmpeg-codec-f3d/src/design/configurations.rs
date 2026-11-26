@@ -9,8 +9,8 @@ use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
-use std::collections::{BTreeMap, HashSet};
+use cadmpeg_ir::unknown::part::GivenUpPart;
+use std::collections::BTreeMap;
 
 mod json;
 
@@ -60,21 +60,6 @@ pub(crate) fn decode_configurations(
             }
         }
     }
-    let mut names = HashSet::new();
-    documents.retain(|document| {
-        if names.insert(document.entry_name().as_str().to_owned()) {
-            true
-        } else {
-            losses.extend(record_given_up(
-                document.id(),
-                crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
-                    "Configuration document {} repeats its identity and remains in the source archive",
-                    document.entry_name()
-                )),
-            ));
-            false
-        }
-    });
     let roots = crate::design::decode::configuration_root::decode_configuration_roots(scan)?;
     let unbound_roots = roots.unparsed + attach_roots(&mut documents, roots.rows)?;
     Ok(DecodedConfigurations {

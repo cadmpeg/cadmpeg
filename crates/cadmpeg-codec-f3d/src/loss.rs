@@ -737,6 +737,8 @@ pub(crate) enum F3dLossCode {
     SketchPointUndecoded,
     /// One indexed sketch curve retains an unread geometry member.
     SketchCurveUndecoded,
+    /// One indexed sketch curve record failed decoding and is given up.
+    SketchCurveRecordUndecoded,
     /// One sketch surface failed decoding.
     SketchSurfaceUndecoded,
     /// One indexed sketch text record failed decoding.
@@ -1890,6 +1892,7 @@ impl F3dLossCode {
         Self::SketchPointUnprojected,
         Self::SketchPointUndecoded,
         Self::SketchCurveUndecoded,
+        Self::SketchCurveRecordUndecoded,
         Self::SketchSurfaceUndecoded,
         Self::SketchTextUndecoded,
         Self::SketchRelationUndecoded,
@@ -2953,6 +2956,7 @@ impl F3dLossCode {
             Self::SketchPointUnprojected => "sketch.point-unprojected",
             Self::SketchPointUndecoded => "sketch.point-undecoded",
             Self::SketchCurveUndecoded => "sketch.curve-undecoded",
+            Self::SketchCurveRecordUndecoded => "sketch.curve-record-undecoded",
             Self::SketchSurfaceUndecoded => "sketch.surface-undecoded",
             Self::SketchTextUndecoded => "sketch.text-undecoded",
             Self::SketchRelationUndecoded => "sketch.relation-undecoded",
@@ -4033,6 +4037,7 @@ impl F3dLossCode {
             | Self::SketchPointUnprojected
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::SketchTextUndecoded
             | Self::SketchRelationUndecoded
@@ -5175,6 +5180,7 @@ impl F3dLossCode {
             | Self::TsplineCageUndecoded
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::DesignBodyBoundsUndecoded
             | Self::SketchTextUndecoded
@@ -5219,10 +5225,12 @@ impl F3dLossCode {
     }
 
     /// The strict floor `f3d.md` §4 states: each code that records a Design
-    /// record the decoder keeps with less content pins Warning.
+    /// record the decoder keeps with less content pins Warning, and so does
+    /// the design-intent failure that the decoder keeps as a record.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::SketchCurveUndecoded
+            Self::DesignIntentUndecoded
+            | Self::SketchCurveUndecoded
             | Self::SketchContainerUndecoded
             | Self::ConfigurationProjectionNative
             | Self::SketchOwnerConflict
@@ -5259,10 +5267,11 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// The codes that record a Design record the decoder keeps with less
-    /// content: a sketch curve without its geometry, a sketch without its
-    /// container row, configurations left native, and sketch geometry or a
-    /// relation with an unresolved owner.
-    const KEPT_DESIGN_RECORD_CODES: [F3dLossCode; 5] = [
+    /// content: the design-intent failure record, a sketch curve without its
+    /// geometry, a sketch without its container row, configurations left
+    /// native, and sketch geometry or a relation with an unresolved owner.
+    const KEPT_DESIGN_RECORD_CODES: [F3dLossCode; 6] = [
+        F3dLossCode::DesignIntentUndecoded,
         F3dLossCode::SketchCurveUndecoded,
         F3dLossCode::SketchContainerUndecoded,
         F3dLossCode::ConfigurationProjectionNative,
@@ -5274,7 +5283,7 @@ mod tests {
     /// record's `record.unreadable` refuses a pinned decode, so these codes
     /// have no floor.
     const GIVEN_UP_DESIGN_RECORD_CODES: [F3dLossCode; 12] = [
-        F3dLossCode::DesignIntentUndecoded,
+        F3dLossCode::SketchCurveRecordUndecoded,
         F3dLossCode::SketchSurfaceUndecoded,
         F3dLossCode::SketchTextUndecoded,
         F3dLossCode::SketchRelationUndecoded,
@@ -5789,6 +5798,7 @@ mod tests {
                 "sketch.point-unprojected",
                 "sketch.point-undecoded",
                 "sketch.curve-undecoded",
+                "sketch.curve-record-undecoded",
                 "sketch.surface-undecoded",
                 "sketch.text-undecoded",
                 "sketch.relation-undecoded",

@@ -107,11 +107,14 @@ fn compose(
     if !archive_untyped.is_empty() {
         fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, archive_untyped)?;
     }
-    crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
-    // `outer_losses` already holds each given-up member's loss.
-    crate::decode::commit_entry_parts(
+    // `outer_losses` already holds the loss of each part the scan or the
+    // member classification gave up.
+    crate::decode::commit_parts(
         ctx,
-        session.archive.given_up.iter().cloned(),
+        scan.given_up
+            .iter()
+            .chain(&session.archive.given_up)
+            .cloned(),
         &mut ir,
         &mut fidelity,
     )?;
