@@ -266,12 +266,16 @@ reference also charges its expanded value size and depth.
 A decoder gives up each member that it rejects as an `archive-entry` part. A
 rejected member has an invalid name, encryption, an unsupported method, a
 failed open, unreadable JSON, or a microversion that differs from the document
-microversion. The part
-keeps the stored bytes of the member. When the member is over a bound, the part
-keeps only the digest of the stored bytes. A later member with the name of an
-earlier member adds no record when its method and stored bytes are equal to
+microversion. The part keeps the stored bytes of the member. When the member is
+over a bound, the part keeps only the digest of the stored bytes. Two directory
+records that name one stored span are one part. A later member with the name of
+an earlier member adds no record when its method and stored bytes are equal to
 those of the earlier member. The decoder gives up each other later member with
 a repeated name.
+
+A feature history or a topology table whose array length is over its bound is
+given up: the member stays an asset, and its `record.unreadable` names the
+member path with the member's offset and stored length.
 
 ## Assembly definitions
 
