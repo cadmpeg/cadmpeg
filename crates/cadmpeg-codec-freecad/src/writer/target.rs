@@ -107,9 +107,10 @@ const PATCH_ONLY: &str =
 
 /// Resolve the request against the source, then plan the export it names.
 ///
-/// `Explicit(id)` refuses an id outside the synthesis catalog. Otherwise the
-/// retained document is written back as the dialect its `Document.xml`
-/// declares: `id` when it declares `id`, and the declared dialect, with
+/// `Explicit(id)` refuses an id that names no row of the synthesis catalog
+/// and no replay row ([`crate::dialect::REPLAY_ROWS`]). Otherwise the retained
+/// document is written back as the dialect its `Document.xml` declares: `id`
+/// when it declares `id`, and the declared dialect, with
 /// `target.request-displaced` naming both, when it declares another.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
@@ -169,13 +170,15 @@ pub(crate) fn uncarried_digest(
 }
 
 /// What [`admit_unedited`] could establish about edits since decode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Baseline {
     /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
     Unedited,
-    /// The digest differs: an edit outside [`CARRIED_NATIVE_ARENAS`] has no
-    /// serializer here and is left as the source stores it.
-    Edited,
+    /// The digest differs, or does not compute for the reason held, though
+    /// the decode that recorded it computed it: an edit outside
+    /// [`CARRIED_NATIVE_ARENAS`] has no serializer here and is left as the
+    /// source stores it.
+    Edited(Option<String>),
     /// The sidecar records no digest, so the document's edits are not known.
     Unrecorded,
 }
@@ -183,7 +186,8 @@ enum Baseline {
 /// Compare the document with the digest its decode recorded.
 ///
 /// A document whose sidecar records no digest (no sidecar, or every decode
-/// below `Full`) is [`Baseline::Unrecorded`].
+/// below `Full`) is [`Baseline::Unrecorded`]. A held digest that does not
+/// compute, for a reason other than a resource ceiling, shows an edit.
 fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
@@ -195,12 +199,19 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let current = uncarried_digest(&ctx, ir)?;
+    let current = match uncarried_digest(&ctx, ir) {
+        Ok(current) => current,
+        Err(error) => {
+            let reason = error.to_string();
+            recover(error)?;
+            return Ok(Baseline::Edited(Some(reason)));
+        }
+    };
     ctx.finish_session()?;
     Ok(if current == *expected {
         Baseline::Unedited
     } else {
-        Baseline::Edited
+        Baseline::Edited(None)
     })
 }
 
@@ -210,7 +221,8 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
 /// in `fidelity` charge both carried-source codes. A [`Baseline::Unrecorded`]
 /// document charges `export:edit.unverified`, and a [`Baseline::Edited`] one
 /// charges `export:edit.dropped` naming the document, because the digest does
-/// not isolate the edited record (§3.4, Paths item 4).
+/// not isolate the edited record, and the record the digest error names
+/// (§3.4, Paths item 4).
 fn finish(
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
@@ -229,12 +241,23 @@ fn finish(
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"
         ))),
-        Baseline::Edited => losses.extend(edit_dropped(
+        Baseline::Edited(None) => losses.extend(edit_dropped(
             EntityKind::Feature,
             "FCStd",
             "patches the retained Document.xml with the carried native records and holds \
              the other records as the source stores them; the uncarried digest names no \
              record, so the entry names the document",
+            [resolution.document().id.clone()],
+        )),
+        Baseline::Edited(Some(reason)) => losses.extend(edit_dropped(
+            EntityKind::Feature,
+            "FCStd",
+            &format!(
+                "patches the retained Document.xml with the carried native records and holds \
+                 the other records as the source stores them; the `{UNCARRIED_DIGEST}` codec \
+                 digest the sidecar holds does not compute ({reason}), so a record it covers \
+                 is edited, and the entry names the document"
+            ),
             [resolution.document().id.clone()],
         )),
     }

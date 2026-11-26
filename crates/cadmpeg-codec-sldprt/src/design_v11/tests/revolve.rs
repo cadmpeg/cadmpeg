@@ -189,7 +189,8 @@ fn part_in_order(
         classes.push(("moProfileFeature_c", "Sketch1", 8));
     }
     let mut ir = part_with_history(keywords.as_bytes(), &classes);
-    let native = SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let native =
+        SldprtNative::load(ir.native.namespace("sldprt").unwrap(), ir.tolerances.linear).unwrap();
     let id = |name: &str| {
         ir.model
             .features
