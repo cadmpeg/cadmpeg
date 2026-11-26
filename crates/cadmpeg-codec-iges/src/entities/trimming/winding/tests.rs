@@ -637,3 +637,234 @@ fn a_ring_of_degree_three_is_ordered_only_beyond_its_control_hull() {
         [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Kept)]
     );
 }
+
+/// The degree-2 parameter curve with the knots `0, 0, 0, 1, 2, 3` and the
+/// `v` poles `v`, over `[0, 1]`. The knots are unclamped at the end of the
+/// domain: over `[0, 1]` the curve ends at the middle of the last two poles.
+fn unclamped_quadratic(v: [f64; 3]) -> (PcurveGeometry, [f64; 2]) {
+    curve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+        &[[0.0, v[0]], [3.0, v[1]], [3.0, v[2]]],
+        None,
+        [0.0, 1.0],
+    )
+}
+
+/// With the `v` poles `0.5, 0.9, 0.1` the unclamped quadratic runs
+/// `v = 0.5 → 0.7 → 0.5`: its extremes on `v` are `0.5` and `0.7`.
+#[test]
+fn an_unclamped_quadratic_has_the_extremes_of_its_curve() {
+    let extremes = extremes_of(&unclamped_quadratic([0.5, 0.9, 0.1]), 1);
+    for (bounds, exact) in [(extremes.lowest, 0.5), (extremes.highest, 0.7)] {
+        for bound in bounds {
+            assert!(
+                (bound - exact).abs() <= ARC_EXTREME_AGREEMENT,
+                "{extremes:?}"
+            );
+        }
+    }
+}
+
+/// Two disjoint rings of unclamped quadratics that both advance along `u`:
+/// the upper (outer) ring with the `v` poles `0.5, 0.9, 0.1` runs in
+/// `[0.5, 0.7]`, and the lower (inner) ring with the `v` poles `0.4, 0.1,
+/// 0.7` runs in `[0.25, 0.4]`. The strip lies above the lower ring, which
+/// keeps its source direction, and below the upper ring, which is reversed.
+#[test]
+fn two_disjoint_rings_of_unclamped_quadratics_bound_the_strip_between_them() {
+    let turns = [([0.5, 0.9, 0.1], true), ([0.4, 0.1, 0.7], false)].map(|(v, outer)| Turning {
+        position: usize::from(!outer),
+        outer,
+        turn: Turn {
+            axis: 0,
+            forward: true,
+        },
+        extremes: extremes_of(&unclamped_quadratic(v), 1),
+    });
+    assert_eq!(
+        strip_windings(&turns, false),
+        [(1, BoundaryWinding::Kept), (0, BoundaryWinding::Reversed)]
+    );
+}
+
+/// Points sampled on each parameter curve to check its stated extremes.
+const SHAPE_SAMPLES: u32 = 1024;
+
+/// Bound on how far the lowest or highest of [`SHAPE_SAMPLES`] points of a
+/// span of degree two or less lies from its exact extreme.
+const SHAPE_SAMPLE_AGREEMENT: f64 = 1.0e-5;
+
+/// Bound on the rounding of a stated extreme against an evaluated point.
+const SHAPE_ROUNDING: f64 = 1.0e-12;
+
+/// For each knot shape, clamped or unclamped at either end, with an interior
+/// knot above the degree, with a range end on a knot or inside a span, and
+/// rational, the stated extremes on `v` contain the lowest and the highest
+/// evaluated point of the curve over its range. Where every span has degree
+/// two or less the extremes are exact.
+#[test]
+fn the_extremes_of_every_knot_shape_contain_the_curve() {
+    type Shape = (u32, Vec<f64>, Vec<f64>, Option<Vec<f64>>, [f64; 2]);
+    let shapes: Vec<(&str, Shape)> = vec![
+        (
+            "clamped",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![0.5, 0.9, 0.1],
+                None,
+                [0.0, 1.0],
+            ),
+        ),
+        (
+            "unclamped end",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+                vec![0.5, 0.9, 0.1],
+                None,
+                [0.0, 1.0],
+            ),
+        ),
+        (
+            "unclamped start",
+            (
+                2,
+                vec![-2.0, -1.0, 0.0, 1.0, 1.0, 1.0],
+                vec![0.1, 0.9, 0.5],
+                None,
+                [0.0, 1.0],
+            ),
+        ),
+        (
+            "unclamped both ends",
+            (
+                2,
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+                vec![0.1, 0.9, 0.2],
+                None,
+                [2.0, 3.0],
+            ),
+        ),
+        (
+            "interior knot above the degree",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+                vec![0.5, 0.9, 0.1, 0.3, -0.4, 0.6],
+                None,
+                [0.0, 2.0],
+            ),
+        ),
+        (
+            "range end on a knot",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0],
+                vec![0.5, 0.9, 0.1, 0.8],
+                None,
+                [1.0, 2.0],
+            ),
+        ),
+        (
+            "range inside a span",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+                vec![0.5, 0.9, 0.1],
+                None,
+                [0.25, 0.75],
+            ),
+        ),
+        (
+            "rational, unclamped end",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+                vec![0.5, 0.9, 0.1],
+                Some(vec![1.0, 2.0, 0.5]),
+                [0.0, 1.0],
+            ),
+        ),
+        (
+            "rational, unclamped both ends",
+            (
+                2,
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+                vec![0.1, 0.9, 0.2],
+                Some(vec![0.5, 3.0, 1.0]),
+                [2.0, 3.0],
+            ),
+        ),
+        (
+            "rational, range inside a span",
+            (
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+                vec![0.5, 0.9, 0.1],
+                Some(vec![1.0, 0.25, 2.0]),
+                [0.25, 0.75],
+            ),
+        ),
+        (
+            "degree one, range inside a span",
+            (
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![0.5, 0.9, 0.1],
+                None,
+                [0.5, 1.5],
+            ),
+        ),
+        (
+            "cubic, unclamped both ends",
+            (
+                3,
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                vec![0.2, 1.0, -0.6, 0.4],
+                None,
+                [3.0, 4.0],
+            ),
+        ),
+    ];
+    for (name, (degree, knots, v, weights, range)) in shapes {
+        let vertices = v
+            .iter()
+            .enumerate()
+            .map(|(index, v)| [f64::from(u32::try_from(index).expect("a pole index")), *v])
+            .collect::<Vec<_>>();
+        let shape = curve(degree, knots, &vertices, weights, range);
+        let [low, high] = with_service_context(b"", |ctx| {
+            (0..=SHAPE_SAMPLES).fold([f64::INFINITY, f64::NEG_INFINITY], |[low, high], step| {
+                let parameter = (range[1] - range[0])
+                    .mul_add(f64::from(step) / f64::from(SHAPE_SAMPLES), range[0]);
+                let point = cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, &shape.0, parameter),
+                )
+                .expect("the curve evaluates")
+                .expect("the point is finite");
+                [low.min(point.v), high.max(point.v)]
+            })
+        });
+        let extremes = extremes_of(&shape, 1);
+        assert!(
+            extremes.lowest[0] <= low + SHAPE_ROUNDING
+                && high - SHAPE_ROUNDING <= extremes.highest[1],
+            "{name}: {extremes:?} excludes the curve over [{low}, {high}]"
+        );
+        if degree <= 2 {
+            for (bound, sampled) in extremes
+                .lowest
+                .into_iter()
+                .map(|bound| (bound, low))
+                .chain(extremes.highest.into_iter().map(|bound| (bound, high)))
+            {
+                assert!(
+                    (bound - sampled).abs() <= SHAPE_SAMPLE_AGREEMENT,
+                    "{name}: {extremes:?} against the sampled [{low}, {high}]"
+                );
+            }
+        }
+    }
+}
