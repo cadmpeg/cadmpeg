@@ -43,7 +43,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         std::collections::BTreeMap::default(),
     ));
     let digest = Sha256Digest::digest(root.window());
-    let Some(brep) = bodies.brep else {
+    if bodies.brep.is_none() && bodies.retained.is_empty() {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -52,8 +52,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             },
             source_fidelity: SourceFidelity::new(digest),
         });
-    };
-    transfer(ctx, ir, brep, bodies.retained, losses, digest)
+    }
+    transfer(ctx, ir, bodies, losses, digest)
 }
 
 /// The decoded ACIS graph and the kernel records retained beside it.
@@ -63,24 +63,30 @@ struct Bodies {
     retained: Vec<UnknownRecord>,
 }
 
-/// Moves the decoded ACIS graph into the document.
+/// Moves the decoded ACIS graph and the retained kernel records into the
+/// document.
 fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
-    brep: AsmBrep,
-    retained: Vec<UnknownRecord>,
+    bodies: Bodies,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
-    let (
-        _,
-        AsmTransferRemainder {
-            unknowns,
-            stats,
-            annotation_records,
-            unbounded_faces,
+    let Bodies { brep, retained } = bodies;
+    let AsmTransferRemainder {
+        unknowns,
+        stats,
+        annotation_records,
+        unbounded_faces,
+    } = match brep {
+        Some(brep) => transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("ironcad"), brep)?.1,
+        None => AsmTransferRemainder {
+            unknowns: Vec::new(),
+            stats: cadmpeg_asm::brep::stats::Stats::default(),
+            annotation_records: Vec::new(),
+            unbounded_faces: Vec::new(),
         },
-    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("ironcad"), brep)?;
+    };
     for face in &unbounded_faces {
         losses.push(IronCadLossCode::FaceBoundaryUnstated.note(format!(
             "face {} on a {} states no loop: the face is stated partial",
@@ -315,9 +321,9 @@ fn acis_body(
         } else {
             decoded.brep
         };
-        Ok((brep, decoded.reduced_records))
+        Ok((brep, decoded.reduced_records, decoded.unread))
     });
-    let (brep, reduced) = match decoded {
+    let (brep, reduced, unread) = match decoded {
         Ok(decoded) => decoded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
@@ -329,11 +335,19 @@ fn acis_body(
         Some(merged) => merged.append(brep),
         None => bodies.brep = Some(brep),
     }
+    if let Some(offset) = unread {
+        losses.push(IronCadLossCode::BodyPartitionUnread.note(format!(
+            "{carrier}: the ACIS stream holds bytes after its solved records from offset \
+             {offset}; the kernel record is retained"
+        )));
+    }
     if reduced > 0 {
         losses.push(IronCadLossCode::BodyExtensionsRetained.note(format!(
             "{carrier}: {reduced} ACIS record(s) store an extended entity prefix whose \
              extension integers have no neutral projection; the kernel record is retained"
         )));
+    }
+    if unread.is_some() || reduced > 0 {
         retain(ctx, record, ordinal, bodies)?;
     }
     Ok(())

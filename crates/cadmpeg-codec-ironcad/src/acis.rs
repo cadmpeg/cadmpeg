@@ -19,6 +19,8 @@ pub(crate) struct DecodedAcis {
     pub(crate) brep: AsmBrep,
     /// Records whose extended entity prefix was reduced to the shared prefix.
     pub(crate) reduced_records: usize,
+    /// Offset of the bytes that the framed records leave unread.
+    pub(crate) unread: Option<usize>,
 }
 
 /// Frames and decodes one ACIS binary save stream.
@@ -37,10 +39,10 @@ pub(crate) fn decode(
             CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
         })
     };
-    let (records, reduced_records) = if acis_interned::applies(bytes, start) {
+    let (records, reduced_records, unread) = if acis_interned::applies(bytes, start) {
         let framed = acis_interned::frame(ctx, bytes, start, bytes.len(), entity_count)
             .map_err(framing_error)?;
-        (framed.records, framed.reduced_records)
+        (framed.records, framed.reduced_records, framed.unread)
     } else {
         let records = match acis_header::solved_record_limit_with_header(bytes, header) {
             Some(limit) => sab::frame(ctx, bytes, start, limit, RefWidth::Four, entity_count),
@@ -49,7 +51,7 @@ pub(crate) fn decode(
             }
         }
         .map_err(framing_error)?;
-        (records, 0)
+        (records, 0, None)
     };
     let brep = decode_with_header(
         ctx,
@@ -63,6 +65,7 @@ pub(crate) fn decode(
     Ok(DecodedAcis {
         brep,
         reduced_records,
+        unread,
     })
 }
 

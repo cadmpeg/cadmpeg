@@ -756,7 +756,7 @@ record contributes an ACIS layer from its binary header. The ACIS record that
 follows a part's child node decodes into B-rep topology and geometry in the
 part frame; ACIS feature records are retained. Parasolid bodies, part
 placements, and feature history are pending, and each produces a loss, as does
-every other scene stream. The headline is L0. The codec is read-only.
+every other non-empty scene stream. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).

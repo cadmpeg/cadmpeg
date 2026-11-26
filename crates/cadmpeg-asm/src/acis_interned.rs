@@ -30,6 +30,9 @@ pub struct InternedStream {
     pub header_extension: Vec<Token>,
     /// Records whose extended prefix was reduced to the shared prefix.
     pub reduced_records: usize,
+    /// Offset of the first byte that the framed records leave unread: a
+    /// `delta_state` history partition, or bytes after `End-of-ACIS-data`.
+    pub unread: Option<usize>,
 }
 
 /// One identifier token: its text, resolved through the name table.
@@ -130,6 +133,7 @@ pub fn frame(
             let token_offset = pos;
             if let Some(name) = identifier(bytes, &mut pos, &mut names, &error)? {
                 if !name_done && name_parts.is_empty() && name.text == END_OF_DATA {
+                    stream.unread = (pos < limit).then_some(pos);
                     return Ok(stream);
                 }
                 if name_done {
@@ -178,6 +182,7 @@ pub fn frame(
         }
         let name = name_parts.join("-");
         if name_parts.first().is_some_and(|part| part == "delta_state") {
+            stream.unread = Some(record_start);
             return Ok(stream);
         }
         if reduce_prefix(&name, &mut tokens) {
@@ -269,8 +274,9 @@ fn identifier(
 /// record carried the extended prefix.
 fn reduce_prefix(name: &str, tokens: &mut Vec<Token>) -> bool {
     let extended = matches!(
-        (tokens.get(1), tokens.get(2), tokens.get(3)),
+        (tokens.first(), tokens.get(1), tokens.get(2), tokens.get(3)),
         (
+            Some(Token::Ref(_)),
             Some(Token::Long(_)),
             Some(Token::Long(_)),
             Some(Token::Ref(_))
