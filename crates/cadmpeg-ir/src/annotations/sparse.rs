@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactions that copy only the identities selected for editing.
 
-use super::{AnnotationBuilder, Annotations};
+use super::{AnnotationBuilder, AnnotationKey, Annotations};
 use crate::provenance::Exactness;
 use std::collections::BTreeSet;
 
@@ -35,7 +35,7 @@ impl Annotations {
     pub fn prepare_overlay(&self, changes: Annotations) -> PreparedAnnotationDelta {
         let mut transaction = self.sparse_transaction();
         for id in changes.provenance.keys().chain(changes.exactness.keys()) {
-            transaction.selected.insert(id.to_owned());
+            transaction.selected.insert(id.as_str().to_owned());
         }
         transaction.changes = changes;
         transaction.prepare()
@@ -126,15 +126,15 @@ impl PreparedAnnotationDelta {
     /// the base is permitted; intervening annotation edits are not.
     pub fn apply(mut self, annotations: &mut Annotations) {
         for id in self.selected {
-            if let Some((key, value)) = self.changes.provenance.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.provenance.remove_entry(id.as_str()) {
                 annotations.provenance.insert(key, value);
             } else {
-                annotations.provenance.remove(&id);
+                annotations.provenance.remove(id.as_str());
             }
-            if let Some((key, value)) = self.changes.exactness.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.exactness.remove_entry(id.as_str()) {
                 annotations.exactness.insert(key, value);
             } else {
-                annotations.exactness.remove(&id);
+                annotations.exactness.remove(id.as_str());
             }
         }
     }
@@ -142,10 +142,14 @@ impl PreparedAnnotationDelta {
 
 fn copy_identity(base: &Annotations, changes: &mut Annotations, id: &str) {
     if let Some(source) = base.provenance.get(id) {
-        changes.provenance.insert(id.to_owned(), source.clone());
+        changes
+            .provenance
+            .insert(AnnotationKey::from(id), source.clone());
     }
     if let Some(note) = base.exactness.get(id) {
-        changes.exactness.insert(id.to_owned(), note.clone());
+        changes
+            .exactness
+            .insert(AnnotationKey::from(id), note.clone());
     }
 }
 

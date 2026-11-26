@@ -3279,13 +3279,17 @@ fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 /// [`polygon_boundary_within`] over the edges of `polygon` that start at
-/// `edges`.
+/// `edges`. No distance is within a negative or NaN tolerance, so no edge is
+/// measured for one.
 fn edges_within(
     polygon: &[Point2],
     edges: impl IntoIterator<Item = usize>,
     point: Point2,
     tolerance: f64,
 ) -> bool {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return false;
+    }
     edges.into_iter().any(|index| {
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];
