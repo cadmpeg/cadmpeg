@@ -1,54 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Lower bounds, in model coordinates, on how far an edge's curve lies from
-//! a face's surface or from a point (§10: in-IR arithmetic).
+//! Lower bounds, in the definition's frame, on how far an edge's curve lies
+//! from a face's surface or from a point, and the lengths of line edges (§10:
+//! in-IR arithmetic).
 //!
-//! The carriers read are the ones the §10 rows on patch supports and spine
-//! limits name (Surfacing, wireframe, forms, and sheet metal): planes,
+//! The carriers read are planes,
 //! cylinders, cones, spheres, tori, and NURBS surfaces whose weights share
 //! one sign; line edges between two vertices, circles, and NURBS curves whose
 //! weights share one sign; each placed by rigid maps, its body's and those of
-//! each `Transformed` carrier it nests in. A face, edge, or vertex that no
-//! body holds lies in its document's frame. Each bound holds for the whole
+//! each `Transformed` carrier it nests in. Each bound holds for the whole
 //! carrier, so it holds for the face or edge on it. A NURBS curve or surface
 //! whose weights share one sign lies in the convex hull of its poles, and so
 //! in their box. An elliptic cone lies between the circular cones of its
 //! minor and major sections.
 
-use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
 use crate::scalar::NonZeroReal;
-use crate::topology::{Body, EdgeCarrier};
+use crate::topology::EdgeCarrier;
 use crate::transform::Transform;
 
-use super::super::super::matching::StateTopology;
-use super::super::position;
-
-/// A rigid map into model coordinates; `None` is the identity.
-type Placement = Option<Transform>;
-
-/// The placement a body gives its geometry, where it is rigid.
-fn body_placement(body: &Body) -> Option<Placement> {
-    match body.transform {
-        None => Some(None),
-        Some(transform) => transform.is_proper_rigid().then_some(Some(transform)),
-    }
-}
-
-/// The placement the bodies that hold an entity give it: none where no body
-/// holds it, so that it lies in its document's frame, else the one every
-/// body gives, where each is rigid and all agree.
-fn held_by<'b>(bodies: impl IntoIterator<Item = &'b Body>) -> Option<Placement> {
-    let mut bodies = bodies.into_iter();
-    let Some(first) = bodies.next() else {
-        return Some(None);
-    };
-    let first = body_placement(first)?;
-    bodies
-        .all(|body| body_placement(body) == Some(first))
-        .then_some(first)
-}
+use super::super::frames::{held_by, point, vector, Placement};
+use super::super::matching::StateTopology;
+use super::position;
 
 /// `outer` after a carrier's own rigid placement `inner`.
 fn within(outer: Placement, inner: &Transform) -> Option<Placement> {
@@ -59,20 +33,6 @@ fn within(outer: Placement, inner: &Transform) -> Option<Placement> {
         None => *inner,
         Some(outer) => outer.compose(*inner).ok()?,
     }))
-}
-
-fn point(placement: Placement, point: Point3) -> Option<Point3> {
-    match placement {
-        None => Some(point),
-        Some(transform) => transform.apply_point(point).map(FinitePoint3::get),
-    }
-}
-
-fn vector(placement: Placement, vector: Vector3) -> Option<Vector3> {
-    match placement {
-        None => Some(vector),
-        Some(transform) => transform.apply_vector(vector).map(FiniteVector3::get),
-    }
 }
 
 /// Whether weights share one sign, so that the carrier lies in the convex
@@ -520,11 +480,32 @@ pub(super) fn curve_distance(
     Reach::of(topology, edge)?.distance(point)
 }
 
-/// The model position of `vertex`, where the bodies of the faces it lies on
-/// give it one rigid placement.
+/// The position of `vertex` in the definition's frame, where the bodies
+/// that hold it give it one rigid placement.
 pub(super) fn placed_position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
-    let faces = topology.vertex_faces.get(vertex).into_iter().flatten();
-    let faces = faces.filter_map(|face| topology.face_body(face));
-    let placement = held_by(faces)?;
+    let bodies = topology.vertex_bodies(vertex);
+    let placement = held_by(
+        bodies
+            .iter()
+            .filter_map(|body| topology.bodies.get(body).copied()),
+    )?;
     point(placement, position(topology, vertex)?)
+}
+
+/// A lower bound on the distance from `point` to the surface of `face`.
+/// `None` where no bound reads the surface.
+pub(super) fn surface_distance(
+    topology: &StateTopology<'_>,
+    face: &str,
+    point: Point3,
+) -> Option<f64> {
+    Some(Sheet::of(topology, face)?.distance(point))
+}
+
+/// The length of a line edge between two vertices.
+pub(super) fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
+    match Reach::of(topology, edge)? {
+        Reach::Segment(start, end) => Some(start.distance(end)),
+        Reach::Line { .. } | Reach::Circle { .. } | Reach::Hull(_) => None,
+    }
 }

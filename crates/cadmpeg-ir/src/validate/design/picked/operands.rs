@@ -17,7 +17,8 @@ use crate::design::selection::{
 use super::super::constructions::input_selections;
 use super::super::matching::{Matcher, StateTopology};
 use super::super::sheets;
-use super::{all_entities, entities, resolved_entities, straight_length, Entity, Probe};
+use super::apart::straight_length;
+use super::{all_entities, entities, resolved_entities, Entity, Probe};
 
 /// The bodies and faces an operand selection resolves to in a state.
 struct Operands<'a> {
