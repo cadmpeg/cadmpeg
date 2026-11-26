@@ -272,7 +272,8 @@ pub enum TargetRefusalKind {
     },
     /// A catalog target was selected explicitly but this input cannot reach it.
     ExplicitUnavailable {
-        /// Canonical catalog target selected by the token.
+        /// The row the token names: a catalog target, or a replay row the
+        /// writer reaches only from a source of that dialect.
         target: DialectId,
         /// Token supplied by the caller, retained verbatim.
         requested: TargetToken,

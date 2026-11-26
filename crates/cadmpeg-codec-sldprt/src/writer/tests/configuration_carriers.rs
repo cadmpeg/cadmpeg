@@ -95,7 +95,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
     let mut source = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut source))
     .unwrap();
@@ -212,7 +212,7 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -273,7 +273,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -357,7 +357,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&inactive, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()
@@ -509,7 +509,7 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -731,7 +731,7 @@ fn semantic_writer_reassigns_a_repeated_configuration_source_index() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()
@@ -760,7 +760,7 @@ fn semantic_writer_names_empty_and_repeated_configuration_names() {
         SldprtCodec
             .plan(
                 EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .unwrap()
             .report()
@@ -838,7 +838,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -902,7 +902,7 @@ fn encoder_bakes_rigid_body_transform() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -1165,7 +1165,7 @@ fn semantic_writer_omits_a_body_whose_face_names_a_missing_surface() {
     ir.geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .clone();
@@ -1192,7 +1192,7 @@ pub(crate) fn semantic_writer_omits_subds_and_names_them() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
@@ -1290,7 +1290,7 @@ fn semantic_writer_omits_bodies_on_cones_compact_records_cannot_hold() {
             .as_str()
             .to_owned();
         let report = SldprtCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
             .unwrap()
             .report()
             .clone();

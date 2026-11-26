@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::math::{Point3, Vector3};
+use crate::scalar::FiniteReal;
 use crate::subd::{
-    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdSymmetry, SubdSymmetryKind,
-    EPS_SUBD_SYMMETRY_FRAME,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdSymmetry,
+    SubdSymmetryKind, EPS_SUBD_SYMMETRY_FRAME,
 };
 
 fn plane() -> SubdPlaneFrame {
@@ -94,9 +95,17 @@ fn plane_frame_admission_preserves_the_unit_and_orthogonality_tolerance() {
     .is_err());
 }
 
+fn radial_kind(sweep: f64, radial_maps: Vec<SubdRadialSymmetryMap>) -> SubdSymmetryKind {
+    SubdSymmetryKind::Radial(SubdRadialSymmetry {
+        segments: std::num::NonZeroU32::new(1).unwrap(),
+        sweep: FiniteReal::new(sweep).unwrap(),
+        radial_maps,
+    })
+}
+
 fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
     SubdSymmetry::new(
-        SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), sweep, Vec::new())?,
+        radial_kind(sweep, Vec::new()),
         plane(),
         Vec::new(),
         Vec::new(),
@@ -105,10 +114,7 @@ fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
 }
 
 #[test]
-fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
-    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(radial(invalid).is_err());
-    }
+fn radial_controls_require_nonzero_segments_and_keep_finite_sweeps() {
     let mut wire = cadmpeg_core::serde_erase::json::to_value(radial(1.0).unwrap()).unwrap();
     wire["kind"]["segments"] = 0.into();
     assert!(
@@ -129,6 +135,22 @@ fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
             .unwrap(),
             symmetry
         );
+    }
+}
+
+/// A radial sweep is a `FiniteReal`, so a non-finite sweep does not
+/// deserialize: neither the raw value nor the `null` that JSON writes for it.
+#[test]
+fn radial_sweep_refuses_non_finite_values() {
+    use serde::de::value::{Error, F64Deserializer};
+    for sweep in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            <FiniteReal as serde::Deserialize>::deserialize(F64Deserializer::<Error>::new(sweep))
+                .is_err()
+        );
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(radial(1.0).unwrap()).unwrap();
+        wire["kind"]["sweep"] = serde_json::json!(sweep);
+        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(wire).is_err());
     }
 }
 
@@ -191,8 +213,10 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
     );
 }
 
+/// A radial map is the source's native map, kept for its writer, so a
+/// repeated selector or source reads and is kept.
 #[test]
-fn radial_maps_require_distinct_selectors_and_sources() {
+fn radial_maps_keep_repeated_selectors_and_sources() {
     let map = |pairs| SubdRadialSymmetryMap {
         selector: SubdRadialMapSelector::Ef,
         pairs,
@@ -201,21 +225,19 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         vec![map(vec![]), map(vec![])],
         vec![map(vec![[0, 0], [0, 1]])],
     ] {
-        assert!(
-            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone(),)
-                .is_err()
-        );
+        let kind = radial_kind(0.0, maps.clone());
+        assert!(matches!(&kind, SubdSymmetryKind::Radial(radial) if radial.radial_maps == maps));
         let mut wire = cadmpeg_core::serde_erase::json::to_value(radial(0.0).unwrap()).unwrap();
-        wire["kind"]["radial_maps"] = cadmpeg_core::serde_erase::json::to_value(maps).unwrap();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(wire).is_err());
+        wire["kind"]["radial_maps"] = cadmpeg_core::serde_erase::json::to_value(&maps).unwrap();
+        let read =
+            cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(read).unwrap(),
+            wire
+        );
     }
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::radial(
-            std::num::NonZeroU32::new(1).unwrap(),
-            0.0,
-            vec![map(vec![[0, 0], [u64::MAX, 0]])],
-        )
-        .unwrap(),
+        radial_kind(0.0, vec![map(vec![[0, 0], [u64::MAX, 0]])]),
         plane(),
         Vec::new(),
         Vec::new(),
@@ -251,13 +273,13 @@ fn radial_kind_deserialization_admits_controls_without_a_symmetry_owner() {
     let mut duplicate_sources = wire.clone();
     duplicate_sources["radial_maps"][0]["pairs"] = serde_json::json!([[0, 1], [0, 2]]);
     assert!(
-        cadmpeg_core::serde_erase::json::from_value::<SubdSymmetryKind>(duplicate_sources).is_err()
+        cadmpeg_core::serde_erase::json::from_value::<SubdSymmetryKind>(duplicate_sources).is_ok()
     );
     let mut duplicate_selectors = wire.clone();
     duplicate_selectors["radial_maps"] =
         serde_json::json!([wire["radial_maps"][0], wire["radial_maps"][0]]);
     assert!(
         cadmpeg_core::serde_erase::json::from_value::<SubdSymmetryKind>(duplicate_selectors)
-            .is_err()
+            .is_ok()
     );
 }

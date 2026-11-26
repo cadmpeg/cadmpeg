@@ -23,6 +23,7 @@ mod fit;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod folds;
+mod frames;
 pub(super) mod index;
 mod joins;
 mod linkage;

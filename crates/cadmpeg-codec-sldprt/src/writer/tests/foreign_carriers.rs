@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .losses

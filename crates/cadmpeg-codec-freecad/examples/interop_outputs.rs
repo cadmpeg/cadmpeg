@@ -14,7 +14,7 @@ use cadmpeg_ir::CadIr;
 
 fn write(ir: &CadIr, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     FcstdCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)?
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)?
         .write_to(&mut File::create(output)?)?;
     Ok(())
 }

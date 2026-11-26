@@ -272,20 +272,29 @@ fn a_fixed_face_is_planar_and_a_bend_pick_is_not() {
     assert!(ruled(&ir, "design.bend-pick-planar-face").is_empty());
 }
 
+/// An extruded hole entering the bottom face, its circle centered at
+/// (5, 5, `z`).
+fn hole(ir: &CadIr, z: f64) -> FeatureOperation {
+    bore(ir, point(5.0, 5.0, z))
+}
+
+/// An extruded hole entering the bottom face, its circle centered at
+/// `center`.
+fn bore(ir: &CadIr, center: Construction<kinds::Point>) -> FeatureOperation {
+    sheet(SheetMetalKind::ExtrudedHole {
+        bore: StampOutline::Circle {
+            center,
+            diameter: positive(2.0),
+        },
+        entry: Some(current(vec![face(ir, bottom(ir))])),
+        height: positive(1.0),
+        root_fillet: None,
+        rule: None,
+    })
+}
+
 #[test]
 fn a_circle_outline_center_lies_on_the_entry_plane() {
-    let hole = |ir: &CadIr, z: f64| {
-        sheet(SheetMetalKind::ExtrudedHole {
-            bore: StampOutline::Circle {
-                center: point(5.0, 5.0, z),
-                diameter: positive(2.0),
-            },
-            entry: Some(current(vec![face(ir, bottom(ir))])),
-            height: positive(1.0),
-            root_fillet: None,
-            rule: None,
-        })
-    };
     let rule = "design.circle-outline-center-off-entry-plane";
     let mut ir = fixture::document();
     with(&mut ir, |ir| hole(ir, 0.0));
@@ -295,21 +304,34 @@ fn a_circle_outline_center_lies_on_the_entry_plane() {
 }
 
 #[test]
+fn a_circle_outline_center_is_read_in_its_entry_face_s_frame() {
+    let rule = "design.circle-outline-center-off-entry-plane";
+    let mut ir = fixture::document();
+    turn_body(&mut ir);
+    with(&mut ir, |ir| hole(ir, 100.0));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| hole(ir, 0.0));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+/// A stiffening rib on the bottom face, at (`x`, 5, 3).
+fn rib(ir: &CadIr, x: f64) -> FeatureOperation {
+    sheet(SheetMetalKind::Stamp {
+        entry: None,
+        form: StampForm::StiffeningRib {
+            bend: current(vec![face(ir, bottom(ir))]),
+            at: point(x, 5.0, 3.0),
+            length: positive(1.0),
+            bottom_radius: positive(1.0),
+            wall_angle: Dimension::Literal(Angle::new(0.5).unwrap()),
+            rim_radius: positive(1.0),
+        },
+        rule: None,
+    })
+}
+
+#[test]
 fn a_stiffening_rib_point_lies_on_its_bend_face() {
-    let rib = |ir: &CadIr, x: f64| {
-        sheet(SheetMetalKind::Stamp {
-            entry: None,
-            form: StampForm::StiffeningRib {
-                bend: current(vec![face(ir, bottom(ir))]),
-                at: point(x, 5.0, 3.0),
-                length: positive(1.0),
-                bottom_radius: positive(1.0),
-                wall_angle: Dimension::Literal(Angle::new(0.5).unwrap()),
-                rim_radius: positive(1.0),
-            },
-            rule: None,
-        })
-    };
     let rule = "design.stiffening-rib-point-off-bend";
     let mut ir = fixture::document();
     curve_bottom(&mut ir);
@@ -317,6 +339,19 @@ fn a_stiffening_rib_point_lies_on_its_bend_face() {
     assert!(ruled(&ir, rule).is_empty());
     assert!(ruled(&ir, "design.bend-pick-planar-face").is_empty());
     with(&mut ir, |ir| rib(ir, 5.0));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn a_stiffening_rib_point_is_read_in_its_bend_face_s_frame() {
+    let rule = "design.stiffening-rib-point-off-bend";
+    let mut ir = fixture::document();
+    curve_bottom(&mut ir);
+    // The turn carries the cylinder's axis to (-2, 5), 5 from (3, 5, 3).
+    turn_body(&mut ir);
+    with(&mut ir, |ir| rib(ir, 3.0));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| rib(ir, 10.0));
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
@@ -444,26 +479,39 @@ fn a_vertex_chamfer_edges_meet_at_one_vertex() {
     assert_eq!(ruled(&ir, rule).len(), 1);
 }
 
+/// A flange on edge 0, set back 4 and `second` from its ends.
+fn flange(ir: &CadIr, second: f64) -> FeatureOperation {
+    sheet(SheetMetalKind::Flange(Flange {
+        edges: current(vec![edge(ir, 0)]),
+        height: None,
+        angle: None,
+        width: Some(FlangeWidth::FromEnds {
+            first: nonnegative(4.0),
+            second: nonnegative(second),
+        }),
+        bend: bend(),
+        rule: None,
+        height_datum: None,
+        position: None,
+        outline: None,
+    }))
+}
+
 #[test]
 fn flange_setbacks_from_the_ends_fit_the_edge() {
-    let flange = |ir: &CadIr, second: f64| {
-        sheet(SheetMetalKind::Flange(Flange {
-            edges: current(vec![edge(ir, 0)]),
-            height: None,
-            angle: None,
-            width: Some(FlangeWidth::FromEnds {
-                first: nonnegative(4.0),
-                second: nonnegative(second),
-            }),
-            bend: bend(),
-            rule: None,
-            height_datum: None,
-            position: None,
-            outline: None,
-        }))
-    };
     let rule = "design.from-ends-setbacks-exceed-edge";
     let mut ir = fixture::document();
+    with(&mut ir, |ir| flange(ir, 6.0));
+    assert!(ruled(&ir, rule).is_empty());
+    with(&mut ir, |ir| flange(ir, 7.0));
+    assert_eq!(ruled(&ir, rule).len(), 1);
+}
+
+#[test]
+fn flange_setbacks_fit_the_edge_of_a_placed_body() {
+    let rule = "design.from-ends-setbacks-exceed-edge";
+    let mut ir = fixture::document();
+    turn_body(&mut ir);
     with(&mut ir, |ir| flange(ir, 6.0));
     assert!(ruled(&ir, rule).is_empty());
     with(&mut ir, |ir| flange(ir, 7.0));
@@ -590,6 +638,19 @@ fn free_edge(ir: &mut CadIr, index: usize) {
 /// Places the cube's body by the affine map of `rows`.
 fn place_body(ir: &mut CadIr, rows: [[f64; 4]; 3]) {
     ir.geometry.bodies[0].transform = Some(Transform::affine(rows).unwrap());
+}
+
+/// Places the cube's body by a quarter turn about the vertical, a shift of 3
+/// along x, and a rise of 100: a rigid map.
+fn turn_body(ir: &mut CadIr) {
+    place_body(
+        ir,
+        [
+            [0.0, -1.0, 0.0, 3.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 100.0],
+        ],
+    );
 }
 
 #[test]
@@ -1065,28 +1126,8 @@ fn a_spine_limit_pick_of_a_stated_kind_leaves_the_target_s_other_picks_judged() 
     assert!(resolves[0].contains(ir.geometry.edges[three[1]].id.as_str()));
 }
 
-#[test]
-fn a_spine_limit_that_no_body_holds_lies_in_the_document_frame() {
-    let rule = "design.spine-limit-off-spine";
-    let mut ir = fixture::document();
-    let three = bottom_edges(&ir)[..3].to_vec();
-    let raised = ir.geometry.edges[level_edges(&ir, 10.0)[0]]
-        .start()
-        .unwrap()
-        .clone();
-    ir.geometry.bodies.clear();
-    with(&mut ir, |ir| spine_sweep(ir, &three, face(ir, bottom(ir))));
-    assert!(ruled(&ir, rule).is_empty());
-    with(&mut ir, |ir| {
-        spine_sweep(ir, &three, face(ir, level(ir, 10.0)))
-    });
-    assert_eq!(ruled(&ir, rule).len(), 1);
-    with(&mut ir, |ir| {
-        spine_sweep(ir, &three, EntityRef::Vertex(raised))
-    });
-    assert_eq!(ruled(&ir, rule).len(), 1);
-}
-
+mod frames;
 mod operands;
+mod ribs;
 mod separation;
 mod sketch_profiles;

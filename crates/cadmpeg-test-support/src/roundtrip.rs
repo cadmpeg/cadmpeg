@@ -76,7 +76,7 @@ where
     let plan = Encoder::plan(
         codec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
     let path = plan.report().write_path().clone();
@@ -170,7 +170,7 @@ pub fn semantic_roundtrip<C>(
     let written = match Encoder::plan(
         codec,
         EncodeInput::new(&ir, Some(&source_fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
@@ -294,7 +294,7 @@ where
     let written = match Encoder::plan(
         codec,
         EncodeInput::new(&edited, Some(&source_fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let mut bytes = Vec::new();

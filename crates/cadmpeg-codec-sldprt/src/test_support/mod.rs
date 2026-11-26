@@ -49,8 +49,8 @@ impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
     }
 }
 
-/// Plans the write of `input` in `session` as `SldprtCodec` plans an
-/// inherited write, and returns the plan and the written part as the write
+/// Plans the write of `input` in `session` as `SldprtCodec` plans a
+/// write that names no target, and returns the plan and the written part as the write
 /// read it back, when it did.
 pub(crate) fn plan_in_session(
     session: &crate::SldprtWriteSession<'_>,
@@ -66,21 +66,23 @@ pub(crate) fn plan_in_session(
         session,
         read_back: std::cell::Cell::new(None),
     };
-    let plan = write.plan(input, TargetRequest::Inherit)?;
+    let plan = write.plan(input, TargetRequest::Unnamed)?;
     Ok((plan, write.read_back.into_inner()))
 }
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Plans an inherited write whose patch path declines the edited document:
+/// Plans a write that names no target and whose patch path declines the
+/// edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
 /// Checks that the output decodes, and returns the
 /// `export:native.records-omitted` message, which states why the patch
@@ -88,7 +90,7 @@ pub(crate) fn plan_inherited_write(
 pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -103,7 +105,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope_declined(
     let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)
@@ -185,7 +187,7 @@ pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)?;
@@ -293,7 +295,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
 ) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -455,7 +457,7 @@ pub(crate) fn write_history_over_stale_solid(
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(writer)?;
     assert!(

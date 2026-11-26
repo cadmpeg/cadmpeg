@@ -124,7 +124,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             let attributes = attributes::AttributeIndex::new(target, native);
             encode_brep(target, native, &attributes).is_ok()
         }
-        Stage::Design | Stage::NeutralDesign | Stage::History | Stage::Archive => attempt(
+        Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
             target,
             false,
             false,
@@ -272,7 +272,7 @@ fn attempt<W: Write + Seek>(
                 target,
                 snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
             )
-            .map_err(Failure::neutral_design)?;
+            .map_err(Failure::records)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
         let mut coverage = coverage(

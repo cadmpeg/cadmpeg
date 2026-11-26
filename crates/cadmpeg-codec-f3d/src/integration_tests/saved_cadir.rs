@@ -52,7 +52,7 @@ fn write(ir: &CadIr, decoded: &DecodeResult) -> (Vec<u8>, ExportReport) {
     let plan = F3dCodec
         .plan(
             EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("plan");
     let mut bytes = Vec::new();
@@ -268,7 +268,7 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
     let (bytes, report) = write_to(
         &with_d1_edited(&decoded),
         &undecodable(&decoded),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     );
     assert_eq!(
         charged(&report, F3dLossCode::WriterPatchDeclined).len(),
