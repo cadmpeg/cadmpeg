@@ -277,3 +277,91 @@ fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
     let decoded = write_and_decode(&ir);
     assert_eq!(decoded.geometry.bodies.len(), ir.geometry.bodies.len());
 }
+
+/// The unit cube with a NURBS use curve on knots `[-2, 3]` on its first
+/// coedge and an embedded-curve tolerant-coedge record whose range is
+/// `record_range`.
+fn tolerant_coedge_cube(record_range: [f64; 2]) -> (CadIr, String) {
+    use cadmpeg_asm::brep::records::{TolerantCoedgeExtension, TolerantCoedgeParameters};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let curve = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
+        .expect("identity grammar");
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![-2.0, -2.0, 3.0, 3.0],
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .expect("a straight spline");
+    ir.geometry.curves.push(Curve {
+        parameter_range: None,
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        source_object: None,
+        native_ref: None,
+    });
+    ir.geometry.coedges[0].use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
+        curve,
+        parameter_range: cadmpeg_ir::topology::ParameterInterval::new([-2.0, 3.0])
+            .expect("an interval"),
+    });
+    let record = TolerantCoedgeParameters {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        coedge: ir.geometry.coedges[0].id.clone(),
+        record_index: 0,
+        parameter_range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite interval"),
+        extension: TolerantCoedgeExtension::EmbeddedCurve {
+            target: None,
+            curve_reversed: false,
+            payload_token_count: 0,
+            parameter_range: Some(
+                cadmpeg_ir::units::FiniteVector::new(record_range).expect("finite interval"),
+            ),
+        },
+    };
+    let id = record.id();
+    f3d_native_mut(&mut ir).tolerant_coedge_parameters = vec![record];
+    (ir, id)
+}
+
+#[test]
+fn a_tolerant_coedge_range_past_the_knot_domain_by_round_off_is_written() {
+    let (ir, _) = tolerant_coedge_cube([-2.0 - 1.0e-13, 3.0]);
+    let decoded = write_and_decode(&ir);
+    let use_curve = decoded
+        .geometry
+        .coedges
+        .iter()
+        .find_map(|coedge| coedge.use_curve.as_ref())
+        .expect("the use curve reads back");
+    assert_eq!(use_curve.parameter_range.endpoints(), [-2.0, 3.0]);
+    assert_eq!(f3d_native(&decoded).tolerant_coedge_parameters.len(), 1);
+}
+
+#[test]
+fn a_tolerant_coedge_record_with_another_range_is_dropped_alone() {
+    let (ir, id) = tolerant_coedge_cube([-1.0, 3.0]);
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of tolerant-coedge records whose parameter range does not give the use-curve range",
+    );
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report)
+            .iter()
+            .any(|message| message.ends_with(&format!(": {id}"))),
+        "{:#?}",
+        report.losses
+    );
+    let decoded = write_and_decode(&ir);
+    assert!(f3d_native(&decoded).tolerant_coedge_parameters.is_empty());
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+}

@@ -29,7 +29,7 @@ mod reduce;
 mod smbh;
 use preconditions::{
     replaced_by_stamp, unreachable_record_headers, unwritable_continuities,
-    unwritable_link_records, validate_source_less_auxiliary_geometry,
+    unwritable_link_records, unwritable_tolerant_coedges, validate_source_less_auxiliary_geometry,
     validate_source_less_design_bindings, validate_source_less_design_links,
     validate_source_less_design_ownership, validate_source_less_history_graph,
     validate_source_less_procedural_carriers, validate_source_less_recipes,
@@ -223,7 +223,9 @@ fn attempt<W: Write + Seek>(
     let brep = if body_less {
         Ok(Vec::new())
     } else {
-        if let Some(unwritable) = unwritable_continuities(&native) {
+        if let Some(unwritable) = unwritable_continuities(&native)
+            .or_else(|| unwritable_tolerant_coedges(target, &native))
+        {
             return Err(Failure::unwritable(Stage::Brep, unwritable));
         }
         encode_brep(target, &native, &attributes)

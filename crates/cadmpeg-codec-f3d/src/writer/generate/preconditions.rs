@@ -357,8 +357,6 @@ pub(super) fn unwritable_link_records(
     ))
 }
 
-/// The edge continuities whose token the ASM edge record does not hold
-/// (asm.md §5.2): the edge is written with `unknown`.
 /// The lengths of the arenas that the stamp of a regenerated design extends.
 #[derive(Clone, Copy)]
 pub(super) struct StampMark {
@@ -425,6 +423,8 @@ pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<U
     )
 }
 
+/// The edge continuities whose token the ASM edge record does not hold
+/// (asm.md §5.2): the edge is written with `unknown`.
 pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> {
     Unwritable::of(
         "of edge continuities other than `tangent` and `unknown`, the tokens the ASM edge record holds",
@@ -435,6 +435,112 @@ pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> 
             .map(|row| row.id().clone())
             .collect(),
     )
+}
+
+/// The tolerant-coedge records the B-rep stream cannot hold as they stand,
+/// in groups by reason. The coedge record holds one extension, written
+/// inline, whose embedded curve is the coedge's NURBS use curve. The decoder
+/// reads the use-curve range from the record range moved onto the curve's
+/// knot domain, so a record whose moved range is the use-curve range is
+/// written as stored.
+pub(super) fn unwritable_tolerant_coedges(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Option<Unwritable> {
+    use cadmpeg_asm::brep::records::TolerantCoedgeExtension;
+
+    let coedges = target
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let curves = target
+        .geometry
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<HashMap<_, _>>();
+    let mut missing = BTreeSet::new();
+    let mut by_coedge = BTreeMap::<_, Vec<String>>::new();
+    let mut unwritable_curve = BTreeSet::new();
+    let mut other_range = BTreeSet::new();
+    let mut relocated = BTreeSet::new();
+    for parameters in &native.tolerant_coedge_parameters {
+        let id = parameters.id();
+        let Some(coedge) = coedges.get(&parameters.coedge) else {
+            missing.insert(id);
+            continue;
+        };
+        by_coedge
+            .entry(&parameters.coedge)
+            .or_default()
+            .push(id.clone());
+        match &parameters.extension {
+            TolerantCoedgeExtension::None {} | TolerantCoedgeExtension::Empty { target: None } => {}
+            TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                parameter_range,
+                ..
+            } => {
+                let curve = coedge.use_curve.as_ref().and_then(|use_curve| {
+                    match curves.get(&use_curve.curve)?.geometry.solved() {
+                        Some(SolvedCurveGeometry::Nurbs(curve)) => Some((use_curve, curve)),
+                        _ => None,
+                    }
+                });
+                let Some((use_curve, curve)) = curve else {
+                    unwritable_curve.insert(id);
+                    continue;
+                };
+                let read = cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
+                    parameter_range.unwrap_or(parameters.parameter_range),
+                )
+                .map(|range| cadmpeg_asm::brep::emit::clamp_to_knot_domain(range, curve));
+                if !read
+                    .is_ok_and(|range| range.endpoints() == use_curve.parameter_range.endpoints())
+                {
+                    other_range.insert(id);
+                }
+            }
+            TolerantCoedgeExtension::Empty { target: Some(_) }
+            | TolerantCoedgeExtension::Reference { .. }
+            | TolerantCoedgeExtension::EmbeddedCurve {
+                target: Some(_), ..
+            } => {
+                relocated.insert(id);
+            }
+        }
+    }
+    let shared = by_coedge
+        .into_values()
+        .filter(|records| records.len() > 1)
+        .flatten()
+        .collect();
+    [
+        (
+            "of tolerant-coedge records that name a coedge the document does not hold",
+            missing,
+        ),
+        (
+            "of tolerant-coedge records that share their coedge with another record (the coedge record holds one extension, and the records do not state which one it is)",
+            shared,
+        ),
+        (
+            "of tolerant-coedge records whose coedge has no NURBS use curve for the embedded curve",
+            unwritable_curve,
+        ),
+        (
+            "of tolerant-coedge records whose parameter range does not give the use-curve range of their coedge",
+            other_range,
+        ),
+        (
+            "of tolerant-coedge records whose extension names another record (the written coedge record holds its extension inline)",
+            relocated,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, records)| Unwritable::of(reason, records))
 }
 
 pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
@@ -922,12 +1028,6 @@ pub(super) fn validate_source_less_design_links(
             sentinel.id()
         )));
     }
-    let coedges = target
-        .geometry
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
     let bodies = target
         .geometry
         .bodies
@@ -1001,82 +1101,6 @@ pub(super) fn validate_source_less_design_links(
             if index_from_u32(link.ordinal) != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals"
-                )));
-            }
-        }
-    }
-
-    let curve_by_id = target
-        .geometry
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut tolerant_coedges = BTreeSet::new();
-    for parameters in &native.tolerant_coedge_parameters {
-        let coedge = coedges.get(&parameters.coedge).copied().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D tolerant-coedge metadata {} targets missing coedge {}",
-                parameters.id(),
-                parameters.coedge
-            ))
-        })?;
-        if !tolerant_coedges.insert(&parameters.coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "multiple F3D tolerant-coedge records target {}",
-                parameters.coedge
-            )));
-        }
-        match &parameters.extension {
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-                target: None,
-                parameter_range,
-                ..
-            } => {
-                let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
-                        "F3D tolerant-coedge extension {} has no use curve",
-                        parameters.id()
-                    ))
-                })?;
-                let curve = curve_by_id
-                    .get(use_curve.curve.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
-                            "F3D tolerant-coedge extension {} references missing use curve {}",
-                            parameters.id(),
-                            use_curve.curve
-                        ))
-                    })?;
-                if !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-                ) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
-                        parameters.id()
-                    )));
-                }
-                let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
-                if use_curve.parameter_range.endpoints() != effective_range.get() {
-                    return Err(CodecError::InvalidInput(format!(
-                        "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
-                        parameters.id()
-                    )));
-                }
-            }
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: Some(_) }
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference { .. }
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-                target: Some(_),
-                ..
-            } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D cannot relocate tolerant-coedge extension {}",
-                    parameters.id()
                 )));
             }
         }
