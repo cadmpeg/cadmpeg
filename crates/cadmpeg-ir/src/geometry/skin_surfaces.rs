@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
     feature = "schema",
     schemars(bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize")
 )]
+#[serde(bound(deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned"))]
 pub struct SkinSurfaceProfile<R = f64, V = Vector3> {
     /// Native profile type integer.
     pub type_code: i64,
@@ -27,7 +28,14 @@ pub struct SkinSurfaceProfile<R = f64, V = Vector3> {
 }
 
 /// Structurally selected native skin payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(
@@ -85,6 +93,9 @@ impl<R, V> SkinSurfaceLayout<R, V> {
         bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
     )
 )]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 pub struct SkinSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Native `SURF_BOOL` enum.
     pub surface_boolean: i64,
@@ -122,6 +133,9 @@ pub struct SkinSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
         bound = "R: JsonSchema + Serialize, V: JsonSchema + Serialize, P: JsonSchema + Serialize"
     )
 )]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 pub struct NetSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Two ordered loft-section graphs.
     pub sections: Box<[LoftSection<R, V>; 2]>,

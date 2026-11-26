@@ -703,7 +703,7 @@ impl TryFrom<Vector3> for UnitVector3 {
                 let unit = Self::normalized(value)?;
                 cadmpeg_core::read_session::repair(
                     cadmpeg_core::read_session::Repair::Value,
-                    || {
+                    &|| {
                         format!(
                             "direction {:?} is normalized to unit length",
                             [value.x, value.y, value.z]
@@ -819,7 +819,7 @@ impl TryFrom<[f64; 2]> for UnitVector2 {
                 let unit = Self::new(direction.0.get())?;
                 cadmpeg_core::read_session::repair(
                     cadmpeg_core::read_session::Repair::Value,
-                    || format!("planar direction {value:?} is normalized to unit length"),
+                    &|| format!("planar direction {value:?} is normalized to unit length"),
                 )
                 .then_some(unit)
             })
@@ -1305,6 +1305,7 @@ mod tests {
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn the_tolerance_in_force_takes_linear_for_each_entity_that_states_none() {
@@ -1418,22 +1419,19 @@ mod tests {
         use crate::math::{Point2, Point3};
 
         let coordinates = FiniteVector::new([-0.0, 1.0]).expect("finite coordinates");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&coordinates).unwrap(),
-            "[0.0,1.0]"
-        );
+        assert_eq!(json::to_string(&coordinates).unwrap(), "[0.0,1.0]");
         let read: FiniteVector<2> = serde_json::from_str("[-0.0,-0]").unwrap();
         assert_eq!(read.get().map(f64::to_bits), [0, 0]);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&Vector3::new(-0.0, 1.0, -0.0)).unwrap(),
+            json::to_string(&Vector3::new(-0.0, 1.0, -0.0)).unwrap(),
             r#"{"x":0.0,"y":1.0,"z":0.0}"#
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&Point3::new(-0.0, -0.0, 2.5)).unwrap(),
+            json::to_string(&Point3::new(-0.0, -0.0, 2.5)).unwrap(),
             r#"{"x":0.0,"y":0.0,"z":2.5}"#
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&Point2::new(-0.0, -1.0)).unwrap(),
+            json::to_string(&Point2::new(-0.0, -1.0)).unwrap(),
             r#"{"u":0.0,"v":-1.0}"#
         );
     }
@@ -1643,15 +1641,14 @@ mod tests {
         assert!(NonNegativeReal::new(-1.0).is_none());
         for value in [-0.0, 0.0, f64::MIN_POSITIVE, f64::MAX] {
             let admitted = NonNegativeReal::new(value).expect("nonnegative");
-            let wire = cadmpeg_core::serde_erase::json::to_string(&admitted).expect("serialize");
+            let wire = json::to_string(&admitted).expect("serialize");
             let decoded: NonNegativeReal = serde_json::from_str(&wire).expect("deserialize");
             assert_eq!(decoded.get().to_bits(), (value + 0.0).to_bits());
         }
         let zero: NonNegativeReal = serde_json::from_str("-0.0").expect("a zero");
         assert_eq!(zero.get().to_bits(), 0);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&FiniteReal::new(-0.0).expect("finite"))
-                .expect("serialize"),
+            json::to_string(&FiniteReal::new(-0.0).expect("finite")).expect("serialize"),
             "0.0"
         );
         assert!(serde_json::from_str::<PositiveReal>("0").is_err());
@@ -1672,7 +1669,7 @@ mod tests {
         );
         assert!(NonzeroVector::from_finite(FiniteVector::new([0.0; 3]).expect("finite")).is_none());
         assert_eq!(value.0, coordinates);
-        let wire = cadmpeg_core::serde_erase::json::to_string(&value).expect("serialize");
+        let wire = json::to_string(&value).expect("serialize");
         assert_eq!(wire, "[2.0,-3.0,4.0]");
         assert_eq!(
             serde_json::from_str::<NonzeroVector<3>>(&wire).expect("deserialize"),
@@ -1692,7 +1689,7 @@ mod tests {
         }
         let value = Tolerances::new(0.25, 0.5).expect("positive finite");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).expect("serialize"),
+            json::to_string(&value).expect("serialize"),
             r#"{"linear":0.25,"angular":0.5}"#
         );
     }

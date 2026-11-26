@@ -3,6 +3,7 @@
 
 use crate::select::Selection;
 use crate::test_support::builders::{measure, plate_with_hole};
+use cadmpeg_core::serde_erase::json;
 
 /// The keys of the top-level object of a JSON text, in text order.
 fn keys(text: &str) -> Vec<String> {
@@ -53,7 +54,7 @@ fn a_face_report_serializes_members_in_contract_order() {
             ..Selection::default()
         },
     );
-    let text = cadmpeg_core::serde_erase::json::to_string(&report).expect("finite report");
+    let text = json::to_string(&report).expect("finite report");
     assert_eq!(
         keys(&text),
         [
@@ -68,7 +69,7 @@ fn a_face_report_serializes_members_in_contract_order() {
     );
     let face = &report.faces()[0];
     assert_eq!(
-        keys(&cadmpeg_core::serde_erase::json::to_string(face).unwrap()),
+        keys(&json::to_string(face).unwrap()),
         [
             "face",
             "placement",
@@ -84,7 +85,7 @@ fn a_face_report_serializes_members_in_contract_order() {
         ]
     );
     assert_eq!(
-        keys(&cadmpeg_core::serde_erase::json::to_string(face.measures().area()).unwrap()),
+        keys(&json::to_string(face.measures().area()).unwrap()),
         [
             "status",
             "value",
@@ -102,7 +103,7 @@ fn a_face_report_serializes_members_in_contract_order() {
         },
     );
     assert_eq!(
-        keys(&cadmpeg_core::serde_erase::json::to_string(&surfaces.surfaces()[0]).unwrap()),
+        keys(&json::to_string(&surfaces.surfaces()[0]).unwrap()),
         [
             "surface",
             "placement",
@@ -136,13 +137,12 @@ fn quantities_that_do_not_apply_are_absent() {
             ..Selection::default()
         },
     );
-    let value = cadmpeg_core::serde_erase::json::to_value(&faces).unwrap();
+    let value = json::to_value(&faces).unwrap();
     let document = value["document"].as_object().unwrap();
     for member in ["area", "closed_volume", "bbox"] {
         assert!(!document.contains_key(member), "{member}");
     }
-    let bodies =
-        cadmpeg_core::serde_erase::json::to_value(measure(&ir, &Selection::default())).unwrap();
+    let bodies = json::to_value(measure(&ir, &Selection::default())).unwrap();
     for member in ["area", "bbox"] {
         assert!(bodies["document"][member].is_object(), "{member}");
     }
@@ -174,7 +174,7 @@ fn quantities_that_do_not_apply_are_absent() {
             Some(cadmpeg_ir::transform::Transform::identity()),
         ));
     assembly.finalize();
-    let unplaced = cadmpeg_core::serde_erase::json::to_value(measure(
+    let unplaced = json::to_value(measure(
         &assembly,
         &Selection {
             occurrence: Some(occurrence),
@@ -198,10 +198,10 @@ fn mass_properties_are_value_objects() {
         .second_moments()
         .as_ref()
         .expect("tensor");
-    let body = &cadmpeg_core::serde_erase::json::to_value(&report).unwrap()["bodies"][0];
+    let body = &json::to_value(&report).unwrap()["bodies"][0];
     let tensor = &body["second_moments"];
     assert_eq!(
-        keys(&cadmpeg_core::serde_erase::json::to_string(typed).unwrap()),
+        keys(&json::to_string(typed).unwrap()),
         [
             "status",
             "value",

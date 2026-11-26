@@ -2,6 +2,7 @@
 //! The stated wire forms of §2.5, checked against what the design types write
 //! and read.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::num::NonZeroI8;
 
@@ -67,7 +68,7 @@ fn a_neutral_expression_is_text_with_side_lists() {
 #[test]
 fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     let mode = fixtures::source_mode();
-    let written = cadmpeg_core::serde_erase::json::to_string(&mode).unwrap();
+    let written = json::to_string(&mode).unwrap();
     assert!(
         written.contains("\"source_settings\":{}"),
         "string keys write an object: {written}"
@@ -166,15 +167,12 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
 fn negative_zero_is_never_written() {
     for zero in [0.0, -0.0] {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&Duration::new(zero).unwrap()).unwrap(),
+            json::to_string(&Duration::new(zero).unwrap()).unwrap(),
             "0.0"
         );
     }
     let read_back: Duration = read_desktop("-0.0").unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&read_back).unwrap(),
-        "0.0"
-    );
+    assert_eq!(json::to_string(&read_back).unwrap(), "0.0");
 }
 
 /// "A `symbol` is the wire name of a `UnitSymbol` variant". Every variant's
@@ -389,18 +387,14 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let list = Members::<Picked, Ordered>::new(given.clone()).unwrap();
     assert_eq!(list.as_slice(), given.as_slice());
 
-    let written =
-        cadmpeg_core::serde_erase::json::to_string(&Picks::<Unordered>::Named(set)).unwrap();
+    let written = json::to_string(&Picks::<Unordered>::Named(set)).unwrap();
     let back: Picks<Unordered> = read_desktop(&written).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&back).unwrap(),
-        written
-    );
-    let unsorted = cadmpeg_core::serde_erase::json::to_string(&given).unwrap();
+    assert_eq!(json::to_string(&back).unwrap(), written);
+    let unsorted = json::to_string(&given).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&unsorted).contains("identity-key order"));
     let read_list: Members<Picked, Ordered> = read_desktop(&unsorted).unwrap();
     assert_eq!(read_list.as_slice(), given.as_slice());
-    let doubled = cadmpeg_core::serde_erase::json::to_string(&vec![first.clone(), first]).unwrap();
+    let doubled = json::to_string(&vec![first.clone(), first]).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&doubled).contains("twice"));
     assert!(refuses::<Members<Picked, Ordered>>(&doubled).contains("twice"));
 }

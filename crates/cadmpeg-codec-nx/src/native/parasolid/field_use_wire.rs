@@ -123,18 +123,16 @@ impl TryFrom<FieldUseWire> for ParasolidAttributeFieldUse {
 mod tests {
     use super::super::ATTRIBUTE_FIELD_USE_CLONE_COUNT;
     use super::{FieldUseWire, ParasolidAttributeFieldUse};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn field_use_wire_preserves_and_checks_derived_fields() {
         let wire = r#"{"id":"field","stream_ordinal":0,"attribute_class_use":"class","entity_51_record":"entity","attribute_definition":"definition","field_ordinal":1,"field_code":2,"reference_ordinal":6,"value_kind":"doubles","value_use":"use","value_record":"value","inflated_offset":8}"#;
         let value: ParasolidAttributeFieldUse = serde_json::from_str(wire).unwrap();
+        assert_eq!(json::to_string(&value).unwrap(), wire);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&FieldUseWire::from(value.clone())).unwrap()
+            json::to_vec(&value).unwrap(),
+            json::to_vec(&FieldUseWire::from(value.clone())).unwrap()
         );
         for invalid in [
             wire.replace("\"field_ordinal\":1", "\"field_ordinal\":2"),

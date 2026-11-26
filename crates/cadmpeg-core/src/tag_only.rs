@@ -77,18 +77,20 @@ mod tests {
             empty
         );
         assert_eq!(
-            serde_json::from_value::<Probe>(empty).expect("the bare tag reads"),
+            crate::serde_erase::json::from_value::<Probe>(empty).expect("the bare tag reads"),
             Probe::Empty
         );
-        let error = serde_json::from_value::<Probe>(serde_json::json!({
+        let error = crate::serde_erase::json::from_value::<Probe>(serde_json::json!({
             "kind": "empty", "zz_bogus": 1
         }))
         .expect_err("a key beside the tag is refused")
         .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
         assert_eq!(
-            serde_json::from_value::<Probe>(serde_json::json!({"kind": "full", "count": 2}))
-                .expect("a struct variant reads"),
+            crate::serde_erase::json::from_value::<Probe>(
+                serde_json::json!({"kind": "full", "count": 2})
+            )
+            .expect("a struct variant reads"),
             Probe::Full { count: 2 }
         );
     }
@@ -101,7 +103,8 @@ mod tests {
             empty
         );
         assert_eq!(
-            serde_json::from_value::<AdjacentProbe>(empty).expect("the bare tag reads"),
+            crate::serde_erase::json::from_value::<AdjacentProbe>(empty)
+                .expect("the bare tag reads"),
             AdjacentProbe::Empty
         );
         for value in [
@@ -120,7 +123,7 @@ mod tests {
             }
         }
         assert_eq!(
-            serde_json::from_value::<AdjacentProbe>(serde_json::json!({
+            crate::serde_erase::json::from_value::<AdjacentProbe>(serde_json::json!({
                 "kind": "count", "value": 2
             }))
             .expect("a newtype variant reads"),

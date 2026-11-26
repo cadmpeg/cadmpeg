@@ -12,6 +12,7 @@ use crate::feature::{
 };
 use crate::record_identity::{Located, RecordTypeId};
 use crate::sketch::PmDcTransform;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -1143,13 +1144,13 @@ pub(crate) fn new_body_form() -> (Fixture, PmDcPatternFeature) {
     ));
     let node =
         crate::feature::tests::test_feature(200, 4, &[(0, 201), (1, 202), (2, 203), (3, 204)]);
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(node).expect("synthetic node");
+    let mut wire = json::to_value(node).expect("synthetic node");
     wire["save_version_major"] = serde_json::json!(19);
     wire["outline_value"] = serde_json::json!(15);
     wire["header"]["flags"] = serde_json::json!(0x6200);
     fixture
         .generated_features
-        .push(cadmpeg_core::serde_erase::json::from_value(wire).expect("generated node"));
+        .push(json::from_value(wire).expect("generated node"));
     fixture.generated_labels.push(test_label(
         200,
         1,
@@ -1164,9 +1165,9 @@ fn change_record<T: serde::Serialize + serde::de::DeserializeOwned>(
     record: &mut T,
     change: impl FnOnce(&mut serde_json::Value),
 ) {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&*record).expect("synthetic record");
+    let mut wire = json::to_value(&*record).expect("synthetic record");
     change(&mut wire);
-    *record = cadmpeg_core::serde_erase::json::from_value(wire).expect("changed synthetic record");
+    *record = json::from_value(wire).expect("changed synthetic record");
 }
 
 pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeature)> {
@@ -1187,8 +1188,7 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
                 .find(|p| p.identity.record_ordinal == 113)
                 .expect("map");
             change_record(map, |wire| {
-                wire["kind"]["definition"][field] =
-                    cadmpeg_core::serde_erase::json::to_value(reference).expect("reference");
+                wire["kind"]["definition"][field] = json::to_value(reference).expect("reference");
             });
             cases.push((format!("map {field} {name}"), fixture, source));
         }
@@ -1222,10 +1222,8 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
             .find(|p| p.identity.record_ordinal == ordinal)
             .expect("wrapper");
         change_record(property, |wire| {
-            wire["kind"]["body"] = cadmpeg_core::serde_erase::json::to_value(
-                crate::pmdc::PmDcReference::from_packed(value),
-            )
-            .expect("reference");
+            wire["kind"]["body"] =
+                json::to_value(crate::pmdc::PmDcReference::from_packed(value)).expect("reference");
         });
         cases.push((name.into(), fixture, source));
     }

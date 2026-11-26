@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::sketch::{Planar, SketchConstraint};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::FeatureId;
@@ -68,8 +69,7 @@ fn project_with(parameter: &LegacyParameter, all: &[&LegacyParameter]) -> Design
 fn neutral_text(parameter: &DesignParameter) -> String {
     match &parameter.definition {
         ParameterDefinition::Expression(expression @ Expression::Neutral(_)) => {
-            cadmpeg_core::serde_erase::json::to_value(expression).expect("serialize")["value"]
-                ["text"]
+            json::to_value(expression).expect("serialize")["value"]["text"]
                 .as_str()
                 .expect("canonical text")
                 .to_owned()

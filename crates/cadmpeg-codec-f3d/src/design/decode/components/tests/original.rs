@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn fixture_attributed_frames_retain_reference_namespaces_and_independent_ordinals() {
     #[derive(serde::Deserialize)]
@@ -60,7 +62,7 @@ fn fixture_attributed_frames_retain_reference_namespaces_and_independent_ordinal
             "{}",
             case.label
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(
             wire["attributed"]["path_discriminator"], case.path_discriminator,
             "{}",
@@ -77,7 +79,7 @@ fn fixture_attributed_frames_retain_reference_namespaces_and_independent_ordinal
             case.label
         );
         let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(decoded, occurrence, "{}", case.label);
     }
 }
@@ -122,7 +124,7 @@ fn empty_attributed_occurrence_keeps_its_prefix_key_namespace_and_matrix() {
         occurrence.transform().unwrap().value.rows().concat(),
         matrix
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+    let wire = json::to_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["attributes"], serde_json::json!([]));
     assert_eq!(wire["attributed"]["ordinal_prefix"], 2);
     assert_eq!(wire["attributed"]["path_discriminator"], 7);
@@ -134,6 +136,6 @@ fn empty_attributed_occurrence_keeps_its_prefix_key_namespace_and_matrix() {
     assert_eq!(wire["transform_offset"], 230);
     assert_eq!(wire["owner_entity_offset"], 368);
     let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        json::from_value(wire).unwrap();
     assert_eq!(decoded, occurrence);
 }

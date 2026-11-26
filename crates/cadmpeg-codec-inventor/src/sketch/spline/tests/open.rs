@@ -3,6 +3,7 @@
 use super::super::*;
 use crate::pmdc::{PmDcListMetadata, PmDcReference};
 use crate::test_support::sketch_curves::{edit_entity, open_cubic_bytes, open_cubic_entities};
+use cadmpeg_core::serde_erase::json;
 
 fn index(entities: &[PmDcSketchEntity]) -> HashMap<(&str, u32), Option<&PmDcSketchEntity>> {
     cadmpeg_core::decode::unique_index(entities.iter().map(|entity| {
@@ -48,10 +49,9 @@ fn endpoint_bound_open_cubic_projects_its_exact_arrays_and_units() {
         ]
     );
     assert!(crate::sketch::curve::native_losses(&entities).is_empty());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&entities[2]).expect("spline wire");
+    let wire = json::to_value(&entities[2]).expect("spline wire");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PmDcSketchEntity>(wire)
-            .expect("restored spline"),
+        json::from_value::<PmDcSketchEntity>(wire).expect("restored spline"),
         entities[2]
     );
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation of a neutral revolve profile against its axis.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::revolve::RevolveConstruction;
@@ -17,7 +18,7 @@ fn square(left: f64) -> (Sketch, Vec<SketchEntity>) {
     let entities = (0..4)
         .map(|index| {
             let (start, end) = (corners[index], corners[(index + 1) % 4]);
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id": format!("inventor:test:entity#{index}"),
                 "sketch": "inventor:test:sketch#1",
                 "construction": false, "endpoint_refs": [],
@@ -33,7 +34,7 @@ fn square(left: f64) -> (Sketch, Vec<SketchEntity>) {
     let chain = (0..4)
         .map(|index| json!({"entity": format!("inventor:test:entity#{index}"), "reversed": false}))
         .collect::<Vec<_>>();
-    let sketch = cadmpeg_core::serde_erase::json::from_value(json!({
+    let sketch = json::from_value(json!({
         "id": "inventor:test:sketch#1",
         "placement": {"kind": "resolved", "frame": {
             "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -49,7 +50,7 @@ fn square(left: f64) -> (Sketch, Vec<SketchEntity>) {
 /// A full revolution of the square about the sketch v axis (world Z).
 fn construction() -> RevolveConstruction {
     RevolveConstruction::Resolved {
-        profile: cadmpeg_core::serde_erase::json::from_value(json!({
+        profile: json::from_value(json!({
             "kind": "sketch_regions",
             "value": {
                 "sketch": "inventor:test:sketch#1",
@@ -57,7 +58,7 @@ fn construction() -> RevolveConstruction {
             },
         }))
         .expect("profile"),
-        axis: cadmpeg_core::serde_erase::json::from_value(json!({
+        axis: json::from_value(json!({
             "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         }))

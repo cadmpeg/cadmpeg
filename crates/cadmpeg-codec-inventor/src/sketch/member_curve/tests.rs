@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::test_support::test_fixtures::{content_at, parse as with_view};
+use cadmpeg_core::serde_erase::json;
 
 fn word(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
@@ -169,11 +170,9 @@ fn polynomial_and_rational_curve_bodies_keep_every_lane() {
         assert_eq!(curve.poles[2][0].get(), 2.0);
         assert_eq!(curve.interval[1].get(), 1.0);
         assert!(data.native_reason().contains("exact curve rule"));
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&data).expect("serialize member curve");
+        let wire = json::to_value(&data).expect("serialize member curve");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<MemberCurveRecord>(wire)
-                .expect("deserialize"),
+            json::from_value::<MemberCurveRecord>(wire).expect("deserialize"),
             data
         );
     }

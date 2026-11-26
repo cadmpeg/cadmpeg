@@ -131,6 +131,21 @@ probes! {
         Two { a: S::Id, b: S::Id },
         Other { n: u8 },
     }
+
+    #[derive(Debug, PartialEq, Reader)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub(super) enum Inferred<T> {
+        One(T),
+        Two { a: T, b: Vec<T> },
+    }
+
+    #[derive(Debug, PartialEq, Reader)]
+    #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+    #[serde(bound(deserialize = "T: serde::Deserialize<'de> + Clone"))]
+    pub(super) enum Stated<T> {
+        One(T),
+        Two { a: T },
+    }
 }
 
 /// What a reader makes of `text`: the value, or the refusal's message.
@@ -336,11 +351,27 @@ const GENERIC: &[&str] = &[
     r#"{"kind":"other","value":{"n":1}}"#,
 ];
 
+const INFERRED: &[&str] = &[
+    r#"{"kind":"one","value":7}"#,
+    r#"{"kind":"one"}"#,
+    r#"{"kind":"two","a":1,"b":[2,3]}"#,
+    r#"{"kind":"two","a":1,"b":[-2]}"#,
+    r#"{"kind":"two","a":1}"#,
+];
+
 #[test]
 fn internally_tagged_enums_read_as_serde_reads_them() {
     agree::<serde_form::Internal, tagged_form::Internal>(INTERNAL, true);
     agree::<serde_form::Loose, tagged_form::Loose>(LOOSE, true);
     agree::<serde_form::Flat, tagged_form::Flat>(FLAT, true);
+}
+
+/// A generic enum without `bound = ""` reads each parameter as an owned
+/// value: with serde's inferred bound, or with the bound it states.
+#[test]
+fn generic_enums_with_serde_bounds_read_as_serde_reads_them() {
+    agree::<serde_form::Inferred<u32>, tagged_form::Inferred<u32>>(INFERRED, true);
+    agree::<serde_form::Stated<u32>, tagged_form::Stated<u32>>(GENERIC, false);
 }
 
 #[test]

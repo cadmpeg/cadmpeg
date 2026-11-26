@@ -4,6 +4,7 @@
 //! record that has no placed image.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
@@ -87,10 +88,9 @@ fn renamed(value: &mut Value, kinds: &[&str], suffix: &str) {
 
 /// `records` with `suffix` appended to each identity of a kind in `kinds`.
 fn copied<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str], suffix: &str) -> Vec<T> {
-    let mut value =
-        cadmpeg_core::serde_erase::json::to_value(records).expect("the records serialize");
+    let mut value = json::to_value(records).expect("the records serialize");
     renamed(&mut value, kinds, suffix);
-    cadmpeg_core::serde_erase::json::from_value(value).expect("the renamed records deserialize")
+    json::from_value(value).expect("the renamed records deserialize")
 }
 
 /// `records` with each identity of a kind in `kinds` renamed for the second

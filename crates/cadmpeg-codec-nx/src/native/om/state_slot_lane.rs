@@ -88,43 +88,34 @@ impl TryFrom<Wire> for OmOperationStateSlotLane {
 #[cfg(test)]
 mod tests {
     use super::OmOperationStateSlotLane;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn wire_end_is_derived_from_slots_and_fixed_framing() {
         let json = r#"{"id":"lane","section_link":"section","ordinal":0,"slots":[],"source_entry":"om","source_offset":10,"end_offset":15}"#;
         let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
+        assert_eq!(json::to_string(&lane).unwrap(), json);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
-            json
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&lane).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::Wire::from(lane.clone())).unwrap()
+            json::to_vec(&lane).unwrap(),
+            json::to_vec(&super::Wire::from(lane.clone())).unwrap()
         );
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         let mut mismatch = wire.clone();
         mismatch["end_offset"] = 16.into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<OmOperationStateSlotLane>(mismatch)
-                .unwrap_err()
-                .to_string()
-                .contains("end_offset")
-        );
+        assert!(json::from_value::<OmOperationStateSlotLane>(mismatch)
+            .unwrap_err()
+            .to_string()
+            .contains("end_offset"));
         let mut boundary = wire.clone();
         boundary["source_offset"] = (u64::MAX - 5).into();
         boundary["end_offset"] = u64::MAX.into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<OmOperationStateSlotLane>(boundary)
-                .is_ok()
-        );
+        assert!(json::from_value::<OmOperationStateSlotLane>(boundary).is_ok());
         let mut overflow = wire;
         overflow["source_offset"] = (u64::MAX - 4).into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<OmOperationStateSlotLane>(overflow)
-                .unwrap_err()
-                .to_string()
-                .contains("source_offset")
-        );
+        assert!(json::from_value::<OmOperationStateSlotLane>(overflow)
+            .unwrap_err()
+            .to_string()
+            .contains("source_offset"));
     }
 
     #[test]
@@ -132,8 +123,8 @@ mod tests {
         let json = r#"{"id":"nx:om:state-slot-lane#0","section_link":"section","ordinal":0,"slots":[{"ordinal":0,"object_index":5,"raw_object_index":"05"}],"source_entry":"om","source_offset":10,"end_offset":16}"#;
         let lane: OmOperationStateSlotLane = serde_json::from_str(json).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&lane).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::Wire::from(lane.clone())).unwrap()
+            json::to_vec(&lane).unwrap(),
+            json::to_vec(&super::Wire::from(lane.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &lane,

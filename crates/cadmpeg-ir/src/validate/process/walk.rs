@@ -8,6 +8,7 @@
 //! is walked without a change here. The [`Reader`] also measures the record's
 //! JSON nesting, which the reader bounds.
 
+use cadmpeg_core::serde_erase::json;
 use std::cell::RefCell;
 
 use serde::Serialize;
@@ -218,9 +219,7 @@ impl Capture {
                 }
             }
             Self::Picked => {
-                if let Ok(pick) =
-                    cadmpeg_core::serde_erase::json::from_value(Value::Object(members))
-                {
+                if let Ok(pick) = json::from_value(Value::Object(members)) {
                     found.picks.push((at, pick));
                 }
             }
