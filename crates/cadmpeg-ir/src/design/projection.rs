@@ -14,6 +14,8 @@ use crate::report::loss::LossNote;
 use crate::report::Severity;
 use crate::unknown::part::record_unreadable_kind;
 
+pub mod sketch;
+
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
 ///

@@ -25,28 +25,39 @@
 //! parameter's quantity; a reference
 //! dimension makes the tree parameter it binds `Driven`, and one whose
 //! parameter no tree node lists binds a `Driven` parameter minted for it. A
-//! sketch with a dimension that binds no parameter, or with an entity that
-//! has no planar curve, stays `Unresolved`; its dimensions still state the
-//! quantities of the parameters they bind.
+//! dimension that binds no parameter states the value its parameter record
+//! stores, or no value, and an entity that has no planar curve states its
+//! native kind.
+//!
+//! A sketch that no feature of the timeline restates is the operation of a
+//! feature of its own: the v10 feature whose operation names it, else one
+//! minted for it. That feature is a member of one unordered `Group`
+//! (interim).
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation,
-    ScalarDimension, Subject,
+    Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
-use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::{
+    Feature, FeatureDefinition as DesignDefinition, FeatureOperation, OperationFamily,
+};
 use cadmpeg_ir::design::ops::sketch::{
-    AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar,
-    PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchPlane,
-    SketchRelation, SketchSolve,
+    DefiningRole, EntityDefinition, EntityForm, EntityRole, Operand, Planar, PlanarCurve,
+    RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchPlane, SketchRelation,
+    SketchSolve,
 };
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
+};
+use cadmpeg_ir::design::projection::sketch::{
+    self as relation, native_entity_kind, native_relation, planar_curve, stored_frame,
+    stored_value, DimensionValue, Loci,
 };
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
@@ -56,10 +67,9 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometryDefinition as Geometry,
-    SketchLocus,
+    SketchConstraintDefinitionInput as Kind, SketchConstraintId, SketchEntityId,
+    SketchGeometryDefinition as Geometry, SketchLocus,
 };
-use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 
 use super::parameters::Entries;
 use super::profile_check;
@@ -98,6 +108,13 @@ pub(super) struct Sketches {
     /// The circles built from a dimension record that the design leaves
     /// out, or states construction although the decoder does not mark them.
     pub(super) dimension_circles: Vec<DimensionCircle>,
+    /// The features, members of no timeline, that own the sketches no
+    /// timeline feature restates.
+    pub(super) outside: Vec<Feature>,
+    /// The entities with no planar curve, stated by their native kind.
+    pub(super) native_entities: Vec<SketchEntityId>,
+    /// The dimensions that bind no parameter of the design.
+    pub(super) unbound: Vec<SketchConstraintId>,
 }
 
 /// A circle built from a dimension record that the design does not keep as
@@ -252,7 +269,71 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Sketch
         }
         preceding.insert(feature.id.clone());
     }
+    out.outside = outside(features, context, &mut out);
     out
+}
+
+/// The owners of the sketches of `context` that no feature of `features`
+/// restates, each sketch restated as its owner's operation. The owner is the
+/// v10 feature whose operation names the sketch, where no feature of
+/// `features` has its id, else a feature minted for the sketch.
+fn outside(features: &[Feature], context: &Context<'_>, out: &mut Sketches) -> Vec<Feature> {
+    let restated = out
+        .records
+        .iter()
+        .map(|sketch| sketch.id.clone())
+        .collect::<HashSet<_>>();
+    let mut owners = Vec::new();
+    for record in &context.model.sketches {
+        if restated.contains(&record.id) {
+            continue;
+        }
+        let source = context.model.features.iter().find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch
+                }) if sketch.id() == Some(&record.id)
+            )
+        });
+        let id = source
+            .map(|feature| feature.id.clone())
+            .filter(|id| features.iter().all(|feature| &feature.id != id))
+            .unwrap_or_else(|| minted_owner(&record.id));
+        restate(&id, record, context, Holder::Unordered, out);
+        owners.push(Feature {
+            name: source
+                .and_then(|feature| feature.name.clone())
+                .or_else(|| record.name.clone()),
+            suppressed: source
+                .and_then(|feature| feature.suppressed)
+                .map(Dimension::Literal),
+            definition: DesignDefinition {
+                operation: FeatureOperation::Sketch(record.id.clone()),
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: None,
+            component: None,
+            driven_by: None,
+            native_ref: source.and_then(|feature| feature.native_ref.clone()),
+            id,
+        });
+    }
+    owners
+}
+
+/// The id of the feature minted to own the sketch `sketch`.
+fn minted_owner(sketch: &SketchId) -> FeatureId {
+    FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "design", "sketch-owner"),
+        cadmpeg_ir::ids::IdentityKey::from(sketch.as_str().len())
+            .then(cadmpeg_ir::identity_key!(":"))
+            .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+                sketch.as_str(),
+            )),
+    )
 }
 
 fn sketch(
@@ -280,18 +361,40 @@ fn sketch(
         .iter()
         .find(|candidate| &candidate.id == id)
         .ok_or("the sketch record is missing")?;
+    restate(&feature.id, record, context, Holder::Ordered(support), out);
+    Ok(record.id.clone())
+}
+
+/// The container member that owns a sketch: a feature of the timeline, with
+/// the principal plane its sketch can lie on, or a member of an unordered
+/// container (§5.8, Anchors).
+#[derive(Clone, Copy)]
+enum Holder<'a> {
+    Ordered(Option<&'a (FeatureId, PrincipalEntity)>),
+    Unordered,
+}
+
+/// Restate `record` as the sketch of the feature `owner`, which `holder`
+/// places.
+fn restate(
+    owner: &FeatureId,
+    record: &cadmpeg_ir::sketches::Sketch,
+    context: &Context<'_>,
+    holder: Holder<'_>,
+    out: &mut Sketches,
+) {
+    let model = context.model;
     let entities = model
         .sketch_entities
         .iter()
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
     let roles = Roles::new(&entities);
-    let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
     let forms = entities
         .iter()
-        .map(|entity| curve(&entity.geometry))
+        .map(|entity| planar_curve(&entity.geometry))
         .collect::<Vec<_>>();
     let mut readings = Vec::with_capacity(entities.len());
     for index in 0..entities.len() {
@@ -304,9 +407,18 @@ fn sketch(
         .zip(forms.iter().cloned())
         .zip(readings.iter())
     {
-        let Some(form) = form else {
-            failure.get_or_insert("a sketch entity has no planar curve");
-            continue;
+        let definition = match form {
+            Some(form) => EntityDefinition::Free(form),
+            None => {
+                out.native_entities.push(entity.id().clone());
+                EntityDefinition::Defined {
+                    form: Box::new(EntityForm::Native(native_entity_kind(
+                        "sldprt",
+                        &entity.geometry,
+                    ))),
+                    solved: None,
+                }
+            }
         };
         let outside =
             context.outside_profile.contains(entity.id()) && !needed.contains(entity.id());
@@ -316,7 +428,7 @@ fn sketch(
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
-            definition: EntityDefinition::Free(form),
+            definition,
             roles: roles.of(entity.id()),
             construction: (entity.construction || outside || reading.is_some()).then_some(true),
             centerline: None,
@@ -337,19 +449,16 @@ fn sketch(
     {
         let relations = Relations {
             context,
-            owner: &feature.id,
+            owner,
             roles: &roles,
             entities: &entities,
         };
-        let (relation, binding) = match relations.relation(constraint, &driven) {
-            Ok(relation) => relation,
-            Err(reason) => {
-                failure.get_or_insert(reason);
-                continue;
-            }
-        };
+        let (relation, binding, unbound) = relations.relation(constraint, &driven);
         if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
             continue;
+        }
+        if unbound {
+            out.unbound.push(constraint.id.clone());
         }
         if let Some((parameter, quantity, minted)) = binding {
             if constraint.driving == Some(false) && context.entries.contains(&parameter) {
@@ -372,9 +481,6 @@ fn sketch(
     out.bound.extend(bound);
     out.driven.extend(driven);
     out.references.extend(references);
-    if let Some(reason) = failure {
-        return Err(reason);
-    }
     let dimension_circles = settle(&entities, readings, &mut constraints);
     sketch_entities.retain(|kept| {
         dimension_circles
@@ -383,9 +489,9 @@ fn sketch(
     });
     out.records.push(Sketch {
         id: record.id.clone(),
-        owner: feature.id.clone(),
+        owner: owner.clone(),
         name: record.name.clone(),
-        plane: SketchPlane::Placed(Box::new(placement(record.placement, support)?)),
+        plane: SketchPlane::Placed(Box::new(placement(record.placement, holder))),
         solve: SketchSolve {
             state: None,
             status: EvaluationStatus::Current,
@@ -421,56 +527,48 @@ fn sketch(
             }),
     );
     out.constraints.extend(constraints);
-    Ok(record.id.clone())
 }
 
 type SketchId = cadmpeg_ir::sketches::SketchId;
 
-/// The plane of a sketch whose stored placement is `placement`, on `support`
-/// where the stored frame lies in that plane.
+/// The plane of a sketch whose stored placement is `placement`, on the
+/// support of `holder` where the stored frame lies in that plane.
 fn placement(
     placement: cadmpeg_ir::sketches::SketchPlacement,
-    support: Option<&(FeatureId, PrincipalEntity)>,
-) -> Result<Construction<kinds::Frame>, &'static str> {
-    let frame = placement.resolved();
-    let resolved = frame
-        .map(|(origin, normal, u_axis)| {
-            let z_axis = UnitVector3::normalized_nonzero(normal)?;
-            let x_axis = UnitVector3::normalized_nonzero(u_axis)?;
-            let y_axis = UnitVector3::normalized(z_axis.as_raw().cross(*x_axis.as_raw()))?;
-            Some(FrameValue {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            })
+    holder: Holder<'_>,
+) -> Construction<kinds::Frame> {
+    let resolved = stored_frame(placement);
+    let (support, anchor) = match holder {
+        Holder::Ordered(support) => (support, Anchor::Input),
+        Holder::Unordered => (None, Anchor::Current),
+    };
+    let on_support = support
+        .filter(|(_, entity)| {
+            resolved
+                .as_ref()
+                .is_some_and(|frame| in_principal_plane(frame, *entity))
         })
-        .map(|frame| frame.ok_or("the stored sketch frame is degenerate"))
-        .transpose()?;
-    let on_support = support.filter(|(_, entity)| {
-        resolved
-            .as_ref()
-            .is_some_and(|frame| in_principal_plane(frame, *entity))
-    });
+        .and_then(|(datum, _)| {
+            selection(vec![pick(PickTarget::Datum {
+                feature: datum.clone(),
+                part: None,
+            })])
+            .ok()
+        });
     let input = match on_support {
-        Some((datum, _)) => ConstructionInput {
+        Some(selection) => ConstructionInput {
             role: Some(InputRole {
                 subject: Subject::Whole,
                 relation: Relation::Coincident,
             }),
-            reference: Some(InputReference::Picks(selection(vec![pick(
-                PickTarget::Datum {
-                    feature: datum.clone(),
-                    part: None,
-                },
-            )])?)),
+            reference: Some(InputReference::Picks(selection)),
             value: None,
             reversed: None,
         },
         None => ConstructionInput {
             role: None,
             reference: Some(InputReference::Picks(Selection {
-                at: Anchor::Input,
+                at: anchor,
                 picks: Picks::Unread,
                 native: None,
             })),
@@ -478,14 +576,14 @@ fn placement(
             reversed: None,
         },
     };
-    Ok(Construction {
+    Construction {
         inputs: vec![input],
         resolved,
         after: Vec::new(),
         solution: None,
         mode: None,
         resolved_in: std::collections::BTreeMap::new(),
-    })
+    }
 }
 
 /// Whether `frame`'s plane is the principal plane `entity`: its normal is the
@@ -968,58 +1066,6 @@ fn needed_state_zero<'a>(
     profile_check::needed(&live, &state_zero)
 }
 
-/// The v11 curve of a decoded sketch entity, or `None` for a geometry the
-/// planar curve vocabulary does not hold as decoded.
-fn curve(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<PlanarCurve> {
-    use cadmpeg_ir::math::portable::Portable;
-    Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
-            start: *start,
-            end: *end,
-        },
-        Geometry::ReferenceLine { origin, direction } => {
-            let [u, v] = [direction.get().u, direction.get().v];
-            let length = u.portable_hypot(v);
-            PlanarCurve::InfiniteLine {
-                through: *origin,
-                direction: UnitVector2::new([u / length, v / length])?,
-            }
-        }
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
-            center: *center,
-            radius: *radius,
-        },
-        Geometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => PlanarCurve::Arc {
-            center: *center,
-            radius: *radius,
-            start: *start_angle,
-            end: *end_angle,
-        },
-        Geometry::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds,
-        } => {
-            let (sin, cos) = major_angle.get().portable_sin_cos();
-            PlanarCurve::Ellipse {
-                center: *center,
-                major: UnitVector2::new([cos, sin])?,
-                radii: [radii.major(), radii.minor()],
-                range: *bounds,
-            }
-        }
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        _ => return None,
-    })
-}
-
 /// A parameter a dimension binds, its quantity, and the parameter minted
 /// for it where no tree node lists it.
 type Binding = (ParameterId, Quantity, Option<DesignParameter>);
@@ -1033,29 +1079,45 @@ struct Relations<'a> {
 }
 
 impl Relations<'_> {
-    /// The relation of `constraint`, and the parameter its value binds. A
-    /// dimension that binds no parameter has no relation.
+    /// The relation of `constraint`, the parameter its value binds, and
+    /// whether it is a dimension that binds no parameter of the design. Such
+    /// a dimension states the value its parameter record stores, where the
+    /// record stores one of the dimension's quantity.
     fn relation(
         &self,
         constraint: &cadmpeg_ir::sketches::SketchConstraint,
         minted: &[DesignParameter],
-    ) -> Result<(SketchRelation<Planar>, Option<Binding>), &'static str> {
-        const UNBOUND: &str = "a sketch dimension binds no parameter";
+    ) -> (SketchRelation<Planar>, Option<Binding>, bool) {
         let kind = constraint.definition.kind();
-        if let Some(relation) = self.geometric(kind) {
-            return Ok((relation, None));
+        if let Some(relation) = relation::geometric(kind, self) {
+            return (relation, None, false);
         }
         if !is_dimension(kind) {
-            return Ok((native(kind, operands(kind), Vec::new()), None));
+            return (native_relation("sldprt", kind, Vec::new()), None, false);
         }
-        let (parameter, quantity) = dimension_parameter(kind).ok_or(UNBOUND)?;
-        let binding = self
-            .binding(parameter, quantity, constraint.driving, minted)
-            .ok_or(UNBOUND)?;
-        let relation = self
-            .dimension(kind, binding.0.clone())
-            .unwrap_or_else(|| native(kind, operands(kind), vec![scalar(quantity, &binding.0)]));
-        Ok((relation, Some(binding)))
+        let Some((parameter, quantity)) = dimension_parameter(kind) else {
+            return (native_relation("sldprt", kind, Vec::new()), None, true);
+        };
+        let binding = self.binding(parameter, quantity, constraint.driving, minted);
+        let value = match &binding {
+            Some((bound, _, _)) => Some(DimensionValue::Parameter(bound.clone())),
+            None => stored_value(&self.context.model.parameters, parameter, quantity),
+        };
+        let relation = value
+            .as_ref()
+            .and_then(|value| relation::dimension(kind, value, self))
+            .unwrap_or_else(|| {
+                native_relation(
+                    "sldprt",
+                    kind,
+                    value
+                        .iter()
+                        .filter_map(|value| value.scalar(quantity))
+                        .collect(),
+                )
+            });
+        let unbound = binding.is_none();
+        (relation, binding, unbound)
     }
 
     /// The parameter `parameter` as a dimension of `quantity` binds it: a
@@ -1126,9 +1188,11 @@ impl Relations<'_> {
             }),
         ))
     }
+}
 
+impl Loci for Relations<'_> {
     /// The point entity or curve a locus names.
-    fn locus(&self, locus: &SketchLocus) -> Option<Operand<Planar>> {
+    fn operand(&self, locus: &SketchLocus) -> Option<Operand<Planar>> {
         Some(Operand::Entity(match locus {
             SketchLocus::Entity(id) => id.clone(),
             SketchLocus::Start(curve) => self.roles.end(curve, true)?.clone(),
@@ -1139,7 +1203,7 @@ impl Relations<'_> {
 
     /// The position of a point locus.
     fn position(&self, locus: &SketchLocus) -> Option<[f64; 2]> {
-        let Some(Operand::Entity(id)) = self.locus(locus) else {
+        let Some(Operand::Entity(id)) = self.operand(locus) else {
             return None;
         };
         let entity = self.entities.iter().find(|entity| entity.id() == &id)?;
@@ -1147,174 +1211,6 @@ impl Relations<'_> {
             Geometry::Point { position } => Some([position.u, position.v]),
             _ => None,
         }
-    }
-
-    fn geometric(&self, kind: &Kind) -> Option<SketchRelation<Planar>> {
-        let entity = |id: &SketchEntityId| Operand::Entity(id.clone());
-        Some(match kind {
-            Kind::Coincident { entities } if entities.len() == 2 => SketchRelation::Coincident {
-                a: entity(&entities[0]),
-                b: entity(&entities[1]),
-            },
-            Kind::CoincidentLoci { loci } if loci.len() == 2 => SketchRelation::Coincident {
-                a: self.locus(&loci[0])?,
-                b: self.locus(&loci[1])?,
-            },
-            Kind::PointOnObject { point, entity: id } => SketchRelation::Coincident {
-                a: self.locus(point)?,
-                b: entity(id),
-            },
-            Kind::Midpoint { point, entity: id } => match self.locus(point)? {
-                Operand::Entity(point) => SketchRelation::Midpoint {
-                    point,
-                    of: entity(id),
-                },
-                _ => return None,
-            },
-            Kind::Concentric { first, second } => SketchRelation::Concentric {
-                a: entity(first),
-                b: entity(second),
-            },
-            Kind::Collinear { first, second } => SketchRelation::Collinear {
-                a: entity(first),
-                b: entity(second),
-            },
-            Kind::Parallel { first, second } => SketchRelation::Parallel {
-                a: entity(first),
-                b: entity(second),
-            },
-            Kind::Perpendicular { first, second } => SketchRelation::Perpendicular {
-                a: entity(first),
-                b: entity(second),
-            },
-            Kind::Tangent { first, second } => SketchRelation::Tangent {
-                a: entity(first),
-                b: entity(second),
-                contact: None,
-            },
-            Kind::Horizontal { entity: id } => SketchRelation::Horizontal {
-                a: entity(id),
-                b: None,
-            },
-            Kind::Vertical { entity: id } => SketchRelation::Vertical {
-                a: entity(id),
-                b: None,
-            },
-            Kind::Equal { first, second } => SketchRelation::Equal {
-                members: vec![entity(first), entity(second)],
-            },
-            Kind::Fixed { entity: id } => SketchRelation::Fixed { of: entity(id) },
-            Kind::Symmetric {
-                first,
-                second,
-                axis,
-            } => SketchRelation::Symmetric {
-                a: self.locus(first)?,
-                b: self.locus(second)?,
-                about: entity(axis),
-            },
-            _ => return None,
-        })
-    }
-
-    /// The dimension relation of `kind`, bound to `value`. A horizontal or
-    /// vertical distance orders its points so the stated value is the
-    /// non-negative difference (§6.1).
-    fn dimension(&self, kind: &Kind, value: ParameterId) -> Option<SketchRelation<Planar>> {
-        let along = |first: &SketchLocus, second: &SketchLocus, axis: usize, along| {
-            let (a, b) = (self.position(first)?, self.position(second)?);
-            let (a_operand, b_operand) = (self.locus(first)?, self.locus(second)?);
-            let (a_operand, b_operand) = if b[axis] >= a[axis] {
-                (a_operand, b_operand)
-            } else {
-                (b_operand, a_operand)
-            };
-            Some(SketchRelation::Distance {
-                a: a_operand,
-                b: b_operand,
-                along: Some(along),
-                doubled: None,
-                value: Dimension::Parameter(value.clone()),
-            })
-        };
-        Some(match kind {
-            Kind::DistanceLoci { first, second, .. } => SketchRelation::Distance {
-                a: self.locus(first)?,
-                b: self.locus(second)?,
-                along: Some(DistanceAxis::Aligned),
-                doubled: None,
-                value: Dimension::Parameter(value),
-            },
-            Kind::Distance { entities, .. } if entities.len() == 2 => SketchRelation::Distance {
-                a: Operand::Entity(entities[0].clone()),
-                b: Operand::Entity(entities[1].clone()),
-                along: Some(DistanceAxis::Aligned),
-                doubled: None,
-                value: Dimension::Parameter(value),
-            },
-            Kind::HorizontalDistance { first, second, .. } => {
-                along(first, second, 0, DistanceAxis::Horizontal)?
-            }
-            Kind::VerticalDistance { first, second, .. } => {
-                along(first, second, 1, DistanceAxis::Vertical)?
-            }
-            Kind::Radius { entity, .. } => SketchRelation::Radial {
-                of: entity.clone(),
-                measure: RadialMeasure::Radius,
-                value: Dimension::Parameter(value),
-            },
-            Kind::Diameter { entity, .. } => SketchRelation::Radial {
-                of: entity.clone(),
-                measure: RadialMeasure::Diameter,
-                value: Dimension::Parameter(value),
-            },
-            Kind::Angle { first, second, .. } => SketchRelation::Angle {
-                between: AngleOperands::Between([
-                    Operand::Entity(first.clone()),
-                    Operand::Entity(second.clone()),
-                ]),
-                sector: None,
-                value: Dimension::Parameter(value),
-            },
-            _ => return None,
-        })
-    }
-}
-
-/// The entities a relation the vocabulary does not type names.
-fn operands(kind: &Kind) -> Vec<Operand<Planar>> {
-    let entities = match kind {
-        Kind::Native { entities, .. }
-        | Kind::Coincident { entities }
-        | Kind::Distance { entities, .. } => entities.clone(),
-        Kind::CoincidentLoci { loci } => loci.iter().map(locus_entity).cloned().collect(),
-        Kind::PointOnObject { point, entity } | Kind::Midpoint { point, entity } => {
-            vec![locus_entity(point).clone(), entity.clone()]
-        }
-        Kind::DistanceLoci { first, second, .. }
-        | Kind::HorizontalDistance { first, second, .. }
-        | Kind::VerticalDistance { first, second, .. } => {
-            vec![locus_entity(first).clone(), locus_entity(second).clone()]
-        }
-        Kind::Radius { entity, .. } | Kind::Diameter { entity, .. } => vec![entity.clone()],
-        Kind::Angle { first, second, .. } => vec![first.clone(), second.clone()],
-        _ => Vec::new(),
-    };
-    let mut operands = Vec::with_capacity(entities.len());
-    for entity in entities {
-        if !operands.contains(&entity) {
-            operands.push(entity);
-        }
-    }
-    operands.into_iter().map(Operand::Entity).collect()
-}
-
-fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
-    match locus {
-        SketchLocus::Entity(id)
-        | SketchLocus::Start(id)
-        | SketchLocus::End(id)
-        | SketchLocus::Center(id) => id,
     }
 }
 
@@ -1338,127 +1234,28 @@ fn is_dimension(kind: &Kind) -> bool {
             NATIVE_LENGTH_DIMENSIONS.contains(&native_kind.as_str())
                 || NATIVE_ANGLE_DIMENSIONS.contains(&native_kind.as_str())
         }
-        Kind::PointCoordinateValues { .. }
-        | Kind::MidpointCoordinate { .. }
-        | Kind::Offset { .. }
-        | Kind::ArcAngle { .. }
-        | Kind::EllipseAngle { .. }
-        | Kind::Distance { .. }
-        | Kind::DistanceLoci { .. }
-        | Kind::DistanceLociValue { .. }
-        | Kind::PolarDistance { .. }
-        | Kind::AngleDifference { .. }
-        | Kind::HorizontalDistance { .. }
-        | Kind::VerticalDistance { .. }
-        | Kind::RepeatedDistance { .. }
-        | Kind::RepeatedLength { .. }
-        | Kind::ParallelLineSetDistance { .. }
-        | Kind::Angle { .. }
-        | Kind::AngleToAxis { .. }
-        | Kind::Radius { .. }
-        | Kind::RepeatedRadius { .. }
-        | Kind::Diameter { .. }
-        | Kind::RepeatedDiameter { .. }
-        | Kind::SnellsLaw { .. }
-        | Kind::Weight { .. } => true,
-        Kind::Disabled {}
-        | Kind::Coincident { .. }
-        | Kind::Polygon { .. }
-        | Kind::SplineGroup { .. }
-        | Kind::RectangularPattern { .. }
-        | Kind::CircularPattern { .. }
-        | Kind::TextFrame { .. }
-        | Kind::TextPath { .. }
-        | Kind::CoincidentLoci { .. }
-        | Kind::SameCoordinate { .. }
-        | Kind::PointOnObject { .. }
-        | Kind::Midpoint { .. }
-        | Kind::ProjectedCopy { .. }
-        | Kind::AtIntersection { .. }
-        | Kind::Concentric { .. }
-        | Kind::Coradial { .. }
-        | Kind::Collinear { .. }
-        | Kind::Symmetric { .. }
-        | Kind::PointSymmetric { .. }
-        | Kind::Horizontal { .. }
-        | Kind::Vertical { .. }
-        | Kind::Parallel { .. }
-        | Kind::Perpendicular { .. }
-        | Kind::Tangent { .. }
-        | Kind::TangentLoci { .. }
-        | Kind::Curvature { .. }
-        | Kind::Equal { .. }
-        | Kind::Fixed { .. }
-        | Kind::ScalarEquality { .. }
-        | Kind::EqualDistance { .. }
-        | Kind::InternalAlignment { .. }
-        | Kind::Group { .. }
-        | Kind::Text { .. } => false,
+        _ => relation::is_dimension(kind),
     }
 }
 
 /// The parameter a dimension relation binds and the quantity it measures.
 fn dimension_parameter(kind: &Kind) -> Option<(&ParameterId, Quantity)> {
-    Some(match kind {
-        Kind::Distance { parameter, .. }
-        | Kind::DistanceLoci { parameter, .. }
-        | Kind::HorizontalDistance { parameter, .. }
-        | Kind::VerticalDistance { parameter, .. }
-        | Kind::Radius { parameter, .. }
-        | Kind::Diameter { parameter, .. } => (parameter, Quantity::LENGTH),
-        Kind::Angle { parameter, .. } => (parameter, Quantity::ANGLE),
-        Kind::Native {
-            native_kind,
-            parameter: Some(parameter),
-            ..
-        } => {
-            if NATIVE_LENGTH_DIMENSIONS.contains(&native_kind.as_str()) {
-                (parameter, Quantity::LENGTH)
-            } else if NATIVE_ANGLE_DIMENSIONS.contains(&native_kind.as_str()) {
-                (parameter, Quantity::ANGLE)
-            } else {
-                return None;
-            }
-        }
-        _ => return None,
-    })
-}
-
-fn scalar(quantity: Quantity, parameter: &ParameterId) -> ScalarDimension {
-    if quantity == Quantity::ANGLE {
-        ScalarDimension::Angle(Dimension::Parameter(parameter.clone()))
-    } else {
-        ScalarDimension::Length(Dimension::Parameter(parameter.clone()))
+    if let Some(dimension) = relation::dimension_parameter(kind) {
+        return Some(dimension);
     }
-}
-
-/// A relation whose meaning the decoder did not type, named by its decoded
-/// form: `sldprt:<native class>` for a native relation, else
-/// `sldprt:<decoded kind>`.
-fn native(
-    kind: &Kind,
-    operands: Vec<Operand<Planar>>,
-    values: Vec<ScalarDimension>,
-) -> SketchRelation<Planar> {
-    let name = match kind {
-        Kind::Native { native_kind, .. } if native_kind.as_str().starts_with("sldprt:") => {
-            native_kind.as_str().to_owned()
-        }
-        Kind::Native { native_kind, .. } => format!("sldprt:{}", native_kind.as_str()),
-        _ => format!("sldprt:{}", kind_name(kind)),
+    let Kind::Native {
+        native_kind,
+        parameter: Some(parameter),
+        ..
+    } = kind
+    else {
+        return None;
     };
-    SketchRelation::Native {
-        kind: NonBlankString::new(name)
-            .unwrap_or_else(|| cadmpeg_core::nonblank_literal!("sldprt:sketch_relation")),
-        operands,
-        values,
+    if NATIVE_LENGTH_DIMENSIONS.contains(&native_kind.as_str()) {
+        Some((parameter, Quantity::LENGTH))
+    } else if NATIVE_ANGLE_DIMENSIONS.contains(&native_kind.as_str()) {
+        Some((parameter, Quantity::ANGLE))
+    } else {
+        None
     }
-}
-
-/// The serialized tag of a decoded relation kind.
-fn kind_name(kind: &Kind) -> String {
-    cadmpeg_core::serde_erase::to_json_value(kind)
-        .ok()
-        .and_then(|value| value.get("kind")?.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "sketch_relation".to_owned())
 }

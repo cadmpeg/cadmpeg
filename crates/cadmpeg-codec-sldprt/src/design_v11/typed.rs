@@ -69,6 +69,9 @@ pub(super) struct Typed {
     /// The note of the revolves whose decoded axis carries the turn sense
     /// their record stores and whose solid depends on it.
     pub(super) revolve_sense_assumed: Option<LossNote>,
+    /// The notes of the sketches outside the timeline, the entities stated
+    /// by their native kind, and the dimensions that bind no parameter.
+    pub(super) sketch_notes: Vec<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -180,6 +183,7 @@ pub(super) fn project(
         "extrudes",
         &unchecked,
     );
+    let sketch_notes = sketch_notes(&sketches);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -203,7 +207,58 @@ pub(super) fn project(
         revolve_profile_differs,
         revolve_profile_unchecked,
         revolve_sense_assumed,
+        sketch_notes,
     }
+}
+
+/// One note naming the sketches outside the timeline, one naming the
+/// entities stated by their native kind, and one naming the dimensions that
+/// bind no parameter of the design.
+fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
+    let outside = sketches
+        .outside
+        .iter()
+        .filter_map(|feature| match &feature.definition.operation {
+            FeatureOperation::Sketch(sketch) => Some(sketch.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut notes = Vec::new();
+    if !outside.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchOutsideHistory.note(format!(
+            "{} sketches that no feature-history node lists are each the operation of a \
+             feature of one unordered Group of the part's scope (interim): {}",
+            outside.len(),
+            listed(outside.into_iter()),
+        )));
+    }
+    if !sketches.native_entities.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchEntityNative.note(format!(
+            "{} sketch entities have no planar curve and state their native kind with no \
+             solved curve: {}",
+            sketches.native_entities.len(),
+            listed(
+                sketches
+                    .native_entities
+                    .iter()
+                    .map(|entity| entity.as_str().to_owned())
+            ),
+        )));
+    }
+    if !sketches.unbound.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchDimensionUnbound.note(format!(
+            "{} sketch dimensions bind no parameter of the design and state the value their \
+             parameter record stores, or no value: {}",
+            sketches.unbound.len(),
+            listed(
+                sketches
+                    .unbound
+                    .iter()
+                    .map(|constraint| constraint.as_str().to_owned())
+            ),
+        )));
+    }
+    notes
 }
 
 /// The text naming the first [`NAMED_INSTANCES_PER_NOTE`] of `named`, and
