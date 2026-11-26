@@ -130,6 +130,7 @@ fn a_base_and_later_historical_split_share_one_history_body() {
                     operands: &[],
                     recipes: &[],
                 },
+                &[],
                 Vec::new(),
                 &mut losses,
             )
