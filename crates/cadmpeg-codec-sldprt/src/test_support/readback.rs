@@ -251,22 +251,29 @@ pub(crate) fn baseline_with_bytes(
             return (entries.clone(), bytes.clone());
         }
     }
-    let part = cadmpeg_test_support::EditableDecodeResult::from(part.clone());
     let records = crate::source_records(part.ir(), part.source_fidelity())
         .expect("the part's retained records");
+    // A NIST specimen's write session holds its retained source decoded again.
+    let source = super::nist::session(part.source_fidelity())
+        .and_then(|session| session.source_of(part.source_fidelity()));
+    let mut cache = crate::writer::SemanticWriteCache::of_source(source);
     let mut bytes = Vec::new();
     // A part the semantic writer cannot write unedited has no differences of
     // its own.
-    let (entries, unedited_bytes) = crate::writer::write_semantic_with_records(
+    let written = crate::writer::write_semantic_with_records_cached(
         part.ir(),
         &part.source_fidelity().annotations,
         &part.source_fidelity().codec_digests,
         &records,
-        &[],
-        &[],
+        crate::writer::SemanticWriteControls {
+            withheld: &[],
+            shaped: &[],
+        },
+        &mut cache,
         &mut bytes,
-    )
-    .map_or_else(
+    );
+    cache.keep_source(source);
+    let (entries, unedited_bytes) = written.map_or_else(
         |_| (Vec::new(), None),
         |_| {
             let written =

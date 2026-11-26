@@ -306,24 +306,26 @@ fn decode_bytes(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .unwrap()
 }
 
-/// Writes through the public encoder with an authored native envelope, and
-/// checks that no stale-solid loss calls an edit written. Returns the report
-/// and the written part read back.
+/// Writes through the sealed encoder with an authored native envelope, and
+/// checks that no stale-solid loss calls an edit written. Returns the report,
+/// the written part read back, and the source fidelity the envelope wraps.
 fn write_without_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> (
     cadmpeg_ir::report::export::ExportReport,
     cadmpeg_ir::codec::DecodeResult,
+    SourceFidelity,
 ) {
-    let mut output = Vec::new();
-    let report = plan_fixture_with_native_envelope(
-        EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .expect("the authored envelope context");
+    let (plan, read_back) = plan_in_session(
+        &crate::SldprtWriteSession::new(Some(&fidelity)),
+        EncodeInput::new(&ir, Some(&fidelity)),
     )
-    .unwrap()
-    .write_to(&mut output)
     .unwrap();
+    let mut output = Vec::new();
+    let report = plan.write_to(&mut output).unwrap();
     assert_eq!(
         loss_messages(
             &report,
@@ -331,7 +333,10 @@ fn write_without_stale_solid(
         ),
         Vec::<String>::new()
     );
-    (report, decode_bytes(output))
+    let written = read_back.unwrap_or_else(|| {
+        crate::decode::decode_for_read_back(&output).expect("the written part decodes")
+    });
+    (report, written, fidelity)
 }
 
 /// Whether `kind` is `export:edit.dropped`, of any entity kind.
@@ -359,7 +364,7 @@ pub(crate) fn write_unwritten_feature_edits(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
-    let (report, written) = write_without_stale_solid(ir, fidelity);
+    let (report, written, _) = write_without_stale_solid(ir, fidelity);
     (
         report
             .losses
@@ -371,13 +376,16 @@ pub(crate) fn write_unwritten_feature_edits(
     )
 }
 
-/// Writes through the public encoder with an authored native envelope and
-/// returns the messages of the feature edits the output keeps as stored. The
-/// write carries no other edit than a rename, so the output reads back as the
-/// source document under the edited names, and no stale-solid loss calls the
-/// edit written.
-pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
-    let (report, written) = write_without_stale_solid(ir, fidelity);
+/// Writes through the sealed encoder with an authored native envelope and
+/// returns the messages of the feature edits the output keeps as stored, and
+/// the written part read back. The write carries no other edit than a
+/// rename, so the output reads back as the source document under the edited
+/// names, and no stale-solid loss calls the edit written.
+pub(crate) fn unwritten_feature_edits(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+    let (report, written, written_from) = write_without_stale_solid(ir, fidelity);
     let unwritten = report
         .losses
         .iter()
@@ -390,14 +398,18 @@ pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> 
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     // The write reads the source image the authored envelope wraps.
-    let (_, written_from) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
-        .expect("the authored envelope context");
-    let source = written_from
+    let image = written_from
         .retained_record(crate::SOURCE_IMAGE_ID)
         .and_then(|record| record.data())
-        .unwrap()
-        .to_vec();
-    let source = decode_bytes(source);
+        .unwrap();
+    let decoded;
+    let source = match nist::decoded(image) {
+        Some(specimen) => specimen,
+        None => {
+            decoded = decode_bytes(image.to_vec());
+            &decoded
+        }
+    };
     let renames = source
         .ir()
         .model
@@ -420,13 +432,13 @@ pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> 
         readback::unnamed(
             readback::beyond(
                 readback::diff(&expected, written.ir()),
-                &readback::baseline(&source)
+                &readback::baseline(source)
             ),
             &messages
         ),
         Vec::new()
     );
-    unwritten
+    (unwritten, written)
 }
 
 /// Write an edit that shapes the solid through the public encoder, and check

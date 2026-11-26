@@ -130,6 +130,23 @@ pub(crate) struct SemanticWriteCache {
     pub(crate) native: CachedNative,
 }
 
+impl SemanticWriteCache {
+    /// A write's cache that starts from the decoded source `source` holds.
+    pub(crate) fn of_source(source: Option<&OnceLock<Arc<RetainedSource>>>) -> Self {
+        Self {
+            source_baseline: source.and_then(OnceLock::get).cloned(),
+            native: CachedNative::Unloaded,
+        }
+    }
+
+    /// Keeps the source this write decoded in `source`, unless it holds one.
+    pub(crate) fn keep_source(&self, source: Option<&OnceLock<Arc<RetainedSource>>>) {
+        if let (Some(source), Some(decoded)) = (source, &self.source_baseline) {
+            source.get_or_init(|| Arc::clone(decoded));
+        }
+    }
+}
+
 /// Per-pass withheld features and shaping edits for one semantic write.
 #[derive(Clone, Copy)]
 pub(crate) struct SemanticWriteControls<'a> {

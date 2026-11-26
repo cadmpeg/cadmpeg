@@ -191,7 +191,7 @@ impl<'f> SldprtWriteSession<'f> {
 
     /// Where a write with `fidelity` keeps its decoded source: the session's
     /// place when `fidelity` is the session's.
-    fn source_of(
+    pub(crate) fn source_of(
         &self,
         fidelity: &SourceFidelity,
     ) -> Option<&OnceLock<Arc<writer::RetainedSource>>> {
@@ -319,10 +319,7 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
-        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache {
-            source_baseline: source.and_then(OnceLock::get).cloned(),
-            native: writer::CachedNative::Unloaded,
-        });
+        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(source));
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
             let mut cache = writer::SemanticWriteCache {
@@ -386,9 +383,7 @@ impl SldprtCodec {
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let shared = shared_cache.into_inner();
-        if let (Some(source), Some(decoded)) = (source, &shared.source_baseline) {
-            source.get_or_init(|| Arc::clone(decoded));
-        }
+        shared.keep_source(source);
         let native = match shared.native {
             writer::CachedNative::Loaded(loaded) => loaded,
             writer::CachedNative::Unloaded => ir
