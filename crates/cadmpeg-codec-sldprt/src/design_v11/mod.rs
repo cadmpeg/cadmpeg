@@ -13,6 +13,7 @@
 //! no history the decoder reads, states no design.
 
 mod configurations;
+mod datum;
 mod equations;
 mod extrude;
 mod names;
