@@ -141,7 +141,7 @@ fn generated_source_less_drops_material_assignment_alone() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "of Design record families that the source-less Design stream has no form for: f3d:generated:material-assignment#0",
+        "because the source-less Design stream has no form for these records: f3d:generated:material-assignment#0",
     );
     assert!(
         report

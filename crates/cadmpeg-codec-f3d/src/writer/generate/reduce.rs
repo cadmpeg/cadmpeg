@@ -26,8 +26,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
-    MissingStateForm,
+    output_empty, partial_topology_omitted, record_invalid, MissingStateForm, NativeDisposition,
+    NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::refs::Member;
@@ -285,6 +285,8 @@ impl Failure {
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
+    /// The `f3d` records are written but those a fallback drops (W1).
+    native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
     /// The form of the features whose states the writer cannot write.
@@ -304,10 +306,13 @@ pub(super) struct Reduction<'a> {
 
 impl<'a> Reduction<'a> {
     pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
+        let mut native = NativeDispositions::dropped("which the F3D writer does not write");
+        native.namespace("f3d", NativeDisposition::Written);
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
+            native,
             design_dropped: false,
             neutral_dropped: false,
             fallback: super::design::Fallback::default(),
@@ -347,9 +352,10 @@ impl<'a> Reduction<'a> {
         &self.fallback
     }
 
-    /// The losses, with `export:output.empty` when no geometry is written.
-    pub(super) fn finish(mut self) -> Vec<LossNote> {
-        self.charge_design_arenas_without_form();
+    /// The losses, with `export:output.empty` when no geometry is written,
+    /// and what the write does with each native record.
+    pub(super) fn finish(mut self) -> (Vec<LossNote>, NativeDispositions) {
+        self.drop_design_arenas_without_form();
         for (body, faces) in std::mem::take(&mut self.opened) {
             let Some(row) = self
                 .ir
@@ -411,7 +417,7 @@ impl<'a> Reduction<'a> {
         } else {
             self.losses.extend(unranged_open_edges(geometry));
         }
-        self.losses
+        (self.losses, self.native)
     }
 
     /// Remove every item the generator has no form for. Idempotent: it runs
@@ -509,11 +515,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)",
             dropped,
-        ));
+        );
     }
 
     /// Neutral records the generator writes only from native Design records.
@@ -1513,32 +1519,24 @@ impl<'a> Reduction<'a> {
         let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
         let progressed = !dropped.is_empty();
         self.design_dropped |= progressed;
-        self.losses
-            .extend(native_records_omitted("F3D", reason, dropped));
+        self.native.drop_records("f3d", reason, dropped);
         progressed
     }
 
     /// W3 for the native Design path: the written Design stream holds no
     /// record of the Design arenas it has no form for, so each one is
-    /// charged with its ids.
-    fn charge_design_arenas_without_form(&mut self) {
+    /// declared dropped.
+    fn drop_design_arenas_without_form(&mut self) {
         if !self.writes_design() {
             return;
         }
-        let Some(namespace) = self.ir.native.namespace("f3d") else {
-            return;
-        };
-        let omitted = DESIGN_ARENAS_WITHOUT_FORM
-            .iter()
-            .filter_map(|arena| namespace.arenas().get(*arena))
-            .flatten()
-            .map(|record| record.id().to_owned())
-            .collect::<Vec<_>>();
-        self.losses.extend(native_records_omitted(
-            "F3D",
-            "of Design record families that the source-less Design stream has no form for",
-            omitted,
-        ));
+        for arena in DESIGN_ARENAS_WITHOUT_FORM {
+            self.native.drop_arena(
+                "f3d",
+                arena,
+                "because the source-less Design stream has no form for these records",
+            );
+        }
     }
 
     /// The generator writes every body in one B-rep stream, whose history
@@ -1556,11 +1554,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_arenas(|arena| arena.starts_with("asm_"));
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!("of {histories} ASM history streams (the generator writes the bodies in one B-rep stream, whose history tail holds one history, and the records do not state which history that stream continues)"),
             dropped,
-        ));
+        );
     }
 
     /// W1: drop the native records `unwritable` names. Returns whether the
@@ -1580,8 +1578,7 @@ impl<'a> Reduction<'a> {
             });
         }
         let progressed = !dropped.is_empty();
-        self.losses
-            .extend(native_records_omitted("F3D", &unwritable.reason, dropped));
+        self.native.drop_records("f3d", &unwritable.reason, dropped);
         progressed
     }
 
@@ -1725,13 +1722,13 @@ impl<'a> Reduction<'a> {
             .flatten()
             .map(|record| record.id().to_owned())
             .collect::<Vec<_>>();
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!(
                 "because the source-less generator cannot write the document with them ({reason})"
             ),
             dropped,
-        ));
+        );
         true
     }
 
@@ -1888,11 +1885,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_records_naming(&named);
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that name topology or geometry the write omits",
             dropped,
-        ));
+        );
     }
 
     /// Remove the named native arenas; returns the removed record ids.

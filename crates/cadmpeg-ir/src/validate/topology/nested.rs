@@ -5,32 +5,66 @@ use cadmpeg_core::CodecError;
 
 use crate::document::{CadIr, Topology};
 use crate::index::ModelIndex;
+use crate::native::view::NativeView;
 use crate::report::check::Finding;
 use crate::validate::geometry_consistency::check_edge_endpoint_consistency;
 use crate::validate::identity_order::check_identity_and_order;
 use crate::validate::referential_integrity::check_typed_references;
 
-/// Checks `geometry` as a model of its own. `file_keys` are the keys of the
-/// `File` definitions of the document that holds it.
+/// The rules a nest check runs on a topology.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::validate) enum NestRules {
+    /// The rules history-body admission runs on a nest: coedge pairing, shell
+    /// connectivity, wire topology, edge ends, and topology tolerances, after
+    /// the identity, reference, and typed reference checks of a closed nest.
+    Admission,
+    /// Every rule of part 10 on one topology. With `caches`, each procedural
+    /// curve is also compared with its solved carrier (Caches, K2).
+    All {
+        /// Whether procedural curves are compared with their solved carriers.
+        caches: bool,
+    },
+}
+
+/// The findings of `rules` on one `Topology` that `document` holds outside
+/// its current geometry: a resolved state, a history body's nest, or a
+/// witness body. The topology is checked as the geometry of a document of
+/// its own, at `document`'s tolerances (part 10, Coincidence). A nest
+/// `closed` over its own references, with the keys of the `File` definitions
+/// of `document`, also has its identities, their order, and every reference
+/// of its records checked.
 pub(in crate::validate) fn check(
     ctx: &DecodeContext<'_>,
-    geometry: Topology,
-    file_keys: &BTreeSet<&str>,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+    document: NativeView<'_>,
+    topology: Topology,
+    closed: Option<&BTreeSet<&str>>,
+    rules: NestRules,
+) -> Result<Vec<Finding>, CodecError> {
     let _depth = ctx.enter_nested("nested topology validation")?;
-    let mut nest = CadIr::empty();
-    nest.geometry = geometry;
-    let index = ModelIndex::build(&nest);
-    check_identity_and_order(&index, file_keys, findings)?;
-    super::check_references(ctx, &nest, &index, findings)?;
-    check_typed_references(ctx, &nest, &index, findings)?;
-    super::graphs::check_coedge_pairing(&nest, findings)?;
-    super::graphs::check_shell_connectivity(&nest, findings);
-    super::graphs::check_wire_topology(&nest, findings);
-    check_edge_endpoint_consistency(ctx, &nest, findings)?;
-    super::check_topology_tolerances(&nest, findings);
-    Ok(())
+    let mut alone = CadIr::empty();
+    alone.fragment = document.ir.fragment;
+    alone.tolerances = document.ir.tolerances;
+    alone.geometry = topology;
+    let index = ModelIndex::build(&alone);
+    let mut findings = Vec::new();
+    if let Some(file_keys) = closed {
+        check_identity_and_order(&index, file_keys, &mut findings)?;
+        super::super::check_references(ctx, &alone, &index, &mut findings)?;
+        check_typed_references(ctx, &alone, &index, &mut findings)?;
+    }
+    match rules {
+        NestRules::Admission => {
+            super::graphs::check_coedge_pairing(&alone, &mut findings)?;
+            super::graphs::check_shell_connectivity(&index, &mut findings);
+            super::graphs::check_wire_topology(&alone, &mut findings);
+            check_edge_endpoint_consistency(ctx, &index, &mut findings)?;
+            super::check_topology_tolerances(&alone, &mut findings);
+        }
+        NestRules::All { caches } => {
+            super::super::check_topology_rules(ctx, &index, document, caches, &mut findings)?;
+        }
+    }
+    Ok(findings)
 }
 
 #[cfg(test)]
@@ -42,11 +76,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let ir = crate::document::CadIr::empty();
         let error = super::check(
             &ctx,
+            crate::native::view::NativeView::new(&ir, None),
             crate::document::Topology::default(),
-            &std::collections::BTreeSet::new(),
-            &mut Vec::new(),
+            Some(&std::collections::BTreeSet::new()),
+            super::NestRules::All { caches: true },
         )
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -68,15 +104,19 @@ mod tests {
             ..crate::document::Topology::default()
         };
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let ir = crate::document::CadIr::empty();
         let unqualified = |file_keys: &std::collections::BTreeSet<&str>| {
-            let mut findings = Vec::new();
-            super::check(&ctx, topology.clone(), file_keys, &mut findings).unwrap();
-            findings
-                .iter()
-                .filter(|finding| {
-                    finding.rule.as_str() == "products.entity-id-scope-key-names-no-file"
-                })
-                .count()
+            super::check(
+                &ctx,
+                crate::native::view::NativeView::new(&ir, None),
+                topology.clone(),
+                Some(file_keys),
+                super::NestRules::All { caches: true },
+            )
+            .unwrap()
+            .iter()
+            .filter(|finding| finding.rule.as_str() == "products.entity-id-scope-key-names-no-file")
+            .count()
         };
         assert_eq!(
             unqualified(&std::collections::BTreeSet::from(["member.f3d"])),

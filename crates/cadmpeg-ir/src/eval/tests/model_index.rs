@@ -3,7 +3,6 @@
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
-use crate::eval::model_surface_point_in_index;
 use crate::eval::EvaluationFailure;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::Curve;
@@ -97,7 +96,7 @@ fn procedural_surface_points_read_the_callers_index() {
     let revolution = &ir.geometry.surfaces[0].geometry;
     let expected = model_surface_point(
         EvaluationAdmission::Standard,
-        &ir,
+        &crate::index::ModelIndex::new_model_only(&ir),
         revolution,
         std::f64::consts::FRAC_PI_2,
         1.5,
@@ -120,7 +119,7 @@ fn procedural_surface_points_read_the_callers_index() {
             Err(EvaluationFailure::NoValue)
         );
         assert_eq!(
-            model_surface_point_in_index(
+            model_surface_point(
                 EvaluationAdmission::Decode(&ctx),
                 &index,
                 revolution,
