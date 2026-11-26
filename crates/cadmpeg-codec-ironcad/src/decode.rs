@@ -338,7 +338,7 @@ fn acis_body(
     if let Some(offset) = unread {
         losses.push(IronCadLossCode::BodyPartitionUnread.note(format!(
             "{carrier}: the ACIS stream holds bytes after its solved records from offset \
-             {offset}; the kernel record is retained"
+             {offset} of the kernel bytes; the kernel record is retained"
         )));
     }
     if reduced > 0 {
