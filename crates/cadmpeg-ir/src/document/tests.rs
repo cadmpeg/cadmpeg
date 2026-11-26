@@ -551,6 +551,32 @@ fn json_round_trips_and_is_deterministic() {
 }
 
 #[test]
+fn up_axis_round_trips_and_is_absent_from_the_wire_when_unstated() {
+    use crate::up_axis::UpAxis;
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(ir.up_axis, None);
+    let absent = ir.to_canonical_json().unwrap();
+    let value: serde_json::Value = serde_json::from_str(&absent).unwrap();
+    assert!(
+        value.get("up_axis").is_none(),
+        "an unstated axis writes no key"
+    );
+    for (axis, text) in [(UpAxis::Y, "y"), (UpAxis::Z, "z")] {
+        ir.up_axis = Some(axis);
+        let json = ir.to_canonical_json().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["up_axis"], text);
+        let parsed = CadIr::from_json(&json).unwrap();
+        assert_eq!(parsed.up_axis, Some(axis));
+        assert_eq!(parsed, ir);
+        assert_eq!(parsed.to_canonical_json().unwrap(), json);
+    }
+    let mut bad: serde_json::Value = serde_json::from_str(&absent).unwrap();
+    bad["up_axis"] = "x".into();
+    assert!(CadIr::from_json(&bad.to_string()).is_err());
+}
+
+#[test]
 fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     // Byte-backed writers compare parsed documents against fresh decodes with
     // exact f64 equality, so JSON parsing must be correctly rounded. The

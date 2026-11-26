@@ -421,6 +421,7 @@ impl Bundle {
         let mut fragment = Document::empty();
         fragment.fragment = true;
         fragment.tolerances = document.tolerances;
+        fragment.up_axis = document.up_axis;
         fragment.source = document
             .source
             .as_ref()

@@ -550,6 +550,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "CadIrReadWire",
     ),
     (
+        "crates/cadmpeg-ir/src/document.rs",
+        "CadIr",
+        "up_axis",
+        "CadIrReadWire",
+    ),
+    (
         "crates/cadmpeg-ir/src/features.rs",
         "Feature",
         "name",

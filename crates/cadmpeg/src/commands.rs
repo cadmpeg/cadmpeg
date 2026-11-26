@@ -614,6 +614,9 @@ pub(crate) fn diff(
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
         }
+        if let Some((before, after)) = &result.up_axis_change {
+            println!("  up axis: {before:?} → {after:?}");
+        }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {
             if arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty() {
