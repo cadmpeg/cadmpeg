@@ -2,6 +2,7 @@
 //! Synthetic `.f3d` ZIP archive builders.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -59,8 +60,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .first()
         .expect("revision surface construction");
     let expected = scrubbed_definition(procedural.definition());
-    let kind = cadmpeg_core::serde_erase::json::to_value(procedural.definition()).expect("kind")
-        ["kind"]
+    let kind = json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
         .expect("kind string")
         .to_string();

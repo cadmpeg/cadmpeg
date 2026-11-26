@@ -14,6 +14,7 @@
 //! every entry by a committed golden or by a minimal hand-written document, so
 //! a bogus entry fails there.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -56,7 +57,7 @@ fn check_unknown_keys(partition: usize) {
         let result = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
-        let ir = cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir");
+        let ir = json::to_value(result.ir()).expect("serialize ir");
         let sweep = accepting_shapes(&ir)
             .unwrap_or_else(|error| panic!("{} does not read back: {error}", path.display()));
         assert!(

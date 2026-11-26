@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Human-readable and JSON command-report rendering.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -409,9 +410,8 @@ pub(crate) fn write_report_text(
     let mut bytes = if value["command"].as_str() == Some("check")
         && value["check_report"]["findings"].is_array()
     {
-        value["input_path"] =
-            cadmpeg_core::serde_erase::json::to_value(std::fs::canonicalize(input)?)?;
-        cadmpeg_core::serde_erase::json::to_vec_pretty(&value)?
+        value["input_path"] = json::to_value(std::fs::canonicalize(input)?)?;
+        json::to_vec_pretty(&value)?
     } else {
         text.as_bytes().to_vec()
     };
@@ -505,23 +505,24 @@ pub(crate) fn print_check_report(
 #[cfg(test)]
 mod tests {
     use super::{FidelityDiff, FidelitySummary};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::None).unwrap(),
+            json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            json::to_value(FidelitySummary::OnlyLeft).unwrap(),
             serde_json::json!({ "present": "left_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            json::to_value(FidelitySummary::OnlyRight).unwrap(),
             serde_json::json!({ "present": "right_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
             }))
@@ -536,7 +537,7 @@ mod tests {
             })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
             }))

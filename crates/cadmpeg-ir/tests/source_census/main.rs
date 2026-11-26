@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Census coverage for hand-written and derived wire readers.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -363,10 +364,9 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone())
-                .expect("native store reads back");
+            json::from_value(wire.clone()).expect("native store reads back");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(read).expect("native store writes back"),
+            json::to_value(read).expect("native store writes back"),
             wire
         );
     }
@@ -375,8 +375,7 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::Native>(wire)
-                .is_err(),
+            json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
             "native namespace and arena maps refuse invalid value shapes"
         );
     }
@@ -387,19 +386,17 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// open native field map and a closed hand-written object adapter.
 #[test]
 fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::NativeRecord>(
-        serde_json::json!({
-            "id": "test:source-census:record#0",
-            "codec_field": {"preserved": true},
-        }),
-    )
+    let native = json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
+        "id": "test:source-census:record#0",
+        "codec_field": {"preserved": true},
+    }))
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
         native.field("codec_field"),
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = cadmpeg_core::serde_erase::json::from_value::<
+    let unknown_configuration = json::from_value::<
         cadmpeg_ir::features::parameters::ConfigurationEvaluation,
     >(serde_json::json!({
         "kind": "suppressed",
@@ -967,15 +964,7 @@ enum WriteSpelling {
 /// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
 /// list names `Serialize`.
 fn derive_list_names_serialize(attribute: &syn::Attribute) -> bool {
-    if !attribute.path().is_ident("derive") && !attribute.path().is_ident("cfg_attr") {
-        return false;
-    }
-    let Ok(list) = attribute.meta.require_list() else {
-        return false;
-    };
-    let mut flat = Vec::new();
-    flatten_tokens(&list.tokens, &mut flat);
-    flat.iter().any(|token| token == "Serialize")
+    derive_list_names(attribute, "Serialize")
 }
 
 /// The count of readable types visited, and every `file:line` where one of
@@ -1154,6 +1143,18 @@ fn routes_through_a_wire(attribute: &syn::Attribute) -> bool {
 /// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
 /// list names `Deserialize`.
 fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
+    derive_list_names(attribute, "Deserialize")
+}
+
+/// Whether this attribute derives `DeserializeTagged`, the reader of a
+/// tagged enum that reads each variant through serde.
+fn derive_list_names_tagged_reader(attribute: &syn::Attribute) -> bool {
+    derive_list_names(attribute, "DeserializeTagged")
+}
+
+/// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
+/// list names `derived`.
+fn derive_list_names(attribute: &syn::Attribute, derived: &str) -> bool {
     if !attribute.path().is_ident("derive") && !attribute.path().is_ident("cfg_attr") {
         return false;
     }
@@ -1162,7 +1163,7 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
     };
     let mut flat = Vec::new();
     flatten_tokens(&list.tokens, &mut flat);
-    flat.iter().any(|token| token == "Deserialize")
+    flat.iter().any(|token| token == derived)
 }
 
 /// The `deserialize_with` helpers that refuse an explicit `null` at their key.

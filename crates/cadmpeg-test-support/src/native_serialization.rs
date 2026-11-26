@@ -2,6 +2,7 @@
 //! Native arena serialization limit checks for codec-owned record tests.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::{arena_from, NativeConvertError};
 use serde::Serialize;
 use std::cell::Cell;
@@ -32,14 +33,11 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
     let stored = arena_from(&service, [Ok::<_, NativeConvertError>(&counted)])
         .expect("serialize the native records");
     assert_eq!(visits.get(), 1);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&stored[0]).expect("stored record"),
-        expected
-    );
+    assert_eq!(json::to_value(&stored[0]).expect("stored record"), expected);
 
     // The stored text is the record's only retained charge, so a ceiling one
     // byte below its length refuses the record.
-    let text = cadmpeg_core::serde_erase::json::to_string(&stored[0]).expect("stored text");
+    let text = json::to_string(&stored[0]).expect("stored text");
     visits.set(0);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(text.len()).expect("record text length") - 1;

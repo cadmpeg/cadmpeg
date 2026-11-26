@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -30,7 +31,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         parameters: &tokens,
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(instance).unwrap(),
+        json::to_value(instance).unwrap(),
         serde_json::json!({
             "id": "iges:native:macro-instance#D3",
             "source_entity": "iges:entity:directory#3",
@@ -61,8 +62,7 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         b"e".to_vec(),
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(super::NativeParameterRecordSlot(Some(&record)))
-            .unwrap(),
+        json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
         serde_json::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
@@ -308,7 +308,7 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         parameters: super::NativeParameterRecordSlot<'a>,
     }
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(Record {
+        json::to_value(Record {
             parameters: super::NativeParameterRecordSlot(None)
         })
         .unwrap(),

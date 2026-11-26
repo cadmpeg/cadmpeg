@@ -1075,9 +1075,9 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         .provenance
         .iter()
         .filter(|(id, provenance)| {
-            id.starts_with("sldprt:metadata:") && provenance.stream() == EXTRA
+            id.as_str().starts_with("sldprt:metadata:") && provenance.stream() == EXTRA
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .collect();
     assert!(
         !extra_attributes.is_empty(),
@@ -1089,9 +1089,9 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         .provenance
         .iter()
         .find(|(id, provenance)| {
-            id.starts_with("sldprt:file:block#") && provenance.stream() == EXTRA
+            id.as_str().starts_with("sldprt:file:block#") && provenance.stream() == EXTRA
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .unwrap();
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     crate::test_support::make_retained_record_unavailable(decoded.source_fidelity_mut(), &block);

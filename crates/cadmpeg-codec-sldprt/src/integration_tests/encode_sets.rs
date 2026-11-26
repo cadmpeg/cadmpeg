@@ -3,6 +3,7 @@
 //! (§3.4, Encode sets).
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, OutputNames, Outputs};
 use cadmpeg_ir::document::{CadIr, EntityRewrite};
@@ -53,7 +54,7 @@ fn assembly_and_part() -> CadIr {
         definition("part"),
         Storage::File {
             document: ExternalDocument::path("part.step"),
-            source: serde_json::from_value(serde_json::json!({
+            source: json::from_value(serde_json::json!({
                 "identity": {"kind": "unclassified", "format": "step"},
                 "attributes": {},
             }))
@@ -158,7 +159,7 @@ fn archive_of_two_designs() -> CadIr {
         } = &mut stated.storage
         {
             *document = ExternalDocument::path("part.f3d");
-            *source = serde_json::from_value(serde_json::json!({
+            *source = json::from_value(serde_json::json!({
                 "identity": {"kind": "unclassified", "format": "f3d"},
                 "attributes": {},
             }))

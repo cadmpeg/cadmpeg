@@ -415,7 +415,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .source_fidelity_mut()
         .annotations
         .provenance
-        .remove(&point_id);
+        .remove(point_id.as_str());
 
     let error =
         crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());

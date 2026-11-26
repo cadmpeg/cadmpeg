@@ -2,6 +2,7 @@
 //! Parameter, equation, and configuration-local scalar decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -821,11 +822,8 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
         Some(&ParameterValue::Length(Length::new(100.0).unwrap()))
     );
     let round_trip: Vec<cadmpeg_ir::features::parameters::DesignConfiguration> =
-        serde_json::from_str(
-            &cadmpeg_core::serde_erase::json::to_string(&decoded.ir().model.configurations)
-                .unwrap(),
-        )
-        .unwrap();
+        serde_json::from_str(&json::to_string(&decoded.ir().model.configurations).unwrap())
+            .unwrap();
     assert_eq!(
         round_trip[1].parameter_values.get(&parameter.id),
         Some(&ParameterValue::Length(Length::new(50.0).unwrap()))

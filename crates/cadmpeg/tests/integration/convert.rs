@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Convert: destination rules, format selection, and write-back fidelity.
 
+use cadmpeg_core::serde_erase::json;
 #[cfg(any(
     feature = "creo",
     feature = "fcstd",
@@ -161,7 +162,7 @@ fn convert_stdout_contains_only_json_artifact() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    cadmpeg_core::serde_erase::json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
@@ -199,8 +200,7 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             ])
             .assert()
             .success();
-        let report: serde_json::Value =
-            cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+        let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
         assert_eq!(report["status"], "ok");
         assert!(report["export"]["losses"]
             .as_array()
@@ -217,8 +217,7 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             ])
             .assert()
             .success();
-        let decoded: serde_json::Value =
-            cadmpeg_core::serde_erase::json::from_slice(&fs::read(decoded).unwrap()).unwrap();
+        let decoded: serde_json::Value = json::from_slice(&fs::read(decoded).unwrap()).unwrap();
         let points = decoded["geometry"]["points"].as_array().unwrap();
         assert_eq!(points.len(), 3, "{name}");
         assert!(points.iter().any(|point| point["position"]["x"] == extent));
@@ -259,8 +258,7 @@ fn pcurves_recover_edges_even_when_the_face_cannot_be_written() {
             ])
             .assert()
             .success();
-        let report: serde_json::Value =
-            cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+        let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
         let losses = report["export"]["losses"].as_array().unwrap();
         assert_eq!(
             losses
@@ -318,8 +316,7 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
             ])
             .assert()
             .success();
-        let report: serde_json::Value =
-            cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let report: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
         let codes: Vec<&str> = report["export"]["losses"]
             .as_array()
             .unwrap()
@@ -432,8 +429,7 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("the write's strictness refuses"));
-    let report: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "strict_export_rejected");
     assert_eq!(report["decode_report"]["transfer"]["kind"], "full");
     assert!(
@@ -702,8 +698,7 @@ fn convert_writes_and_reports_check_errors_unless_rejected() {
                 .and(predicate::str::contains("output writes")),
         );
     assert!(written.exists());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&written_report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&written_report).unwrap()).unwrap();
     assert!(value["refusal"].is_null(), "{value:#}");
     assert!(
         value["check_report"]["findings"]
@@ -735,8 +730,7 @@ fn convert_writes_and_reports_check_errors_unless_rejected() {
             "the write's strictness refuses export:record.invalid",
         ));
     assert!(!refused.exists());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&refused_report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&refused_report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "strict_export_rejected");
     assert_eq!(value["refusal"]["stage"], "export");
 }
@@ -932,8 +926,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         ])
         .assert()
         .success();
-    cadmpeg_core::serde_erase::json::from_slice::<serde_json::Value>(&fs::read(&inferred).unwrap())
-        .unwrap();
+    json::from_slice::<serde_json::Value>(&fs::read(&inferred).unwrap()).unwrap();
 
     let native = geometryless_creo(dir.path(), "empty.prt");
     let stdout = Command::cargo_bin("cadmpeg")
@@ -1024,8 +1017,7 @@ fn a_write_to_another_format_names_the_solidworks_application_element() {
         ])
         .assert()
         .success();
-    let report: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     let named = report["decode_report"]["losses"]
         .as_array()
         .unwrap()
@@ -1396,7 +1388,7 @@ fn a_same_format_synthesis_prints_why_the_patch_was_declined_once() {
         .stderr
         .clone();
     let stderr = String::from_utf8(stderr).unwrap();
-    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     let reason = report["export"]["synthesis_cause"]["reason"]
         .as_str()
         .unwrap_or_else(|| panic!("a patch-declined reason: {report}"));
@@ -1466,10 +1458,7 @@ fn a_to_that_names_only_the_format_still_inherits() {
 #[test]
 fn a_cadir_read_keeps_the_text_of_a_given_up_record_in_the_written_sidecar() {
     let dir = tempdir().unwrap();
-    let mut value = cadmpeg_core::serde_erase::json::to_value(
-        unit_cube().expect("unit cube fixture is admitted"),
-    )
-    .unwrap();
+    let mut value = json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
     value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
     let text =
         cadmpeg_ir::hash::finite_json::to_canonical_json_string(&value["geometry"]["points"][0])

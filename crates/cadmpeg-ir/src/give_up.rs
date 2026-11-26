@@ -474,7 +474,7 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
                 return false;
             };
             let restate = restate.past_the_bound();
-            ir.rewrite_records(&seed.arena, &seed.id, |record| {
+            ir.rewrite_records(&seed.arena, &seed.id, &mut |record| {
                 restate.record(home, field, record)
             })
         })
@@ -1537,7 +1537,7 @@ fn clear_native_refs(ir: &mut CadIr, holder: &mut Holder) -> bool {
     if !holder.names.iter().any(|(path, _)| path == "native_ref") {
         return false;
     }
-    let cleared = ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    let cleared = ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         if let Some(record) = record.as_object_mut() {
             record.remove("native_ref");
         }
@@ -1612,7 +1612,7 @@ fn restate(
     let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
         return false;
     };
-    ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         restate.record(home, field, record)
     })
 }

@@ -1891,6 +1891,8 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     mod placement_owner_run;
 
     #[test]
@@ -2123,10 +2125,7 @@ mod tests {
             design_parameter_scopes: scopes,
             ..Default::default()
         };
-        let native = cadmpeg_core::serde_erase::json::from_value(
-            cadmpeg_core::serde_erase::json::to_value(native).unwrap(),
-        )
-        .unwrap();
+        let native = json::from_value(json::to_value(native).unwrap()).unwrap();
         crate::writer::primitives::validate_assembly_projection(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &cadmpeg_ir::document::CadIr::empty(),
@@ -2248,7 +2247,7 @@ mod tests {
         );
 
         let mut reference: crate::records::xref::XrefReference =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "id":"f3d:xref:reference#0", "ordinal":0,
                 "from":"root.f3d", "relative_path":"part.f3d",
                 "neutron_role":"shared-role", "neutron_data":"",
@@ -2383,10 +2382,8 @@ mod tests {
             design_parameter_scopes: omitted_scopes.clone(),
             ..Default::default()
         };
-        let restored: crate::native::F3dNative = cadmpeg_core::serde_erase::json::from_value(
-            cadmpeg_core::serde_erase::json::to_value(native).unwrap(),
-        )
-        .unwrap();
+        let restored: crate::native::F3dNative =
+            json::from_value(json::to_value(native).unwrap()).unwrap();
         assert_eq!(restored.design_parameter_scopes, omitted_scopes);
         assert_eq!(restored.xref_references, [omitted]);
         let kept = instances(&restored.xref_references);
@@ -2890,7 +2887,7 @@ mod tests {
             occurrence("local", "local"),
         ];
         let container = |value: serde_json::Value| -> cadmpeg_ir::OperandContainer {
-            cadmpeg_core::serde_erase::json::from_value(value).unwrap()
+            json::from_value(value).unwrap()
         };
         let external = container(serde_json::json!({
             "kind": "external",
@@ -3053,17 +3050,14 @@ mod tests {
             )
         };
         let kind = |projection: &super::AssemblyJointProjection| {
-            cadmpeg_core::serde_erase::json::to_value(&projection.joints[0]).unwrap()["operands"]
-                ["value"]["kind"]
-                .clone()
+            json::to_value(&projection.joints[0]).unwrap()["operands"]["value"]["kind"].clone()
         };
 
         let rigid = project(&[]);
         assert_eq!(kind(&rigid)["kind"], "fixed");
         // Connector frames stay in their operand's own space, in millimetres.
-        let connectors = cadmpeg_core::serde_erase::json::to_value(&rigid.joints[0]).unwrap()
-            ["operands"]["value"]["connectors"]
-            .clone();
+        let connectors =
+            json::to_value(&rigid.joints[0]).unwrap()["operands"]["value"]["connectors"].clone();
         assert_eq!(connectors[0]["frame"][2][3], 0.0);
         assert_eq!(connectors[1]["frame"][2][3], 10.0);
 
@@ -3112,8 +3106,8 @@ mod tests {
         // Rotation about local y turns each connector frame so y becomes z.
         let turned = project(&[motion(&[1], [0, 0])]);
         assert_eq!(kind(&turned)["kind"], "revolute");
-        let frame = cadmpeg_core::serde_erase::json::to_value(&turned.joints[0]).unwrap()
-            ["operands"]["value"]["connectors"][0]["frame"]
+        let frame = json::to_value(&turned.joints[0]).unwrap()["operands"]["value"]["connectors"]
+            [0]["frame"]
             .clone();
         assert_eq!(frame[1][2], 1.0);
         assert_eq!(frame[2][1], -1.0);

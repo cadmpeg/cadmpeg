@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::decode::blend::blend_surface_point;
@@ -727,10 +728,8 @@ fn unselected_ext11_deltas_do_not_assign_primary_uv_lanes() {
         )
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
-            .unwrap(),
-        cadmpeg_core::serde_erase::json::to_value((&baseline.ir().geometry, &baseline.ir().model))
-            .unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

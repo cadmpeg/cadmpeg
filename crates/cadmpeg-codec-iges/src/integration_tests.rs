@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{IgesCodec, IgesVersion};
@@ -906,8 +907,8 @@ fn repeated_decode_is_canonical() {
         second.ir().to_canonical_json().unwrap()
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(first.report()).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(second.report()).unwrap()
+        json::to_vec(first.report()).unwrap(),
+        json::to_vec(second.report()).unwrap()
     );
     assert_eq!(first.source_fidelity(), second.source_fidelity());
 }

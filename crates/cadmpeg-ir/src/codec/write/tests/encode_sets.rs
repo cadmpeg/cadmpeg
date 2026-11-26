@@ -9,6 +9,7 @@ use crate::codec::FormatId;
 use crate::examples::unit_cube;
 use crate::report::strictness::code_name;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 use super::{uniform_dispositions, NeutralEncoder};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
@@ -160,7 +161,7 @@ fn two_file_document() -> CadIr {
         definition_id("part"),
         Storage::File {
             document: ExternalDocument::path("part.source"),
-            source: serde_json::from_value(serde_json::json!({
+            source: json::from_value(serde_json::json!({
                 "identity": {"kind": "unclassified", "format": "step"},
                 "attributes": {},
             }))

@@ -3,6 +3,7 @@
 //! instead of refusing the write.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::Codec;
 
@@ -560,8 +561,8 @@ fn a_faceless_part_keeps_its_swift_annotations() {
             .map(|annotation| {
                 (
                     annotation.id.clone(),
-                    cadmpeg_core::serde_erase::json::to_value(&annotation.definition).unwrap(),
-                    cadmpeg_core::serde_erase::json::to_value(&annotation.targets).unwrap(),
+                    json::to_value(&annotation.definition).unwrap(),
+                    json::to_value(&annotation.targets).unwrap(),
                 )
             })
             .collect::<Vec<_>>()

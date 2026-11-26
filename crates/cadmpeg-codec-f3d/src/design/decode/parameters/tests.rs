@@ -6,6 +6,7 @@
     clippy::uninlined_format_args
 )]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
@@ -730,9 +731,9 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.scope_record_index(), 0);
     assert_eq!(parsed.local_ordinal(), 0);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::parameters::DesignParameterOwnerWire,
-        >(cadmpeg_core::serde_erase::json::to_value(&parsed).unwrap())
+        json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
+            json::to_value(&parsed).unwrap()
+        )
         .unwrap()
         .owned_ordinal,
         290
@@ -798,11 +799,8 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     assert!(
         super::parse_admitted_legacy_parameter_owner_68(&malformed, evaluated, 0, true).is_none()
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&typed).unwrap();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::records::parameters::DesignParameterOwner,
-    >(wire)
-    .is_ok());
+    let wire = json::to_value(&typed).unwrap();
+    assert!(json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok());
 }
 
 #[test]
@@ -862,9 +860,9 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     assert_eq!(parsed.scope_record_index(), 77);
     assert_eq!(parsed.local_ordinal(), 0);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::parameters::DesignParameterOwnerWire,
-        >(cadmpeg_core::serde_erase::json::to_value(&parsed).unwrap())
+        json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
+            json::to_value(&parsed).unwrap()
+        )
         .unwrap()
         .owned_ordinal,
         290
@@ -1878,7 +1876,7 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     assert_eq!(parameter.owner_record_index(), Some(1));
     assert_eq!(parameter.expression(), "5 mm");
     assert_eq!(parameter.source_kind(), "AlongDistance");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&parameter).unwrap();
+    let wire = json::to_value(&parameter).unwrap();
     assert_eq!(wire["source_kind_offset"], 77);
     assert_eq!(parameter.name(), "d1");
     assert_eq!(parameter.evaluated_value().get(), 1.0);

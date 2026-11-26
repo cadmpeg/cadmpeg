@@ -2,6 +2,7 @@
 use crate::design::decode::operands::extrude_selections::bind_extrude_selection_geometry;
 use crate::design::decode::operands::extrude_selections::bind_extrude_selection_identities;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::decode::operands::extrude_selections::parse_extrude_selection_group;
 use crate::design::decode::operands::extrude_selections::parse_extrude_selection_member;
@@ -177,9 +178,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         assert_eq!(long_member.next_record_index, 201);
         assert!(long_member.tail_slot_present);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<
+            json::from_value::<
                 crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
-            >(cadmpeg_core::serde_erase::json::to_value(&long_member).unwrap())
+            >(json::to_value(&long_member).unwrap())
             .unwrap(),
             long_member
         );

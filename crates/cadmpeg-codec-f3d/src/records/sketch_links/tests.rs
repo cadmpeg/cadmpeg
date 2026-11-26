@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{PersistentDesignLink, PersistentDesignLinkWire, PERSISTENT_DESIGN_LINK_CLONE_COUNT};
+use cadmpeg_core::serde_erase::json;
 
 fn link() -> PersistentDesignLink {
     PersistentDesignLink {
@@ -17,8 +18,8 @@ fn persistent_design_link_borrowed_wire_matches_owned_wire_bytes() {
     let record = link();
     let owned = PersistentDesignLinkWire::from(record.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
