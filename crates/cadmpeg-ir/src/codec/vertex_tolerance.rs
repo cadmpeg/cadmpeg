@@ -13,29 +13,28 @@
 //! itself does, or where that carrier distance cannot be measured: there a
 //! range is off, not the vertex.
 //!
-//! The pass measures each geometry until a measure widens no tolerance: a
-//! widened vertex raises the allowance of the comparisons it ends, so a
-//! vertex that a miss on such a comparison kept as stored is measured again.
-//! It measures the current geometry, then the resolved state of each
-//! evaluation and process state with content: its base with its delta
-//! applied, as validation resolves it. A vertex that only a resolved state
-//! compares with a moved position states its widened tolerance in that
-//! state's delta: the delta's own record, or a copy of the base's record,
-//! annotated as the base's record is, that the delta then restates. Each
-//! state is measured after the states its chain of bases passes, with the
+//! The pass measures each geometry again, at the tolerances it has widened,
+//! until a measure widens no tolerance: a widened vertex raises the allowance
+//! of the comparisons it ends. It measures the current geometry, then the
+//! resolved state of each evaluation and process state with content: its base
+//! with its delta applied, as validation resolves it. A vertex that only a
+//! resolved state compares with a moved position states its widened tolerance
+//! in that state's delta: the delta's own record, or a copy of the base's
+//! record, annotated as the base's record is, that the delta then restates.
+//! Each state is measured after the states its chain of bases passes, with the
 //! tolerances they widen, and over the records connected through references
 //! with a record its delta changes: every other vertex is compared as in the
 //! base, where it was measured. A state whose base is the current state or
 //! empty, or whose base the pass did not measure until a measure widened
-//! nothing, is measured whole. A state whose chain of bases the pass does
-//! not resolve, or that it does not measure before a resource ceiling, keeps
-//! its stored tolerances, and the pass charges
+//! nothing, is measured whole. A state whose chain of bases the pass does not
+//! resolve, or that it does not measure before a resource ceiling, keeps its
+//! stored tolerances, and the pass charges
 //! `geometry.vertex-tolerance-unmeasured` naming it. A geometry that still
-//! widens after one measure more than it holds vertices keeps the
-//! tolerances widened so far, and the pass charges that loss naming it. A
-//! record inside a history body or a witness body has no annotation key of
-//! its own, so its widened tolerance could not be marked derived; it keeps
-//! its stored tolerance, and validation reports its gaps.
+//! widens after one measure more than it holds vertices keeps the tolerances
+//! widened so far, and the pass charges that loss naming it. A record inside a
+//! history body or a witness body has no annotation key of its own, so its
+//! widened tolerance could not be marked derived; it keeps its stored
+//! tolerance, and validation reports its gaps.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -113,10 +112,15 @@ fn widen_measuring(
 ) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let read = |key: &str| !computed(annotations, key);
+    let mut stored = HashMap::new();
     let measured = DecodeContext::from_root_bytes_limit(&[], &arena, policy)
         .map_err(CodecError::from)
         .and_then(|(ctx, _)| {
-            let current = measure_current(&ctx, ir, &read)?;
+            let first = measure(&ctx, ir, &read)?;
+            let current = settle(ir.geometry.vertices.len(), first, |widened| {
+                raise(&mut ir.geometry, widened, &mut stored);
+                measure(&ctx, ir, &read)
+            })?;
             let mut states = StateWidening::new(&current.widened, measured);
             let stopped = visit_resolved_states(&ctx, ir, &mut |state| {
                 states.measure(&ctx, ir, &read, &state)
@@ -135,10 +139,15 @@ fn widen_measuring(
     let (current, deltas, stopped, unresolved, unsettled) = match measured {
         Ok(measured) => measured,
         Err(error) => {
+            for vertex in &mut ir.geometry.vertices {
+                if let Some(&tolerance) = stored.get(vertex.id.as_str()) {
+                    vertex.tolerance = tolerance;
+                }
+            }
             return vec![DecodeLossCode::VertexToleranceUnmeasured.note(format!(
                 "the decode wrapper's vertex tolerance pass stopped ({error}), so it widened no \
                  vertex tolerance"
-            ))]
+            ))];
         }
     };
     let mut written = Vec::new();
@@ -164,7 +173,12 @@ fn widen_measuring(
             continue;
         };
         builder.derived_field(&vertex.id, TOLERANCE);
-        let before = vertex.tolerance.unwrap_or(linear).get();
+        let before = stored
+            .get(vertex.id.as_str())
+            .copied()
+            .unwrap_or(vertex.tolerance)
+            .unwrap_or(linear)
+            .get();
         vertex.tolerance = Some(tolerance);
         largest = largest.max(tolerance.get() - before);
         widened.push(vertex.id.as_str().to_owned());
@@ -343,10 +357,15 @@ impl<'w> StateWidening<'w> {
             None => id.to_owned(),
         };
         let read = |id: &str| read(&key(id));
-        let alone = alone(ir, topology);
+        let mut alone = CadIr::empty();
+        alone.fragment = ir.fragment;
+        alone.tolerances = ir.tolerances;
+        alone.geometry = topology;
+        let mut stored = HashMap::new();
         let first = measure(ctx, &alone, &read)?;
         let settled = settle(alone.geometry.vertices.len(), first, |widened| {
-            measure(ctx, &with_tolerances(&alone, widened), &read)
+            raise(&mut alone.geometry, widened, &mut stored);
+            measure(ctx, &alone, &read)
         })?;
         if settled.settled {
             self.measured_states.insert(state.holder.to_owned());
@@ -362,7 +381,12 @@ impl<'w> StateWidening<'w> {
             else {
                 continue;
             };
-            let before = vertex.tolerance.unwrap_or(ir.tolerances.linear).get();
+            let before = stored
+                .get(vertex.id.as_str())
+                .copied()
+                .unwrap_or(vertex.tolerance)
+                .unwrap_or(ir.tolerances.linear)
+                .get();
             self.by_state
                 .entry(vertex.id.as_str().to_owned())
                 .or_default()
@@ -386,54 +410,34 @@ impl<'w> StateWidening<'w> {
 struct Settled {
     /// Each widened vertex with its tolerance.
     widened: BTreeMap<String, f64>,
-    /// Whether the last measure leaves nothing that another would widen.
+    /// Whether the last measure widened no vertex further.
     settled: bool,
 }
 
-/// The current geometry of `ir`, measured until a measure widens none.
-fn measure_current(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    read: &dyn Fn(&str) -> bool,
-) -> Result<Settled, ResourceLimit> {
-    let first = measure(ctx, ir, read)?;
-    settle(ir.geometry.vertices.len(), first, |widened| {
-        measure(ctx, &with_tolerances(ir, widened), read)
-    })
-}
-
 /// Merges `first` and the measures `again` makes, each at the tolerances
-/// widened before it, until a measure leaves no vertex kept as stored by a
-/// miss on a comparison with a vertex it widens. Widening only raises a
-/// tolerance, and a widened vertex then misses no position compared with
-/// it, so each measure after `first` follows one that widened a vertex not
-/// widened before. After one measure more than `vertices`, the geometry's
-/// vertex count, the result is unsettled.
+/// widened before it, until a measure widens no vertex further. Where the
+/// measure after `vertices` measures, the geometry's vertex count, still
+/// widens one, the result is unsettled.
 fn settle(
     vertices: usize,
-    first: Measure,
-    mut again: impl FnMut(&BTreeMap<String, f64>) -> Result<Measure, ResourceLimit>,
+    first: BTreeMap<String, f64>,
+    mut again: impl FnMut(&BTreeMap<String, f64>) -> Result<BTreeMap<String, f64>, ResourceLimit>,
 ) -> Result<Settled, ResourceLimit> {
     let mut widened = BTreeMap::new();
     let mut last = first;
     let mut measures = 1;
     loop {
-        let mut changed = HashSet::new();
-        for (vertex, tolerance) in last.tolerances {
+        let mut changed = false;
+        for (vertex, tolerance) in last {
             if widened
                 .get(&vertex)
                 .is_none_or(|&stated: &f64| tolerance > stated)
             {
-                widened.insert(vertex.clone(), tolerance);
-                changed.insert(vertex);
+                widened.insert(vertex, tolerance);
+                changed = true;
             }
         }
-        let unblocked = last
-            .blocked
-            .values()
-            .flatten()
-            .any(|partner| changed.contains(partner));
-        if !unblocked {
+        if !changed {
             return Ok(Settled {
                 widened,
                 settled: true,
@@ -450,30 +454,27 @@ fn settle(
     }
 }
 
-/// `ir`'s geometry with the tolerance of each vertex in `widened` raised to
-/// its widened value.
-fn with_tolerances(ir: &CadIr, widened: &BTreeMap<String, f64>) -> CadIr {
-    let mut geometry = ir.geometry.clone();
+/// Raises the tolerance of each vertex of `geometry` that `widened` holds to
+/// its widened value, and keeps in `stored` the tolerance each raised vertex
+/// held before its first raise.
+fn raise(
+    geometry: &mut Topology,
+    widened: &BTreeMap<String, f64>,
+    stored: &mut HashMap<String, Option<PositiveLength>>,
+) {
     for vertex in &mut geometry.vertices {
-        if let Some(tolerance) = widened
+        let Some(tolerance) = widened
             .get(vertex.id.as_str())
             .copied()
             .and_then(PositiveLength::new)
-        {
-            vertex.tolerance = Some(tolerance);
-        }
+        else {
+            continue;
+        };
+        stored
+            .entry(vertex.id.as_str().to_owned())
+            .or_insert(vertex.tolerance);
+        vertex.tolerance = Some(tolerance);
     }
-    alone(ir, geometry)
-}
-
-/// `geometry` as a document of its own, with `ir`'s fragment flag and
-/// tolerances.
-fn alone(ir: &CadIr, geometry: Topology) -> CadIr {
-    let mut alone = CadIr::empty();
-    alone.fragment = ir.fragment;
-    alone.tolerances = ir.tolerances;
-    alone.geometry = geometry;
-    alone
 }
 
 /// States `vertex` in the delta of the evaluation or process state `holder`:
@@ -528,16 +529,6 @@ fn computed(annotations: &Annotations, id: &str) -> bool {
     })
 }
 
-/// What one measure of a geometry finds.
-struct Measure {
-    /// The tolerance of each vertex the measure widens.
-    tolerances: BTreeMap<String, f64>,
-    /// Each vertex that misses a compared position and that the measure
-    /// keeps as stored, with the vertex at the other end of each comparison
-    /// where it misses.
-    blocked: BTreeMap<String, Vec<String>>,
-}
-
 /// The tolerance each vertex of `ir`'s geometry states after one measure,
 /// for the vertices it widens, measuring only between the records `read`
 /// admits.
@@ -545,7 +536,7 @@ fn measure(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     read: &dyn Fn(&str) -> bool,
-) -> Result<Measure, ResourceLimit> {
+) -> Result<BTreeMap<String, f64>, ResourceLimit> {
     let index = ModelIndex::new_model_only(ir);
     // Each vertex read from the source, with its position.
     let vertices: HashMap<&str, Point3> = ir
@@ -570,52 +561,44 @@ fn measure(
         comparisons.push(comparison);
     })?;
     let mut largest: BTreeMap<&str, f64> = BTreeMap::new();
-    let mut misses: BTreeMap<&str, Vec<(f64, ComparedCarrier<'_>, &str)>> = BTreeMap::new();
+    let mut misses: BTreeMap<&str, Vec<(f64, ComparedCarrier<'_>)>> = BTreeMap::new();
     for comparison in &comparisons {
         if !read(comparison.subject) || !comparison.records.iter().all(|record| read(record)) {
             continue;
         }
-        for (end, partner) in comparison.ends.iter().zip(comparison.ends.iter().rev()) {
+        for end in &comparison.ends {
             if !vertices.contains_key(end.vertex) || !end.distance.is_finite() {
                 continue;
             }
             let distance = largest.entry(end.vertex).or_default();
             *distance = distance.max(end.distance);
             if end.distance > end.allowance {
-                misses.entry(end.vertex).or_default().push((
-                    end.distance,
-                    comparison.carrier,
-                    partner.vertex,
-                ));
+                misses
+                    .entry(end.vertex)
+                    .or_default()
+                    .push((end.distance, comparison.carrier));
             }
         }
     }
-    let mut measured = Measure {
-        tolerances: BTreeMap::new(),
-        blocked: BTreeMap::new(),
-    };
+    let mut tolerances = BTreeMap::new();
     'vertices: for (vertex, misses) in misses {
         let Some(&position) = vertices.get(vertex) else {
             continue;
         };
-        for &(distance, carrier, _) in &misses {
+        for &(distance, carrier) in &misses {
             let carrier = match carrier {
                 ComparedCarrier::Curve(curve) => curve_distance(ctx, curve, position)?,
                 ComparedCarrier::Surface(surface) => surface_distance(ctx, surface, position)?,
             };
             if carrier.is_none_or(|carrier| distance > CARRIER_DISTANCE_FACTOR * carrier) {
-                let partners = misses.iter().map(|&(_, _, partner)| partner.to_owned());
-                measured
-                    .blocked
-                    .insert(vertex.to_owned(), partners.collect());
                 continue 'vertices;
             }
         }
         if let Some(&tolerance) = largest.get(vertex) {
-            measured.tolerances.insert(vertex.to_owned(), tolerance);
+            tolerances.insert(vertex.to_owned(), tolerance);
         }
     }
-    Ok(measured)
+    Ok(tolerances)
 }
 
 /// The distance of `point` from `surface`, or `None` where the surface has

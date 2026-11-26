@@ -188,12 +188,13 @@ fn a_state_whose_chain_of_bases_does_not_resolve_is_charged_and_the_others_are_m
 #[test]
 fn a_state_on_a_settled_base_widens_nothing_outside_its_delta_region() {
     // `after-extrude`, on the current state, moves corner 0 off its three
-    // edges and corner 1 along edge 0 toward corner 0; measured until a
-    // measure widens nothing, it widens both. `a-chained`, based on it,
+    // edges, corner 1 along edge 0 toward corner 0, and corner 2 along edge 1
+    // toward corner 1; measured until a measure widens nothing, it widens all
+    // three. `a-chained`, based on it,
     // changes no record: its resolved state widens nothing, measured whole
     // or over its delta's region.
     let mut ir = document();
-    let points = super::corner_points_off_their_edges(&ir);
+    let points = super::chained_corner_points(&ir);
     let base = &mut ir.design.evaluations[0];
     base.content.as_mut().unwrap().delta.records.points = points;
     let mut chained = base.clone();
@@ -212,10 +213,10 @@ fn a_state_on_a_settled_base_widens_nothing_outside_its_delta_region() {
             .delta
     };
     assert!(delta(0).records.vertices.is_empty(), "{:?}", delta(0));
-    assert_eq!(delta(1).records.vertices.len(), 2, "{:?}", delta(1));
+    assert_eq!(delta(1).records.vertices.len(), 3, "{:?}", delta(1));
     super::assert_close(
-        super::vertex_tolerance(&delta(1).records, 1).unwrap(),
-        0.015_625,
+        super::vertex_tolerance(&delta(1).records, 2).unwrap(),
+        0.011_718_75,
     );
     assert_eq!(region, whole);
 }

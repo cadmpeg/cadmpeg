@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use super::{settle, widen, Measure};
+use super::{settle, widen};
 use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
@@ -732,30 +732,50 @@ fn gaps(ir: &CadIr) -> usize {
         .count()
 }
 
-/// The cube's points at corner 0, moved by (-0.02, -0.02, -0.02) off the
-/// ends and lines of its three edges, and at corner 1, moved 0.015625 along
-/// edge 0 toward corner 0: on edge 0's line and 0.015625 from its end, and
-/// 0.015625 from the ends and lines of its two other edges.
-fn corner_points_off_their_edges(ir: &CadIr) -> Vec<crate::topology::Point> {
-    let mut corner = ir
+/// The cube's point at `at`, moved to `to`.
+fn moved_point(ir: &CadIr, at: Point3, to: Point3) -> crate::topology::Point {
+    let mut point = ir
         .geometry
         .points
         .iter()
-        .find(|point| point.position().get() == Point3::new(10.0, 0.0, 0.0))
+        .find(|point| point.position().get() == at)
         .unwrap()
         .clone();
-    corner.set_position(FinitePoint3::new(Point3::new(10.0 - 0.015_625, 0.0, 0.0)).unwrap());
-    vec![moved_origin_corner(ir), corner]
+    point.set_position(FinitePoint3::new(to).unwrap());
+    point
+}
+
+/// The cube's points at corners 0, 1 and 2, each but the first on the line
+/// of the edge from the corner before it, so that only the widening of that
+/// corner lets the measure state its distance from its other edges. Corner 0
+/// is moved by (-0.02, -0.02, -0.02), off the ends and lines of its three
+/// edges. Corner 1 is moved 0.015625 along edge 0 toward corner 0: 0.015625
+/// from the ends and lines of edges 1 and 9. Corner 2 is moved 0.01171875
+/// along edge 1 toward corner 1: 0.01171875 from the ends and lines of edges
+/// 2 and 10.
+fn chained_corner_points(ir: &CadIr) -> Vec<crate::topology::Point> {
+    vec![
+        moved_origin_corner(ir),
+        moved_point(
+            ir,
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0 - 0.015_625, 0.0, 0.0),
+        ),
+        moved_point(
+            ir,
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(10.0, 10.0 - 0.011_718_75, 0.0),
+        ),
+    ]
 }
 
 #[test]
-fn a_vertex_kept_by_a_miss_at_a_widened_vertex_is_measured_again_and_widened() {
-    // Corner 0 widens. Corner 1 misses the end of edge 0 on that edge's line,
-    // so a first measure keeps it as stored. With corner 0 widened, edge 0's
-    // allowance covers corner 1, which then states its distance from the ends
-    // of its two other edges.
+fn a_chain_of_vertices_each_kept_by_a_miss_at_the_one_before_is_widened_in_turn() {
+    // A first measure widens corner 0 and keeps corners 1 and 2 as stored:
+    // each misses the end of the edge from the corner before it on that
+    // edge's line. Each widening covers the next corner's gap on that edge.
     let mut ir = unit_cube().unwrap();
-    for moved in corner_points_off_their_edges(&ir) {
+    for moved in chained_corner_points(&ir) {
         for point in &mut ir.geometry.points {
             if point.id == moved.id {
                 *point = moved.clone();
@@ -772,9 +792,9 @@ fn a_vertex_kept_by_a_miss_at_a_widened_vertex_is_measured_again_and_widened() {
         loss.code,
         DecodeLossCode::VertexToleranceWidened.note("").code
     );
-    let vertices = [0, 1].map(|corner| vertex_id(&ir, corner));
+    let vertices = [0, 1, 2].map(|corner| vertex_id(&ir, corner));
     assert!(
-        loss.message.starts_with("widened 2 vertex tolerance(s)")
+        loss.message.starts_with("widened 3 vertex tolerance(s)")
             && loss
                 .message
                 .ends_with(&format!(": {}", vertices.join(", "))),
@@ -786,56 +806,51 @@ fn a_vertex_kept_by_a_miss_at_a_widened_vertex_is_measured_again_and_widened() {
         moved_corner_gap(),
     );
     assert_close(vertex_tolerance(&ir.geometry, 1).unwrap(), 0.015_625);
+    assert_close(vertex_tolerance(&ir.geometry, 2).unwrap(), 0.011_718_75);
     assert_eq!(gaps(&ir), 0);
 }
 
 #[test]
-fn a_state_vertex_kept_by_a_miss_at_a_vertex_the_state_widens_is_widened_in_its_delta() {
-    // As above, with the two moved points in the delta of an evaluation on
+fn a_chain_of_state_vertices_each_kept_by_a_miss_at_the_one_before_is_widened_in_its_delta() {
+    // As above, with the three moved points in the delta of an evaluation on
     // the current state.
     let mut ir = crate::validate::design::fixture::document();
-    let points = corner_points_off_their_edges(&ir);
+    let points = chained_corner_points(&ir);
     let evaluation = &mut ir.design.evaluations[0];
     let holder = evaluation.id.as_str().to_owned();
     evaluation.content.as_mut().unwrap().delta.records.points = points;
     assert!(gaps_on(&ir, &holder) > 0);
-    let keys = [0, 1].map(|corner| format!("{holder} {}", vertex_id(&ir, corner)));
+    let keys = [0, 1, 2].map(|corner| format!("{holder} {}", vertex_id(&ir, corner)));
     let ir = assert_widened_in_deltas(ir, &keys);
     let delta = &ir.design.evaluations[0].content.as_ref().unwrap().delta;
     assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
     assert_close(delta_vertex_tolerance(delta, 1), 0.015_625);
+    assert_close(delta_vertex_tolerance(delta, 2), 0.011_718_75);
     assert_eq!(gaps_on(&ir, &holder), 0);
 }
 
-/// A measure that widens each vertex of `widened` to its tolerance and keeps
-/// each `(vertex, partner)` of `blocked` as stored by a miss at `partner`.
-fn a_measure(widened: &[(&str, f64)], blocked: &[(&str, &str)]) -> Measure {
-    Measure {
-        tolerances: widened
-            .iter()
-            .map(|&(vertex, tolerance)| (vertex.to_owned(), tolerance))
-            .collect(),
-        blocked: blocked
-            .iter()
-            .map(|&(vertex, partner)| (vertex.to_owned(), vec![partner.to_owned()]))
-            .collect(),
-    }
+/// The tolerances a measure widens.
+fn a_measure(widened: &[(&str, f64)]) -> BTreeMap<String, f64> {
+    widened
+        .iter()
+        .map(|&(vertex, tolerance)| (vertex.to_owned(), tolerance))
+        .collect()
 }
 
 #[test]
-fn settling_measures_again_while_a_measure_widens_the_partner_of_a_kept_vertex() {
-    // Each measure widens the vertex the one before kept by a miss at the
-    // vertex it widened; the third keeps none.
+fn settling_measures_again_while_a_measure_widens_a_vertex() {
+    // Each measure widens one vertex more; the fourth widens none.
     let mut again = 0;
-    let settled = settle(3, a_measure(&[("a", 1.0)], &[("b", "a")]), |widened| {
+    let settled = settle(3, a_measure(&[("a", 1.0)]), |widened| {
         again += 1;
         Ok(match widened.len() {
-            1 => a_measure(&[("b", 2.0)], &[("c", "b")]),
-            _ => a_measure(&[("c", 3.0)], &[]),
+            1 => a_measure(&[("b", 2.0)]),
+            2 => a_measure(&[("c", 3.0)]),
+            _ => a_measure(&[]),
         })
     })
     .unwrap();
-    assert_eq!(again, 2);
+    assert_eq!(again, 3);
     assert!(settled.settled);
     assert_eq!(
         settled.widened,
@@ -844,22 +859,19 @@ fn settling_measures_again_while_a_measure_widens_the_partner_of_a_kept_vertex()
 }
 
 #[test]
-fn settling_does_not_measure_again_where_no_kept_vertex_misses_at_a_widened_one() {
-    let settled = settle(3, a_measure(&[("a", 1.0)], &[("b", "c")]), |_| {
-        panic!("measured again")
-    })
-    .unwrap();
+fn settling_does_not_measure_again_after_a_measure_that_widens_nothing() {
+    let settled = settle(3, a_measure(&[]), |_| panic!("measured again")).unwrap();
     assert!(settled.settled);
-    assert_eq!(settled.widened, BTreeMap::from([("a".into(), 1.0)]));
+    assert!(settled.widened.is_empty());
 }
 
 #[test]
 fn settling_stops_unsettled_after_one_measure_more_than_the_geometry_holds_vertices() {
-    // Each measure widens `a` further and keeps `b` by a miss at `a`.
+    // Each measure widens `a` further.
     let mut again = 0;
-    let settled = settle(2, a_measure(&[("a", 1.0)], &[("b", "a")]), |_| {
+    let settled = settle(2, a_measure(&[("a", 1.0)]), |_| {
         again += 1;
-        Ok(a_measure(&[("a", 1.0 + f64::from(again))], &[("b", "a")]))
+        Ok(a_measure(&[("a", 1.0 + f64::from(again))]))
     })
     .unwrap();
     assert_eq!(again, 2);
