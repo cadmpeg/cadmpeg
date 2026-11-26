@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 mod accounting;
 mod body_drop;
@@ -109,11 +109,17 @@ pub(crate) enum CachedNative {
     Loaded(Option<SldprtNative>),
 }
 
-/// The retained source image decoded again, and its native records: what
-/// every pass of one write compares the caller's document with.
+/// The retained source image decoded again, and what depends on it alone:
+/// what every pass of a write compares the caller's document with.
 pub(crate) struct RetainedSource {
     pub(crate) decoded: cadmpeg_ir::codec::Decoded,
     pub(crate) native: Option<SldprtNative>,
+    /// The records of `decoded` as the read-back compares them, from the
+    /// first pass that reads back; `None` inside when they do not serialize.
+    pub(crate) records: OnceLock<Option<crate::history::write::read_back::document::Document>>,
+    /// What the write of `decoded` with no edit reads back as, from the first
+    /// pass that reads back a difference no edit explains.
+    pub(crate) unedited: OnceLock<Vec<crate::history::write::read_back::document::Difference>>,
 }
 
 /// Reusable decoded source baseline and native records across read-back retries
@@ -3321,7 +3327,12 @@ fn retained_source_baseline<'a>(
             .namespace("sldprt")
             .map(SldprtNative::load)
             .transpose()?;
-        *baseline = Some(Arc::new(RetainedSource { decoded, native }));
+        *baseline = Some(Arc::new(RetainedSource {
+            decoded,
+            native,
+            records: OnceLock::new(),
+            unedited: OnceLock::new(),
+        }));
     }
     Ok(baseline.as_deref())
 }

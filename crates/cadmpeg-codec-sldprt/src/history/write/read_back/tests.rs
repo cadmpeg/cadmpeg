@@ -87,7 +87,7 @@ fn judge_settled(
     Judge::new(input, &CodecDigests::new(), &|_| None).judge(
         claims,
         &UnwrittenEdits::default(),
-        (source, &[], &[]),
+        ((source, &Document::of(source).unwrap()), &[], &[]),
         written,
         Some(settled),
         &mut |_| Vec::new(),
@@ -552,7 +552,7 @@ fn a_difference_the_unedited_write_has_is_named_by_arena() {
     let read_back = Judge::new(&input, &CodecDigests::new(), &|_| None).judge(
         &claims,
         &UnwrittenEdits::default(),
-        (&source, &[], &[]),
+        ((&source, &Document::of(&source).unwrap()), &[], &[]),
         &written,
         Some(&HashSet::new()),
         &mut |stated| {

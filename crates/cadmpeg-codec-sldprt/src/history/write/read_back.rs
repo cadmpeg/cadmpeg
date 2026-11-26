@@ -315,11 +315,6 @@ struct Judge<'a> {
     digests: &'a CodecDigests,
     round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
     stated: Option<Document>,
-    /// The decoded source document, from the first pass that states one.
-    source: Option<Document>,
-    /// The differences of the source document written with no edit; `None`
-    /// until a pass needs them.
-    baseline: Option<Vec<Difference>>,
 }
 
 impl<'a> Judge<'a> {
@@ -333,8 +328,6 @@ impl<'a> Judge<'a> {
             digests,
             round_trip,
             stated: None,
-            source: None,
-            baseline: None,
         }
     }
 
@@ -342,7 +335,7 @@ impl<'a> Judge<'a> {
     /// decode: that part is written again.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
         let claims = &output.claims;
-        let Some(source) = output.source.as_ref().map(|source| &source.decoded) else {
+        let Some(source) = output.source.as_deref() else {
             return ReadBack::default();
         };
         let withhold = claims
@@ -362,6 +355,13 @@ impl<'a> Judge<'a> {
             Err(error) => {
                 return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
             }
+        };
+        let Some(source_records) = source
+            .records
+            .get_or_init(|| Document::of(&source.decoded.ir))
+            .as_ref()
+        else {
+            return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
         let round_trip = self.round_trip;
         // The writer's own losses that name a record as omitted or as
@@ -388,26 +388,37 @@ impl<'a> Judge<'a> {
         self.judge(
             claims,
             &output.written,
-            (&source.ir, &output.coverage.omitted(self.input), &naming),
+            (
+                (&source.decoded.ir, source_records),
+                &output.coverage.omitted(self.input),
+                &naming,
+            ),
             decoded.ir(),
             None,
-            &mut |stated| baseline_of(round_trip, source, stated),
+            &mut |stated| {
+                source
+                    .unedited
+                    .get_or_init(|| baseline_of(round_trip, &source.decoded, stated))
+                    .clone()
+            },
         )
     }
 
     /// Judges `written`, the written part decoded, against the document the
     /// write must read back as. `unwritten` holds the edits the write states
-    /// it does not carry; `source` is the decoded source document, the
-    /// labels of the arenas the write omits, whose `arena.omitted` losses
-    /// name their records, and the messages of the writer's losses that
-    /// name a record as omitted or as dropping its edit. `settled` holds the
-    /// claimed features whose travel reads back as the stored solid settles
-    /// it; `None` finds them ([`settled_by_solid`]).
+    /// it does not carry; `source` is the decoded source document and its
+    /// records, the labels of the arenas the write omits, whose
+    /// `arena.omitted` losses name their records, and the messages of the
+    /// writer's losses that name a record as omitted or as dropping its edit.
+    /// `settled` holds the claimed features whose travel reads back as the
+    /// stored solid settles it; `None` finds them ([`settled_by_solid`]).
+    /// `baseline` gives the differences of the source written with no edit,
+    /// from the source records.
     fn judge(
         &mut self,
         claims: &ReadBackClaims,
         unwritten: &UnwrittenEdits,
-        (source, omitted, naming): (&CadIr, &[&str], &[String]),
+        ((source, source_records), omitted, naming): ((&CadIr, &Document), &[&str], &[String]),
         written: &CadIr,
         settled: Option<&HashSet<FeatureId>>,
         baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
@@ -415,14 +426,7 @@ impl<'a> Judge<'a> {
         if self.stated.is_none() {
             self.stated = Document::of(self.input);
         }
-        if self.source.is_none() {
-            self.source = Document::of(source);
-        }
-        let (Some(stated), Some(source_records), Some(read)) = (
-            self.stated.as_ref(),
-            self.source.as_ref(),
-            Document::of(written),
-        ) else {
+        let (Some(stated), Some(read)) = (self.stated.as_ref(), Document::of(written)) else {
             return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
         let expected = expected(self.input, stated, source_records, claims, unwritten);
@@ -515,10 +519,7 @@ impl<'a> Judge<'a> {
         if general.is_empty() {
             return read_back;
         }
-        if self.baseline.is_none() {
-            self.baseline = Some(baseline(source_records));
-        }
-        let base = self.baseline.as_deref().unwrap_or_default();
+        let base = baseline(source_records);
         let (defects, unexplained): (Vec<_>, Vec<_>) = general
             .into_iter()
             .partition(|difference| base.iter().any(|base| same_difference(base, difference)));
