@@ -13,10 +13,11 @@
 //! itself does, or where that carrier distance cannot be measured: there a
 //! range is off, not the vertex.
 //!
-//! The pass widens the current geometry alone. A record inside an
-//! evaluation's or a process state's delta, a history body, or a witness
-//! body has no annotation key of its own, so its widened tolerance could not
-//! be marked derived; validation reports the gaps there.
+//! The pass widens the current geometry alone. A record inside a history
+//! body or a witness body has no annotation key of its own, so its widened
+//! tolerance could not be marked derived. A record inside an evaluation's or
+//! a process state's delta keeps its stored tolerance. Validation reports the
+//! gaps in each of them.
 
 use std::collections::{BTreeMap, HashMap};
 
