@@ -804,6 +804,79 @@ impl FbbFaceRun {
     pub(crate) fn after_faces(&self) -> usize {
         self.after_faces
     }
+
+    /// Byte offset of each face row.
+    pub(super) fn rows(&self) -> impl Iterator<Item = usize> {
+        (self.face_start..self.after_faces).step_by(fbb_row::LEN)
+    }
+}
+
+/// The part a face row the decode builds no face for is given up as
+/// (`catia.md`, Partial decode).
+const FACE_ROW_PART: &str = "fbb-face-row";
+
+/// Give up the face rows at offsets `rows` of `spine`, the main data stream
+/// that the retained brep payload holds, for `cause`.
+pub(super) fn give_up_face_rows(
+    ctx: &DecodeContext<'_>,
+    spine: &[u8],
+    rows: impl IntoIterator<Item = usize>,
+    cause: &str,
+) -> Result<Vec<cadmpeg_ir::unknown::part::GivenUpPart>, CodecError> {
+    use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+    let payload = cadmpeg_ir::ids::Identity::from(
+        cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#brep-stream".to_owned())
+            .map_err(CodecError::malformed)?,
+    );
+    let code = crate::loss::CatiaLossCode::TopologyFbbRowsWithheld.kind();
+    rows.into_iter()
+        .filter_map(|offset| {
+            Some((
+                offset,
+                spine.get(offset..offset.checked_add(fbb_row::LEN)?)?,
+            ))
+        })
+        .map(|(offset, row)| {
+            ctx.give_up_part(
+                Part::at(
+                    "catia",
+                    FACE_ROW_PART,
+                    cadmpeg_core::decode::u64_from_index(offset),
+                    row,
+                    [cadmpeg_core::decode::ArenaClass::Model],
+                )
+                .in_stream(
+                    cadmpeg_ir::stream_name!("catia:").with_suffix("MainDataStream+SurfacicReps"),
+                )
+                .contained_in(payload.clone())
+                .digest_only(),
+                CodecError::malformed(format_args!("{code}: {cause}")),
+            )
+        })
+        .collect()
+}
+
+/// Give up the face rows of `main`, the main data stream, outside the face
+/// row runs `taken` the standard populations take.
+pub(super) fn give_up_untaken_face_rows(
+    ctx: &DecodeContext<'_>,
+    main: &[u8],
+    taken: &[FbbFaceRun],
+) -> Result<Vec<cadmpeg_ir::unknown::part::GivenUpPart>, CodecError> {
+    let rows = crate::container::fbb_run_ranges(main)
+        .into_iter()
+        .flat_map(|run| run.step_by(fbb_row::LEN))
+        .filter(|row| {
+            !taken
+                .iter()
+                .any(|run| (run.face_start..run.after_faces).contains(row))
+        });
+    give_up_face_rows(
+        ctx,
+        main,
+        rows,
+        "the face row lies outside every face row run a standard population takes",
+    )
 }
 
 /// Find every independently source-closed standard FBB population.

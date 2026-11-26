@@ -2266,6 +2266,11 @@ fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
     }
 }
 
+/// The part a refused zero-entity NURBS surface record is given up as
+/// (`catia.md`, Partial decode). The part runs from the record start to the
+/// end of its pole grid.
+const ZERO_ENTITY_NURBS_SURFACE_PART: &str = "zero-entity-nurbs-surface";
+
 /// Decode the inline zero-entity non-rational NURBS carrier. Its pole grid
 /// extends past the nominal framed record at a tag-specific fixed offset.
 fn zero_entity_nurbs_surface(
@@ -2284,8 +2289,11 @@ fn zero_entity_nurbs_surface(
         let at = pole
             .checked_mul(24)
             .and_then(|offset| layout.grid.checked_add(offset))?;
-        let point = f64_point(data, at)?;
-        control_points.push(point);
+        control_points.push(Point3::new(
+            View::f64_le_at(data, at)?,
+            View::f64_le_at(data, at.checked_add(8)?)?,
+            View::f64_le_at(data, at.checked_add(16)?)?,
+        ));
     }
     let u_knots = zero_entity_expand_knots(
         layout.u_distinct.iter().map(|knot| knot.get()),
@@ -2295,24 +2303,30 @@ fn zero_entity_nurbs_surface(
         layout.v_distinct.iter().map(|knot| knot.get()),
         &layout.v_mults,
     );
-    let mut rows = Vec::new();
+    let v_count = index_from_u32(layout.v_count);
+    let surface =
+        crate::nurbs::finite_poles("zero-entity surface poles", control_points).and_then(|poles| {
+            let mut rows = Vec::new();
 
-    for row in control_points.chunks(index_from_u32(layout.v_count)) {
-        rows.push(row.to_vec());
-    }
+            for row in poles.chunks(v_count) {
+                rows.push(row.to_vec());
+            }
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None),
+                false,
+            )
+        });
     crate::nurbs::give_up_refused(
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(rows, None),
-            false,
-        ),
+        surface,
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "zero-entity-nurbs-surface-frame"),
-            record,
-        ),
+        crate::nurbs::SourceFrame {
+            kind: ZERO_ENTITY_NURBS_SURFACE_PART,
+            offset: record,
+            bytes: data.get(record..layout.end)?,
+        },
     )
     .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
 }

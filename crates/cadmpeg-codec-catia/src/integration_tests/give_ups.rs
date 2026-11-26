@@ -1,0 +1,212 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Records a decode reads and leaves out of the document are charged
+//! `record.unreadable` by the part or record they would have been.
+
+use std::io::Cursor;
+
+use cadmpeg_core::decode::ArenaClass;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{record_unreadable_kind, Part};
+
+use super::decode;
+use crate::test_support::test_container::{
+    main_stream, standard_catpart_from_streams, surf_stream, zero_entity_nurbs_catpart,
+};
+use crate::test_support::test_e5::{append_e5_record, e5_catpart_appending};
+use crate::CatiaCodec;
+use cadmpeg_test_support::EditableDecodeResult;
+
+const FBB_ROW: [u8; 8] = [0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
+/// The offset of the first FBB row in [`main_stream`].
+const FIRST_FBB_ROW: usize = 40;
+
+fn unreadable(result: &EditableDecodeResult) -> Vec<&LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect()
+}
+
+fn names_part(loss: &LossNote, id: &UnknownId) -> bool {
+    loss.message.contains(&format!("record={id}:"))
+}
+
+fn holds_stub(result: &EditableDecodeResult, id: &UnknownId) -> bool {
+    stub_links(result, id).is_some()
+}
+
+/// The records the stub `id` links to, when the document holds the stub.
+fn stub_links(result: &EditableDecodeResult, id: &UnknownId) -> Option<Vec<String>> {
+    result
+        .ir()
+        .native_unknowns("catia")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| &record.id == id)
+        .map(|record| {
+            record
+                .links
+                .iter()
+                .map(|link| link.as_str().to_owned())
+                .collect()
+        })
+}
+
+fn fbb_row_part(offset: usize) -> UnknownId {
+    Part::at(
+        "catia",
+        "fbb-face-row",
+        u64::try_from(offset).unwrap(),
+        &FBB_ROW,
+        [ArenaClass::Model],
+    )
+    .in_stream(cadmpeg_ir::stream_name!("catia:").with_suffix("MainDataStream+SurfacicReps"))
+    .id()
+    .unwrap()
+}
+
+/// The zero-entity record establishes its pole grid before it reads a pole,
+/// so a pole that is not finite refuses the record: a permissive decode gives
+/// up its frame and goes on, and a pinned decode refuses. The container has
+/// no nested stream directory, so the kept payload record holds the whole
+/// file image and the stub of the part links to it.
+#[test]
+fn a_non_finite_zero_entity_pole_gives_up_its_frame() {
+    const RECORD: usize = 16;
+    const FIRST_POLE: usize = RECORD + 167;
+    let mut bytes = zero_entity_nurbs_catpart();
+    bytes[FIRST_POLE..FIRST_POLE + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    let part = Part::at(
+        "catia",
+        "zero-entity-nurbs-surface",
+        u64::try_from(RECORD).unwrap(),
+        &bytes[RECORD..],
+        [ArenaClass::Model],
+    )
+    .id()
+    .unwrap();
+
+    let permissive = decode(bytes.clone());
+    let charges = unreadable(&permissive);
+    assert_eq!(charges.len(), 1, "{charges:?}");
+    assert!(names_part(charges[0], &part), "{}", charges[0].message);
+    assert!(
+        charges[0].message.ends_with("dropped=[]"),
+        "{}",
+        charges[0].message
+    );
+    let links = stub_links(&permissive, &part).expect("the stub of the part");
+    let [payload] = links.as_slice() else {
+        panic!("one containing record: {links:?}");
+    };
+    assert!(payload.starts_with("catia:payload:unknown#"), "{payload}");
+    assert!(permissive
+        .ir()
+        .native_unknowns("catia")
+        .expect("native unknowns")
+        .iter()
+        .any(|record| record.id.as_str() == payload));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up frame");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(
+        names_part(rejection.loss(), &part),
+        "{}",
+        rejection.loss().message
+    );
+}
+
+/// A face record whose E5 reference graph does not parse builds no face; the
+/// decode charges the face the record would have been.
+#[test]
+fn an_e5_face_record_outside_a_parsed_graph_is_given_up() {
+    let mut face = Vec::new();
+    // A face record that states no loop.
+    append_e5_record(&mut face, 0x00, 41, &[0x81]);
+    let result = decode(e5_catpart_appending(&face));
+    let charges = unreadable(&result);
+    assert_eq!(charges.len(), 1, "{charges:?}");
+    assert!(
+        charges[0]
+            .message
+            .starts_with("record catia:e5:face#41 given up: "),
+        "{}",
+        charges[0].message
+    );
+    assert!(
+        charges[0].message.ends_with("dropped=[]"),
+        "{}",
+        charges[0].message
+    );
+    assert!(result.ir().geometry.faces.is_empty());
+}
+
+/// A face row outside the run the standard population takes becomes no face;
+/// the decode gives up the row. The rows of the taken run stay faces, so no
+/// row of that run is given up.
+#[test]
+fn an_fbb_face_row_outside_the_selected_run_is_given_up() {
+    let mut main = main_stream();
+    let lone_row = main.len();
+    main.extend_from_slice(&FBB_ROW);
+    let result = decode(standard_catpart_from_streams(&main, &surf_stream()));
+    let charges = unreadable(&result);
+    let lone = fbb_row_part(lone_row);
+    assert_eq!(
+        charges
+            .iter()
+            .filter(|loss| names_part(loss, &lone))
+            .count(),
+        1,
+        "{charges:?}"
+    );
+    assert!(holds_stub(&result, &lone));
+    for row in [FIRST_FBB_ROW, FIRST_FBB_ROW + 8] {
+        let taken = fbb_row_part(row);
+        assert!(
+            !charges.iter().any(|loss| names_part(loss, &taken)),
+            "{charges:?}"
+        );
+    }
+}
+
+/// Three face rows against two face-sense bindings build no face; the decode
+/// gives up each row of the run.
+#[test]
+fn fbb_face_rows_without_matching_face_bindings_are_each_given_up() {
+    let mut main = main_stream();
+    let third_row = FIRST_FBB_ROW + 16;
+    main.splice(third_row..third_row, FBB_ROW);
+    let result = decode(standard_catpart_from_streams(&main, &surf_stream()));
+    let charges = unreadable(&result);
+    assert!(result.ir().geometry.faces.is_empty());
+    for row in [FIRST_FBB_ROW, FIRST_FBB_ROW + 8, third_row] {
+        let part = fbb_row_part(row);
+        assert_eq!(
+            charges
+                .iter()
+                .filter(|loss| names_part(loss, &part))
+                .count(),
+            1,
+            "row at {row}: {charges:?}"
+        );
+        assert!(holds_stub(&result, &part));
+    }
+    assert!(
+        !charges
+            .iter()
+            .any(|loss| loss.message.contains("catia:standard:face#")),
+        "{charges:?}"
+    );
+}

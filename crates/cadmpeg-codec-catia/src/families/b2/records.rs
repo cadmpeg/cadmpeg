@@ -2369,10 +2369,11 @@ fn parse_b2_nurbs_curve(
         NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "b2-nurbs-curve-frame"),
-            frame.pos,
-        ),
+        crate::nurbs::SourceFrame {
+            kind: B2_NURBS_CURVE_PART,
+            offset: frame.pos,
+            bytes: data.get(frame.pos..frame.end)?,
+        },
     )
     .map(|geometry| B2NurbsCurve {
         pos: frame.pos,
@@ -2380,6 +2381,10 @@ fn parse_b2_nurbs_curve(
         geometry,
     })
 }
+
+/// The part a refused `b2 03 16` record is given up as (`catia.md`, Partial
+/// decode).
+const B2_NURBS_CURVE_PART: &str = "b2-nurbs-curve";
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
 #[derive(Debug, Clone)]

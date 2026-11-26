@@ -279,6 +279,51 @@ fn a8_logical_source_reconstruction_retains_physical_offsets() {
     .is_empty());
 }
 
+/// A frame the pool path refuses leaves the document; the decode gives up
+/// the frame's bytes at the frame's offset in the `CATPart` image.
+#[test]
+fn a8_pool_refusal_gives_up_the_frame_at_its_image_offset() {
+    use crate::wire::records::SourceExtent;
+
+    let mut logical = a8_inline_tail_surface_stream();
+    let frame = super::a8_frames(&logical, 0x34)
+        .next()
+        .expect("one class-34 frame");
+    let pole_start = super::parse_a8_surface_header(&logical, frame)
+        .expect("a parsed lattice")
+        .pole_start;
+    logical[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::INFINITY));
+    let split = 100;
+    let mut bytes = logical[split..].to_vec();
+    bytes.extend_from_slice(&logical[..split]);
+    let header_start = logical.len() - split;
+    let sources = [vec![
+        SourceExtent::within(&bytes, header_start, bytes.len()).unwrap(),
+        SourceExtent::within(&bytes, 0, header_start).unwrap(),
+    ]];
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    assert!(
+        super::a8_surfaces_in_sources(&bytes, &sources, &mut refusal)
+            .expect("decode the reordered logical source")
+            .is_empty()
+    );
+    let parts = crate::test_support::with_service_context(|ctx| refusal.take_given_up(ctx, None))
+        .expect("give up the refused frame");
+    let [part] = parts.as_slice() else {
+        panic!("one given-up frame: {parts:?}");
+    };
+    let expected = cadmpeg_ir::unknown::part::Part::at(
+        "catia",
+        "a8-nurbs-surface",
+        u64::try_from(header_start).expect("an offset in range"),
+        &logical[frame.pos..frame.end],
+        [cadmpeg_core::decode::ArenaClass::Model],
+    )
+    .id()
+    .expect("part id");
+    assert_eq!(part.id(), &expected);
+}
+
 #[test]
 fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let mut bytes = a8_rational_surface_stream();
@@ -514,6 +559,37 @@ fn a8_inline_surface_accepts_finite_large_poles() {
             .expect("service decode")
     })
     .is_empty());
+}
+
+/// The object graph keeps a class-34 object whose poles the IR refuses as an
+/// unresolved surface, so the refusal is a note and gives up no record.
+#[test]
+fn an_a8_object_the_graph_keeps_states_its_refusal_as_a_note() {
+    let mut bytes = a8_surface_stream_with_pcurve();
+    let pole_start = 59;
+    bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
+    let frame = super::a8_frames(&bytes, 0x34)
+        .next()
+        .expect("one class-34 frame");
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    assert!(super::a8_surface_from_object_frame(
+        &bytes,
+        frame.pos,
+        frame.end,
+        frame.object_id,
+        &mut refusal
+    )
+    .expect("service decode")
+    .is_none());
+    let codes = refusal
+        .take_notes()
+        .into_iter()
+        .map(|note| note.code)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.kind()]
+    );
 }
 
 #[test]
