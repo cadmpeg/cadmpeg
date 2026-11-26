@@ -112,8 +112,6 @@ const JOINED_LOOP: &str = "that are loops of more than one edge of shells the se
                            loop as one composite curve";
 const UNUSED_COLOR: &str =
     "that are colour definitions no written body or face states with their colour and name";
-const COLOR_NUMBER: &str = "that are colour definitions whose Directory colour number the \
-                            semantic writer writes as 0";
 const DISPLAY_FIELDS: &str = "that are Directory line font, level, view, or line weight \
                               fields the semantic writer writes with its own values";
 const DISPLAY_COLOR: &str =
@@ -140,7 +138,7 @@ impl Presented {
                 DirectoryColor::Standard(number) => {
                     crate::entities::presentation::standard_color(number)
                 }
-                DirectoryColor::Custom(color) => Color::new(color.r(), color.g(), color.b(), 1.0),
+                DirectoryColor::Custom(color) => opaque(color),
                 DirectoryColor::Definition(_) => None,
             },
             visible: presentation.visible != Some(false),
@@ -148,6 +146,12 @@ impl Presented {
             face: presentation.face.clone(),
         }
     }
+}
+
+/// The colour a Directory entry states for `color`: its red, green, and blue,
+/// with no opacity.
+fn opaque(color: Color) -> Option<Color> {
+    Color::new(color.r(), color.g(), color.b(), 1.0)
 }
 
 /// The Directory sequence of the source Type 314 whose appearance is `id`.
@@ -213,7 +217,6 @@ pub(super) fn native_dispositions(
             }
         }
     }
-    dropped.extend(color_number_drops(namespace, &drops));
     dropped.extend(display_drops(
         namespace,
         &sources,
@@ -724,31 +727,6 @@ impl Reasons {
     }
 }
 
-/// The colour definitions of held Type 314 entities whose Directory colour
-/// number is not 0: the writer writes 0 there.
-fn color_number_drops(
-    namespace: &NativeNamespace,
-    drops: &BTreeMap<String, &'static str>,
-) -> Vec<(String, String)> {
-    namespace
-        .arenas()
-        .get("colors")
-        .into_iter()
-        .flatten()
-        .filter(|record| {
-            record
-                .field("source_entity")
-                .and_then(|value| value.as_str().map(|source| !drops.contains_key(source)))
-                .unwrap_or(false)
-                && record
-                    .field("fallback_color_number")
-                    .and_then(|value| value.as_i64())
-                    .is_some_and(|number| number != 0)
-        })
-        .map(|record| (record.id().to_owned(), COLOR_NUMBER.to_owned()))
-        .collect()
-}
-
 /// What the writer emitted, for the Directory display fields it writes.
 struct Written<'a> {
     entities: &'a [Entity],
@@ -781,7 +759,9 @@ impl Written<'_> {
 /// entity it drops, with the entity's reason, and each whose fields an
 /// emitted entity that states the entity writes with other values. A Type
 /// 124 is written as a transformation of its own with no colour, a visible
-/// status, and the line font of a Type 124.
+/// status, and the line font of a Type 124. A Type 314 is written with
+/// Directory colour number 0, and its colour number is also the fallback
+/// colour of its colour definition record, so one charge names both records.
 fn display_drops(
     namespace: &NativeNamespace,
     sources: &Sources<'_>,
@@ -796,7 +776,15 @@ fn display_drops(
         .flatten()
         .map(|record| (record.id(), record))
         .collect::<BTreeMap<_, _>>();
+    let definitions = colors
+        .values()
+        .filter_map(|record| {
+            let source = record.field("source_entity")?.as_str()?.to_owned();
+            Some((source, record.id()))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut dropped = Vec::new();
+    let mut fallbacks = Vec::new();
     for record in namespace
         .arenas()
         .get("display_attributes")
@@ -816,6 +804,14 @@ fn display_drops(
             dropped.push((record.id().to_owned(), reason.to_owned()));
             continue;
         };
+        let definition = source.and_then(|source| definitions.get(source));
+        let color_number = record
+            .field("color_number")
+            .and_then(|value| value.as_i64());
+        if let Some(definition) = definition.filter(|_| color_number.is_some_and(|n| n != 0)) {
+            fallbacks.push((record.id().to_owned(), *definition));
+            continue;
+        }
         let source_type = sources
             .records
             .get(&sequence)
@@ -862,6 +858,18 @@ fn display_drops(
         if let Some(reason) = reason {
             dropped.push((record.id().to_owned(), reason.to_owned()));
         }
+    }
+    if !fallbacks.is_empty() {
+        let reason = format!(
+            "that are Directory colour numbers of colour definitions, which colour definition \
+             records {} state as their fallback colour, and which the semantic writer writes as 0",
+            fallbacks
+                .iter()
+                .map(|(_, definition)| *definition)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        dropped.extend(fallbacks.into_iter().map(|(id, _)| (id, reason.clone())));
     }
     dropped
 }
@@ -1136,5 +1144,6 @@ fn degenerate_native_line(record: &NativeRecord) -> bool {
 }
 
 pub(super) mod appearances;
+pub(super) mod presentation;
 #[cfg(test)]
 mod tests;

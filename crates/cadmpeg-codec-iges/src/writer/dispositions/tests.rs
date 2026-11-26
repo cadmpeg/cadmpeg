@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::codec::write::NativeDisposition;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, NativeDisposition};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{appearances, Sources, ENTITY_VIEW_ARENAS};
@@ -77,25 +77,27 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
 
 /// Decodes `bytes`, writes it, decodes the written file, and pushes a
 /// failure for each declaration the written file does not bear out. Each
-/// native entity the write declares Regenerated states at least one fact and
-/// reads back with the facts the decoder derives from it; each entity it
-/// declares Dropped has a fact that does not read back. The facts of an
-/// entity are the geometry and topology records that change when the entity
-/// is replaced by a null entity. A fact of a record decoded from a Dropped
-/// entity is that entity's loss, and so is a reference to such a record; the
-/// rest of the fact is compared. The colour and blank status of a record
-/// decoded from an entity whose display attribute record is Dropped are that
-/// record's loss. Each Regenerated display attribute and colour definition
-/// record reads back with its values, and each that is Dropped while its
-/// entity is Regenerated reads back fewer times than the source states it. Each appearance and appearance binding
-/// the write states reads back with its values, the binding with the colour
-/// of its appearance and the record it binds; each it does not state is
-/// charged with its reason and does not read back. The written Global section restates
-/// the source Global cards, so they are Regenerated, and each source Global
-/// fact that does not read back is charged by its field name. Each view of
-/// an entity and each of its Directory and Parameter cards follows the
-/// entity. Every other arena is Dropped. Returns the numbers of Regenerated
-/// and Dropped entities checked, or the step that refuses the source.
+/// native entity the write declares Regenerated states at least one fact, at
+/// least one of its facts reads back, and each of its facts that does not
+/// read back is the loss of another disposition; each entity it declares
+/// Dropped has a fact that does not read back. The facts of an entity are the
+/// geometry and topology records that change when the entity is replaced by a
+/// null entity. A fact of a record decoded from a Dropped entity is that
+/// entity's loss, and so is a reference to such a record; the rest of the
+/// fact is compared. The colour and blank status of a record decoded from an
+/// entity whose display attribute record is Dropped are that record's loss.
+/// Each Regenerated display attribute and colour definition record reads back
+/// with its values, and each that is Dropped while its entity is Regenerated
+/// reads back fewer times than the source states it. Each appearance and
+/// appearance binding the write states reads back with its values, the
+/// binding with the colour of its appearance and the record it binds; each it
+/// does not state is charged with its reason and does not read back. The
+/// written Global section restates the source Global cards, so they are
+/// Regenerated, and each source Global fact that does not read back is
+/// charged by its field name. Each view of an entity, each of its Directory
+/// and Parameter cards, and its colour definition record follow the entity.
+/// Every other arena is Dropped. Returns the numbers of Regenerated and
+/// Dropped entities checked, or the step that refuses the source.
 fn check(
     name: &str,
     bytes: &[u8],
@@ -186,15 +188,24 @@ fn check(
             regenerated += 1;
             if facts.is_empty() {
                 failures.push(format!("{name} {id} Regenerated, states no fact"));
+                continue;
             }
             let absent = facts
                 .iter()
-                .filter(|(fact_id, fact)| {
-                    !entity_charged(fact_id)
-                        && output_facts.count(fact, Compared::Regenerated)
-                            < source_facts.count_among(fact, claimed.iter().copied())
+                .filter(|(_, fact)| {
+                    output_facts.count(fact, Compared::Regenerated)
+                        < source_facts.count_among(fact, claimed.iter().copied())
                 })
                 .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>();
+            if absent.len() == facts.len() {
+                failures.push(format!(
+                    "{name} {id} Regenerated, no fact reads back: {absent:?}"
+                ));
+            }
+            let absent = absent
+                .into_iter()
+                .filter(|fact_id| !entity_charged(fact_id))
                 .collect::<Vec<_>>();
             if !absent.is_empty() {
                 failures.push(format!("{name} {id} Regenerated, facts absent: {absent:?}"));
@@ -221,12 +232,7 @@ fn check(
             let Some(owner) = entity_dispositions.get(source.as_str().unwrap()) else {
                 continue;
             };
-            let disposition = of(arena, record.id());
-            // A colour definition loses its Directory colour number while its
-            // entity is written when the number is not 0.
-            let follows = disposition == *owner
-                || (*arena == "colors" && disposition == NativeDisposition::Dropped);
-            if !follows {
+            if of(arena, record.id()) != *owner {
                 failures.push(format!("{name} {} differs from its entity", record.id()));
             }
         }
@@ -495,6 +501,67 @@ fn a_named_body_colour_and_a_body_name_read_back() {
         ),
         "the Type 314 has no coordinates, so the Global maximum coordinate is the vertex at 1"
     );
+}
+
+/// The Directory colour number of a Type 314 is one fact that its display
+/// attribute record and its colour definition record both state. The write
+/// states the Type 314 with colour number 0, so one loss charges the number
+/// and names both records, and the colour definition record, whose colour and
+/// name read back, follows its entity.
+#[test]
+fn a_colour_definition_colour_number_is_charged_once_naming_both_records() {
+    let file = NAMED_BODY.replace(
+        "     314       0       0       1       0 ",
+        "     314       0       3       1       0 ",
+    );
+    let mut failures = Vec::new();
+    check("numbered_color", file.as_bytes(), &mut failures).unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
+    let checked = readback::write_and_read_back(file.as_bytes()).ok().unwrap();
+    for (arena, id, disposition) in [
+        (
+            "entities",
+            "iges:entity:directory#13",
+            NativeDisposition::Regenerated,
+        ),
+        (
+            "colors",
+            "iges:presentation:color#D13",
+            NativeDisposition::Regenerated,
+        ),
+        (
+            "display_attributes",
+            "iges:presentation:display-attributes#D13",
+            NativeDisposition::Dropped,
+        ),
+    ] {
+        assert_eq!(
+            checked.native.disposition("iges", arena, id),
+            disposition,
+            "{id}"
+        );
+    }
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&checked.source, None),
+            TargetRequest::Explicit(crate::IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .unwrap();
+    let naming = |id: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .split_whitespace()
+                    .any(|token| token.trim_end_matches([',', ':', ';']) == id)
+            })
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
+    };
+    let charges = naming("iges:presentation:display-attributes#D13");
+    assert_eq!(charges.len(), 1, "{:#?}", plan.report().losses);
+    assert_eq!(naming("iges:presentation:color#D13"), charges);
 }
 
 /// A trimmed surface whose one Directory colour field states standard colour

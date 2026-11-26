@@ -3,14 +3,15 @@
 //! written when the written file states it, and every other record is charged
 //! by id with its reason.
 //!
-//! A written Directory entry states the colour of the body or the face that
-//! its entity carries. A binding of the whole of a body or a face is written
-//! when every entity that carries it states the colour of its appearance; its
-//! source identity, object type, and channels are the source's names for the
-//! target that the written entity restates. An appearance is written when a
-//! written entity that carries a body or a face that one of its bindings
-//! names states its colour, it states only a colour and a name, and a written
-//! Type 314 states its name.
+//! A written Directory entry states the red, green, and blue of the colour of
+//! the body or the face that its entity carries, and no opacity. A binding of
+//! the whole of a body or a face is written when every entity that carries it
+//! states the red, green, and blue of its appearance; its source identity,
+//! object type, and channels are the source's names for the target that the
+//! written entity restates. An appearance is written when a written entity
+//! that carries a body or a face that one of its bindings names states its
+//! red, green, and blue, it states only an opaque colour and a name, and a
+//! written Type 314 states its name.
 //!
 //! A Type 143 or 144 has one Directory colour field for its sheet body and
 //! its face. A body whose faces it writes with another colour is charged
@@ -42,6 +43,8 @@ pub(super) const APPEARANCE_UNUSED: &str =
     "whose colour no written body or face that one of their bindings names states";
 const APPEARANCE_CONTENT: &str = "that state an identity, a category, a schema, properties, or \
                                   textures that IGES does not state";
+const APPEARANCE_OPACITY: &str =
+    "whose colour states an opacity, which a Directory colour does not state";
 const APPEARANCE_NAME: &str = "whose name no written colour definition states";
 
 /// The schema of the appearances the IGES decoder states.
@@ -83,7 +86,8 @@ impl AppearanceDrops {
             .filter(|binding| {
                 let color = appearances
                     .get(binding.appearance.as_str())
-                    .and_then(|appearance| appearance.base_color);
+                    .and_then(|appearance| appearance.base_color)
+                    .and_then(super::opaque);
                 color.is_some()
                     && carriers(&binding.target.entity, synthesis)
                         .is_some_and(|carrying| carrying.iter().any(|p| p.color == color))
@@ -102,6 +106,8 @@ impl AppearanceDrops {
                 APPEARANCE_UNUSED
             } else if states_more_than_a_colour(appearance) {
                 APPEARANCE_CONTENT
+            } else if appearance.base_color.is_some_and(|color| color.a() != 1.0) {
+                APPEARANCE_OPACITY
             } else if appearance.name.is_some() && !named.contains(id) {
                 APPEARANCE_NAME
             } else {
@@ -169,7 +175,7 @@ fn binding_drop(
     };
     if carrying
         .iter()
-        .any(|presented| presented.color != Some(color))
+        .any(|presented| presented.color != super::opaque(color))
     {
         return Some(BINDING_COLOR);
     }

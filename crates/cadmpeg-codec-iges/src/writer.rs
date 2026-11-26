@@ -326,54 +326,14 @@ enum DirectoryColor {
     Definition(usize),
 }
 
-fn body_presentation(
-    ir: &CadIr,
-    body: &cadmpeg_ir::topology::Body,
-    losses: &mut Vec<LossNote>,
-) -> Presentation {
-    let name = body.name.as_deref().and_then(|name| {
-        if !name.is_empty()
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-        {
-            Some(name.to_owned())
-        } else {
-            losses.push(IgesLossCode::WriterBodyNameNotRepresented.note(format!(
-                "IGES body {} name {:?} cannot be encoded as a Type 406 Form 15 name",
-                body.id, name
-            )));
-            None
-        }
-    });
-    let label = body.name.as_deref().and_then(|name| {
-        if !name.is_empty()
-            && name.len() <= 8
-            && name.trim() == name
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-        {
-            Some(name.to_owned())
-        } else {
-            None
-        }
-    });
-    let (color, color_definition) = directory_color(
-        ir,
-        &AppearanceTarget::Body(body.id.clone()),
-        body.color,
-        |alpha| {
-            IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
-                "IGES body {} opacity {alpha} has no Directory representation",
-                body.id
-            ))
-        },
-        losses,
-    );
+fn body_presentation(ir: &CadIr, body: &cadmpeg_ir::topology::Body) -> Presentation {
+    let name = body.name.as_deref().filter(|name| writable_name(name));
+    let label = name.filter(|name| name.len() <= 8 && name.trim() == *name);
+    let (color, color_definition) =
+        directory_color(ir, &AppearanceTarget::Body(body.id.clone()), body.color);
     Presentation {
-        label,
-        name,
+        label: label.map(str::to_owned),
+        name: name.map(str::to_owned),
         color,
         color_definition,
         visible: body.visible,
@@ -383,23 +343,9 @@ fn body_presentation(
 }
 
 /// The Directory colour of a face, on the Type 510 that writes it.
-fn face_presentation(
-    ir: &CadIr,
-    face: &cadmpeg_ir::topology::Face,
-    losses: &mut Vec<LossNote>,
-) -> Presentation {
-    let (color, color_definition) = directory_color(
-        ir,
-        &AppearanceTarget::Face(face.id.clone()),
-        face.color,
-        |alpha| {
-            IgesLossCode::WriterFaceOpacityNotRepresented.note(format!(
-                "IGES face {} opacity {alpha} has no Directory representation",
-                face.id
-            ))
-        },
-        losses,
-    );
+fn face_presentation(ir: &CadIr, face: &cadmpeg_ir::topology::Face) -> Presentation {
+    let (color, color_definition) =
+        directory_color(ir, &AppearanceTarget::Face(face.id.clone()), face.color);
     Presentation {
         label: None,
         name: None,
@@ -419,11 +365,10 @@ fn trimmed_face_presentation(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
     face: &cadmpeg_ir::topology::Face,
-    losses: &mut Vec<LossNote>,
 ) -> Presentation {
-    let mut presentation = body_presentation(ir, body, losses);
+    let mut presentation = body_presentation(ir, body);
     if face.color.is_some() {
-        let own = face_presentation(ir, face, losses);
+        let own = face_presentation(ir, face);
         presentation.color = own.color;
         presentation.color_definition = own.color_definition;
     }
@@ -438,15 +383,10 @@ fn directory_color(
     ir: &CadIr,
     target: &AppearanceTarget,
     color: Option<Color>,
-    opacity_loss: impl FnOnce(f64) -> LossNote,
-    losses: &mut Vec<LossNote>,
 ) -> (DirectoryColor, Option<ColorDefinition>) {
     let Some(color) = color else {
         return (DirectoryColor::Standard(0), None);
     };
-    if color.a() != 1.0 {
-        losses.push(opacity_loss(color.a()));
-    }
     let number = match (color.r(), color.g(), color.b()) {
         (0.0, 0.0, 0.0) => 1,
         (1.0, 0.0, 0.0) => 2,
@@ -2752,7 +2692,7 @@ fn brep_entities(
                     transform: None,
                     restates: vec![face_id.as_str().to_owned()],
                 });
-                presentations.insert(index, face_presentation(ir, face, losses));
+                presentations.insert(index, face_presentation(ir, face));
                 face_indices.insert(face_id.as_str().to_owned(), index);
             }
 
@@ -2800,7 +2740,7 @@ fn brep_entities(
                     restates: vec![shell.id.as_str().to_owned()],
                 });
                 if body.kind == BodyKind::Sheet {
-                    presentations.insert(index, body_presentation(ir, body, losses));
+                    presentations.insert(index, body_presentation(ir, body));
                 }
                 shell_indices.insert(shell.id.as_str(), index);
             }
@@ -2843,7 +2783,7 @@ fn brep_entities(
                     transform,
                     restates: vec![body.id.as_str().to_owned()],
                 });
-                presentations.insert(index, body_presentation(ir, body, losses));
+                presentations.insert(index, body_presentation(ir, body));
             }
             Ok(())
         })?;
@@ -3545,7 +3485,7 @@ fn topology_entities(
                 transform: None,
                 restates: vec![face.id.as_str().to_owned()],
             });
-            presentations.insert(index, trimmed_face_presentation(ir, body, face, losses));
+            presentations.insert(index, trimmed_face_presentation(ir, body, face));
             Ok(())
         })?;
     }
