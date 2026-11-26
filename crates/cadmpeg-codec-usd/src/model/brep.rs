@@ -41,6 +41,8 @@ use crate::brep::{
     AnalyticSurface, Brep, Catalog, CurveKind, Frame, PcurveKind, Reference, SurfaceKind,
 };
 use crate::ids::brep as id;
+use crate::loss::UsdLossCode;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 /// The entities of one B-rep, in arena order.
 #[derive(Debug, Default)]
@@ -981,6 +983,10 @@ impl super::Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_breps
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::body(key),
+                    format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                ));
                 return Ok(Vec::new());
             }
         };
@@ -1005,10 +1011,15 @@ impl super::Builder<'_, '_, '_, '_> {
                     bodies.push(body);
                     keys.insert(ordinal, body_key);
                 }
-                Err(reason) => self
-                    .tallies
-                    .rejected_breps
-                    .push(format!("{}: {reason}", prim.path)),
+                Err(reason) => {
+                    self.tallies
+                        .rejected_breps
+                        .push(format!("{}: {reason}", prim.path));
+                    self.tallies.given_up.push(GivenUpRecord::new(
+                        crate::ids::body(&body_key),
+                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                    ));
+                }
             }
         }
         self.brep_subsets(prim, key, &decoded.faces, &keys)?;
@@ -1151,8 +1162,17 @@ impl super::Builder<'_, '_, '_, '_> {
         ordinal: usize,
         body: &cadmpeg_ir::ids::BodyId,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        let tessellation_key = if ordinal == 0 {
+            key.to_owned()
+        } else {
+            format!("{key}/{}", prim.name)
+        };
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             self.tallies.rejected_meshes.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::tessellation(&tessellation_key),
+                UsdLossCode::MeshRejected.kind(),
+            ));
             return Ok(());
         };
         self.ctx.retain_bytes(
@@ -1162,17 +1182,16 @@ impl super::Builder<'_, '_, '_, '_> {
             ),
             super::RETAIN_MESH,
         )?;
-        let tessellation_key = if ordinal == 0 {
-            key.to_owned()
-        } else {
-            format!("{key}/{}", prim.name)
-        };
         let tessellation = match self.tessellation(&tessellation_key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::tessellation(&tessellation_key),
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                ));
                 return Ok(());
             }
         };

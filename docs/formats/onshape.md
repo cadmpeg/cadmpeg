@@ -66,7 +66,8 @@ selection text. The canonical member paths above bind the Part Studio.
 
 The feature response has a `features` array in timeline order and can have
 a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
-`featureType` selects the operation. `name` carries its display label.
+`featureType` selects the operation. `name` carries its display label; a blank or
+absent `name` leaves the `featureId` as the label.
 `parameters` is an array with unique `parameterId` keys; `btType` names each
 REST record class. `suppressed` and `parentSuppressed` are Boolean fields
 that mark inactive features. `rollbackIndex` is the number of features before the
@@ -243,11 +244,21 @@ is directed along its stored direction. The direction of a line with
 `clockwise` field establishes its sense. The `MODEL` domain binds the
 feature to its Part Studio model.
 
-A single planar target with a closed convex line boundary admits an exact
-`UP_TO_NEXT` intersection for a closed convex line profile. Each positive
-ray-plane intersection lies within all target boundary half-planes.
-Convexity extends coverage across the complete profile. The target plane,
-line carriers, endpoints and coedge directions are stored in the rollback.
+`UP_TO_NEXT` ends on the first stored planar face that every ray of the profile
+meets. The Boolean operation does not select the face. The profile is a closed
+convex line boundary. The rollback state lists the faces of every body before
+the feature. Each body stores a `type` and a `consumedByComposite` flag. A live
+body is a body that no composite consumes. Candidate faces and blocking faces
+belong to live bodies of every type. Each face stores a plane, line carriers,
+endpoints and loops with an outer or hole role. A face whose surface is not a
+plane, or whose loops are not closed chains of line edges, prevents the target
+wherever it lies in the rollback state. A ray meets a face where its positive
+plane intersection lies inside the outer loop and outside every hole. The
+target covers the complete profile. A face whose boundary overlaps the profile
+and whose plane meets a ray of the profile at a smaller positive distance than
+the target prevents the target; the position of that intersection inside the
+face boundary does not matter. A plane parallel to the travel direction that
+crosses the profile prevents the target.
 
 A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
 scope list identifies target bodies at the consuming rollback. An empty
@@ -328,6 +339,28 @@ those of the input body, and the removed face leaves an opening.
 
 Each bound applies before the corresponding unbounded operation. A compact
 reference also charges its expanded value size and depth.
+
+A decoder gives up each member that it rejects as an `archive-entry` part over
+the stored bytes of the member, and omits the member. A rejected member has an
+invalid name, encryption, an unsupported method, a failed open, JSON that does
+not parse, or a microversion that differs from the document microversion. The
+part keeps the stored bytes of the member. When the member is over a size bound,
+or the parse of its JSON stops at a resource bound, the part keeps only the
+digest of the stored bytes. Two directory records that name one stored span are
+one part with one `record.unreadable`. A later member with the name of an
+earlier member adds no record when its method and stored bytes are equal to
+those of the earlier member. The decoder gives up each other later member with
+a repeated name.
+
+A member that the decoder reads stays an asset with its note. The decoder also
+gives up such a member as an `archive-entry` part over its stored bytes when
+the `features` array of a feature history is absent, is not an array, or is
+longer than its bound, when the topology rows of a body details table are over
+their bound, or when the nested decode of `export.step` fails. The decoder then
+reads no feature history, topology table, or final geometry from the member.
+When the member is stored without compression, the part keeps only the digest
+of the stored bytes, because the asset holds the same bytes. When a part studio
+has no feature history and its `export.step` fails, the part studio fails.
 
 ## Assembly definitions
 
