@@ -340,7 +340,7 @@ pub(super) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<
 mod tests {
     use super::super::item::ArenaTarget;
     use super::{CadirDocument, RecordSelection, RequestedIds};
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     #[test]
     fn indexes_neutral_and_native_arenas_and_skips_non_arrays() {

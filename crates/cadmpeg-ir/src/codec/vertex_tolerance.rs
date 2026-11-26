@@ -149,7 +149,7 @@ fn widen_measuring(
         else {
             continue;
         };
-        builder.derived_field(vertex.id.as_str(), TOLERANCE);
+        builder.derived_field(&vertex.id, TOLERANCE);
         let before = vertex.tolerance.unwrap_or(linear).get();
         vertex.tolerance = Some(tolerance);
         largest = largest.max(tolerance.get() - before);

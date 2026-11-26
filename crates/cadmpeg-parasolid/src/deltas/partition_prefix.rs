@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn wire_checks_the_current_pointer_without_a_consecutive_allocation_rule() {
-        let value = serde_json::json!({
+        let value = cadmpeg_core::json!({
             "partition": {"xmt": 2, "current_pmark": 9, "highest_id": u32::MAX},
             "current_pmark": {
                 "xmt": 9, "preceding": 12, "first_following": 1,

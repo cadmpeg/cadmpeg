@@ -463,7 +463,7 @@ mod tests {
     fn a_named_optional_key_states_a_value_or_is_left_out() {
         use super::ViewPresentation;
 
-        let refusal = json::from_value::<ViewPresentation>(serde_json::json!({
+        let refusal = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {},
@@ -476,7 +476,7 @@ mod tests {
                 && text.contains("this key states a value or is left out; it does not state null"),
             "{text}"
         );
-        let absent = json::from_value::<ViewPresentation>(serde_json::json!({
+        let absent = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {}
@@ -719,11 +719,11 @@ mod tests {
 
     #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
-        let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
+        let wire = cadmpeg_core::json!({"kind": "source", "source_id": "#42"});
         let value: PresentationItem = json::from_value(wire.clone()).expect("nonempty source_id");
         assert_eq!(json::to_value(value).expect("serialize"), wire);
         let error = json::from_value::<PresentationItem>(
-            serde_json::json!({"kind": "source", "source_id": ""}),
+            cadmpeg_core::json!({"kind": "source", "source_id": ""}),
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
@@ -741,7 +741,7 @@ mod tests {
                         .expect("valid identity"),
                 ));
             ir.model.view_presentations.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": format!("test:presentation:view#{key}"),
                     "order": 1,
                     "properties": {}

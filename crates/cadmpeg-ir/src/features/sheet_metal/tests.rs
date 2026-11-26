@@ -1,6 +1,6 @@
 use super::{SheetMetalBendLinesConstruction, SheetMetalLineBend};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn edge_partial_extent_inputs_keep_each_known_member() {

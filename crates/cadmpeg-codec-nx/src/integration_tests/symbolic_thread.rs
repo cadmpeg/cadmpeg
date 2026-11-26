@@ -40,7 +40,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     assert_eq!(wire["construction"]["parameter_class_index"], 3);
     assert_eq!(
         wire["construction"]["coordinates"][2],
-        serde_json::json!({"value":0.1,"raw":"2fb999999999999a"})
+        cadmpeg_core::json!({"value":0.1,"raw":"2fb999999999999a"})
     );
     assert_eq!(wire["construction"]["byte_len"], 30);
     let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -66,7 +66,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
                 .is_empty()
         );
         let mut invalid = wire.clone();
-        invalid["construction"]["coordinates"][2]["value"] = serde_json::json!(1.0);
+        invalid["construction"]["coordinates"][2]["value"] = cadmpeg_core::json!(1.0);
         ir.native
             .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_symbolic_threads", &[invalid])

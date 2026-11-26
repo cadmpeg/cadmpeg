@@ -152,7 +152,7 @@ fn a_vertex_whose_point_the_decoder_computed_keeps_its_tolerance() {
         .id
         .clone();
     let mut builder = AnnotationBuilder::new();
-    builder.exactness(point.as_str(), Exactness::Derived);
+    builder.exactness(&point, Exactness::Derived);
     let mut annotations = builder.build();
     let before = ir.clone();
     assert_eq!(
@@ -280,7 +280,7 @@ fn cube_with_face_pcurves(position: Point3, axis: Vector3) -> (CadIr, Annotation
     }
     let mut builder = AnnotationBuilder::new();
     for curve in &ir.geometry.curves {
-        builder.exactness(curve.id.as_str(), Exactness::Derived);
+        builder.exactness(&curve.id, Exactness::Derived);
     }
     (ir, builder.build())
 }

@@ -39,7 +39,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     let wire = json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["parameter_range"],
-        serde_json::json!([1.0, 1.0])
+        cadmpeg_core::json!([1.0, 1.0])
     );
     assert_eq!(
         json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
@@ -48,7 +48,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(SubsetCurveConstruction::try_new(source(), range, false, None).is_err());
         let mut invalid = wire.clone();
-        invalid["definition"]["parameter_range"] = serde_json::json!(range);
+        invalid["definition"]["parameter_range"] = cadmpeg_core::json!(range);
         assert!(
             json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
         );
@@ -91,11 +91,11 @@ fn a_distance_law_without_its_parameter_range_has_no_encoding() {
     );
 
     let mut law_without_range = wire.clone();
-    law_without_range["range"] = serde_json::json!({"kind": "variable"});
+    law_without_range["range"] = cadmpeg_core::json!({"kind": "variable"});
     assert!(json::from_value::<ProceduralCurveDefinition>(law_without_range).is_err());
 
     let mut bogus = wire;
-    bogus["range"]["zz_bogus"] = serde_json::json!(1);
+    bogus["range"]["zz_bogus"] = cadmpeg_core::json!(1);
     let error = json::from_value::<ProceduralCurveDefinition>(bogus)
         .unwrap_err()
         .to_string();
@@ -127,7 +127,7 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
             )
         );
         let mut wire = json::to_value(&valid).unwrap();
-        wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
+        wire["range"] = cadmpeg_core::json!({"kind": "uniform", "parameter_range": range});
         let error = json::from_value::<ProceduralCurveDefinition>(wire).unwrap_err();
         assert!(
             error
@@ -250,7 +250,7 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
     let wire = json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["silhouette"]["draft_factor"],
-        serde_json::json!(0.5)
+        cadmpeg_core::json!(0.5)
     );
     assert_eq!(
         json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
@@ -271,7 +271,7 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
     }
     assert!(FiniteReal::new(f64::NAN).is_none());
     let mut invalid = wire;
-    invalid["definition"]["silhouette"]["draft_factor"] = serde_json::json!("nan");
+    invalid["definition"]["silhouette"]["draft_factor"] = cadmpeg_core::json!("nan");
     assert!(json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err());
     assert!(json::from_value::<ProceduralCurve>(invalid).is_err());
 }
@@ -322,14 +322,14 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
     );
 
     let mut both = normal_wire;
-    both["direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0});
+    both["direction"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0});
     let error = json::from_value::<ProceduralCurveDefinition>(both)
         .unwrap_err()
         .to_string();
     assert!(error.contains("direction"), "{error}");
 
     let mut stray_support = json::to_value(&normal).unwrap();
-    stray_support["support"] = serde_json::json!("test:model:surface#0");
+    stray_support["support"] = cadmpeg_core::json!("test:model:surface#0");
     let error = json::from_value::<ProceduralCurveDefinition>(stray_support)
         .unwrap_err()
         .to_string();
@@ -349,9 +349,9 @@ fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
         [crate::scalar::FiniteReal::new(-1.0), None]
     );
     let wire = json::to_value(&admitted).unwrap();
-    assert_eq!(wire["stamp"], serde_json::json!(20_900));
-    assert_eq!(wire["post_enum"], serde_json::json!(0));
-    assert_eq!(wire["parameter_range"], serde_json::json!([-1.0, null]));
+    assert_eq!(wire["stamp"], cadmpeg_core::json!(20_900));
+    assert_eq!(wire["post_enum"], cadmpeg_core::json!(0));
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([-1.0, null]));
     assert_eq!(
         json::from_value::<crate::geometry::intersection_curves::LawCurveVersionForm>(wire)
             .unwrap(),
@@ -514,14 +514,14 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
     // The carrier is transparent: the wire states the formula itself.
     let wire = json::to_value(&admitted).expect("serializes");
     assert_eq!(wire["kind"], "law");
-    assert_eq!(wire["extension"], serde_json::json!(3));
+    assert_eq!(wire["extension"], cadmpeg_core::json!(3));
     assert_eq!(wire["primary"]["kind"], "named");
     assert_eq!(wire["primary"]["name"], "primary_law");
     assert_eq!(
         wire["primary"]["variables"][0]["parameters"],
-        serde_json::json!([-0.5, 1.5])
+        cadmpeg_core::json!([-0.5, 1.5])
     );
-    assert_eq!(wire["additional"], serde_json::json!([{"kind": "null"}]));
+    assert_eq!(wire["additional"], cadmpeg_core::json!([{"kind": "null"}]));
     assert_eq!(
         json::from_value::<ProceduralCurveDefinition>(wire.clone()).expect("round trip"),
         admitted
@@ -650,10 +650,10 @@ fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
     };
     assert_eq!(parameter_range.endpoints(), [0.0, 1.0]);
     let wire = json::to_value(&range).unwrap();
-    assert_eq!(wire["parameter_range"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([0.0, 1.0]));
     assert_eq!(
         wire["distance_law"]["control_range"],
-        serde_json::json!([0.0, 10.0])
+        cadmpeg_core::json!([0.0, 10.0])
     );
     assert_eq!(
         json::from_value::<CurveOffsetRange>(wire.clone()).unwrap(),
@@ -676,7 +676,7 @@ fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
         );
     }
     let mut decreasing = wire;
-    decreasing["distance_law"]["control_range"] = serde_json::json!([10.0, 0.0]);
+    decreasing["distance_law"]["control_range"] = cadmpeg_core::json!([10.0, 0.0]);
     let error = json::from_value::<CurveOffsetRange>(decreasing).unwrap_err();
     assert!(
         error

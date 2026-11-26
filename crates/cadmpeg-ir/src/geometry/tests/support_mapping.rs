@@ -163,10 +163,10 @@ fn a_support_context_holds_its_admitted_interval_and_discontinuities() {
         [vec![2.5], vec![], vec![3.0, 4.0]]
     );
     let wire = json::to_value(&context).unwrap();
-    assert_eq!(wire["parameter_range"], serde_json::json!([2.0, 5.0]));
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([2.0, 5.0]));
     assert_eq!(
         wire["discontinuities"],
-        serde_json::json!([[2.5], [], [3.0, 4.0]])
+        cadmpeg_core::json!([[2.5], [], [3.0, 4.0]])
     );
     assert_eq!(
         json::from_value::<IntcurveSupportContext>(wire).unwrap(),

@@ -156,7 +156,7 @@ mod tests {
         );
         for column in 1..4 {
             let mut invalid = wire.clone();
-            invalid["matrix"][0][column] = serde_json::json!(3.0);
+            invalid["matrix"][0][column] = cadmpeg_core::json!(3.0);
             assert!(json::from_value::<CompactMatrix>(invalid).is_err());
         }
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {

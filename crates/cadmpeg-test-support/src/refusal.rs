@@ -12,7 +12,7 @@ use cadmpeg_core::serde_erase::json;
 ///
 /// Panics when `T` admits the null value.
 pub fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-    let mut wire = serde_json::json!({});
+    let mut wire = cadmpeg_core::json!({});
     wire[key] = serde_json::Value::Null;
     let Err(refused) = json::from_value::<T>(wire) else {
         panic!("{key}: null was admitted")

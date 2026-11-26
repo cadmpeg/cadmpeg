@@ -321,7 +321,7 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     let scope: crate::records::feature::scope::DesignParameterScope =
-        json_wire::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:test:scope",
             "byte_offset": 0,
             "class_tag": "300",
@@ -343,7 +343,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         }))
         .expect("Fillet scope");
     let identity = |group_record_index, group_member_ordinal, record_index| {
-        json_wire::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
+        json_wire::from_value::<DesignEdgeIdentityOperand>(cadmpeg_core::json!({
             "id": format!("f3d:test:identity#{record_index}"),
             "scope_record_index": 1,
             "group_record_index": group_record_index,
@@ -1608,7 +1608,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let mut operand = json_wire::from_value::<DesignFaceOperand>(serde_json::json!({
+    let mut operand = json_wire::from_value::<DesignFaceOperand>(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:design-face-operand#1",
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,

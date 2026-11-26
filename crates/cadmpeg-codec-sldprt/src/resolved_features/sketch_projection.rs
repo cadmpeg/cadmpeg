@@ -329,7 +329,7 @@ fn project_brep(
                     };
                     crate::annotations::note(
                         annotations,
-                        id.as_str(),
+                        &id,
                         source_stream,
                         0,
                         "feature_input_profile_edge",
@@ -395,7 +395,7 @@ fn project_brep(
             };
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                &id,
                 source_stream,
                 0,
                 "feature_input_profile_point",
@@ -436,7 +436,7 @@ fn project_brep(
         };
         crate::annotations::note(
             annotations,
-            sketch_id.as_str(),
+            &sketch_id,
             source_stream,
             cadmpeg_core::decode::u64_from_index(stream_offset),
             "feature_input_profile",

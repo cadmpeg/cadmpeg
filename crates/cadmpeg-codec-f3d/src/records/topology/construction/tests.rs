@@ -8,9 +8,9 @@ use super::{
 };
 use crate::records::identity::Located;
 use crate::records::topology::test_support::rejects_changed_fields;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::refusal::{refusal, states_the_key};
-use serde_json::json;
 fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
     let matrix = [
         [1.0, 0.0, 0.0, 0.0],
@@ -127,7 +127,7 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
 #[test]
 fn construction_frame_borrowed_wire_matches_owned_wire_bytes() {
     for wire in [
-        serde_json::json!({
+        cadmpeg_core::json!({
             "member_count_offset": 20,
             "opaque_index": 1, "opaque_index_offset": 80,
             "opaque_scalar": 0.0, "opaque_scalar_offset": 84, "variant": false
@@ -580,7 +580,7 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
 #[test]
 fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
     use super::super::extrude_selection::DesignOperandRole;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "group", "scope_record_index": 1, "scope_reference_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "256",
         "members": [], "member_offsets": [],
@@ -606,10 +606,10 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         (DesignOperandRole::PROFILE, "profile", Some("termination")),
     ] {
         let mut invalid = wire.clone();
-        invalid["role"] = serde_json::json!(role.raw());
-        invalid["extrude_role"] = serde_json::json!(extrude_role);
+        invalid["role"] = cadmpeg_core::json!(role.raw());
+        invalid["extrude_role"] = cadmpeg_core::json!(extrude_role);
         if let Some(face_role) = face_role {
-            invalid["extrude_face_role"] = serde_json::json!(face_role);
+            invalid["extrude_face_role"] = cadmpeg_core::json!(face_role);
         }
         let error = json::from_value::<DesignConstructionOperandGroup>(invalid).unwrap_err();
         assert!(error.to_string().contains("role"));

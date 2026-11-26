@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::super::{features, number, rows, text, Mapping};
 use super::{cross, sub, unit, vector, State};

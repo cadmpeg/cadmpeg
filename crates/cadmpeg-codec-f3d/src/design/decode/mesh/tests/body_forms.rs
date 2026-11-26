@@ -85,18 +85,18 @@ fn compact_version_six_body_preserves_equal_affine_maps_and_source_fields() {
         let row = &wire["bodies"][0];
         assert_eq!(
             row["body_variable_layout"]["presence_offsets"],
-            serde_json::json!([37, 166])
+            cadmpeg_core::json!([37, 166])
         );
         assert_eq!(
             row["transform_offsets"],
-            serde_json::json!([start + 38, start + 167])
+            cadmpeg_core::json!([start + 38, start + 167])
         );
         assert_eq!(row["scope_reference_offset"], start + 504);
         assert_eq!(row["scene_node_reference_offset"], start + 549);
         assert_eq!(row["body_words"]["body_word"], 1);
         assert_eq!(
             row["transform"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 [0.2, 0.0, 0.0, 1.0],
                 [0.0, 0.3, 0.0, 2.0],
                 [0.0, 0.0, 0.4, 3.0],
@@ -218,18 +218,18 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
             assert!(row.get("transform_offsets").is_none());
             assert_eq!(
                 row["body_variable_layout"]["presence_offsets"],
-                serde_json::json!([45, 46])
+                cadmpeg_core::json!([45, 46])
             );
             assert_eq!(row["scope_reference_offset"], start + 256);
             assert_eq!(row["scene_node_reference_offset"], start + 301);
         } else {
             assert_eq!(
                 row["transform_offsets"],
-                serde_json::json!([start + 46, start + 175])
+                cadmpeg_core::json!([start + 46, start + 175])
             );
             assert_eq!(
                 row["body_variable_layout"]["presence_offsets"],
-                serde_json::json!([45, 174])
+                cadmpeg_core::json!([45, 174])
             );
             assert_eq!(row["scope_reference_offset"], start + 514);
             assert_eq!(row["scene_node_reference_offset"], start + 559);

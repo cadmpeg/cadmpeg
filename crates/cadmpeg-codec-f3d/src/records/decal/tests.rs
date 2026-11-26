@@ -3,7 +3,7 @@
 use cadmpeg_core::serde_erase::json;
 
 fn decal_wire_fixture() -> serde_json::Value {
-    let base = serde_json::json!({
+    let base = cadmpeg_core::json!({
         "id": "decal", "scope_record_index": 23, "scope_layout": "compact", "asset_reference_offset": 222,
         "scope_code": 96, "scope_code_offset": 232, "target_group_record_index": 24,
         "target_group_reference_offset": 234, "asset_class_tag": "258", "asset_record_index": 17,
@@ -16,7 +16,7 @@ fn decal_wire_fixture() -> serde_json::Value {
 
 fn decal_image_fixture() -> super::DesignDecalImage {
     let mut wire = decal_wire_fixture();
-    wire["id"] = serde_json::json!("f3d:native:decal#0");
+    wire["id"] = cadmpeg_core::json!("f3d:native:decal#0");
     json::from_value(wire).unwrap()
 }
 
@@ -64,7 +64,7 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     let base = decal_wire_fixture();
     for code in [0, 0x60, 0x61, 0xff] {
         let mut value = base.clone();
-        value["scope_code"] = serde_json::json!(code);
+        value["scope_code"] = cadmpeg_core::json!(code);
         let wire: crate::records::decal::DesignDecalImageWire =
             json::from_value(value).expect("Decal wire");
         let expected = json::to_string(&wire).expect("Decal wire bytes");
@@ -77,10 +77,10 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
         );
     }
     let mut unicode = base.clone();
-    unicode["asset_name"] = serde_json::json!("图😀.png");
-    unicode["name_frame_length"] = serde_json::json!(39);
-    unicode["asset_record_index"] = serde_json::json!(u32::MAX - 1);
-    unicode["name_record_index"] = serde_json::json!(u32::MAX);
+    unicode["asset_name"] = cadmpeg_core::json!("图😀.png");
+    unicode["name_frame_length"] = cadmpeg_core::json!(39);
+    unicode["asset_record_index"] = cadmpeg_core::json!(u32::MAX - 1);
+    unicode["name_record_index"] = cadmpeg_core::json!(u32::MAX);
     let wire: crate::records::decal::DesignDecalImageWire =
         json::from_value(unicode).expect("Decal Unicode wire");
     let expected = json::to_string(&wire).expect("Decal Unicode bytes");
@@ -102,7 +102,7 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
         "asset_name_offset",
     ] {
         let mut value = base.clone();
-        value[field] = serde_json::json!(0);
+        value[field] = cadmpeg_core::json!(0);
         let error = json::from_value::<crate::records::decal::DesignDecalImage>(value)
             .expect_err("invalid Decal field")
             .to_string();
@@ -110,7 +110,7 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     }
     for field in ["asset_class_tag", "name_class_tag", "asset_name"] {
         let mut value = base.clone();
-        value[field] = serde_json::json!("");
+        value[field] = cadmpeg_core::json!("");
         let error = json::from_value::<crate::records::decal::DesignDecalImage>(value)
             .expect_err("empty Decal field")
             .to_string();
@@ -118,15 +118,15 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     }
     for field in ["asset_reference_offset", "asset_byte_offset"] {
         let mut value = base.clone();
-        value[field] = serde_json::json!(u64::MAX);
+        value[field] = cadmpeg_core::json!(u64::MAX);
         let error = json::from_value::<crate::records::decal::DesignDecalImage>(value)
             .expect_err("Decal byte extent overflow")
             .to_string();
         assert!(error.contains(field));
     }
     let mut no_successor = base;
-    no_successor["asset_record_index"] = serde_json::json!(u32::MAX);
-    no_successor["name_record_index"] = serde_json::json!(u32::MAX);
+    no_successor["asset_record_index"] = cadmpeg_core::json!(u32::MAX);
+    no_successor["name_record_index"] = cadmpeg_core::json!(u32::MAX);
     let error = json::from_value::<crate::records::decal::DesignDecalImage>(no_successor)
         .expect_err("Decal record index overflow")
         .to_string();
@@ -186,9 +186,9 @@ fn decal_scope_layouts_place_references_and_asset_frames() {
 #[test]
 fn decal_image_wire_refuses_an_asset_frame_of_another_layout() {
     let mut value = decal_wire_fixture();
-    value["scope_layout"] = serde_json::json!("typed_compact");
-    value["scope_code_offset"] = serde_json::json!(272);
-    value["target_group_reference_offset"] = serde_json::json!(274);
+    value["scope_layout"] = cadmpeg_core::json!("typed_compact");
+    value["scope_code_offset"] = cadmpeg_core::json!(272);
+    value["target_group_reference_offset"] = cadmpeg_core::json!(274);
     let error = json::from_value::<crate::records::decal::DesignDecalImage>(value)
         .expect_err("typed layout with a 30-byte asset frame")
         .to_string();
@@ -197,7 +197,7 @@ fn decal_image_wire_refuses_an_asset_frame_of_another_layout() {
 
 #[test]
 fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
-    let placement = serde_json::json!({
+    let placement = cadmpeg_core::json!({
         "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
         "u_axis": [0.5, 0.0, 0.0], "v_axis": [0.0, -0.5, 0.0], "flag_bytes": "010000", "reference_separator": 1, "normal_gap": 4,
         "normal": [0.0, 0.0, -1.0], "origin": [1.0, 2.0, 0.0], "image_name": "mark",
@@ -211,12 +211,12 @@ fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
     let asset_at = value["asset_byte_offset"].clone();
     for (field, bad) in [
         ("byte_offset", asset_at),
-        ("class_tag", serde_json::json!("")),
-        ("image_name", serde_json::json!("")),
-        ("normal", serde_json::json!([0.0, 0.0, 2.0])),
-        ("reference_separator", serde_json::json!(2)),
-        ("normal_gap", serde_json::json!(3)),
-        ("normal_gap", serde_json::json!(6)),
+        ("class_tag", cadmpeg_core::json!("")),
+        ("image_name", cadmpeg_core::json!("")),
+        ("normal", cadmpeg_core::json!([0.0, 0.0, 2.0])),
+        ("reference_separator", cadmpeg_core::json!(2)),
+        ("normal_gap", cadmpeg_core::json!(3)),
+        ("normal_gap", cadmpeg_core::json!(6)),
     ] {
         let mut refused = value.clone();
         refused["placement"][field] = bad;
@@ -240,7 +240,7 @@ fn placement_normal_is_parallel_to_the_axes_within_the_tolerance() {
     let u_length = u.iter().map(|value| value * value).sum::<f64>().sqrt();
     let in_plane = u.map(|value| value / u_length);
     let placement = |normal: [f64; 3], u_axis: [f64; 3]| {
-        json::from_value::<crate::records::decal::DesignDecalPlacement>(serde_json::json!({
+        json::from_value::<crate::records::decal::DesignDecalPlacement>(cadmpeg_core::json!({
             "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
             "u_axis": u_axis, "v_axis": v, "flag_bytes": "010000",
             "reference_separator": 1, "normal_gap": 4,

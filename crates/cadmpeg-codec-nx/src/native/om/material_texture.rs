@@ -260,13 +260,13 @@ mod tests {
             json::to_vec(&super::TextureWire::from(value.clone())).unwrap()
         );
         for (field, invalid) in [
-            ("name", serde_json::json!("Other")),
-            ("version", serde_json::json!(43)),
-            ("first_ifd_offset", serde_json::json!(7)),
-            ("first_ifd_offset", serde_json::json!(10)),
-            ("byte_len", serde_json::json!(8)),
-            ("source_entry", serde_json::json!("/Root/materialsTif/")),
-            ("source_entry", serde_json::json!("/Root/Other/Steel")),
+            ("name", cadmpeg_core::json!("Other")),
+            ("version", cadmpeg_core::json!(43)),
+            ("first_ifd_offset", cadmpeg_core::json!(7)),
+            ("first_ifd_offset", cadmpeg_core::json!(10)),
+            ("byte_len", cadmpeg_core::json!(8)),
+            ("source_entry", cadmpeg_core::json!("/Root/materialsTif/")),
+            ("source_entry", cadmpeg_core::json!("/Root/Other/Steel")),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid;
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn material_texture_native_limit_refuses_before_name_copy() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:container:material-texture#0", "name": "Steel",
             "byte_order": "little_endian", "version": 42,
             "first_ifd_offset": 8, "byte_len": 10,

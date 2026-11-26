@@ -281,7 +281,7 @@ fn reference_target_id_streams_once_with_native_retained_limit() {
     };
     assert_native_limit(
         &record,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "iges:reference:edge#1",
             "edge": {
                 "kind": "transform", "raw_pointer": 1,

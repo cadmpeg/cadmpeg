@@ -145,7 +145,7 @@ fn geometry_diff_detects_moved_body() {
     assert_eq!(comparison["verdict"], "disagree");
     assert_eq!(
         comparison["unmatched_a"],
-        serde_json::json!(["step:data:body#71"])
+        cadmpeg_core::json!(["step:data:body#71"])
     );
     assert_eq!(comparison["unmatched_b"].as_array().unwrap().len(), 1);
     let row = |quantity: &str| {
@@ -238,7 +238,7 @@ fn geometry_diff_self_comparison() {
         assert_eq!(code, Some(i32::from(verdict != "agree")), "{file}");
         assert_eq!(
             comparison["inconclusive_causes"],
-            serde_json::json!(causes),
+            cadmpeg_core::json!(causes),
             "{file}"
         );
         assert!(comparison["unmatched_a"].as_array().unwrap().is_empty());

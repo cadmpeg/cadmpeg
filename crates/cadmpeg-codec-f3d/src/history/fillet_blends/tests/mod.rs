@@ -1500,7 +1500,7 @@ fn named_group(
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": id,
         "byte_offset": 0,
         "class_tag": "325",

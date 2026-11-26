@@ -77,7 +77,7 @@ fn wire_rejects_unknown_keys_and_explicit_null_labels() {
     );
     for (key, value) in [
         ("label", serde_json::Value::Null),
-        ("unknown", serde_json::json!(1)),
+        ("unknown", cadmpeg_core::json!(1)),
     ] {
         let mut damaged = wire.clone();
         damaged[key] = value;
