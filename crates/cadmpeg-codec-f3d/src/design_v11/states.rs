@@ -10,23 +10,23 @@
 //! parameter scope binds. The states of the items of one history tile its
 //! chain, which the walk follows back from the state after the last item of
 //! that history: the state after each item is the state before the next
-//! later item of that history. A stored state after that of the last item
-//! is the result of no item, and the current geometry holds it. The state
-//! after an item holds, of each history, the state that this walk reaches at
-//! the item, with the consumed bodies of the head whose consumer is later in
-//! the timeline (§5.5). A consumed body has the owner of the live bodies
-//! that the component-ownership rule places with its body-map pair, and a
-//! state omits a consumed body whose owner is not known.
+//! later item of that history. The current state holds the change of the
+//! states that a history stores after that of its last item, and a loss
+//! names them. The state after an item holds, of each history, the state
+//! that this walk reaches at the item, with the consumed bodies of the head
+//! whose consumer is later in the timeline (§5.5). A consumed body has the
+//! owner of the live bodies that its entity cluster places with it, or of the
+//! definition bound to that cluster; a loss names a consumed body that takes
+//! the owner of its history, and a state omits one with no owner.
 //!
-//! An item that builds the current geometry and that is not stateless has an
-//! evaluation of the state after it, whose base is the state after the next
-//! later such item, and `Current` at the scope's current position for the
-//! last of them. An item that stores no state id holds the state after the
-//! nearest earlier item; where that item has an evaluation of the same
-//! state, the item's evaluation has that base and an empty delta. The
-//! current position has no evaluation. The walk stops at the first item
-//! whose state it does not place, and a loss names each feature whose state
-//! it leaves unstated.
+//! An item that builds the current geometry, that is not stateless, and
+//! that stores a state id has an evaluation of the state after it, whose
+//! base is the state after the next later such item, and `Current` at the
+//! scope's current position for the last of them. The current position has
+//! no evaluation. An item that stores no state id holds members and poses
+//! that the walk does not read: it has no evaluation, and a loss names it.
+//! The walk stops at the first item whose state it does not place, and a
+//! loss names each feature whose state it leaves unstated.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -47,6 +47,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{RetainedSourceRecord, SourceFidelity};
 
 use crate::container::ContainerScan;
+use crate::decode::geometry_admission::Note;
+use crate::design::components::HistoryPairOwner;
 use crate::history::face_resolution::historical_brep_source;
 use crate::history::stored_states::{self, Blob, Read, StateRecords, Want};
 use crate::loss::F3dLossCode;
@@ -121,7 +123,7 @@ pub(super) fn project(
         fidelity: sources.fidelity,
         scope,
         tails,
-        peers: sources.history_peers,
+        pairs: sources.history_owners,
         losses,
     };
     if let Err(reason) = reader.read(sources.scan, &mut evaluations, &mut carried)? {
@@ -171,7 +173,12 @@ struct Entry<'a> {
 impl Entry<'_> {
     /// The item has an evaluation of the state after it.
     fn evaluated(&self) -> bool {
-        !self.stateless && !self.current
+        !self.stateless && !self.current && self.kind != Kind::NoState
+    }
+
+    /// The item changes a state that the walk does not read.
+    fn unstated(&self) -> bool {
+        !self.stateless && !self.current && self.kind == Kind::NoState
     }
 }
 
@@ -196,16 +203,27 @@ struct Plan {
     stop: Option<Stop>,
 }
 
+/// The state after the last item of each of `count` histories that
+/// `entries` bind, with that item.
+fn last_items<'e>(entries: &'e [Entry<'e>], count: usize) -> Vec<Option<(i64, &'e FeatureId)>> {
+    let mut last = vec![None; count];
+    for entry in entries {
+        if let Kind::Bound { history, state, .. } = entry.kind {
+            last[history] = Some((state, entry.feature));
+        }
+    }
+    last
+}
+
 /// The states after `entries`, walking back through the histories named
 /// `names` from the state after the last item of each, or from its head in
 /// `heads` where no item stores one of its states.
 fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
-    let mut at = heads.to_vec();
-    for entry in entries {
-        if let Kind::Bound { history, state, .. } = entry.kind {
-            at[history] = Some(state);
-        }
-    }
+    let mut at = last_items(entries, heads.len())
+        .into_iter()
+        .zip(heads)
+        .map(|(last, head)| last.map(|(state, _)| state).or(*head))
+        .collect::<Vec<_>>();
     let mut set = vec![0_usize; heads.len()];
     let mut planned = Vec::<Planned>::new();
     for (index, entry) in entries.iter().enumerate().rev() {
@@ -213,45 +231,50 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
             .iter()
             .filter(|entry| entry.evaluated())
             .map(|entry| entry.feature.clone());
-        if let Kind::Bound { history, state, .. } = entry.kind {
-            if at[history] != Some(state) {
-                let left = at[history]
-                    .map_or_else(|| "no state".to_owned(), |state| format!("state {state}"));
-                let features = planned
-                    .drain(set[history]..)
-                    .map(|planned| entries[planned.entry].feature.clone())
-                    .chain(entry.evaluated().then(|| entry.feature.clone()))
-                    .chain(earlier)
-                    .collect();
-                return Plan {
-                    planned,
-                    stop: Some(Stop {
-                        reason: format!(
-                            "feature {} stores state {state} of {}, and the items after it leave that history at {left}",
-                            entry.feature, names[history]
-                        ),
-                        features,
-                    }),
-                };
-            }
-        }
-        if entry.evaluated() {
-            planned.push(Planned {
-                entry: index,
-                targets: at.clone(),
-            });
-        }
         match &entry.kind {
             Kind::Bound {
-                history, previous, ..
+                history,
+                state,
+                previous,
             } => {
+                if at[*history] != Some(*state) {
+                    let left = at[*history]
+                        .map_or_else(|| "no state".to_owned(), |state| format!("state {state}"));
+                    let features = planned
+                        .drain(set[*history]..)
+                        .map(|planned| entries[planned.entry].feature.clone())
+                        .chain(entry.evaluated().then(|| entry.feature.clone()))
+                        .chain(earlier)
+                        .collect();
+                    return Plan {
+                        planned,
+                        stop: Some(Stop {
+                            reason: format!(
+                                "feature {} stores state {state} of {}, and the items after it leave that history at {left}",
+                                entry.feature, names[*history]
+                            ),
+                            features,
+                        }),
+                    };
+                }
+                if entry.evaluated() {
+                    planned.push(Planned {
+                        entry: index,
+                        targets: at.clone(),
+                    });
+                }
                 at[*history] = *previous;
                 set[*history] = planned.len();
             }
             Kind::NoState => {}
             Kind::Unresolved(_) if entry.stateless => {}
             Kind::Unresolved(reason) => {
-                let features = earlier.collect::<Vec<_>>();
+                let features = entry
+                    .evaluated()
+                    .then(|| entry.feature.clone())
+                    .into_iter()
+                    .chain(earlier)
+                    .collect::<Vec<_>>();
                 return Plan {
                     planned,
                     stop: (!features.is_empty()).then(|| Stop {
@@ -271,6 +294,17 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
     }
 }
 
+/// How a body of a state takes an owner that the file does not state for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Rule {
+    /// The owner that its entity cluster gives it, as for a live body with no
+    /// Body-container owner.
+    Cluster,
+    /// The one owner of the current bodies of its history, which the file
+    /// does not state for it.
+    Assumed,
+}
+
 /// The consumed bodies of the head of one history.
 #[derive(Default)]
 struct Consumed {
@@ -279,10 +313,12 @@ struct Consumed {
     placed: BTreeMap<u64, usize>,
     /// The keys of the bodies that no timeline item consumes.
     unplaced: BTreeSet<u64>,
-    /// The owner of each placed body, by key.
-    owners: BTreeMap<u64, ProductDefinitionId>,
+    /// The owner of each placed body, and how it takes it, by key.
+    owners: BTreeMap<u64, (ProductDefinitionId, Rule)>,
     /// The keys of the consumed bodies whose owner is not known.
     unowned: BTreeSet<u64>,
+    /// The ids of the body-map pairs of each key.
+    pairs: BTreeMap<u64, BTreeSet<String>>,
 }
 
 /// The one owner of the current bodies of each history in `held`, if any.
@@ -305,31 +341,38 @@ fn history_owners(
 
 impl Consumed {
     /// Gives each placed body the one owner in `current` of the live bodies
-    /// that `peers` places with it, by key, or, where `current` holds none
-    /// of them, the owner `history` of the current bodies of its history.
-    /// A placed body with no such owner becomes unowned.
+    /// that `pairs` places with it, by key. Where `current` holds none of
+    /// them, it takes the definition that `pairs` binds to its entity
+    /// cluster where `defined` holds it, and else the owner `history` of the
+    /// current bodies of its history. A placed body with no such owner
+    /// becomes unowned.
     fn own(
         &mut self,
-        peers: &BTreeMap<u64, BTreeSet<BodyId>>,
+        pairs: &BTreeMap<u64, HistoryPairOwner>,
+        defined: &BTreeSet<&ProductDefinitionId>,
         history: Option<&ProductDefinitionId>,
         current: &ResolvedState,
     ) {
         for key in self.placed.keys() {
-            let mut found = peers
-                .get(key)
+            let pair = pairs.get(key);
+            let mut found = pair
                 .into_iter()
-                .flatten()
+                .flat_map(|pair| &pair.peers)
                 .filter_map(|body| current.owners().get(body))
                 .collect::<BTreeSet<_>>()
                 .into_iter();
             let owner = match (found.next(), found.next()) {
-                (Some(owner), None) => Some(owner),
-                (None, _) => history,
+                (Some(owner), None) => Some((owner, Rule::Cluster)),
                 (Some(_), Some(_)) => None,
+                (None, _) => pair
+                    .and_then(|pair| pair.definition.as_ref())
+                    .filter(|definition| defined.contains(definition))
+                    .map(|definition| (definition, Rule::Cluster))
+                    .or(history.map(|owner| (owner, Rule::Assumed))),
             };
             match owner {
-                Some(owner) => {
-                    self.owners.insert(*key, owner.clone());
+                Some((owner, rule)) => {
+                    self.owners.insert(*key, (owner.clone(), rule));
                 }
                 None => {
                     self.unowned.insert(*key);
@@ -338,6 +381,16 @@ impl Consumed {
         }
         let unowned = &self.unowned;
         self.placed.retain(|key, _| !unowned.contains(key));
+    }
+
+    /// The keys of every consumed body of the head.
+    fn keys(&self) -> BTreeSet<u64> {
+        self.placed
+            .keys()
+            .chain(&self.unplaced)
+            .chain(&self.unowned)
+            .copied()
+            .collect()
     }
 }
 
@@ -372,6 +425,51 @@ fn wants(
         .collect()
 }
 
+/// The loss of the items of `entries` that change a state the walk does not
+/// read, if any.
+fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<LossNote> {
+    let features = entries
+        .iter()
+        .filter(|entry| entry.unstated())
+        .map(|entry| entry.feature.as_str())
+        .collect::<BTreeSet<_>>();
+    (!features.is_empty()).then(|| {
+        F3dLossCode::HistoryStateUnread.note(format!(
+            "scope {definition}: the states after features {} are not stated: they store no history state, and the members and poses after them are not read.",
+            join(features)
+        ))
+    })
+}
+
+/// The loss of the states that each of `histories` stores after the state
+/// of its last item in `entries`, which the walk takes the current state to
+/// hold.
+fn tails_assumed(
+    definition: &ProductDefinitionId,
+    entries: &[Entry<'_>],
+    histories: &[History<'_>],
+) -> Vec<LossNote> {
+    histories
+        .iter()
+        .zip(last_items(entries, histories.len()))
+        .filter_map(|(history, last)| {
+            let (state, feature) = last?;
+            let later = history
+                .states
+                .range((std::ops::Bound::Excluded(state), std::ops::Bound::Unbounded))
+                .map(|(later, _)| later.to_string())
+                .collect::<Vec<_>>();
+            (!later.is_empty()).then(|| {
+                F3dLossCode::HistoryStateTailAssumed.note(format!(
+                    "scope {definition}: no timeline position joins the states {} of {}, which it stores after state {state} of feature {feature}; the current state is taken to hold their change.",
+                    later.join(", "),
+                    history.blob.stream
+                ))
+            })
+        })
+        .collect()
+}
+
 /// The loss of the states that `stop` leaves unstated, if any.
 fn stopped(definition: &ProductDefinitionId, stop: &Stop) -> Option<LossNote> {
     let mut features = stop
@@ -390,16 +488,17 @@ fn stopped(definition: &ProductDefinitionId, stop: &Stop) -> Option<LossNote> {
     })
 }
 
-/// The losses of the consumed bodies of the head of the history `stream`
-/// that the states omit: those that no timeline item consumes, and those
-/// whose owner is not known.
+/// The losses of the bodies of the head of the history `stream` that the
+/// states omit: the consumed bodies that no timeline item consumes, those
+/// whose owner is not known, and the bodies that no body-map pair names; and
+/// of the body-map pairs whose keys select no body of the head.
 fn omitted(
     definition: &ProductDefinitionId,
     stream: &str,
     consumed: &Consumed,
     read: &Read,
 ) -> Vec<LossNote> {
-    [
+    let mut out = [
         (
             &consumed.unplaced,
             "the current geometry omits them, and no timeline item consumes them",
@@ -410,20 +509,71 @@ fn omitted(
         ),
     ]
     .into_iter()
-    .filter_map(|(keys, reason)| {
+    .map(|(keys, reason)| {
         let bodies = keys
             .iter()
             .filter_map(|key| read.head_consumed.get(key))
-            .map(BodyId::as_str)
             .collect::<BTreeSet<_>>();
-        (!bodies.is_empty()).then(|| {
-            F3dLossCode::HistoryStateBodyOmitted.note(format!(
-                "scope {definition}: the states after its timeline items omit the bodies {} of the head of {stream}: {reason}.",
-                bodies.into_iter().collect::<Vec<_>>().join(", ")
-            ))
-        })
+        (bodies, reason)
     })
-    .collect()
+    .chain([(
+        read.head_unnamed.iter().collect(),
+        "no body-map pair of the current model or of a consuming scope names them",
+    )])
+    .filter(|(bodies, _)| !bodies.is_empty())
+    .map(|(bodies, reason)| {
+        F3dLossCode::HistoryStateBodyOmitted.note(format!(
+            "scope {definition}: the states after its timeline items omit the bodies {} of the head of {stream}: {reason}.",
+            join(bodies.into_iter().map(BodyId::as_str))
+        ))
+    })
+    .collect::<Vec<_>>();
+    let unselected = consumed
+        .keys()
+        .into_iter()
+        .filter(|key| !read.head_consumed.contains_key(key))
+        .flat_map(|key| consumed.pairs.get(&key).into_iter().flatten())
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if !unselected.is_empty() {
+        out.push(F3dLossCode::HistoryStateBodyOmitted.note(format!(
+            "scope {definition}: the states after its timeline items join no body to the body-map pairs {} of {stream}: their keys select no body of its head.",
+            join(unselected)
+        )));
+    }
+    out
+}
+
+/// The bodies that the states give an owner the file does not state for
+/// them, by history index, rule, and owner.
+type Marks = BTreeMap<(usize, Rule, ProductDefinitionId), BTreeSet<BodyId>>;
+
+/// The losses of `marks`.
+fn marked(
+    definition: &ProductDefinitionId,
+    histories: &[History<'_>],
+    marks: &Marks,
+) -> Vec<LossNote> {
+    marks
+        .iter()
+        .map(|((history, rule, owner), bodies)| {
+            let stream = histories[*history].blob.stream;
+            let bodies = join(bodies.iter().map(BodyId::as_str));
+            match rule {
+                Rule::Cluster => F3dLossCode::ComponentBodyOwnerFallback.note(format!(
+                    "scope {definition}: the states after its timeline items give the consumed bodies {bodies} of {stream} the owner {owner} that their entity cluster places them in, because their body-map pairs state no Body-container component owner."
+                )),
+                Rule::Assumed => F3dLossCode::HistoryStateOwnerAssumed.note(format!(
+                    "scope {definition}: the states after its timeline items give the bodies {bodies} of {stream} the owner {owner} of the current bodies of that history; the file states no owner for them."
+                )),
+            }
+        })
+        .collect()
+}
+
+/// `items`, separated by commas.
+fn join<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
+    items.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 /// One model blob with a history partition.
@@ -454,16 +604,14 @@ struct Chain<'c, 'e> {
 }
 
 impl Chain<'_, '_> {
-    /// The stop at the item `index` of the plan, which leaves its state, the
-    /// states of the earlier items, and the states of `leaves` unstated.
-    fn stop(&self, index: usize, leaves: &[(usize, usize)], reason: String) -> Stop {
+    /// The stop at the item `index` of the plan, which leaves its state and
+    /// the states of the earlier items unstated.
+    fn stop(&self, index: usize, reason: String) -> Stop {
         Stop {
             reason,
             features: self.planned[index..]
                 .iter()
-                .map(|planned| planned.entry)
-                .chain(leaves.iter().map(|(leaf, _)| self.planned[*leaf].entry))
-                .map(|entry| self.entries[entry].feature.clone())
+                .map(|planned| self.entries[planned.entry].feature.clone())
                 .collect(),
         }
     }
@@ -476,9 +624,9 @@ struct Reader<'r, 'c> {
     fidelity: &'r SourceFidelity,
     scope: &'r Scope,
     tails: &'r Tails<'r>,
-    /// The live bodies that the component-ownership rule places with each
-    /// history-only body-map pair, by pair id.
-    peers: &'r HashMap<String, BTreeSet<BodyId>>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pairs: &'r HashMap<String, HistoryPairOwner>,
     losses: &'r mut Vec<LossNote>,
 }
 
@@ -520,7 +668,11 @@ impl<'r> Reader<'r, '_> {
             Position::After(member) => {
                 match scope.members.iter().position(|found| found == member) {
                     Some(at) => &scope.members[..=at],
-                    None => return Ok(Ok(())),
+                    None => {
+                        return Ok(Err(
+                            "the position of its current state is not read".to_owned()
+                        ))
+                    }
                 }
             }
         };
@@ -537,16 +689,19 @@ impl<'r> Reader<'r, '_> {
                 ))
             })?;
         let mut held = vec![BTreeSet::new(); histories.len()];
+        let mut inherited = BTreeSet::new();
         for body in &scope.bodies {
-            let Some(at) = histories
+            match histories
                 .iter()
                 .position(|history| body.as_str().starts_with(&history.space))
-            else {
-                return Ok(Err(format!(
-                    "the current body {body} lies in no model blob with a history"
-                )));
-            };
-            held[at].insert(body.clone());
+            {
+                Some(at) => {
+                    held[at].insert(body.clone());
+                }
+                None => {
+                    inherited.insert(body.as_str());
+                }
+            }
         }
         let mut entries = Vec::new();
         for (position, member) in built.iter().enumerate() {
@@ -569,6 +724,7 @@ impl<'r> Reader<'r, '_> {
             .iter()
             .map(|history| history.blob.stream)
             .collect::<Vec<_>>();
+        self.losses.extend(unstated(&scope.definition, &entries));
         let Plan { planned, stop } = plan(&entries, &heads, &names);
         self.losses.extend(
             stop.as_ref()
@@ -576,6 +732,15 @@ impl<'r> Reader<'r, '_> {
         );
         if planned.is_empty() {
             return Ok(Ok(()));
+        }
+        self.losses
+            .extend(tails_assumed(&scope.definition, &entries, &histories));
+        if !inherited.is_empty() {
+            self.losses.push(F3dLossCode::HistoryStateBodyInherited.note(format!(
+                "scope {}: the states after its timeline items hold the current bodies {} as the current geometry does: they lie in no model blob with a history.",
+                scope.definition,
+                join(inherited)
+            )));
         }
         let owners = history_owners(&held, &current);
         let consumed = self.consumed(&histories, &owners, &current)?;
@@ -603,9 +768,13 @@ impl<'r> Reader<'r, '_> {
             consumed: &consumed,
             current: &current,
         };
-        if let Some(stop) = self.emit(&chain, configuration.as_ref(), out, carried)? {
+        let mut marks = Marks::new();
+        let stop = self.emit(&chain, configuration.as_ref(), &mut marks, out, carried)?;
+        if let Some(stop) = stop {
             self.losses.extend(stopped(&scope.definition, &stop));
         }
+        self.losses
+            .extend(marked(&scope.definition, &histories, &marks));
         Ok(Ok(()))
     }
 
@@ -624,9 +793,6 @@ impl<'r> Reader<'r, '_> {
         let Some((stream, record)) = self.scope.items.get(feature) else {
             return Ok(None);
         };
-        if !document_prefix(stream).is_empty() {
-            return Ok(None);
-        }
         let stateless = self
             .ir
             .is_stateless(feature, configuration)
@@ -636,14 +802,18 @@ impl<'r> Reader<'r, '_> {
                 ))
             })?;
         let tail = self.tails.get(&(stream.as_str(), *record)).copied();
-        let kind = match tail.and_then(|tail| Some((tail, tail.state?))) {
-            None => Kind::NoState,
-            Some((tail, state)) if tail.flags.is_some_and(|flags| flags.no_result) => {
+        let kind = match tail.map(|tail| (tail, tail.state)) {
+            _ if !document_prefix(stream).is_empty() => {
+                Kind::Unresolved("its timeline item lies in another document".to_owned())
+            }
+            None => Kind::Unresolved("its scope tail is not read".to_owned()),
+            Some((_, None)) => Kind::NoState,
+            Some((tail, Some(state))) if tail.flags.is_some_and(|flags| flags.no_result) => {
                 Kind::Unresolved(format!(
                     "its scope tail flags state {state} as holding no current result"
                 ))
             }
-            Some((tail, state)) => bind(histories, &tail, state),
+            Some((tail, Some(state))) => bind(histories, &tail, state),
         };
         Ok(Some(Entry {
             feature,
@@ -670,7 +840,10 @@ impl<'r> Reader<'r, '_> {
             .iter()
             .map(|_| Consumed::default())
             .collect::<Vec<_>>();
-        let mut peers = vec![BTreeMap::<u64, BTreeSet<BodyId>>::new(); histories.len()];
+        let mut keyed = vec![
+            BTreeMap::<u64, (BTreeSet<BodyId>, BTreeSet<&ProductDefinitionId>)>::new();
+            histories.len()
+        ];
         let Some(namespace) = self.ir.native.namespace("f3d") else {
             return Ok(out);
         };
@@ -701,10 +874,17 @@ impl<'r> Reader<'r, '_> {
             else {
                 continue;
             };
-            peers[at]
-                .entry(binding.asm_body_key)
+            let key = binding.asm_body_key;
+            out[at]
+                .pairs
+                .entry(key)
                 .or_default()
-                .extend(self.peers.get(binding.id()).into_iter().flatten().cloned());
+                .insert(binding.id().clone());
+            let entry = keyed[at].entry(key).or_default();
+            if let Some(pair) = self.pairs.get(binding.id().as_str()) {
+                entry.0.extend(pair.peers.iter().cloned());
+                entry.1.extend(&pair.definition);
+            }
             let consumer = binding
                 .consumers
                 .iter()
@@ -712,21 +892,39 @@ impl<'r> Reader<'r, '_> {
                 .min();
             match consumer {
                 Some(consumer) => {
-                    let first = out[at]
-                        .placed
-                        .entry(binding.asm_body_key)
-                        .or_insert(consumer);
+                    let first = out[at].placed.entry(key).or_insert(consumer);
                     *first = (*first).min(consumer);
                 }
                 None => {
-                    out[at].unplaced.insert(binding.asm_body_key);
+                    out[at].unplaced.insert(key);
                 }
             }
         }
-        for ((consumed, peers), history) in out.iter_mut().zip(&peers).zip(owners) {
+        let defined = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .map(|definition| &definition.id)
+            .collect::<BTreeSet<_>>();
+        for ((consumed, keyed), history) in out.iter_mut().zip(keyed).zip(owners) {
             let placed = &consumed.placed;
             consumed.unplaced.retain(|key| !placed.contains_key(key));
-            consumed.own(peers, history.as_ref(), current);
+            let pairs = keyed
+                .into_iter()
+                .map(|(key, (peers, definitions))| {
+                    let mut definitions = definitions.into_iter();
+                    let definition = definitions.next().filter(|_| definitions.next().is_none());
+                    (
+                        key,
+                        HistoryPairOwner {
+                            peers,
+                            definition: definition.cloned(),
+                        },
+                    )
+                })
+                .collect();
+            consumed.own(&pairs, &defined, history.as_ref(), current);
         }
         Ok(out)
     }
@@ -767,13 +965,7 @@ impl<'r> Reader<'r, '_> {
                 .filter_map(|wants| wants[index].clone())
                 .filter(|want| Some(want) != head.as_ref())
                 .collect();
-            let keys = consumed[index]
-                .placed
-                .keys()
-                .chain(&consumed[index].unplaced)
-                .chain(&consumed[index].unowned)
-                .copied()
-                .collect();
+            let keys = consumed[index].keys();
             let read = match stored_states::read(
                 self.ctx,
                 &history.blob,
@@ -808,12 +1000,14 @@ impl<'r> Reader<'r, '_> {
     }
 
     /// Pushes to `out` the evaluation of the state after each item of the
-    /// plan, latest first, each based on the one before it. Returns where
-    /// the chain stops.
+    /// plan, latest first, each based on the one before it, and to `marks`
+    /// each body that takes an owner the file does not state for it. Returns
+    /// where the chain stops.
     fn emit(
         &mut self,
         chain: &Chain<'_, '_>,
         configuration: Option<&ConfigurationId>,
+        marks: &mut Marks,
         out: &mut Vec<Evaluation>,
         carried: &mut Vec<UnknownRecord>,
     ) -> Result<Option<Stop>, CodecError> {
@@ -869,25 +1063,11 @@ impl<'r> Reader<'r, '_> {
         let limit = self.ctx.policy().limits.max_state_chain_depth;
         let mut depth = 0_u64;
         let mut base = StateBase::Current(scope.at.clone());
-        let mut leaves = Vec::<(usize, usize)>::new();
         for (index, planned) in chain.planned.iter().enumerate() {
             let entry = &chain.entries[planned.entry];
-            if entry.kind == Kind::NoState {
-                let earlier = chain.planned[index + 1..]
-                    .iter()
-                    .position(|planned| chain.entries[planned.entry].kind != Kind::NoState)
-                    .map(|offset| index + 1 + offset);
-                if let Some(earlier) =
-                    earlier.filter(|earlier| chain.wants[*earlier] == chain.wants[index])
-                {
-                    leaves.push((index, earlier));
-                    continue;
-                }
-            }
             if depth >= limit {
                 return Ok(Some(chain.stop(
                     index,
-                    &leaves,
                     format!("the state chain ceiling {limit} is reached"),
                 )));
             }
@@ -904,7 +1084,6 @@ impl<'r> Reader<'r, '_> {
                     Err(reason) => {
                         return Ok(Some(chain.stop(
                             index,
-                            &leaves,
                             format!("the history of {}: {reason}", history.blob.stream),
                         )))
                     }
@@ -922,7 +1101,6 @@ impl<'r> Reader<'r, '_> {
                         Some((_, Err(reason))) => {
                             return Ok(Some(chain.stop(
                                 index,
-                                &leaves,
                                 format!(
                                     "state {} of {}: {reason}",
                                     want.state, history.blob.stream
@@ -932,7 +1110,6 @@ impl<'r> Reader<'r, '_> {
                         None => {
                             return Ok(Some(chain.stop(
                                 index,
-                                &leaves,
                                 format!(
                                     "state {} of {} is not read",
                                     want.state, history.blob.stream
@@ -950,7 +1127,6 @@ impl<'r> Reader<'r, '_> {
                 ) {
                     return Ok(Some(chain.stop(
                         index,
-                        &leaves,
                         format!(
                             "state {} of {}: {reason}",
                             target.as_ref().map_or_else(
@@ -982,23 +1158,29 @@ impl<'r> Reader<'r, '_> {
                 }
                 for body in next.bodies.iter().filter(|body| !before.contains(&body.id)) {
                     let owner = if chain.held[at].contains(&body.id) {
-                        current.owners().get(&body.id)
+                        current.owners().get(&body.id).map(|owner| (owner, None))
+                    } else if let Some((owner, rule)) = consumed[at].get(&body.id) {
+                        Some((owner, Some(*rule)))
                     } else {
-                        consumed[at]
-                            .get(&body.id)
-                            .copied()
-                            .or(chain.owners[at].as_ref())
+                        chain.owners[at]
+                            .as_ref()
+                            .map(|owner| (owner, Some(Rule::Assumed)))
                     };
-                    let Some(owner) = owner else {
+                    let Some((owner, rule)) = owner else {
                         return Ok(Some(chain.stop(
                             index,
-                            &leaves,
                             format!(
                                 "the owner of body {} of {} is not known",
                                 body.id, history.blob.stream
                             ),
                         )));
                     };
+                    if let Some(rule) = rule {
+                        marks
+                            .entry((at, rule, owner.clone()))
+                            .or_default()
+                            .insert(body.id.clone());
+                    }
                     if *owner != scope.definition {
                         delta.owners.insert(body.id.clone(), Some(owner.clone()));
                         entries.insert(body.id.clone(), owner.clone());
@@ -1007,7 +1189,7 @@ impl<'r> Reader<'r, '_> {
                 previous[at] = (target.clone(), next);
             }
             if let Err(reason) = self.carry(&delta, &sources, carried)? {
-                return Ok(Some(chain.stop(index, &leaves, reason)));
+                return Ok(Some(chain.stop(index, reason)));
             }
             let id = evaluation_id(entry.stream, entry.record)?;
             if !current.names().is_empty() {
@@ -1020,6 +1202,7 @@ impl<'r> Reader<'r, '_> {
                 };
                 self.names(&mut delta, &mut named, current, &holds, &id);
             }
+            self.notes(&delta.records, current.records(), &sources, &id);
             sort(&mut delta.records);
             self.ctx.charge_entities(
                 u64_from_index(len(&delta.records) + delta.removed.len()),
@@ -1043,34 +1226,35 @@ impl<'r> Reader<'r, '_> {
                 },
             });
             depth += 1;
-            let (flushed, kept) = leaves
-                .into_iter()
-                .partition::<Vec<_>, _>(|(_, earlier)| *earlier == index);
-            leaves = kept;
-            if !flushed.is_empty() && depth >= limit {
-                return Ok(Some(chain.stop(
-                    index + 1,
-                    &flushed,
-                    format!("the state chain ceiling {limit} is reached"),
-                )));
-            }
-            for (leaf, _) in flushed {
-                let leaf = &chain.entries[chain.planned[leaf].entry];
-                out.push(Evaluation {
-                    id: evaluation_id(leaf.stream, leaf.record)?,
-                    scope: scope.definition.clone(),
-                    configuration: configuration.cloned(),
-                    of: Evaluated::State(Position::After(Member::Feature(leaf.feature.clone()))),
-                    status: EvaluationStatus::Current,
-                    content: Some(StateContent {
-                        base: StateBase::Evaluation(id.clone()),
-                        delta: StateDelta::default(),
-                    }),
-                    native_ref: None,
-                });
-            }
         }
         Ok(None)
+    }
+
+    /// Pushes the loss of each admission note of `sources` whose record
+    /// `records` states from the state, where the current geometry holds
+    /// no equal record, keyed by the evaluation `evaluation` (§3.2).
+    fn notes(
+        &mut self,
+        records: &Topology,
+        current: &Topology,
+        sources: &[&StateRecords],
+        evaluation: &EvaluationId,
+    ) {
+        let noted = sources
+            .iter()
+            .flat_map(|source| &source.notes)
+            .map(Note::record)
+            .collect::<HashSet<_>>();
+        if noted.is_empty() {
+            return;
+        }
+        let stated = stated(records, current, &noted);
+        for note in sources.iter().flat_map(|source| &source.notes) {
+            if stated.contains(note.record()) {
+                self.losses
+                    .push(note.loss(&format!("{evaluation} {}", note.record())));
+            }
+        }
     }
 
     /// Adds to `carried` each native record of `sources` that a record of
@@ -1324,6 +1508,32 @@ fn len(topology: &Topology) -> usize {
     }
     topology_arenas!(add);
     count
+}
+
+/// The ids of `noted` whose record `delta` holds and `current` does not
+/// hold as it is.
+fn stated<'t>(delta: &'t Topology, current: &Topology, noted: &HashSet<&str>) -> HashSet<&'t str> {
+    let mut out = HashSet::new();
+    macro_rules! find {
+        ($($field:ident $arm:ident),*) => {$({
+            let held = delta.$field.iter()
+                .filter(|record| noted.contains(record.record_identity()))
+                .collect::<Vec<_>>();
+            if !held.is_empty() {
+                let present = current.$field.iter()
+                    .filter(|record| noted.contains(record.record_identity()))
+                    .map(|record| (record.record_identity(), record))
+                    .collect::<HashMap<_, _>>();
+                for record in held {
+                    if present.get(record.record_identity()) != Some(&record) {
+                        out.insert(record.record_identity());
+                    }
+                }
+            }
+        })*};
+    }
+    topology_arenas!(find);
+    out
 }
 
 fn sort(topology: &mut Topology) {

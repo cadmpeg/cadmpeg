@@ -1007,6 +1007,16 @@ option `2`, and side extents `[1, 0]`.
 
 **Note.** The decoder states the evaluations of that item and of the items after it, and charges `history.state-unread` for the states of the items before it.
 
+### DR-1068. History states after the state of the last timeline item
+
+**Question.** A `.smbh` history can store states whose identities are above the current history-state identity of the last timeline item that commits a state to it. Which timeline position, if any, holds each such state, and does the current geometry of the blob equal the last of them or the state of that item?
+
+**Known.** `f3d.md` §3.1 "**States of a document.**" gives the state after a timeline item: the stored state whose identity is the item's current history-state identity, and the tiling of a history's chain by the states of its items. The `delta_state` chain of a history numbers its states on a counter of its own, and its head is the state with the largest identity. A history stores the states `2` to `7`, and its last item stores the current identity `6`. Each state after the root state has one bulletin board (DR-1054). The current geometry of the blob holds the records that its head state holds.
+
+**Need.** A Sketch and a new-body `Extrude`, then a `Fillet` of one edge, saved once with the timeline marker at the end and once after a `Move` of the body that stores no history-state identity: for each save, the identity of the head compared with the current identity of the last item, the bulletin boards of the states above that identity, and the records of each such state compared with the current geometry.
+
+**Note.** The decoder takes the current state to hold the change of these states, states the item's evaluation from the state with its current identity, and charges `history.state-tail-assumed`.
+
 ### DR-1054. Bulletin board of a state that changes an earlier body
 
 **Question.** Which entity slots does the bulletin board of a history state keep as updates, and which does it delete and insert, when the item of the state changes a body of the state before it?

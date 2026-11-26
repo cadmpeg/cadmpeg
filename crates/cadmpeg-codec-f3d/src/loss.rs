@@ -688,6 +688,15 @@ pub(crate) enum F3dLossCode {
     /// head that the current geometry omits and that no timeline item
     /// consumes.
     HistoryStateBodyOmitted,
+    /// A history stores states after the state of its last timeline item;
+    /// the current state holds their change.
+    HistoryStateTailAssumed,
+    /// An evaluation gives a body the owner of the current bodies of its
+    /// history, which the file does not state for it.
+    HistoryStateOwnerAssumed,
+    /// The evaluations of a timeline's states hold a current body that lies
+    /// in no model blob with a history as the current geometry does.
+    HistoryStateBodyInherited,
     /// An evaluation keeps the current state's name of an entity whose
     /// record it changes.
     HistoryStateNameInherited,
@@ -1878,6 +1887,9 @@ impl F3dLossCode {
         Self::HistoryStateUnread,
         Self::HistoryStatesUnread,
         Self::HistoryStateBodyOmitted,
+        Self::HistoryStateTailAssumed,
+        Self::HistoryStateOwnerAssumed,
+        Self::HistoryStateBodyInherited,
         Self::HistoryStateNameInherited,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
@@ -2939,6 +2951,9 @@ impl F3dLossCode {
             Self::HistoryStateUnread => "history.state-unread",
             Self::HistoryStatesUnread => "history.states-unread",
             Self::HistoryStateBodyOmitted => "history.state-body-omitted",
+            Self::HistoryStateTailAssumed => "history.state-tail-assumed",
+            Self::HistoryStateOwnerAssumed => "history.state-owner-assumed",
+            Self::HistoryStateBodyInherited => "history.state-body-inherited",
             Self::HistoryStateNameInherited => "history.state-name-inherited",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
@@ -4028,6 +4043,9 @@ impl F3dLossCode {
             | Self::HistoryStateUnread
             | Self::HistoryStatesUnread
             | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
             | Self::HistoryStateNameInherited
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
@@ -4827,6 +4845,9 @@ impl F3dLossCode {
             | Self::HistoryStateUnread
             | Self::HistoryStatesUnread
             | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
             | Self::HistoryStateNameInherited
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
@@ -5786,6 +5807,9 @@ mod tests {
                 "history.state-unread",
                 "history.states-unread",
                 "history.state-body-omitted",
+                "history.state-tail-assumed",
+                "history.state-owner-assumed",
+                "history.state-body-inherited",
                 "history.state-name-inherited",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",

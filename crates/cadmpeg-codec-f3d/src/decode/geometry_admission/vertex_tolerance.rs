@@ -9,11 +9,8 @@ use cadmpeg_ir::eval::{decode::curve_point, finite_or_refusal};
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::binding_allowance;
 use cadmpeg_ir::CadIr;
-
-use crate::loss::F3dLossCode;
 
 const MAX_BODY_DIAGONAL_FRACTION: f64 = 0.01;
 
@@ -27,7 +24,7 @@ struct EndpointMisses {
 pub(super) fn admit(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
+    notes: &mut Vec<super::Note>,
     annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
     if !ir
@@ -171,7 +168,6 @@ pub(super) fn admit(
     }
     let bounds = vertex_bounds(ir, &index);
     let mut widened = HashSet::new();
-    let mut maximum_widening = 0.0_f64;
     for vertex in &mut ir.geometry.vertices {
         let Some(miss) = misses.get(vertex.id.as_str()) else {
             continue;
@@ -190,7 +186,10 @@ pub(super) fn admit(
         }
         vertex.tolerance = cadmpeg_ir::scalar::PositiveLength::new(miss.maximum);
         widened.insert(vertex.id.as_str());
-        maximum_widening = maximum_widening.max(miss.maximum - previous);
+        notes.push(super::Note::VertexTolerance {
+            vertex: vertex.id.as_str().to_owned(),
+            widening: miss.maximum - previous,
+        });
     }
     if !widened.is_empty() {
         for annotation in annotations {
@@ -200,10 +199,6 @@ pub(super) fn admit(
                 annotation.derived_fields.push("tolerance");
             }
         }
-        let widened = widened.len();
-        losses.push(F3dLossCode::VertexToleranceWidened.note(format!(
-            "Widened {widened} vertex tolerance(s); maximum widening {maximum_widening:.17} mm"
-        )));
     }
     Ok(())
 }

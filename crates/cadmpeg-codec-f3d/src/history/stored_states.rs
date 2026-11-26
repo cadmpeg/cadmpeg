@@ -7,7 +7,9 @@
 //! records are those its table decodes to, as the model blob is decoded,
 //! confined to the bodies of the current geometry, the bodies the head
 //! does not hold that are no sketch region, and the consumed bodies that
-//! the timeline position of the state keeps (§5.5).
+//! the timeline position of the state keeps (§5.5). A state whose table
+//! takes the revision of a slot from the board of a later state that updates
+//! that slot twice is not read.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,6 +22,11 @@ use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::Brep;
+use crate::decode::geometry_admission::{self, Note};
+use crate::history_records::{AsmDeltaState, AsmEntityChangeKind};
+
+#[cfg(test)]
+mod tests;
 
 /// The least record work, in table entries, that the stored states of one
 /// decode may spend.
@@ -54,6 +61,8 @@ pub(crate) struct StateRecords {
     pub(crate) records: Topology,
     /// The native records of the state that its records leave undecoded.
     pub(crate) unknowns: Vec<UnknownRecord>,
+    /// What the admission of its records leaves unstated.
+    pub(crate) notes: Vec<Note>,
 }
 
 /// The states of one history that a timeline's states use.
@@ -65,6 +74,9 @@ pub(crate) struct Read {
     /// The body of the head that each key of the read's consumed keys
     /// selects.
     pub(crate) head_consumed: BTreeMap<u64, BodyId>,
+    /// The bodies of the head that are not current, that no consumed key
+    /// selects, and that are no sketch region.
+    pub(crate) head_unnamed: BTreeSet<BodyId>,
     /// Each wanted state other than the head, newest first, with its records,
     /// or why they are not read.
     pub(crate) states: Vec<(Want, Result<StateRecords, String>)>,
@@ -120,6 +132,8 @@ pub(crate) fn read(
     let mut read = Vec::new();
     let mut stopped = None::<String>;
     let mut failure = None::<CodecError>;
+    let mut undone = None::<usize>;
+    let mut ambiguous = Ambiguous::default();
     let complete = super::walk_entity_versions_hashed(
         &states,
         active_count,
@@ -127,6 +141,9 @@ pub(crate) fn read(
         |index, versions| {
             if failure.is_some() {
                 return;
+            }
+            if let Some(later) = undone.replace(index) {
+                ambiguous.undo(&states[later]);
             }
             let state_id = states[index].state_id;
             let outcome = match &head {
@@ -139,6 +156,12 @@ pub(crate) fn read(
                     for want in wanted.iter().filter(|want| want.state == state_id) {
                         if let Some(reason) = &stopped {
                             read.push((want.clone(), Err(reason.clone())));
+                            continue;
+                        }
+                        if let Some((slot, by)) = ambiguous.first() {
+                            let reason = format!("slot {slot} is updated twice by state {by}");
+                            stopped = Some(format!("a later state is not read ({reason})"));
+                            read.push((want.clone(), Err(reason)));
                             continue;
                         }
                         match decoder.state(versions, current, found, &want.consumed) {
@@ -173,6 +196,7 @@ pub(crate) fn read(
             head,
             head_records: found.records,
             head_consumed: found.consumed,
+            head_unnamed: found.unnamed,
             states: read,
         })),
         Some(Err(reason)) => Ok(Err(reason)),
@@ -185,6 +209,9 @@ struct Head {
     bodies: BTreeSet<BodyId>,
     /// Its body of each consumed body-map key that selects one.
     consumed: BTreeMap<u64, BodyId>,
+    /// Its bodies that are not current, that no consumed key selects, and
+    /// that are no sketch region.
+    unnamed: BTreeSet<BodyId>,
     /// The records its current bodies reach.
     records: Topology,
 }
@@ -221,6 +248,7 @@ impl StateDecoder<'_, '_> {
         if let Some(body) = current.iter().find(|body| !bodies.contains(*body)) {
             return Ok(Err(format!("its head holds no body {body}")));
         }
+        let regions = brep.sketch_region_bodies();
         let mut keyed = BTreeMap::new();
         for key in consumed {
             match crate::brep::resolve_body_selector(brep.asm.body_native_keys.iter(), *key) {
@@ -233,11 +261,20 @@ impl StateDecoder<'_, '_> {
                 }
             }
         }
+        let selected = keyed.values().collect::<BTreeSet<_>>();
+        let unnamed = bodies
+            .iter()
+            .filter(|body| {
+                !(current.contains(*body) || selected.contains(body) || regions.contains(*body))
+            })
+            .cloned()
+            .collect();
         Ok(self
             .records(brep, current.iter().cloned().collect())?
             .map(|records| Head {
                 bodies,
                 consumed: keyed,
+                unnamed,
                 records: records.records,
             }))
     }
@@ -325,10 +362,12 @@ impl StateDecoder<'_, '_> {
             brep.asm,
         )
         .map(|(_, remainder)| remainder);
+        let mut notes = Vec::new();
         let admitted = remainder.and_then(|mut remainder| {
-            crate::decode::admit_state_geometry(
+            geometry_admission::admit_noted(
                 self.ctx,
                 &mut scratch,
+                &mut notes,
                 &mut remainder.annotation_records,
             )
             .map(|()| remainder.unknowns)
@@ -337,6 +376,7 @@ impl StateDecoder<'_, '_> {
             Ok(unknowns) => Ok(Ok(StateRecords {
                 records: scratch.geometry,
                 unknowns,
+                notes,
             })),
             Err(error @ CodecError::ResourceLimit(_)) => Err(error),
             Err(error) => Ok(Err(format!("its records do not transfer: {error}"))),
@@ -355,4 +395,51 @@ pub(crate) fn state_ids(blob: &Blob<'_>) -> Option<BTreeMap<i64, String>> {
             .map(|state| (state.state_id, state.id.clone()))
             .collect(),
     )
+}
+
+/// The slots whose revision a state of a walk does not fix: each slot that
+/// the board of a later state updates twice, and that no board between them
+/// changes, with the id of that later state.
+#[derive(Default)]
+struct Ambiguous(BTreeMap<i64, i64>);
+
+impl Ambiguous {
+    /// Adds the reversal of the board of `state`, the earliest state undone.
+    fn undo(&mut self, state: &AsmDeltaState) {
+        let mut updated = BTreeSet::new();
+        let mut twice = BTreeSet::new();
+        for change in state
+            .bulletin_boards
+            .iter()
+            .flat_map(|board| &board.changes)
+        {
+            if let AsmEntityChangeKind::Update { new, .. } = change.kind {
+                if !updated.insert(new) {
+                    twice.insert(new);
+                }
+            }
+        }
+        for change in state
+            .bulletin_boards
+            .iter()
+            .flat_map(|board| &board.changes)
+        {
+            let slot = match change.kind {
+                AsmEntityChangeKind::Insert { new } | AsmEntityChangeKind::Update { new, .. } => {
+                    new
+                }
+                AsmEntityChangeKind::Delete { old } => old,
+            };
+            if twice.contains(&slot) {
+                self.0.insert(slot, state.state_id);
+            } else {
+                self.0.remove(&slot);
+            }
+        }
+    }
+
+    /// The first ambiguous slot, with the state that updates it twice.
+    fn first(&self) -> Option<(i64, i64)> {
+        self.0.iter().next().map(|(slot, by)| (*slot, *by))
+    }
 }

@@ -77,9 +77,9 @@ pub(crate) struct StoredStates<'a> {
     pub(crate) scan: &'a ContainerScan<'a>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     pub(crate) scope_histories: &'a HashMap<String, String>,
-    /// The live bodies that the component-ownership rule places with each
-    /// history-only body-map pair, by pair id.
-    pub(crate) history_peers: &'a HashMap<String, BTreeSet<BodyId>>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pub(crate) history_owners: &'a HashMap<String, crate::design::components::HistoryPairOwner>,
     /// The retained source records of the document.
     pub(crate) fidelity: &'a SourceFidelity,
 }
@@ -259,6 +259,16 @@ pub(crate) fn project(
             continue;
         };
         let at = rollback_position(id, members, rollback.as_ref());
+        if stored_histories {
+            unread_scope(
+                &definition,
+                &prefix,
+                &at,
+                bodies.is_empty(),
+                &projected.containers,
+                losses,
+            );
+        }
         if prefix.is_empty() && !bodies.is_empty() {
             root = Some(states::Scope {
                 definition: definition.clone(),
@@ -327,6 +337,60 @@ pub(crate) fn project(
         _ => {}
     }
     Ok(Vec::new())
+}
+
+/// Pushes to `losses` the states of the scope `definition` that the walk of
+/// stored states does not reach: those of a document other than the root,
+/// those of a root with no current body, and those after the items of each
+/// timeline after its first. `containers` are its timelines, and `at` is the
+/// position of its current state.
+fn unread_scope(
+    definition: &ProductDefinitionId,
+    prefix: &str,
+    at: &Position,
+    bodiless: bool,
+    containers: &[Container],
+    losses: &mut Vec<LossNote>,
+) {
+    fn features(container: &Container) -> BTreeSet<&str> {
+        match container {
+            Container::Ordered { members, .. } => members
+                .iter()
+                .filter_map(|member| match member {
+                    Member::Feature(feature) => Some(feature.as_str()),
+                    Member::Container(_) => None,
+                })
+                .collect(),
+            Container::Unordered { .. } => BTreeSet::new(),
+        }
+    }
+    let built = !matches!(at, Position::Start(_))
+        && containers
+            .first()
+            .is_some_and(|first| !features(first).is_empty());
+    let reason = if !prefix.is_empty() {
+        Some("its timeline lies in a document other than the root")
+    } else if bodiless {
+        Some("it has no current body")
+    } else {
+        None
+    };
+    if let Some(reason) = reason.filter(|_| built) {
+        losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+            "scope {definition}: the states after its timeline items are not stated: {reason}."
+        )));
+    }
+    let later = containers
+        .iter()
+        .skip(1)
+        .flat_map(features)
+        .collect::<BTreeSet<_>>();
+    if !later.is_empty() {
+        losses.push(F3dLossCode::HistoryStateUnread.note(format!(
+            "scope {definition}: the states after features {} are not stated: they lie in a timeline after the first of the scope.",
+            later.into_iter().collect::<Vec<_>>().join(", ")
+        )));
+    }
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

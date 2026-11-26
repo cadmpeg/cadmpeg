@@ -1863,40 +1863,64 @@ impl<'a> Projector<'a> {
     }
 }
 
-/// How the component-ownership rule places the body of one body-map pair in
-/// its Design stream.
+/// Where the component-ownership rule places the body of one body-map pair
+/// in its Design stream.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Placement {
-    /// By the component record that its owner names.
-    Component(Option<u64>),
-    /// By the root entity of its entity cluster.
-    Cluster(Option<u64>),
+    /// In the naming space whose root entity this is.
+    Definition(u64),
+    /// In the component record of this index, which no naming space binds.
+    Record(u64),
     /// In the stored-frame group of its stream.
-    Unresolved,
+    Group,
 }
 
-/// The bodies of the live pairs of `bindings` that the component-ownership
-/// rule places with each history-only pair, by pair id: the pairs of its
-/// Design stream with the same component owner, or, without one, in the same
-/// entity cluster. `bodies` holds the current bodies.
-pub(crate) fn history_body_peers<'a>(
-    bindings: &'a [DesignBodyBinding],
+/// The owner that the component-ownership rule gives the body of a
+/// history-only body-map pair.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HistoryPairOwner {
+    /// The current bodies of the live pairs that the rule places with it.
+    pub(crate) peers: BTreeSet<BodyId>,
+    /// The definition of the naming space bound to its entity cluster.
+    pub(crate) definition: Option<ProductDefinitionId>,
+}
+
+/// The owner of each history-only pair of `bindings`, by pair id. A
+/// history-only pair has no Body-container owner, so its entity cluster
+/// places it: in the naming space bound to the cluster, or in the
+/// stored-frame group of its stream. A live pair is placed by its
+/// Body-container owner, by its entity cluster where it has none, and in the
+/// stored-frame group where its owner is unresolved. `bodies` holds the
+/// current bodies.
+pub(crate) fn history_pair_owners(
+    bindings: &[DesignBodyBinding],
     components: &BTreeMap<String, StreamComponents>,
     bodies: Option<&BTreeSet<BodyId>>,
-) -> std::collections::HashMap<String, BTreeSet<BodyId>> {
-    let place = |binding: &'a DesignBodyBinding| {
+) -> std::collections::HashMap<String, HistoryPairOwner> {
+    let cluster = |stream: &str, suffix: u64| {
+        components
+            .get(stream)
+            .and_then(|components| components.cluster_owner(suffix))
+    };
+    let place = |binding: &DesignBodyBinding| {
         let stream = crate::ids::native_stream(binding.id())?;
         let placement = match &binding.component_owner {
-            Some(owner) => Placement::Component(owner.component_for(binding.entity_suffix)),
-            None if binding.component_owner_unresolved => Placement::Unresolved,
-            None => Placement::Cluster(
-                components
+            Some(owner) => {
+                let component = owner.component_for(binding.entity_suffix)?;
+                match components
                     .get(stream)
-                    .and_then(|components| components.cluster_owner(binding.entity_suffix))
-                    .map(|definition| definition.root_entity),
-            ),
+                    .and_then(|components| components.roots.get(&component))
+                {
+                    Some(root) => Placement::Definition(root.root_entity),
+                    None => Placement::Record(component),
+                }
+            }
+            None if binding.component_owner_unresolved => Placement::Group,
+            None => cluster(stream, binding.entity_suffix).map_or(Placement::Group, |root| {
+                Placement::Definition(root.root_entity)
+            }),
         };
-        Some((stream, placement))
+        Some((stream.to_owned(), placement))
     };
     let mut live = std::collections::HashMap::<_, BTreeSet<BodyId>>::new();
     for binding in bindings.iter().filter(|binding| !binding.history_only) {
@@ -1914,7 +1938,13 @@ pub(crate) fn history_body_peers<'a>(
     bindings
         .iter()
         .filter(|binding| binding.history_only)
-        .filter_map(|binding| Some((binding.id().clone(), live.get(&place(binding)?)?.clone())))
+        .filter_map(|binding| {
+            let placement = place(binding)?;
+            let definition = cluster(&placement.0, binding.entity_suffix)
+                .map(|root| crate::ids::neutral_component_id(&root.context_uuid));
+            let peers = live.get(&placement).cloned().unwrap_or_default();
+            Some((binding.id().clone(), HistoryPairOwner { peers, definition }))
+        })
         .collect()
 }
 

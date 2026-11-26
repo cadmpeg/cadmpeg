@@ -3351,10 +3351,9 @@ struct F3dDecodeSession<'a> {
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     scope_histories: std::collections::HashMap<String, String>,
-    /// The live bodies that the component-ownership rule places with each
-    /// history-only body-map pair, by pair id.
-    history_peers:
-        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3471,7 +3470,7 @@ impl<'a> F3dDecodeSession<'a> {
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
                 scope_histories: std::collections::HashMap::new(),
-                history_peers: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3529,7 +3528,7 @@ impl<'a> F3dDecodeSession<'a> {
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
                 scope_histories: std::collections::HashMap::new(),
-                history_peers: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3948,7 +3947,7 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
-        self.history_peers = crate::design::components::history_body_peers(
+        self.history_owners = crate::design::components::history_pair_owners(
             &prereqs.design_body_bindings,
             &local_components,
             bodies.as_ref(),
@@ -4222,7 +4221,7 @@ impl<'a> F3dDecodeSession<'a> {
                         untyped: self.untyped,
                         source_attributes: self.source_attributes,
                         scope_histories: self.scope_histories,
-                        history_peers: self.history_peers,
+                        history_owners: self.history_owners,
                     },
                     &mut admitted_entities,
                 );
@@ -4281,7 +4280,7 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped: self.untyped,
                 source_attributes: self.source_attributes,
                 scope_histories: self.scope_histories,
-                history_peers: self.history_peers,
+                history_owners: self.history_owners,
             },
             &mut admitted_entities,
         )
@@ -4366,7 +4365,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             let sources = crate::design_v11::StoredStates {
                 scan: &scan,
                 scope_histories: &decoded.scope_histories,
-                history_peers: &decoded.history_peers,
+                history_owners: &decoded.history_owners,
                 fidelity: &decoded.source_fidelity,
             };
             cadmpeg_ir::design::projection::project_layer(
@@ -4466,7 +4465,7 @@ fn decode_scanned_document<'a>(
                 untyped,
                 source_attributes,
                 scope_histories: std::collections::HashMap::new(),
-                history_peers: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             &mut admitted_entities,
         );
@@ -5541,10 +5540,10 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
     /// The ASM history of each parameter scope that binds one, by scope id.
     pub(crate) scope_histories: std::collections::HashMap<String, String>,
-    /// The live bodies that the component-ownership rule places with each
-    /// history-only body-map pair, by pair id.
-    pub(crate) history_peers:
-        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pub(crate) history_owners:
+        std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl AuthoredDecoded {
@@ -5568,10 +5567,9 @@ struct RetainedArtifacts {
     source_attributes: std::collections::BTreeMap<String, String>,
     /// The ASM history of each parameter scope that binds one, by scope id.
     scope_histories: std::collections::HashMap<String, String>,
-    /// The live bodies that the component-ownership rule places with each
-    /// history-only body-map pair, by pair id.
-    history_peers:
-        std::collections::HashMap<String, std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 fn decode_result(
@@ -5627,7 +5625,7 @@ fn decode_result(
         body: report,
         source_fidelity,
         scope_histories: retained.scope_histories,
-        history_peers: retained.history_peers,
+        history_owners: retained.history_owners,
     })
 }
 
@@ -6104,16 +6102,6 @@ fn try_decode_brep(
         crate::ids::ID_FORMAT,
     )
     .map(Some)
-}
-
-/// Admit the transferred geometry of a stored history state as the model
-/// geometry is admitted, without its notes.
-pub(crate) fn admit_state_geometry(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
-) -> Result<(), CodecError> {
-    geometry_admission::admit(ctx, ir, &mut Vec::new(), annotations)
 }
 
 /// Assemble the IR document from the decoded B-rep graph.
@@ -6967,7 +6955,7 @@ pub(crate) fn apply_body_presentation_names(
 }
 
 pub(crate) mod design_intent;
-mod geometry_admission;
+pub(crate) mod geometry_admission;
 mod mesh_import;
 mod mesh_operations;
 mod prereqs;
