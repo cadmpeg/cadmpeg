@@ -227,6 +227,12 @@ impl TryFrom<&str> for Identity {
     }
 }
 
+impl AsRef<Identity> for Identity {
+    fn as_ref(&self) -> &Identity {
+        self
+    }
+}
+
 impl Display for Identity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
@@ -1344,6 +1350,10 @@ macro_rules! id_type {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(self.0.as_str())
             }
+        }
+
+        impl AsRef<$crate::ids::Identity> for $name {
+            fn as_ref(&self) -> &$crate::ids::Identity { &self.0 }
         }
 
         impl From<$name> for $crate::ids::Identity {
