@@ -717,7 +717,8 @@ impl Annotations {
 
     /// Annotate `to` as the entity `from` is annotated, replacing the
     /// annotations of `to`.
-    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+    pub fn copy_entity(&mut self, from: &impl AsRef<crate::ids::Identity>, to: AnnotationKey) {
+        let from = from.as_ref().as_str();
         match self.provenance.get(from).cloned() {
             Some(provenance) => self.provenance.insert(to.clone(), provenance),
             None => self.provenance.remove(&to),

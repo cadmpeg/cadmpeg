@@ -1251,16 +1251,18 @@ fn annotate(
             continue;
         };
         let feature_id = id("feature", native);
-        if !seen.insert(native)
-            || !model
-                .ir
-                .model
-                .features
-                .iter()
-                .any(|feature| feature.id.as_str() == feature_id)
-        {
+        if !seen.insert(native) {
             continue;
         }
+        let Some(feature) = model
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == feature_id)
+        else {
+            continue;
+        };
         let sketch_id = id("sketch", native);
         if let Some(sketch) = model
             .ir
@@ -1294,10 +1296,8 @@ fn annotate(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         if source.get("suppressed").is_none() && source.get("parentSuppressed").is_none() {
-            let feature = cadmpeg_ir::ids::Identity::new(id("feature", native))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
             annotations
-                .field_exactness(feature, "suppressed", Exactness::Inferred)
+                .field_exactness(&feature.id, "suppressed", Exactness::Inferred)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
