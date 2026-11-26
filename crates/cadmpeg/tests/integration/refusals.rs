@@ -620,11 +620,11 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(report["refusal"]["stage"], "export");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
+    // The decode's one native record is a `creo` `unknowns` stub, which
+    // incurs no omission loss (Rule W3).
     let losses = report["export"]["losses"].as_array().unwrap();
-    assert_eq!(losses.len(), 2);
-    assert!(losses
-        .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0]["code"]["value"]["code"], "output.empty");
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &{
         let mut cube = unit_cube().expect("unit cube fixture is admitted");
