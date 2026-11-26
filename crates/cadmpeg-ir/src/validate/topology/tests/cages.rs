@@ -142,10 +142,13 @@ fn a_cage_member_round_trips_through_json() {
     let member = ShellMember::Subd {
         id: SubdId::mint("test:model:subd#0").unwrap(),
     };
-    let json = serde_json::to_value(&member).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&member).unwrap();
     assert_eq!(
         json,
         serde_json::json!({"kind": "subd", "id": "test:model:subd#0"})
     );
-    assert_eq!(serde_json::from_value::<ShellMember>(json).unwrap(), member);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<ShellMember>(json).unwrap(),
+        member
+    );
 }

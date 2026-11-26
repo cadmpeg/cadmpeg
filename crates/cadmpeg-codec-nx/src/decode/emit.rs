@@ -2218,7 +2218,7 @@ mod tests {
         assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
-        let wire = serde_json::to_value(&unknown).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&unknown).unwrap();
         assert_eq!(
             wire["retention"]["sha256"],
             cadmpeg_ir::hash::sha256_hex(&stream.inflated)
@@ -2252,8 +2252,8 @@ mod tests {
         let actual = source_meta(&scan, &dialects, Some(&parsed))
             .expect("source metadata reads the existing census");
         assert_eq!(
-            serde_json::to_value(actual).expect("source metadata"),
-            serde_json::to_value(expected).expect("source metadata")
+            cadmpeg_core::serde_erase::json::to_value(actual).expect("source metadata"),
+            cadmpeg_core::serde_erase::json::to_value(expected).expect("source metadata")
         );
     }
 

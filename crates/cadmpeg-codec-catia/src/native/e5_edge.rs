@@ -80,7 +80,8 @@ mod tests {
             assert_eq!(record.record_id, 7);
             assert_eq!(record.object_references, [13, 10, 16, 14, 15]);
         }
-        let wire = serde_json::to_value(&records).expect("stored edge records");
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(&records).expect("stored edge records");
         for (row, (raw, value, encoding)) in wire.as_array().expect("record array").iter().zip([
             (1, 0, "backward_distance"),
             (2, 0, "selector2"),
@@ -98,7 +99,7 @@ mod tests {
             );
         }
         assert_eq!(
-            serde_json::from_value::<Vec<super::CatiaE5EdgeRecord>>(wire)
+            cadmpeg_core::serde_erase::json::from_value::<Vec<super::CatiaE5EdgeRecord>>(wire)
                 .expect("load exact terminal forms"),
             records
         );
@@ -128,7 +129,7 @@ mod tests {
         let records =
             crate::test_support::with_service_context(|ctx| derive(ctx, &frame(&[0x21], 7)))
                 .expect("source records");
-        let wire = serde_json::to_value(&records).expect("stored records");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&records).expect("stored records");
         for bad in [
             serde_json::json!({"raw_byte":33,"value":10,"encoding":"backward_distance"}),
             serde_json::json!({"raw_byte":33,"value":8,"encoding":"selector2"}),
@@ -136,7 +137,12 @@ mod tests {
         ] {
             let mut malformed = wire.clone();
             malformed[0]["allocation_terminal"] = bad;
-            assert!(serde_json::from_value::<Vec<super::CatiaE5EdgeRecord>>(malformed).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<Vec<super::CatiaE5EdgeRecord>>(
+                    malformed
+                )
+                .is_err()
+            );
         }
     }
 

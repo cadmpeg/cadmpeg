@@ -28,7 +28,7 @@ fn every_example_document_has_one_spelling() {
     ];
     let values = documents
         .iter()
-        .map(|ir| serde_json::to_value(ir).expect("a CadIr serializes"))
+        .map(|ir| cadmpeg_core::serde_erase::json::to_value(ir).expect("a CadIr serializes"))
         .collect::<Vec<_>>();
     let mut sweep = SpellingSweep::default();
     for value in &values {

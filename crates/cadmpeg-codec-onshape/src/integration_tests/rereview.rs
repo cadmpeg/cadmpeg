@@ -212,13 +212,15 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
             .any(|loss| loss.message.contains("producer is ambiguous")));
         validate(result);
         let bracketed = members(&ambiguous, |members| {
-            let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
+                &members["partstudios/studio/bodydetails/3.json"],
+            )
+            .unwrap();
             before["bodies"][0]["edges"] = json!([]);
             before["bodies"][0]["faces"] = json!([]);
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
             );
             members.insert(
                 "partstudios/studio/bodydetails/index.json".into(),
@@ -256,15 +258,17 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         );
         validate(result);
         let unchanged = members(&bracketed, |members| {
-            let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
+                &members["partstudios/studio/bodydetails/3.json"],
+            )
+            .unwrap();
             before["bodies"][0]["edges"][0]["curve"]["origin"]["x"] = json!(0);
             if operand == "face" {
                 before["bodies"][0]["faces"][0]["surface"]["normal"]["z"] = json!(1);
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&unchanged);
@@ -289,8 +293,10 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         );
         validate(result);
         let changed = members(&bracketed, |members| {
-            let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
+                &members["partstudios/studio/bodydetails/3.json"],
+            )
+            .unwrap();
             if operand == "face" {
                 for edge in before["bodies"][0]["edges"].as_array_mut().unwrap() {
                     let x = edge["curve"]["origin"]["x"].as_f64().unwrap();
@@ -307,7 +313,7 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&changed);

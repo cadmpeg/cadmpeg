@@ -1139,9 +1139,9 @@ mod tests {
                 vec![1],
             )
             .expect("fitting token");
-            let bytes = serde_json::to_vec(&frame).expect("frame JSON");
+            let bytes = cadmpeg_core::serde_erase::json::to_vec(&frame).expect("frame JSON");
             assert_eq!(
-                serde_json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes)
+                cadmpeg_core::serde_erase::json::from_slice::<ConsolidatedRawFrame<u64>>(&bytes)
                     .expect("checked frame JSON"),
                 frame
             );
@@ -1153,9 +1153,12 @@ mod tests {
                 vec![1]
             )
             .is_err());
-            let mut wire = serde_json::to_value(&frame).expect("frame wire");
+            let mut wire = cadmpeg_core::serde_erase::json::to_value(&frame).expect("frame wire");
             wire["header_token"] = serde_json::json!(maximum + 1);
-            assert!(serde_json::from_value::<ConsolidatedRawFrame<u64>>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ConsolidatedRawFrame<u64>>(wire)
+                    .is_err()
+            );
         }
         let frame = ConsolidatedRawFrame::new(
             12_u64,
@@ -1166,7 +1169,7 @@ mod tests {
         )
         .expect("frame");
         assert_eq!(
-            serde_json::to_string(&frame).expect("frame bytes"),
+            cadmpeg_core::serde_erase::json::to_string(&frame).expect("frame bytes"),
             r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":"01"}"#
         );
     }
@@ -1211,19 +1214,24 @@ mod tests {
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {
         for byte in u8::MIN..=u8::MAX {
-            let width = serde_json::from_value::<ConsolidatedFrameWidth>(serde_json::json!(byte));
+            let width = cadmpeg_core::serde_erase::json::from_value::<ConsolidatedFrameWidth>(
+                serde_json::json!(byte),
+            );
             assert_eq!(width.is_ok(), matches!(byte, 1..=4));
             if let Ok(width) = width {
                 assert_eq!(
-                    serde_json::to_value(width).expect("serialize frame width"),
+                    cadmpeg_core::serde_erase::json::to_value(width)
+                        .expect("serialize frame width"),
                     serde_json::json!(byte)
                 );
             }
-            let flag = serde_json::from_value::<ConsolidatedFrameFlag>(serde_json::json!(byte));
+            let flag = cadmpeg_core::serde_erase::json::from_value::<ConsolidatedFrameFlag>(
+                serde_json::json!(byte),
+            );
             assert_eq!(flag.is_ok(), matches!(byte, 0x03 | 0x13 | 0x83));
             if let Ok(flag) = flag {
                 assert_eq!(
-                    serde_json::to_value(flag).expect("serialize frame flag"),
+                    cadmpeg_core::serde_erase::json::to_value(flag).expect("serialize frame flag"),
                     serde_json::json!(byte)
                 );
             }

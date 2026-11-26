@@ -27,7 +27,7 @@ type Reader = fn(&str) -> Result<Value, String>;
 /// Reads `text` as a `T` and writes it back.
 fn reads<T: Serialize + DeserializeOwned>(text: &str) -> Result<Value, String> {
     let read: T = read_desktop(text).map_err(|error| error.to_string())?;
-    serde_json::to_value(read).map_err(|error| error.to_string())
+    cadmpeg_core::serde_erase::json::to_value(read).map_err(|error| error.to_string())
 }
 
 /// The reader of each adjacently tagged process enum with a unit variant, by

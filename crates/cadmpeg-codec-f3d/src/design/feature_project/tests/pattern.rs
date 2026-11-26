@@ -494,7 +494,7 @@ pub(super) fn compact_entity_selection(
     record_index: u32,
     identity: u64,
 ) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
         "scope_record_index": 10,
         "group_record_index": group_record_index, "group_member_ordinal": 0,
@@ -746,8 +746,8 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
         );
         let record = scope.rectangular_pattern_construction().unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(
-                serde_json::to_value(record).unwrap()
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                cadmpeg_core::serde_erase::json::to_value(record).unwrap()
             )
             .unwrap(),
             *record

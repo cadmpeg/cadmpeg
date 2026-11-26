@@ -88,15 +88,20 @@ mod tests {
             );
             let state: SurfaceCurveState = serde_json::from_str(&json).unwrap();
             assert_eq!(state.original(), expected);
-            assert_eq!(serde_json::to_string(&state).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
+                json
+            );
             for field in ["surface_xmt", "pcurve_xmt"] {
                 for invalid in [0, 1] {
-                    let mut wire = serde_json::to_value(state).unwrap();
+                    let mut wire = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
                     wire[field] = invalid.into();
-                    assert!(serde_json::from_value::<SurfaceCurveState>(wire)
-                        .unwrap_err()
-                        .to_string()
-                        .contains(field));
+                    assert!(
+                        cadmpeg_core::serde_erase::json::from_value::<SurfaceCurveState>(wire)
+                            .unwrap_err()
+                            .to_string()
+                            .contains(field)
+                    );
                 }
             }
         }

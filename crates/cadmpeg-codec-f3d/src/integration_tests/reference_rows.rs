@@ -28,10 +28,10 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
             "assembly-design",
             "root.f3d",
             &placements,
-            &serde_json::to_vec(&table).unwrap(),
+            &cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
         );
         let child = f3d_with_smbh(&synthetic_geometry_smbh());
-        let description = serde_json::to_vec(&json!({
+        let description = cadmpeg_core::serde_erase::json::to_vec(&json!({
             "name": "Autodesk Design Description", "version": "0.1",
             "designDescription": {"id": "0", "designGraphs": [{
                 "rootIds": [0], "designObjectRefs": [], "designObjects": [{
@@ -94,7 +94,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: &[Value]) -> Vec<u8> {
-    serde_json::to_vec(&json!({
+    cadmpeg_core::serde_erase::json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],

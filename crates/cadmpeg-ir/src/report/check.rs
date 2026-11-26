@@ -424,9 +424,9 @@ mod tests {
             "entity": "test:model:feature#consumer",
             "related": []
         });
-        let finding: Finding = serde_json::from_value(wire.clone())?;
+        let finding: Finding = cadmpeg_core::serde_erase::json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());
-        assert_eq!(serde_json::to_value(finding)?, wire);
+        assert_eq!(cadmpeg_core::serde_erase::json::to_value(finding)?, wire);
         Ok(())
     }
 
@@ -446,7 +446,8 @@ mod tests {
             "f3d/links.native-ref",
             "design_x.a1",
         ] {
-            let finding: Finding = serde_json::from_value(wire(good)).expect(good);
+            let finding: Finding =
+                cadmpeg_core::serde_erase::json::from_value(wire(good)).expect(good);
             assert_eq!(finding.rule.as_str(), good);
         }
         for bad in [
@@ -458,7 +459,7 @@ mod tests {
             "",
         ] {
             assert!(
-                serde_json::from_value::<Finding>(wire(bad)).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<Finding>(wire(bad)).is_err(),
                 "{bad}"
             );
         }
@@ -467,7 +468,7 @@ mod tests {
             .as_object_mut()
             .expect("a finding is an object")
             .remove("rule");
-        assert!(serde_json::from_value::<Finding>(missing).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Finding>(missing).is_err());
     }
 
     #[test]
@@ -479,9 +480,12 @@ mod tests {
             (Check::MeasurementIncomplete, "measurement_incomplete"),
             (Check::DeclaredMeasure, "declared_measure"),
         ] {
-            assert_eq!(serde_json::to_value(check)?, name);
+            assert_eq!(cadmpeg_core::serde_erase::json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);
-            assert_eq!(serde_json::from_value::<Check>(name.into())?, check);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::from_value::<Check>(name.into())?,
+                check
+            );
         }
         Ok(())
     }
@@ -499,9 +503,12 @@ mod tests {
                 "test:model:feature#first".into(),
             ],
         };
-        let wire = serde_json::to_value(&finding)?;
+        let wire = cadmpeg_core::serde_erase::json::to_value(&finding)?;
         assert_eq!(wire["related"], serde_json::json!(finding.related));
-        assert_eq!(serde_json::from_value::<Finding>(wire)?, finding);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::from_value::<Finding>(wire)?,
+            finding
+        );
         Ok(())
     }
 }

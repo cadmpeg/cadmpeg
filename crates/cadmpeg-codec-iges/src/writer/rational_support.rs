@@ -3,6 +3,7 @@
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
 use super::covered_uses::visit_pole_uses;
+use super::degrade::{naming, Unwritten};
 use super::exact::nurbs_form;
 use super::same_range;
 use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
@@ -20,7 +21,7 @@ use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
-use cadmpeg_ir::topology::{Face, FaceLoops, LoopBoundary, LoopRing, PcurveUse, Sense};
+use cadmpeg_ir::topology::{Face, LoopBoundary, LoopRing, PcurveUse, Sense};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,11 +41,12 @@ const RATIONAL_PIECE_SPLITS: u32 = 8;
 /// on it. A face whose parameter curves are not all exact on the restated
 /// support keeps its model-space boundary: its parameter curves are removed
 /// and each is charged `writer.pcurve-omitted`. Only the supports that
-/// `admit` names are restated.
+/// `admit` names are restated. Fails naming a face that no restated domain
+/// holds.
 pub(super) fn rational_analytic_supports(
     ir: &CadIr,
     admit: impl Fn(&str) -> bool,
-) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), CodecError> {
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), Unwritten> {
     let forms = ir
         .geometry
         .surfaces
@@ -70,6 +72,7 @@ pub(super) fn rational_analytic_supports(
         let Some(restated) = restated_support(&ends, &index, surface, &form) else {
             continue;
         };
+        let restated = restated?;
         if restated
             .pcurves
             .keys()
@@ -508,7 +511,6 @@ impl LoopImages {
         }
     }
 
-    /// The middle of the azimuths of the loop, absent for a loop of no curve.
     /// The least and greatest value of the parameter `axis` on the loop,
     /// absent for a loop of no curve.
     fn extent(&self, axis: usize) -> Option<[f64; 2]> {
@@ -696,12 +698,14 @@ fn whole_slope(delta: Point2) -> Option<Slope> {
 /// The rational form of the revolved support `surface` over a domain that
 /// holds its faces, with the exact image of each parameter curve on it. A
 /// face that states no loop on a sphere or torus covers the whole support.
+/// None where no such domain holds the faces together; an error naming the
+/// face where no domain holds one face.
 fn restated_support(
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
     surface: &str,
     form: &Revolved,
-) -> Option<Restated> {
+) -> Option<Result<Restated, Unwritten>> {
     let geometry = &index.ir.geometry;
     let faces = geometry
         .faces
@@ -723,34 +727,57 @@ fn restated_support(
     for face in faces {
         if face.loops.stated().next().is_none() {
             if !circular {
-                return None;
+                return Some(Err(naming(face.id.as_str())(CodecError::NotImplemented(
+                    format!(
+                        "IGES restated support {surface}: a cylinder or cone face that states no loop has no finite domain"
+                    ),
+                ))));
             }
             whole = true;
             continue;
         }
         match face_images(ends, index, face, circular)? {
             Ok(mut loops) => {
-                let outer = matches!(
-                    face.loops,
-                    FaceLoops::Classified { .. }
-                        | FaceLoops::PartialClassified { outer: Some(_), .. }
-                );
-                aligned(&mut loops, 0, outer);
-                if form.v_periodic() {
-                    aligned(&mut loops, 1, outer);
-                }
                 let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
                 let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
                     (vec![Point2::new(0.0, 0.0); loops.len()], Default::default())
                 });
+                for (images, shift) in loops.iter_mut().zip(shifts) {
+                    images.shift(shift);
+                }
+                for (axis, parameter) in [(0, "azimuth"), (1, "tube angle")] {
+                    if axis == 1 && !form.v_periodic() {
+                        continue;
+                    }
+                    windowed(&mut loops, axis, &reach[axis]);
+                    let mut extent = Extent::default();
+                    for value in loops
+                        .iter()
+                        .filter_map(|images| images.extent(axis))
+                        .flatten()
+                        .chain(reach[axis].iter().copied())
+                    {
+                        extent.include(value);
+                    }
+                    if extent
+                        .bounds()
+                        .is_some_and(|[low, high]| high - low > TAU + ANGULAR_TOLERANCE)
+                    {
+                        return Some(Err(naming(face.id.as_str())(CodecError::NotImplemented(
+                            format!(
+                                "IGES restated support {surface}: no one turn of the {parameter} holds the loops of face {}",
+                                face.id
+                            ),
+                        ))));
+                    }
+                }
                 let mut own = BTreeSet::new();
-                for (loop_images, shift) in loops.into_iter().zip(shifts) {
+                for loop_images in loops {
                     for mut image in loop_images.images {
                         if !own.insert(image.id.clone()) {
                             continue;
                         }
-                        for point in [&mut image.start, &mut image.end] {
-                            *point = Point2::new(point.u + shift.u, point.v + shift.v);
+                        for point in [&image.start, &image.end] {
                             u_extent.include(point.u);
                             v_extent.include(point.v);
                         }
@@ -953,61 +980,60 @@ fn restated_support(
         };
         pcurves.insert(curve.id, nurbs);
     }
-    Some(Restated {
+    Some(Ok(Restated {
         surface,
         pcurves,
         model_space,
         copies,
-    })
+    }))
 }
 
-/// Moves each loop of a face that does not wind about the other parameter by
-/// whole turns of the periodic parameter `axis` to the period of a reference
-/// loop: the outer loop where the face states one (`outer`, the first loop),
-/// else a loop that winds about `axis`, else the loop of the widest extent
-/// in `axis`. A loop that winds about the other parameter keeps its place in
-/// `axis`, where its side of the face sets its period.
-fn aligned(loops: &mut [LoopImages], axis: usize, outer: bool) {
+/// Moves each loop of a face that does not turn around the other parameter
+/// by whole turns of the periodic parameter `axis` into one window of a
+/// turn. The loops that turn around the other parameter bound the face in
+/// `axis` and keep their places: the window starts at the least value of
+/// these loops and of `reach`, the bounds their face sides set. Without such
+/// loops, the window is the narrowest that holds every loop.
+fn windowed(loops: &mut [LoopImages], axis: usize, reach: &[f64]) {
     let other = 1 - axis;
-    let reference = outer
-        .then_some(0)
-        .filter(|_| {
-            loops
-                .first()
-                .and_then(|images| images.extent(axis))
-                .is_some()
-        })
+    // The whole turns that move the value `low` to at least `start`.
+    let turns = |start: f64, low: f64| ((start - low - ANGULAR_TOLERANCE) / TAU).ceil() * TAU;
+    let free = loops
+        .iter()
+        .filter(|images| images.winding[other] == 0)
+        .filter_map(|images| images.extent(axis))
+        .collect::<Vec<_>>();
+    let start = loops
+        .iter()
+        .filter(|images| images.winding[other] != 0)
+        .filter_map(|images| images.extent(axis))
+        .map(|[low, _]| low)
+        .chain(reach.iter().copied())
+        .min_by(f64::total_cmp)
         .or_else(|| {
-            loops
-                .iter()
-                .position(|images| images.winding[axis] != 0 && images.extent(axis).is_some())
-        })
-        .or_else(|| {
-            loops
-                .iter()
-                .enumerate()
-                .filter_map(|(position, images)| {
-                    images
-                        .extent(axis)
-                        .map(|[low, high]| (position, high - low))
+            free.iter()
+                .map(|[start, _]| {
+                    let end = free
+                        .iter()
+                        .map(|[low, high]| high + turns(*start, *low))
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    (*start, end - start)
                 })
-                .max_by(|first, second| first.1.total_cmp(&second.1))
-                .map(|(position, _)| position)
+                .min_by(|first, second| first.1.total_cmp(&second.1))
+                .map(|(start, _)| start)
         });
-    let Some([low, high]) = reference.and_then(|position| loops[position].extent(axis)) else {
+    let Some(start) = start else {
         return;
     };
-    let reference = 0.5 * (low + high);
     for images in loops.iter_mut().filter(|images| images.winding[other] == 0) {
-        let Some([low, high]) = images.extent(axis) else {
-            continue;
-        };
-        let turns = ((reference - 0.5 * (low + high)) / TAU).round() * TAU;
-        images.shift(if axis == 0 {
-            Point2::new(turns, 0.0)
-        } else {
-            Point2::new(0.0, turns)
-        });
+        if let Some([low, _]) = images.extent(axis) {
+            let turns = turns(start, low);
+            images.shift(if axis == 0 {
+                Point2::new(turns, 0.0)
+            } else {
+                Point2::new(0.0, turns)
+            });
+        }
     }
 }
 

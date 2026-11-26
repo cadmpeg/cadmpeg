@@ -15,7 +15,7 @@ fn connectivity_budget_refuses_work_before_curve_lookup() {
 
 #[test]
 fn clamped_rational_spline_endpoints_use_the_end_poles() {
-    let entity = serde_json::from_value(json!({
+    let entity = cadmpeg_core::serde_erase::json::from_value(json!({
         "id":"synthetic:model:entity#spline", "sketch":"synthetic:model:sketch#path",
         "construction":false, "endpoint_refs":[],
         "geometry":{"kind":"nurbs", "curve":{

@@ -7,7 +7,10 @@ where
     T: serde::de::DeserializeOwned + Serialize,
 {
     let lane: T = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+        json
+    );
     for column in columns {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         if let serde_json::Value::String(bytes) = &mut malformed[*column] {
@@ -15,6 +18,9 @@ where
         } else {
             malformed[*column].as_array_mut().unwrap().pop();
         }
-        assert!(serde_json::from_value::<T>(malformed).is_err(), "{column}");
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<T>(malformed).is_err(),
+            "{column}"
+        );
     }
 }

@@ -844,7 +844,7 @@ mod tests {
             let hex = super::LowerHex(bytes);
             assert_eq!(hex.to_string(), expected);
             assert_eq!(
-                serde_json::to_value(&hex).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(&hex).unwrap(),
                 serde_json::json!(expected)
             );
         }
@@ -940,7 +940,7 @@ mod tests {
   "zeta": null
 }"#;
         assert_eq!(
-            serde_json::to_string_pretty(&pinned_record()).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_record()).unwrap(),
             expected
         );
     }
@@ -980,7 +980,7 @@ mod tests {
   }
 }"#;
         assert_eq!(
-            serde_json::to_string_pretty(&pinned_native()).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_native()).unwrap(),
             expected
         );
     }
@@ -1554,7 +1554,7 @@ mod tests {
             }),
         ];
         for sample in &samples {
-            let compact = serde_json::to_string(sample).unwrap();
+            let compact = cadmpeg_core::serde_erase::json::to_string(sample).unwrap();
             let mut formatted = String::new();
             let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
             assert!(max_depth >= 2);

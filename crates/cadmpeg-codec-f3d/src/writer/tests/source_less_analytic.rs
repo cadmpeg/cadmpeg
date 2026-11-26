@@ -107,7 +107,8 @@ fn generated_configuration_document() -> serde_json::Value {
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = serde_json::to_vec(&generated_configuration_document()).unwrap();
+    let payload =
+        cadmpeg_core::serde_erase::json::to_vec(&generated_configuration_document()).unwrap();
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(

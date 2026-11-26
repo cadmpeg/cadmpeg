@@ -17,8 +17,8 @@ fn a_document_with_a_history_body_measures_as_one_without() {
     let without = measure(&plain, &selection);
     let with = measure(&nested, &selection);
     assert_eq!(
-        serde_json::to_value(&without).expect("serialize"),
-        serde_json::to_value(&with).expect("serialize")
+        cadmpeg_core::serde_erase::json::to_value(&without).expect("serialize"),
+        cadmpeg_core::serde_erase::json::to_value(&with).expect("serialize")
     );
     assert_eq!(with.faces().len(), without.faces().len());
     let bodies = measure(&nested, &Selection::default());

@@ -62,7 +62,7 @@ fn measure_json(args: &[&str]) -> Value {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap()
 }
 
 #[cfg(feature = "step")]
@@ -748,7 +748,8 @@ fn report_flag_aliases() {
             .arg(&report)
             .assert()
             .success();
-        let value: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let value: Value =
+            cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["command"], "measure");
         assert_eq!(value["status"], "ok");
         assert!(value["measure"]["bodies"].is_array());
@@ -764,7 +765,8 @@ fn report_flag_aliases() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout.lines().next(), Some(FACE_HEADER));
-    let value: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["command"], "measure");
     assert_eq!(value["measure"]["faces"].as_array().unwrap().len(), 1);
 
@@ -854,7 +856,7 @@ fn container_depth_cadir_charges_output_empty() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     let losses = value["measure"]["losses"].as_array().unwrap();
     assert_eq!(losses.len(), 1, "{value:#}");
     assert_eq!(losses[0]["code"]["value"]["namespace"], "measure");
@@ -869,7 +871,7 @@ fn container_depth_cadir_charges_output_empty() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["code"], "strict_measure_rejected");
     assert_eq!(value["refusal"]["stage"], "measure");
@@ -881,7 +883,8 @@ fn ring_order_caveat_is_visible() {
     let dir = tempdir().unwrap();
     let cadir = dir.path().join("plate.cadir.json");
     dump(&fixture("measure_plane_hole.p21"), &cadir, &[]);
-    let mut document: Value = serde_json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
+    let mut document: Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
     let outer = document["geometry"]["loops"]
         .as_array_mut()
         .unwrap()
@@ -892,7 +895,11 @@ fn ring_order_caveat_is_visible() {
     assert_eq!(coedges.len(), 4);
     coedges[1..].reverse();
     let reversed = dir.path().join("reversed.cadir.json");
-    fs::write(&reversed, serde_json::to_vec(&document).unwrap()).unwrap();
+    fs::write(
+        &reversed,
+        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
 
     let report = measure_json(&[reversed.to_str().unwrap(), "--face", "face#69"]);
     let row = face(&report, "step:data:face#69");
@@ -923,7 +930,7 @@ fn json_refusal_envelope() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "refused");
     assert_eq!(value["command"], "measure");
     let mut keys: Vec<&str> = value

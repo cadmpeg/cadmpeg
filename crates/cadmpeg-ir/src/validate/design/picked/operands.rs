@@ -289,11 +289,13 @@ impl<'a> Probe<'_, 'a> {
         }
         let mut short = BTreeMap::new();
         for state in self.states(&corners.at) {
-            let Some(thinnest) =
-                sheets::entering(self.index, self.feature.id.as_str(), state.configuration)
-                    .and_then(|entering| entering.thicknesses)
-                    .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min))
-            else {
+            let Some(thinnest) = sheets::entering(
+                self.index,
+                self.feature.id.as_str(),
+                sheets::Reading::of(state.configuration),
+            )
+            .and_then(|entering| entering.thicknesses)
+            .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min)) else {
                 continue;
             };
             let Some(topology) = state.matcher.topology() else {

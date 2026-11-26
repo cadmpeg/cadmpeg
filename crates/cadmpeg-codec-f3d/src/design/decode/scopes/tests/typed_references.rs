@@ -102,13 +102,13 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
     let evidence = prologue.opaque_distance_word().unwrap();
     assert_eq!(evidence.value.get(), word);
     assert_eq!(evidence.byte_offset, u64::try_from(option_offset).unwrap());
-    let mut wire = serde_json::to_value(prologue).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(prologue).unwrap();
     assert_eq!(
-        serde_json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
         prologue
     );
     wire["opaque_distance_word"]["value"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<DesignExtrudePrologue>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignExtrudePrologue>(wire).is_err());
 
     for (offset, value) in [(26, 2), (30, 1), (35, 0), (36, 1), (option_offset + 4, 1)] {
         let mut different = opaque.clone();

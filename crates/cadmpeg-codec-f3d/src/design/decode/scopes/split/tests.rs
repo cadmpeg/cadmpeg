@@ -93,7 +93,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
         .unwrap();
     let mut losses = Vec::new();
     decode_split_tool_extension(&bytes, &mut scope, &mut losses);
-    let value = serde_json::to_value(&scope).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
     assert_eq!(
         value["split_tool_extension"],
         serde_json::json!({"value": false, "offset": offset})
@@ -103,12 +103,15 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
         losses[0].code,
         F3dLossCode::FeatureSplitToolExtensionAssumed.kind()
     );
-    let decoded: DesignParameterScope = serde_json::from_value(value.clone()).unwrap();
+    let decoded: DesignParameterScope =
+        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
     assert_eq!(decoded, scope);
 
     let mut wrong_offset = value;
     wrong_offset["split_tool_extension"]["offset"] = serde_json::json!(offset + 1);
-    assert!(serde_json::from_value::<DesignParameterScope>(wrong_offset).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wrong_offset).is_err()
+    );
 
     bytes[offset] = 2;
     losses.clear();
@@ -118,7 +121,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
         losses[0].code,
         F3dLossCode::FeatureSplitToolExtensionUnresolved.kind()
     );
-    assert!(serde_json::to_value(&scope)
+    assert!(cadmpeg_core::serde_erase::json::to_value(&scope)
         .unwrap()
         .get("split_tool_extension")
         .is_none());

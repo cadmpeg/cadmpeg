@@ -214,22 +214,23 @@ impl Fixture {
         .unwrap()
         .expect("Revolve scope");
         scope.id = format!("{STREAM}:design-parameter-scope#0");
-        let owner: DesignParameterOwner = serde_json::from_value(serde_json::json!({
-            "id": format!("{STREAM}:design-parameter-owner#{OWNER}"),
-            "byte_offset": 2000,
-            "frame_length": 104,
-            "class_tag": "351",
-            "record_index": OWNER,
-            "scope_record_index": SCOPE,
-            "local_ordinal": 0,
-            "evaluated_value": self.owner_value,
-            "evaluated_value_offset": 2040,
-            "parameter_record_index": OWNER - 1,
-            "owned_ordinal": 3,
-            "variant": 0,
-            "companion_record_index": OWNER + 1,
-        }))
-        .unwrap();
+        let owner: DesignParameterOwner =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": format!("{STREAM}:design-parameter-owner#{OWNER}"),
+                "byte_offset": 2000,
+                "frame_length": 104,
+                "class_tag": "351",
+                "record_index": OWNER,
+                "scope_record_index": SCOPE,
+                "local_ordinal": 0,
+                "evaluated_value": self.owner_value,
+                "evaluated_value_offset": 2040,
+                "parameter_record_index": OWNER - 1,
+                "owned_ordinal": 3,
+                "variant": 0,
+                "companion_record_index": OWNER + 1,
+            }))
+            .unwrap();
         match exact_path_feature_construction(&bytes, &records, &scope, &[owner])? {
             DesignPathFeatureConstruction::Revolve(construction) => Some(construction),
             _ => None,

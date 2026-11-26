@@ -32,7 +32,7 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     let result = decode(3);
-    let wire = serde_json::to_value(
+    let wire = cadmpeg_core::serde_erase::json::to_value(
         &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
     )
     .unwrap();
@@ -87,7 +87,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     });
     for selector in [0, 1, 4] {
         let result = decode(selector);
-        let wire = serde_json::to_value(
+        let wire = cadmpeg_core::serde_erase::json::to_value(
             &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
         )
         .unwrap();

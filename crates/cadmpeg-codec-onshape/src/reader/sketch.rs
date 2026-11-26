@@ -430,7 +430,7 @@ pub(super) fn map(
             &mut model.sketch_entities,
             json!({"id": entity_id, "sketch": sketch_id,
             "endpoint_refs": [], "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
-                serde_json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
+                cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
                 Ok(geometry)
             }) {
                 Ok(geometry) => geometry,
@@ -489,8 +489,8 @@ fn locus_position(locus: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|e| e.id().as_str() == entity_id)
         .ok_or("the sketch point's entity is missing")?;
-    let entity =
-        serde_json::to_value(entity).map_err(|_| "the sketch point's entity is unreadable")?;
+    let entity = cadmpeg_core::serde_erase::json::to_value(entity)
+        .map_err(|_| "the sketch point's entity is unreadable")?;
     let geometry = entity
         .get("geometry")
         .ok_or("the sketch point's geometry is missing")?;

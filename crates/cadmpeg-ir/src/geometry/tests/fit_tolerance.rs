@@ -48,13 +48,13 @@ fn a_full_law_surface_tail_states_its_fit_tolerance() {
         Some(FitTolerance::try_new(0.25).expect("admissible fit tolerance"))
     );
     let surface = ProceduralSurface::new(surface_id(), definition, None);
-    let wire = serde_json::to_value(&surface).expect("serialize");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&surface).expect("serialize");
     assert_eq!(
         wire["definition"]["construction"]["tail"]["cache"]["fit_tolerance"],
         0.25
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralSurface>(wire).expect("read back"),
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).expect("read back"),
         surface
     );
 }

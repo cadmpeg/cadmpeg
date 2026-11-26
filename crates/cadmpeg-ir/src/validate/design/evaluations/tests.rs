@@ -336,12 +336,12 @@ fn a_state_chain_past_the_ceiling_refuses_the_session_and_is_no_finding() {
         ),
         "{refusal:?}"
     );
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_err());
     let ir = state_chain(depth);
     let findings = findings_under(&ir, &policy).unwrap();
     assert!(findings.is_empty(), "{findings:#?}");
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_ok());
 }
 

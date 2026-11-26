@@ -2278,7 +2278,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             pairs: vec![pair],
         })
         .collect();
-        let synthetic = serde_json::to_string(&[RadialFixture {
+        let synthetic = cadmpeg_core::serde_erase::json::to_string(&[RadialFixture {
             source,
             face_pairs: vec![[0, 0]],
             edge_pairs: vec![[0, 1]],

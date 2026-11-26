@@ -39,7 +39,7 @@ pub(in crate::design) fn reads<T: Serialize + DeserializeOwned>(
     value: &Value,
 ) -> Result<Value, String> {
     let read: T = read_desktop(&value.to_string()).map_err(|error| error.to_string())?;
-    serde_json::to_value(read).map_err(|error| error.to_string())
+    cadmpeg_core::serde_erase::json::to_value(read).map_err(|error| error.to_string())
 }
 
 /// The reader of each adjacently tagged design enum with a unit variant, by

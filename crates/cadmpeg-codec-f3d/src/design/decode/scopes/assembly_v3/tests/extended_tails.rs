@@ -121,9 +121,9 @@ fn extended_tails_preserve_reference_offsets_and_independent_alignment_lanes() {
                             (decoded.angle() - std::f64::consts::FRAC_PI_2).abs() < EPS_ALIGNMENT
                         );
                         assert!(valid_alignment(&scope, &decoded, &types, &owners));
-                        let wire = serde_json::to_value(&decoded).unwrap();
+                        let wire = cadmpeg_core::serde_erase::json::to_value(&decoded).unwrap();
                         let round_trip: DesignAssemblyAlignment =
-                            serde_json::from_value(wire).unwrap();
+                            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
                         assert_eq!(decoded, round_trip);
                     }
                 }
@@ -198,15 +198,16 @@ fn typed_extended_tails_admit_scope_metadata_and_shift_previous_history() {
             parsed.previous_history_state_id_offset(),
             Some(scope.feature_ordinal_offset() + if extended { 121 } else { 70 })
         );
-        let mut wire = serde_json::to_value(&parsed).unwrap();
-        let round_trip: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&parsed).unwrap();
+        let round_trip: DesignParameterScope =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(
             round_trip.previous_history_state_id_offset(),
             parsed.previous_history_state_id_offset()
         );
         wire["previous_history_state_id_offset"] =
             serde_json::json!(scope.feature_ordinal_offset() + 122);
-        assert!(serde_json::from_value::<DesignParameterScope>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire).is_err());
         if extended {
             let mut damaged = bytes.clone();
             damaged[usize::try_from(scope.feature_ordinal_offset()).unwrap() + 70] = 0;
@@ -270,7 +271,7 @@ fn extended_tails_refuse_invalid_type_reference_state_extent_and_native_offsets(
         damaged.additional_tail_reference = reference;
         assert!(!valid_alignment(&scope, &damaged, &types, &owners));
     }
-    let mut wire = serde_json::to_value(&decoded).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&decoded).unwrap();
     wire["additional_tail_reference"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<DesignAssemblyAlignment>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyAlignment>(wire).is_err());
 }

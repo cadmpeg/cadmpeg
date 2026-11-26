@@ -799,7 +799,7 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
             "{}",
             case.label
         );
-        let json = serde_json::to_string(&relation).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
         assert_eq!(restored, relation, "{}", case.label);

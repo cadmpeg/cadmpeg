@@ -53,7 +53,9 @@ fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
         r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
     )
     .unwrap();
-    let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
+    let record_bytes = cadmpeg_core::serde_erase::json::to_vec(&Wire::from(&pair))
+        .unwrap()
+        .len();
     let native = super::F3dNative {
         design_dimension_null_locus_pairs: vec![pair].try_into().unwrap(),
         ..super::F3dNative::default()
@@ -172,7 +174,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     );
     for records in round_trip.arenas().values() {
         for record in records {
-            let json = serde_json::to_value(record).unwrap();
+            let json = cadmpeg_core::serde_erase::json::to_value(record).unwrap();
             assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
@@ -1669,7 +1671,7 @@ fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
         .iter()
         .zip(&changes)
     {
-        let json = serde_json::to_string(rec).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(rec).unwrap();
         let parsed = super::try_parse_canonical_asm_entity_change(&json).unwrap();
         assert_eq!(&parsed, change);
     }
@@ -1707,7 +1709,7 @@ fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
         .iter()
         .zip(&records)
     {
-        let json = serde_json::to_string(rec).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(rec).unwrap();
         let parsed = super::try_parse_canonical_asm_history_record(&json).unwrap();
         assert_eq!(&parsed, record);
     }
