@@ -107,8 +107,7 @@ fuzz = "required"
 [[crate]]
 id = "ironcad"
 names = ["IronCadCodec"]
-fuzz = "absent"
-fuzz_reason = "the codec target calls IronCadCodec directly"
+fuzz = "required"
 
 [[crate]]
 id = "solidedge"

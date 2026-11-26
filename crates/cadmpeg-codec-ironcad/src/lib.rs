@@ -10,6 +10,8 @@ mod container;
 mod decode;
 mod dialect;
 mod frame;
+#[doc(hidden)]
+pub mod fuzz;
 mod kernel;
 mod layout;
 mod loss;
