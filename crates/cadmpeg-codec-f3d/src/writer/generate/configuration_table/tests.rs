@@ -11,8 +11,13 @@ use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{ConfigurationId, Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::Length;
 
-use super::{evaluated, regenerate, row_id};
-use crate::design::configurations::{project, reconcile_active_configurations};
+use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
+
+use super::{evaluated, regenerate, row_id, Written};
+use crate::design::configurations::{project, reconcile_active_configurations, Projection};
 use crate::ids::neutral_configuration_id;
 use crate::records::configuration::table::ConfiguredValue;
 use crate::records::configuration::{
@@ -23,6 +28,50 @@ use crate::test_support::configuration_table::{
     string_cell, table_document, Natives,
 };
 use crate::writer::primitives::projects;
+
+/// The write of `configurations` over `documents`, which project as
+/// `decoded`, in a document whose design scope states `scoped` active: the
+/// written documents, and the losses of the table and of its read-back with
+/// the row that the root record names active.
+fn write_scoped<'a>(
+    documents: &'a [DesignConfiguration],
+    decoded: &Projection,
+    configurations: &'a [Configuration],
+    natives: &Natives,
+    scoped: Option<&ConfigurationId>,
+) -> (Written<'a>, Vec<LossNote>) {
+    let targets = natives.targets();
+    let (written, mut losses) = regenerate(documents, decoded, configurations, &targets).unwrap();
+    let mut ir = CadIr::empty();
+    ir.design.scopes.extend(scoped.map(|scoped| DesignScope {
+        definition: ProductDefinitionId::mint("test:design:product#0").unwrap(),
+        roots: Vec::new(),
+        active_configuration: Some(scoped.clone()),
+        active_arrangements: std::collections::BTreeSet::new(),
+        occurrences: std::collections::BTreeMap::new(),
+        current: Vec::new(),
+        unproduced: std::collections::BTreeSet::new(),
+    }));
+    let plan = super::super::configuration_root::plan(
+        &ir,
+        documents,
+        decoded.table,
+        &written,
+        configurations,
+    );
+    losses.extend(written.read_back(plan.active(), &targets).unwrap());
+    (written, losses)
+}
+
+/// [`write_scoped`] in a document with no design scope.
+fn write<'a>(
+    documents: &'a [DesignConfiguration],
+    decoded: &Projection,
+    configurations: &'a [Configuration],
+    natives: &Natives,
+) -> (Written<'a>, Vec<LossNote>) {
+    write_scoped(documents, decoded, configurations, natives, None)
+}
 
 const ENTRY: &str =
     "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.w.dsgcfg";
@@ -117,8 +166,7 @@ fn regenerated(
     let decoded = project(documents, &natives.targets()).unwrap();
     let mut configurations = decoded.configurations.clone();
     edit(&mut configurations);
-    let (written, losses) =
-        regenerate(documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = write(documents, &decoded, &configurations, natives);
     Outcome {
         unchanged: matches!(written.documents, Cow::Borrowed(_)),
         documents: written.documents.into_owned(),
@@ -157,9 +205,9 @@ fn an_unedited_projection_writes_every_document_as_stated() {
 }
 
 #[test]
-fn a_feature_edit_without_a_cell_change_writes_the_rows_as_stated() {
+fn a_definition_the_table_cannot_hold_is_charged_in_each_configuration() {
     let natives = natives();
-    let decoded = project(&documents(), &natives.targets()).unwrap();
+    let feature = natives.neutral_features[0].id.clone();
     let outcome = regenerated(&natives, &documents(), |configurations| {
         for state in configurations
             .iter_mut()
@@ -172,9 +220,153 @@ fn a_feature_edit_without_a_cell_change_writes_the_rows_as_stated() {
             state.dependencies = DistinctMembers::default();
         }
     });
-    assert_ne!(outcome.configurations, decoded.configurations);
+    assert!(outcome.unchanged);
+    assert_eq!(outcome.losses.len(), 1, "{:#?}", outcome.losses);
+    let (code, message) = &outcome.losses[0];
+    assert_eq!(code, "export/edit.dropped");
+    for row in ["tall", "c1"] {
+        assert!(
+            message.contains(&format!(
+                "{}: feature_states.{feature}.definition stated ",
+                id(row)
+            )),
+            "{message}"
+        );
+    }
+    assert!(message.contains("Revolve"), "{message}");
+    assert!(
+        message.contains(&format!(
+            "feature_states.{feature}.dependencies stated [], reads back [\""
+        )),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_decoded_definition_equal_to_the_feature_s_is_not_charged() {
+    let mut natives = natives();
+    let other = neutral_feature(&scope(2), "f3d:test:feature#a");
+    natives.neutral_features.push(other.clone());
+    let feature = natives.neutral_features[0].clone();
+    let decoded = project(&documents(), &natives.targets()).unwrap();
+    for configuration in &decoded.configurations {
+        let state = &configuration.feature_states[&feature.id];
+        assert_eq!(state.definition, *feature.evaluation.definition());
+        assert_eq!(state.dependencies, feature.dependencies);
+    }
+    let outcome = regenerated(&natives, &documents(), |configurations| {
+        configuration(configurations, "tall")
+            .feature_states
+            .insert(other.id.clone(), other.configuration_state());
+    });
     assert!(outcome.unchanged);
     assert_eq!(outcome.losses, Vec::new());
+}
+
+/// The undecided feature 0 of [`natives`] (suppression `None`, or a sketch)
+/// and the losses of a write of [`documents`], with row `c1` active in the
+/// source, whose active row suppresses that feature: `tall` made active by
+/// the configurations (`Moved`) or by the design scope (`Scoped`), or `c1`
+/// edited to suppress it (`Edited`).
+fn active_row_suppression(sketch: bool, change: Change) -> (Feature, Vec<(String, String)>) {
+    let mut natives = natives();
+    if sketch {
+        natives.neutral_features[0].suppressed = Some(false);
+        natives.neutral_features[0]
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            }));
+    } else {
+        natives.neutral_features[0].suppressed = None;
+    }
+    let feature = natives.neutral_features[0].clone();
+    let mut documents = documents();
+    documents[0]
+        .set_active_row(DesignConfigurationActiveRow {
+            record_index: 349,
+            table_id: "1".into(),
+            row_id: "c1".into(),
+        })
+        .unwrap();
+    let decoded = reconciled(&natives, &documents);
+    let mut configurations = decoded.configurations.clone();
+    let mut scoped = None;
+    match change {
+        Change::Moved => {
+            configuration(&mut configurations, "c1").active = false;
+            configuration(&mut configurations, "tall").active = true;
+        }
+        Change::Scoped => scoped = Some(id("tall")),
+        Change::Edited => {
+            configuration(&mut configurations, "c1")
+                .feature_states
+                .get_mut(&feature.id)
+                .unwrap()
+                .evaluation = ConfigurationEvaluation::Suppressed {};
+        }
+    }
+    let (_, losses) = write_scoped(
+        &documents,
+        &decoded,
+        &configurations,
+        &natives,
+        scoped.as_ref(),
+    );
+    (
+        feature,
+        losses
+            .iter()
+            .map(|loss| (loss.code.to_string(), loss.message.clone()))
+            .collect(),
+    )
+}
+
+/// How [`active_row_suppression`] makes the active row suppress the feature.
+#[derive(Debug, Clone, Copy)]
+enum Change {
+    Moved,
+    Scoped,
+    Edited,
+}
+
+#[test]
+fn a_feature_the_written_active_row_suppresses_is_charged() {
+    for sketch in [false, true] {
+        for change in [Change::Moved, Change::Scoped, Change::Edited] {
+            let (feature, losses) = active_row_suppression(sketch, change);
+            assert_eq!(losses.len(), 1, "{sketch} {change:?}: {losses:#?}");
+            assert_eq!(losses[0].0, "export/value.unwritable");
+            assert!(
+                losses[0].1.contains(&format!(
+                    "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}",
+                    feature.id
+                )),
+                "{sketch} {change:?}: {losses:#?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_feature_the_decoder_suppressed_with_the_active_row_is_not_charged() {
+    let mut natives = natives();
+    natives.neutral_features[0].suppressed = None;
+    let mut documents = documents();
+    documents[0]
+        .set_active_row(DesignConfigurationActiveRow {
+            record_index: 349,
+            table_id: "1".into(),
+            row_id: "tall".into(),
+        })
+        .unwrap();
+    let mut decoded = project(&documents, &natives.targets()).unwrap();
+    reconcile_active_configurations(&mut natives.neutral_features, &mut decoded.configurations)
+        .unwrap();
+    assert_eq!(natives.neutral_features[0].suppressed, Some(true));
+    let (written, losses) = write(&documents, &decoded, &decoded.configurations, &natives);
+    assert!(matches!(written.documents, Cow::Borrowed(_)));
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
@@ -315,8 +507,7 @@ fn an_added_configuration_whose_id_names_no_row_is_written_under_a_generated_row
     added.ordinal = 2;
     added.properties.clear();
     configurations.push(added);
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = write(&documents, &decoded, &configurations, &natives);
     let (row, configuration) = written.generated.iter().next().unwrap();
     assert_eq!(configuration, "test:configuration:variant#added");
     assert_eq!(losses.len(), 1, "{losses:#?}");
@@ -359,13 +550,12 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
         serde_json::Map::new(),
     )
     .unwrap()];
-    let (written, losses) = regenerate(
+    let (written, losses) = write(
         &empty,
         &crate::design::configurations::Projection::default(),
         &decoded.configurations,
-        &natives.targets(),
-    )
-    .unwrap();
+        &natives,
+    );
     assert!(matches!(written.documents, Cow::Borrowed(_)));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
@@ -399,8 +589,7 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
         .unwrap();
     assert!(tall.feature_states.contains_key(&suppressed.id));
     let mut configurations = decoded.configurations.clone();
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = write(&documents, &decoded, &configurations, &natives);
     assert!(matches!(written.documents, Cow::Borrowed(_)));
     assert!(losses.is_empty(), "{losses:#?}");
 
@@ -410,8 +599,7 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
             NonBlankString::new("property:Part Number").unwrap(),
             "T-2".to_owned(),
         );
-    let (_, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (_, losses) = write(&documents, &decoded, &configurations, &natives);
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -461,8 +649,7 @@ fn charged(
     decoded: &crate::design::configurations::Projection,
     configurations: &[Configuration],
 ) -> (bool, Vec<(String, String)>) {
-    let (written, losses) =
-        regenerate(documents, decoded, configurations, &natives.targets()).unwrap();
+    let (written, losses) = write(documents, decoded, configurations, natives);
     (
         matches!(written.documents, Cow::Borrowed(_)),
         losses
@@ -707,8 +894,7 @@ fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
                 configuration.active = configuration.id == id("wide");
             }
         }
-        let (written, losses) =
-            regenerate(&documents, &decoded, &neutral, &natives.targets()).unwrap();
+        let (written, losses) = write(&documents, &decoded, &neutral, &natives);
         assert!(losses.is_empty(), "{shape:?}: {losses:#?}");
         assert_eq!(written.documents.len(), documents.len());
         for (written, stated) in written.documents.iter().zip(&documents) {

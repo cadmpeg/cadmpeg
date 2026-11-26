@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
 use cadmpeg_ir::features::parameters::{
-    ConfigurationEvaluation, DesignConfiguration as Configuration, ParameterValue,
+    ConfigurationFeatureState, DesignConfiguration as Configuration, ParameterValue,
 };
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -28,7 +28,7 @@ use crate::records::configuration::table::{
     ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue, RowGuids,
 };
 use crate::records::configuration::DesignConfiguration;
-use crate::writer::primitives::{bases, differences, projection, reconciled, same_row};
+use crate::writer::primitives::{bases, differences, projection, reconciled, same_row, Difference};
 
 /// The configuration documents the write holds, and what they read back as.
 pub(super) struct Written<'a> {
@@ -40,16 +40,19 @@ pub(super) struct Written<'a> {
     /// the writer generates, keyed by the configuration id the row reads
     /// back as.
     pub(super) generated: BTreeMap<String, String>,
+    /// The configuration of each written row, keyed by the configuration id
+    /// the row reads back as.
+    expected: BTreeMap<String, &'a Configuration>,
 }
 
 /// Write `documents` with the rows, cells, row order and rule targets of
 /// `configurations`, where they differ from `decoded`, the configurations
-/// that `documents` project. Return the written documents and the losses of
-/// what they read back as otherwise than `configurations`.
+/// that `documents` project. Return the written documents, and the losses
+/// of the configurations that no table holds a row for.
 pub(super) fn regenerate<'a>(
     documents: &'a [DesignConfiguration],
     decoded: &Projection,
-    configurations: &[Configuration],
+    configurations: &'a [Configuration],
     targets: &ConfigurationTargets<'_>,
 ) -> Result<(Written<'a>, Vec<LossNote>), CodecError> {
     let mut payloads = vec![None; documents.len()];
@@ -84,16 +87,6 @@ pub(super) fn regenerate<'a>(
     );
     let documents = written(documents, payloads)?;
     let projection = projection(&documents, targets)?;
-    // The root record that the planner writes names the expected active
-    // configuration.
-    let mut read = projection.clone();
-    for configuration in &mut read.configurations {
-        if let Some(expected) = expected.get(configuration.id.as_str()) {
-            configuration.active = expected.active;
-        }
-    }
-    let read = reconciled(read, targets.neutral_features)?;
-    losses.extend(compare(&expected, &read.configurations, &bases));
     let generated = expected
         .iter()
         .filter(|(written, configuration)| configuration.id.as_str() != written.as_str())
@@ -104,9 +97,61 @@ pub(super) fn regenerate<'a>(
             documents,
             projection,
             generated,
+            expected,
         },
         losses,
     ))
+}
+
+impl Written<'_> {
+    /// The losses of what the written documents read back as otherwise than
+    /// the configurations and the features of `targets`, when the root
+    /// record names the row of the configuration `active`. The decoder
+    /// reconciles the features with that row (f3d.md §1.2: the design
+    /// stores the state of the active row).
+    pub(super) fn read_back(
+        &self,
+        active: Option<&str>,
+        targets: &ConfigurationTargets<'_>,
+    ) -> Result<Vec<LossNote>, CodecError> {
+        let mut read = self.projection.clone();
+        for configuration in &mut read.configurations {
+            configuration.active = self
+                .expected
+                .get(configuration.id.as_str())
+                .is_some_and(|expected| Some(expected.id.as_str()) == active);
+        }
+        let mut features = targets.neutral_features.to_vec();
+        let read = reconciled(read, &mut features)?;
+        let mut losses = compare(
+            &self.expected,
+            &read.configurations,
+            &bases(targets.neutral_features),
+        );
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these features in the current state that the active row of the written configuration table gives them: the Design stream stores the state of its active row",
+            targets
+                .neutral_features
+                .iter()
+                .zip(&features)
+                .filter_map(|(stated, read)| {
+                    let (stated_state, read_state) = (
+                        stated.configuration_state().evaluation,
+                        read.configuration_state().evaluation,
+                    );
+                    (stated_state != read_state).then(|| {
+                        Difference::of(
+                            stated.id.to_string(),
+                            Some(&stated_state),
+                            Some(&read_state),
+                        )
+                        .to_string()
+                    })
+                }),
+        ));
+        Ok(losses)
+    }
 }
 
 /// The table that holds the rows of the configurations: the table whose rows
@@ -144,7 +189,7 @@ struct Rows<'s, 'p> {
     table: &'s ConfigurationTable,
     targets: &'s ConfigurationTargets<'s>,
     /// The state of each feature in a configuration that states none.
-    bases: &'s BTreeMap<&'s FeatureId, ConfigurationEvaluation>,
+    bases: &'s BTreeMap<&'s FeatureId, ConfigurationFeatureState>,
 }
 
 impl Rows<'_, '_> {
@@ -541,7 +586,7 @@ fn written(
 fn compare(
     expected: &BTreeMap<String, &Configuration>,
     read: &[Configuration],
-    bases: &BTreeMap<&FeatureId, ConfigurationEvaluation>,
+    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
 ) -> Vec<LossNote> {
     let read = read
         .iter()
@@ -595,22 +640,12 @@ fn compare(
             dropped.push(format!("{id}: {}", fields.join("; ")));
         }
     }
-    let removed = read
-        .keys()
-        .filter(|id| !expected.contains_key(**id))
-        .map(|id| (*id).to_owned());
     let mut losses = Vec::new();
     losses.extend(edit_dropped(
         EntityKind::Configuration,
         "F3D",
         "writes these configurations, whose written rows read back as configurations that differ in these fields: the configuration table holds no cell or row for the field, or its cell reads back otherwise",
         dropped,
-    ));
-    losses.extend(edit_dropped(
-        EntityKind::Configuration,
-        "F3D",
-        "writes the rows of these configurations, which the document removes",
-        removed,
     ));
     losses.extend(value_unwritable(
         "F3D",

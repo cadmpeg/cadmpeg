@@ -5,7 +5,7 @@ use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
-use super::{bases, differences, same_configurations, same_row};
+use super::{bases, differences, projects, same_row};
 use crate::design::configurations::project;
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::test_support::configuration_table::{
@@ -40,26 +40,46 @@ fn configurations() -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration
 }
 
 #[test]
-fn a_feature_edit_leaves_the_configurations_the_same() {
-    let decoded = configurations();
-    let mut edited = decoded.clone();
-    for state in edited
-        .iter_mut()
-        .flat_map(|configuration| configuration.feature_states.values_mut())
-    {
-        state.definition = FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: "Revolve".into(),
-            parameters: std::collections::BTreeMap::new(),
-        });
-        state.dependencies = DistinctMembers::default();
-    }
-    assert_ne!(edited, decoded);
+fn a_definition_or_dependencies_other_than_the_feature_s_make_the_configurations_differ() {
     let natives = Natives::complete();
-    assert!(same_configurations(
-        &edited,
-        &decoded,
-        &bases(&natives.neutral_features)
-    ));
+    let targets = natives.targets();
+    let feature = &natives.neutral_features[0];
+    let decoded = configurations();
+    for state in decoded
+        .iter()
+        .flat_map(|configuration| configuration.feature_states.values())
+    {
+        assert_eq!(state.definition, *feature.evaluation.definition());
+        assert_eq!(state.dependencies, feature.dependencies);
+    }
+    assert!(projects(&decoded, &[document()], &targets).unwrap());
+
+    let mut definition = decoded.clone();
+    definition[0]
+        .feature_states
+        .get_mut(&feature.id)
+        .unwrap()
+        .definition = FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: "Revolve".into(),
+        parameters: std::collections::BTreeMap::new(),
+    });
+    assert!(!projects(&definition, &[document()], &targets).unwrap());
+    let bases = bases(&natives.neutral_features);
+    assert_eq!(
+        differences(&definition[0], &decoded[0], &bases)
+            .iter()
+            .map(|difference| difference.field.clone())
+            .collect::<Vec<_>>(),
+        [format!("feature_states.{}.definition", feature.id)]
+    );
+
+    let mut dependencies = decoded.clone();
+    dependencies[1]
+        .feature_states
+        .get_mut(&feature.id)
+        .unwrap()
+        .dependencies = DistinctMembers::default();
+    assert!(!projects(&dependencies, &[document()], &targets).unwrap());
 }
 
 #[test]
@@ -74,11 +94,11 @@ fn a_configuration_edit_makes_the_configurations_differ() {
         ConfigurationEvaluation::Active { .. } => ConfigurationEvaluation::Suppressed {},
     };
     let natives = Natives::complete();
-    let bases = bases(&natives.neutral_features);
-    assert!(!same_configurations(&edited, &decoded, &bases));
+    let targets = natives.targets();
+    assert!(!projects(&edited, &[document()], &targets).unwrap());
     let mut reordered = decoded.clone();
     reordered[0].ordinal = 7;
-    assert!(!same_configurations(&reordered, &decoded, &bases));
+    assert!(!projects(&reordered, &[document()], &targets).unwrap());
 }
 
 #[test]

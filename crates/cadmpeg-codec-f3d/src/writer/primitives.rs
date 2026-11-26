@@ -11,7 +11,7 @@ use crate::records::configuration::DesignConfiguration;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{
-    ConfigurationEvaluation, DesignConfiguration as Configuration,
+    ConfigurationFeatureState, DesignConfiguration as Configuration,
 };
 use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::topology::Sense;
@@ -55,11 +55,12 @@ pub(super) fn projection(
 }
 
 /// `projection` with its active configuration reconciled with `features`,
-/// as the decoder reconciles it. A reconciliation that fails leaves the
-/// projection as it is.
+/// and `features` with the suppression that the active configuration gives
+/// them, as the decoder reconciles both. A reconciliation that fails leaves
+/// both as they are.
 pub(super) fn reconciled(
     projection: Projection,
-    features: &[Feature],
+    features: &mut [Feature],
 ) -> Result<Projection, CodecError> {
     if !projection
         .configurations
@@ -69,14 +70,18 @@ pub(super) fn reconciled(
         return Ok(projection);
     }
     let mut configurations = projection.configurations.clone();
+    let mut reconciled = features.to_vec();
     match crate::design::configurations::reconcile_active_configurations(
-        &mut features.to_vec(),
+        &mut reconciled,
         &mut configurations,
     ) {
-        Ok(()) => Ok(Projection {
-            configurations,
-            ..projection
-        }),
+        Ok(()) => {
+            features.clone_from_slice(&reconciled);
+            Ok(Projection {
+                configurations,
+                ..projection
+            })
+        }
         Err(error) if is_fatal(&error) => Err(error),
         Err(_) => Ok(projection),
     }
@@ -88,7 +93,10 @@ pub(super) fn decoded_configurations(
     documents: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
 ) -> Result<Projection, CodecError> {
-    reconciled(projection(documents, targets)?, targets.neutral_features)
+    reconciled(
+        projection(documents, targets)?,
+        &mut targets.neutral_features.to_vec(),
+    )
 }
 
 /// The property prefix of a suppressed state that the decoder infers in an
@@ -98,11 +106,24 @@ const INFERRED: &str = "suppression_inferred:";
 
 /// The state of each of `features` in a configuration that states none:
 /// the feature's own state (cadir-v11.md §5.11, Resolution).
-pub(super) fn bases(features: &[Feature]) -> BTreeMap<&FeatureId, ConfigurationEvaluation> {
+pub(super) fn bases(features: &[Feature]) -> BTreeMap<&FeatureId, ConfigurationFeatureState> {
     features
         .iter()
-        .map(|feature| (&feature.id, feature.configuration_state().evaluation))
+        .map(|feature| (&feature.id, feature.configuration_state()))
         .collect()
+}
+
+/// The state of `feature` in `configuration`: its own, else the one in
+/// `bases`.
+fn resolved<'s>(
+    configuration: &'s Configuration,
+    feature: &FeatureId,
+    bases: &'s BTreeMap<&FeatureId, ConfigurationFeatureState>,
+) -> Option<&'s ConfigurationFeatureState> {
+    configuration
+        .feature_states
+        .get(feature)
+        .or_else(|| bases.get(feature))
 }
 
 /// A field of a configuration that the written file reads back otherwise.
@@ -115,7 +136,7 @@ pub(super) struct Difference {
 
 impl Difference {
     /// The field `field`, whose values `stated` and `read` serialize.
-    fn of<T: Serialize>(field: String, stated: Option<&T>, read: Option<&T>) -> Self {
+    pub(super) fn of<T: Serialize>(field: String, stated: Option<&T>, read: Option<&T>) -> Self {
         let shown = |value: Option<&T>| value.and_then(|value| serde_json::to_string(value).ok());
         Self {
             field,
@@ -152,13 +173,13 @@ fn differing<'k, K: Ord, V: PartialEq>(
 
 /// The fields that a table row states, other than its name, which `read`
 /// states otherwise than `stated`: material, bodies, properties, parameter
-/// overrides and values, and the evaluation of each feature state. A
-/// configuration that states no state of a feature resolves it to the
-/// feature's state in `bases`.
+/// overrides and values, and the evaluation, definition and dependencies of
+/// each feature state. A configuration that states no state of a feature
+/// resolves it to the feature's state in `bases`.
 pub(super) fn differences(
     stated: &Configuration,
     read: &Configuration,
-    bases: &BTreeMap<&FeatureId, ConfigurationEvaluation>,
+    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
 ) -> Vec<Difference> {
     let mut fields = Vec::new();
     if stated.material != read.material {
@@ -204,31 +225,47 @@ pub(super) fn differences(
             )
         }),
     );
-    let resolved = |configuration: &Configuration, feature: &FeatureId| {
-        configuration
-            .feature_states
-            .get(feature)
-            .map(|state| state.evaluation.clone())
-            .or_else(|| bases.get(feature).cloned())
-    };
-    fields.extend(
-        stated
-            .feature_states
-            .keys()
-            .chain(read.feature_states.keys())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter_map(|feature| {
-                let (stated, read) = (resolved(stated, feature), resolved(read, feature));
-                (stated != read).then(|| {
-                    Difference::of(
-                        format!("feature_states.{feature}"),
-                        stated.as_ref(),
-                        read.as_ref(),
-                    )
-                })
-            }),
-    );
+    let features = stated
+        .feature_states
+        .keys()
+        .chain(read.feature_states.keys())
+        .collect::<BTreeSet<_>>();
+    for feature in features {
+        let field = format!("feature_states.{feature}");
+        match (
+            resolved(stated, feature, bases),
+            resolved(read, feature, bases),
+        ) {
+            (Some(stated), Some(read)) => {
+                if stated.evaluation != read.evaluation {
+                    fields.push(Difference::of(
+                        field.clone(),
+                        Some(&stated.evaluation),
+                        Some(&read.evaluation),
+                    ));
+                }
+                if stated.definition != read.definition {
+                    fields.push(Difference::of(
+                        format!("{field}.definition"),
+                        Some(&stated.definition),
+                        Some(&read.definition),
+                    ));
+                }
+                if stated.dependencies != read.dependencies {
+                    fields.push(Difference::of(
+                        format!("{field}.dependencies"),
+                        Some(&stated.dependencies),
+                        Some(&read.dependencies),
+                    ));
+                }
+            }
+            (stated, read) => fields.push(Difference::of(
+                field,
+                stated.map(|state| &state.evaluation),
+                read.map(|state| &state.evaluation),
+            )),
+        }
+    }
     fields
 }
 
@@ -237,68 +274,34 @@ pub(super) fn differences(
 pub(super) fn same_row(
     left: &Configuration,
     right: &Configuration,
-    bases: &BTreeMap<&FeatureId, ConfigurationEvaluation>,
+    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
 ) -> bool {
     left.name == right.name && differences(left, right, bases).is_empty()
 }
 
-/// Whether `left` and `right` state the same configurations: the same ids,
-/// positions, activity, source slots and native records, and the same
-/// rows ([`same_row`]).
-fn same_configurations(
-    left: &[Configuration],
-    right: &[Configuration],
-    bases: &BTreeMap<&FeatureId, ConfigurationEvaluation>,
-) -> bool {
-    left.len() == right.len()
-        && left.iter().zip(right).all(|(left, right)| {
-            (
-                &left.id,
-                left.ordinal,
-                left.active,
-                left.source_index,
-                &left.native_ref,
-            ) == (
-                &right.id,
-                right.ordinal,
-                right.active,
-                right.source_index,
-                &right.native_ref,
-            ) && same_row(left, right, bases)
-        })
-}
-
 /// Whether `configurations` are the ones the decoder states for
-/// `documents`.
+/// `documents`: the same ids, positions, activity, source slots and native
+/// records, and the same rows ([`same_row`]).
 pub(super) fn projects(
     configurations: &[Configuration],
     documents: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
 ) -> Result<bool, CodecError> {
-    Ok(same_configurations(
-        configurations,
-        &decoded_configurations(documents, targets)?.configurations,
-        &bases(targets.neutral_features),
-    ))
-}
-
-/// Refuse a patch of `target` whose configurations are other than the ones
-/// the decoder states for `native`.
-pub(super) fn validate_configuration_projection(
-    target: &CadIr,
-    native: &F3dNative,
-) -> Result<(), CodecError> {
-    if !projects(
-        &target.model.configurations,
-        &native.design_configurations,
-        &configuration_targets(target, native),
-    )? {
-        return Err(CodecError::Malformed(
-            "neutral F3D configurations must equal the projection of native configuration tables"
-                .into(),
-        ));
-    }
-    Ok(())
+    let decoded = decoded_configurations(documents, targets)?.configurations;
+    let bases = bases(targets.neutral_features);
+    let identity = |configuration: &Configuration| {
+        (
+            configuration.id.clone(),
+            configuration.ordinal,
+            configuration.active,
+            configuration.source_index,
+            configuration.native_ref.clone(),
+        )
+    };
+    Ok(configurations.len() == decoded.len()
+        && configurations.iter().zip(&decoded).all(|(left, right)| {
+            identity(left) == identity(right) && same_row(left, right, &bases)
+        }))
 }
 
 pub(crate) fn validate_assembly_projection(

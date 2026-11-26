@@ -107,6 +107,7 @@ fn planning(
         &written,
         &ir.model.configurations,
     );
+    losses.extend(written.read_back(plan.active(), &TARGETS).unwrap());
     losses.append(&mut plan.losses);
     plan.losses = losses;
     (plan, written.documents.into_owned())
@@ -215,6 +216,21 @@ fn an_active_configuration_with_no_written_row_is_charged() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].0, "export/value.unwritable");
     assert!(losses[0].1.contains(id("absent").as_str()));
+}
+
+#[test]
+fn an_active_configuration_no_table_holds_is_charged_once() {
+    let empty = vec![DesignConfiguration::try_new(
+        TABLE.into(),
+        DesignConfigurationKind::Table,
+        serde_json::Map::new(),
+    )
+    .unwrap()];
+    let (root, losses) = planned(&document(&documents(), &[id("large")], &[]), &empty);
+    assert!(root.is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/edit.dropped");
+    assert!(losses[0].1.contains(id("large").as_str()));
 }
 
 #[test]

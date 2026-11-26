@@ -53,6 +53,8 @@ pub(in crate::writer) const ROW_ID: TextCapacity = TextCapacity::new(
 /// losses of what the write states otherwise than the configurations.
 pub(super) struct Plan {
     root: Option<ConfigurationRoot>,
+    /// The configuration whose row `root` names.
+    active: Option<String>,
     /// The record index of the source's root record.
     source: Option<u32>,
     losses: Vec<LossNote>,
@@ -162,13 +164,17 @@ pub(super) fn plan(
     let inactive = candidates.map(|row| row.configuration).collect::<Vec<_>>();
     let unmatched = scoped
         .iter()
-        .chain(&flagged)
-        .filter(|id| !matched.contains(*id))
+        .filter(|id| {
+            !matched.contains(*id)
+                && !configurations
+                    .iter()
+                    .any(|configuration| configuration.id.as_str() == id.as_str())
+        })
         .cloned()
         .collect::<BTreeSet<_>>();
     losses.extend(value_unwritable(
         "F3D",
-        "writes no active row for these active configurations: no written configuration table holds their row",
+        "writes no active row for these active configurations: the document holds no such configuration",
         unmatched,
     ));
     losses.extend(value_unwritable(
@@ -181,10 +187,13 @@ pub(super) fn plan(
         "writes these active configurations inactive: the Design stream holds one DesignConfigurationRoot record, which names another row",
         inactive,
     ));
+    let active = first.as_ref().map(|row| row.configuration.clone());
     let root = first.and_then(|row| root(row, documents, &mut losses));
+    let active = active.filter(|_| root.is_some());
     let root = stated_root(source, projected, root, &mut losses);
     Plan {
         root,
+        active,
         source: source
             .iter()
             .find_map(DesignConfiguration::active_row)
@@ -402,6 +411,11 @@ fn unique(stated: &str, taken: &BTreeSet<&str>) -> String {
 }
 
 impl Plan {
+    /// The configuration whose row the root record names.
+    pub(super) fn active(&self) -> Option<&str> {
+        self.active.as_deref()
+    }
+
     /// The bytes of `configuration`, the written document at `index`, with
     /// the ids the root record cuts or renames written as the record writes
     /// them.

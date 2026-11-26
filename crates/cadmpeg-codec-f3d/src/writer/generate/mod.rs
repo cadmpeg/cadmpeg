@@ -350,13 +350,18 @@ fn attempt<W: Write + Seek>(
             &targets,
         )
         .map_err(Failure::design)?;
-        table_losses = losses;
         let plan = configuration_root::plan(
             target,
             &native.design_configurations,
             decoded.table,
             &written,
             neutral,
+        );
+        table_losses = losses;
+        table_losses.extend(
+            written
+                .read_back(plan.active(), &targets)
+                .map_err(Failure::design)?,
         );
         let names = configuration_entry_names(&written.documents);
         for (index, (configuration, (name, fault))) in
