@@ -147,7 +147,7 @@ use std::sync::{Arc, OnceLock};
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
     ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
-    PatchConsumption, WritePath,
+    NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -428,7 +428,8 @@ impl SldprtCodec {
             },
             dialect,
             fidelity,
-            coverage,
+            coverage: Box::new(coverage),
+            history_dropped: None,
             stale_solid,
             unwritten_edits,
             unwritten,
@@ -443,9 +444,6 @@ impl SldprtCodec {
 enum ReplaySkipped {
     DigestMismatch,
     ImageMissing,
-    /// The patch path cannot write the edited document, which is
-    /// synthesized without its `SolidWorks` history.
-    PatchDeclined,
 }
 
 impl ReplaySkipped {
@@ -456,10 +454,6 @@ impl ReplaySkipped {
                     "decoded model no longer matches the preserved SLDPRT source digest"
                 }
                 Self::ImageMissing => "preserved SLDPRT source image is unavailable",
-                Self::PatchDeclined => {
-                    "the SLDPRT patch path cannot write the edited document, which is synthesized \
-                     without its SolidWorks history"
-                }
             }
             .into(),
         }
@@ -504,6 +498,37 @@ impl SemanticPath {
     }
 }
 
+/// Why a semantic write takes no record of the `sldprt` namespace: the patch
+/// path declined the edited document, which is synthesized without its
+/// `SolidWorks` history.
+struct HistoryDropped {
+    /// Why the patch declined.
+    cause: String,
+    /// Whether the write was given the sidecar whose image the patch did not
+    /// write, so its path states the cause (§3.4, `PatchDeclined { reason }`).
+    sidecar: bool,
+}
+
+impl HistoryDropped {
+    fn native_reason(&self) -> String {
+        format!(
+            "because the patch of the document {}, and its synthesis writes no SolidWorks \
+             history record",
+            self.cause
+        )
+    }
+
+    fn consumption(&self) -> Consumption {
+        Consumption::Degraded {
+            reason: format!(
+                "the SLDPRT patch of the edited document {}, so the document is synthesized \
+                 without its SolidWorks history",
+                self.cause
+            ),
+        }
+    }
+}
+
 /// One completed write.
 enum Written {
     /// The retained source image, byte for byte. The dialect is the source's
@@ -523,7 +548,10 @@ enum Written {
         path: SemanticPath,
         dialect: DialectId,
         fidelity: SemanticFidelity,
-        coverage: ArenaDispositions,
+        coverage: Box<ArenaDispositions>,
+        /// Why the write takes no record of the `sldprt` namespace: the
+        /// synthesis after a declined patch writes no `SolidWorks` history.
+        history_dropped: Option<Box<HistoryDropped>>,
         /// One loss per construction edit that shapes the solid: the output
         /// keeps the stored solid, which shows the state before the edit.
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -545,6 +573,11 @@ impl Written {
     fn path(&self) -> WritePath {
         match self {
             Self::Replayed | Self::Stored { .. } => WritePath::VerbatimReplay,
+            Self::Semantic {
+                path,
+                history_dropped: Some(dropped),
+                ..
+            } if dropped.sidecar => path.write_path(dropped.consumption()),
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -557,8 +590,40 @@ impl Written {
             // The stored part may represent a record of any arena; the loss
             // names the edits it does not carry.
             Self::Stored { .. } => ArenaCoverage::Declared(writer::stored_part_coverage()),
-            Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
+            Self::Semantic { coverage, .. } => ArenaCoverage::Declared(**coverage),
         }
+    }
+
+    /// What the output does with each native arena (§3.4, Rule W3). A replay
+    /// holds every record of the source; a semantic write states the records
+    /// of the arenas it loads from neutral and native content, and the
+    /// synthesis after a declined patch states none. No write holds a record
+    /// of another format.
+    fn native(&self) -> NativeDispositions {
+        let mut native = NativeDispositions::dropped("which the SLDPRT writer does not write");
+        match self {
+            Self::Replayed | Self::Stored { .. } => {
+                native.namespace("sldprt", NativeDisposition::Written);
+            }
+            Self::Semantic {
+                history_dropped: Some(dropped),
+                ..
+            } => {
+                let reason = dropped.native_reason();
+                for arena in crate::native::SLDPRT_ARENA_NAMES {
+                    native.drop_arena("sldprt", arena, &reason);
+                }
+            }
+            Self::Semantic {
+                history_dropped: None,
+                ..
+            } => {
+                for arena in crate::native::SLDPRT_ARENA_NAMES {
+                    native.arena("sldprt", arena, NativeDisposition::Regenerated);
+                }
+            }
+        }
+        native
     }
 
     /// The semantic path that ran instead of an eligible replay, with why.
@@ -627,6 +692,7 @@ impl CodecBackend for SldprtCodec {
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "SLDPRT";
     /// Patches the retained source, so it plans from the design records it
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;

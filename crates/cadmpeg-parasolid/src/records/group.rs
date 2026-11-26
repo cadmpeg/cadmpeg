@@ -124,14 +124,17 @@ mod tests {
         for value in 1..=10u8 {
             let selector = GroupSelector::try_from(value).unwrap();
             assert_eq!(u8::from(selector), value);
-            assert_eq!(json::to_value(selector).unwrap(), serde_json::json!(value));
             assert_eq!(
-                json::from_value::<GroupSelector>(serde_json::json!(value)).unwrap(),
+                json::to_value(selector).unwrap(),
+                cadmpeg_core::json!(value)
+            );
+            assert_eq!(
+                json::from_value::<GroupSelector>(cadmpeg_core::json!(value)).unwrap(),
                 selector
             );
         }
         for value in [0u8, 11, 255] {
-            assert!(json::from_value::<GroupSelector>(serde_json::json!(value)).is_err());
+            assert!(json::from_value::<GroupSelector>(cadmpeg_core::json!(value)).is_err());
         }
     }
 }

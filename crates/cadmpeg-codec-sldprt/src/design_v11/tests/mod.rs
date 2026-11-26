@@ -698,12 +698,12 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     let sketch = "sldprt:model:sketch#test";
     let entity = |key: &str| format!("sldprt:model:sketch-entity#test:{key}");
     let point = |key: &str, u: f64, v: f64| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "native_ref": format!("native:{key}"), "endpoint_refs": [],
             "geometry": {"kind": "point", "position": {"u": u, "v": v}}})
     };
     let line = |key: &str, from: (&str, f64, f64), to: (&str, f64, f64)| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "endpoint_refs": [format!("native:{}", from.0), format!("native:{}", to.0)],
             "geometry": {"kind": "line", "start": {"u": from.1, "v": from.2},
                 "end": {"u": to.1, "v": to.2}}})
@@ -722,18 +722,18 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
         let to = corners[(index + 1) % corners.len()];
         entities.push(line(&format!("l{index}"), *from, to));
     }
-    entities.push(serde_json::json!({"id": entity("hole"), "sketch": sketch,
+    entities.push(cadmpeg_core::json!({"id": entity("hole"), "sketch": sketch,
         "construction": false, "endpoint_refs": [],
         "geometry": {"kind": "circle", "center": {"u": 25.0, "v": 15.0}, "radius": 5.0}}));
     ir.model.sketch_entities = json::from_value(serde_json::Value::Array(entities)).unwrap();
-    ir.model.sketches = json::from_value(serde_json::json!([{
+    ir.model.sketches = json::from_value(cadmpeg_core::json!([{
         "id": sketch, "name": "Sketch1",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 1.0, "z": 0.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
         "profiles": []
     }]))
     .unwrap();
-    ir.model.sketch_constraints = json::from_value(serde_json::json!([
+    ir.model.sketch_constraints = json::from_value(cadmpeg_core::json!([
         {"id": "sldprt:model:sketch-constraint#test:0", "sketch": sketch,
             "definition": {"kind": "coincident_loci", "loci": [
                 {"kind": "end", "value": entity("l0")}, {"kind": "start", "value": entity("l1")}]}},
@@ -758,10 +758,10 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     .unwrap();
     for feature in &mut ir.model.features {
         let definition = if feature.id == sketch_feature {
-            serde_json::json!({"kind": "operation", "value": {"kind": "sketch",
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sketch",
                 "value": {"sketch": {"kind": "planar", "sketch": sketch}}}})
         } else if feature.id == boss {
-            serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
                 "profile": {"kind": "planar", "value": {"kind": "feature",
                     "value": sketch_feature.as_str()}},
                 "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
@@ -1111,7 +1111,7 @@ fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
         .unwrap()
         .id
         .clone();
-    let definition = json::from_value(serde_json::json!({"kind": "operation",
+    let definition = json::from_value(cadmpeg_core::json!({"kind": "operation",
         "value": {"kind": "extrude", "value": {
             "profile": {"kind": "planar", "value": {"kind": "feature",
                 "value": sketch_feature.as_str()}},
@@ -1216,7 +1216,7 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_stated_wit
             let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
             for constraint in constraints.as_array_mut().unwrap() {
                 if constraint["id"] == WIDTH {
-                    constraint["definition"]["parameter"] = serde_json::json!(parameter);
+                    constraint["definition"]["parameter"] = cadmpeg_core::json!(parameter);
                 }
             }
             ir.model.sketch_constraints = json::from_value(constraints).unwrap();
@@ -1262,7 +1262,7 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_stated_wit
     let typed = assert_sketch_stated(
         |ir| {
             ir.model.sketch_entities.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": TEXT,
                     "sketch": "sldprt:model:sketch#test",
                     "construction": false, "endpoint_refs": [],
@@ -1311,11 +1311,12 @@ fn assert_sketch_stated(
         .iter_mut()
         .find(|constraint| constraint["id"].as_str().unwrap().ends_with(":4"))
         .unwrap();
-    hole_constraint["driving"] = serde_json::json!(false);
+    hole_constraint["driving"] = cadmpeg_core::json!(false);
     let hole_parameter = hole_constraint["definition"]["parameter"].clone();
     let mut reference = hole_constraint.clone();
-    reference["id"] = serde_json::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
-    reference["definition"]["parameter"] = serde_json::json!(MINTED);
+    reference["id"] =
+        cadmpeg_core::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
+    reference["definition"]["parameter"] = cadmpeg_core::json!(MINTED);
     constraints_list.push(reference);
     ir.model.sketch_constraints = json::from_value(constraints).unwrap();
     let mut parameters = json::to_value(&ir.model.parameters).unwrap();
@@ -1326,13 +1327,13 @@ fn assert_sketch_stated(
         .unwrap()
         .clone();
     let mut minted = hole.clone();
-    minted["id"] = serde_json::json!(MINTED);
-    minted["name"] = serde_json::json!("D9");
+    minted["id"] = cadmpeg_core::json!(MINTED);
+    minted["name"] = cadmpeg_core::json!("D9");
     parameters_list.push(minted);
     let mut unlisted = hole;
-    unlisted["id"] = serde_json::json!("sldprt:model:parameter#unlisted");
-    unlisted["name"] = serde_json::json!("D8");
-    unlisted["value"] = serde_json::json!({"kind": "length", "value": 50.0});
+    unlisted["id"] = cadmpeg_core::json!("sldprt:model:parameter#unlisted");
+    unlisted["name"] = cadmpeg_core::json!("D8");
+    unlisted["value"] = cadmpeg_core::json!({"kind": "length", "value": 50.0});
     parameters_list.push(unlisted);
     ir.model.parameters = json::from_value(parameters).unwrap();
     change(&mut ir);

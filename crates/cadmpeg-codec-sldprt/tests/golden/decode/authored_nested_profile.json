@@ -883,41 +883,6 @@
             "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
         }
       },
       "provenance": {
@@ -1070,41 +1035,6 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "offset": 591,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
-        },
-        "sldprt:model:sketch-entity#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
         }
       }
     },

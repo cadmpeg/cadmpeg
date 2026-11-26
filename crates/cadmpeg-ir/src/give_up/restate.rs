@@ -429,7 +429,7 @@ impl<'a> Restate<'a> {
             },
             Some("neutral") => match &self.dialect {
                 Some(dialect) => {
-                    *value = serde_json::json!({
+                    *value = cadmpeg_core::json!({
                         "kind": "source",
                         "value": {"dialect": dialect, "tokens": []}
                     });
@@ -447,11 +447,11 @@ impl<'a> Restate<'a> {
         if !names(value, self.gone) {
             return Fate::Clean;
         }
-        let bare = serde_json::json!({"kind": "unknown"});
+        let bare = cadmpeg_core::json!({"kind": "unknown"});
         let cached = value
             .get("cache")
             .filter(|cache| !names(cache, self.gone))
-            .map(|cache| serde_json::json!({"kind": "unknown", "cache": cache}))
+            .map(|cache| cadmpeg_core::json!({"kind": "unknown", "cache": cache}))
             .filter(|unknown| {
                 if carrier == PROCEDURAL_CURVE {
                     cadmpeg_core::serde_erase::from_json_value::<ProceduralCurveDefinition>(unknown)

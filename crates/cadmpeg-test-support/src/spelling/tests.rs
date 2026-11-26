@@ -3,7 +3,7 @@ use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn the_repeated_key_is_the_first_key_of_the_named_object_only() {
-    let value = serde_json::json!({"a": [{"b": 1, "c": 2}, {"b": 3}], "d": {"e": 4}});
+    let value = cadmpeg_core::json!({"a": [{"b": 1, "c": 2}, {"b": 3}], "d": {"e": 4}});
     let mut text = String::new();
     write_repeating(
         &value,

@@ -15,7 +15,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_dropped, edit_unverified,
     target::{ResolvedWrite, WrittenRow},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -262,12 +263,18 @@ fn finish(
         )),
     }
     losses.extend(outcome.losses);
+    // The patched archive holds every record of the retained graph; a
+    // namespace of another format has no place in it.
+    let mut native = NativeDispositions::dropped("which the FCStd writer does not write");
+    native.namespace("fcstd", NativeDisposition::Written);
+    outcome.omitted.declare(&mut native);
     Ok(ExportBody {
         bytes,
         census: outcome.census,
         losses,
         write_path,
         coverage: ArenaCoverage::Complete,
+        native,
         notes: outcome.notes,
         written_row: None,
         annotations: None,

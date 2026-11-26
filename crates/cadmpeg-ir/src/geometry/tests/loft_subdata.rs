@@ -19,7 +19,7 @@ fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     let wire = json::to_value(&fixed).expect("serializes");
     assert_eq!(
         wire,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "type211", "dimensions": [3, 4],
             "row": [0.5, 1.5]
         })
@@ -42,7 +42,7 @@ fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     .expect("a table of one shared column width");
     let wire = json::to_value(&table).expect("serializes");
     assert_eq!(wire["kind"], "table");
-    assert_eq!(wire["type_code"], serde_json::json!(7));
+    assert_eq!(wire["type_code"], cadmpeg_core::json!(7));
     assert!(wire.get("row_count").is_none());
     assert!(wire.get("column_count").is_none());
     assert_eq!(
@@ -56,14 +56,14 @@ fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     restated
         .as_object_mut()
         .expect("object")
-        .insert("row_count".to_string(), serde_json::json!(2));
+        .insert("row_count".to_string(), cadmpeg_core::json!(2));
     let error = json::from_value::<LoftSubdata>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("row_count"), "{error}");
 
     let mut ragged = wire;
-    ragged["rows"][1]["columns"] = serde_json::json!([[6.0, 7.0], [8.0, 9.0]]);
+    ragged["rows"][1]["columns"] = cadmpeg_core::json!([[6.0, 7.0], [8.0, 9.0]]);
     let error = json::from_value::<LoftSubdata>(ragged)
         .unwrap_err()
         .to_string();

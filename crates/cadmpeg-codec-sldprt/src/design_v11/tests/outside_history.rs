@@ -100,7 +100,7 @@ fn a_sketch_no_timeline_feature_lists_is_owned_by_a_member_of_one_group() {
     const EXTRA: &str = "sldprt:model:sketch#extra";
     let (mut ir, native) = sketch_and_extrude();
     let mut sketches = json::to_value(&ir.model.sketches).unwrap();
-    sketches.as_array_mut().unwrap().push(serde_json::json!({
+    sketches.as_array_mut().unwrap().push(cadmpeg_core::json!({
         "id": EXTRA, "name": "Loose",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 5.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
@@ -108,7 +108,7 @@ fn a_sketch_no_timeline_feature_lists_is_owned_by_a_member_of_one_group() {
     }));
     ir.model.sketches = json::from_value(sketches).unwrap();
     ir.model.sketch_entities.push(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "sldprt:model:sketch-entity#extra:c", "sketch": EXTRA,
             "construction": false, "endpoint_refs": [],
             "geometry": {"kind": "circle", "center": {"u": 1.0, "v": 2.0}, "radius": 3.0}}))
@@ -180,7 +180,7 @@ fn a_part_without_history_states_its_sketches_in_one_group_with_its_bodies_unpro
     let mut parameters = json::to_value(&ir.model.parameters).unwrap();
     for parameter in parameters.as_array_mut().unwrap() {
         if parameter["id"] == width {
-            parameter["value"] = serde_json::json!({"kind": "length", "value": 50.0});
+            parameter["value"] = cadmpeg_core::json!({"kind": "length", "value": 50.0});
         }
     }
     ir.model.parameters = json::from_value(parameters).unwrap();

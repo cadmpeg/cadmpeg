@@ -313,7 +313,7 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        document["model"]["parameters"] = serde_json::json!([]);
+        document["model"]["parameters"] = cadmpeg_core::json!([]);
         let error = CadIr::from_json(&document.to_string())
             .unwrap_err()
             .to_string();

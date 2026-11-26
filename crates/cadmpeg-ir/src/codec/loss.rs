@@ -4,9 +4,10 @@
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
 //! holds, for a class a decoder states the source holds beyond the delivered
-//! depth, for the records its normalizer gave up, and for an id a decoder
-//! emitted twice with different content, so every codec reports them under
-//! one namespace.
+//! depth, for the records its normalizer gave up, for an id a decoder
+//! emitted twice with different content, and for the vertex tolerances it
+//! widened or could not measure, so every codec reports them under one
+//! namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -32,6 +33,12 @@ pub(crate) enum DecodeLossCode {
     /// The normalizer gave up records part way, which keep spellings the
     /// decoder stated.
     NormalizeIncomplete,
+    /// The wrapper stated the tolerance of vertices the source stores
+    /// farther from a compared position than the coincidence allowance.
+    VertexToleranceWidened,
+    /// The wrapper's vertex tolerance pass met a resource ceiling of its own
+    /// session and widened no vertex tolerance.
+    VertexToleranceUnmeasured,
 }
 
 impl DecodeLossCode {
@@ -41,6 +48,8 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
+            Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::VertexToleranceUnmeasured => "geometry.vertex-tolerance-unmeasured",
         }
     }
 
@@ -49,6 +58,8 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => Severity::Error,
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete => Severity::Warning,
+            Self::VertexToleranceWidened => Severity::Info,
+            Self::VertexToleranceUnmeasured => Severity::Warning,
         }
     }
 
@@ -61,7 +72,10 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete => LossTaxonomy::DecodeDiagnostic,
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
@@ -69,7 +83,10 @@ impl DecodeLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IdRepeated => Some(Severity::Error),
-            Self::DepthNotDelivered { .. } | Self::NormalizeIncomplete => None,
+            Self::DepthNotDelivered { .. }
+            | Self::NormalizeIncomplete
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => None,
         }
     }
 

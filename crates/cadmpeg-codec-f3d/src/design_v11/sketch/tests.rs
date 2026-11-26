@@ -96,7 +96,7 @@ fn model() -> Model {
     let mut model = Model::default();
     model.features = vec![sketch_feature(OWNER, SKETCH)];
     model.parameters = vec![length("width", 30.0), length("radius", 5.0)];
-    model.sketches = json::from_value(serde_json::json!([{
+    model.sketches = json::from_value(cadmpeg_core::json!([{
         "id": SKETCH, "name": "Sketch1",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
@@ -104,10 +104,10 @@ fn model() -> Model {
     }]))
     .unwrap();
     let point = |key: &str, u: f64| {
-        serde_json::json!({"id": entity(key), "sketch": SKETCH, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": SKETCH, "construction": false,
             "endpoint_refs": [], "geometry": {"kind": "point", "position": {"u": u, "v": 0.0}}})
     };
-    model.sketch_entities = json::from_value(serde_json::json!([
+    model.sketch_entities = json::from_value(cadmpeg_core::json!([
         point("p0", 0.0),
         point("p1", 30.0),
         {"id": entity("line"), "sketch": SKETCH, "construction": false, "endpoint_refs": [],
@@ -118,7 +118,7 @@ fn model() -> Model {
             "geometry": {"kind": "native", "native_kind": "SketchText"}}
     ]))
     .unwrap();
-    model.sketch_constraints = json::from_value(serde_json::json!([
+    model.sketch_constraints = json::from_value(cadmpeg_core::json!([
         {"id": constraint("width"), "sketch": SKETCH,
             "definition": {"kind": "horizontal_distance",
                 "first": {"kind": "entity", "value": entity("p1")},

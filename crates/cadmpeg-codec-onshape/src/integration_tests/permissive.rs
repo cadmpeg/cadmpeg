@@ -126,18 +126,19 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
     for table in ["bodies", "faces", "edges", "vertices", "loops", "coedges"] {
         let bytes = edit(&fixture("plate-fillet"), |path, response| {
             if path.ends_with("bodydetails/2.json") {
-                let rows = serde_json::json!([null]);
+                let rows = cadmpeg_core::json!([null]);
                 let oversized = Value::Array(
                     std::iter::repeat_n(rows[0].clone(), crate::reader::ROWS + 1).collect(),
                 );
                 match table {
                     "bodies" => response["bodies"] = oversized,
                     "loops" => {
-                        response["bodies"][0]["faces"] = serde_json::json!([{"loops": oversized}]);
+                        response["bodies"][0]["faces"] =
+                            cadmpeg_core::json!([{"loops": oversized}]);
                     }
                     "coedges" => {
                         response["bodies"][0]["faces"] =
-                            serde_json::json!([{"loops": [{"coedges": oversized}]}]);
+                            cadmpeg_core::json!([{"loops": [{"coedges": oversized}]}]);
                     }
                     key => response["bodies"][0][key] = oversized,
                 }
@@ -197,7 +198,7 @@ fn unreadable_step_without_history_remains_an_error() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let bytes = edit(&fixture("plate-fillet"), |path, value| {
         if path.ends_with("features.json") {
-            value["features"] = serde_json::json!([]);
+            value["features"] = cadmpeg_core::json!([]);
         }
     });
     let bytes = crate::test_support::review::members(&bytes, |members| {

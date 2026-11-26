@@ -152,6 +152,6 @@ fn move_face_retained_core_honors_native_serialization_limits() {
         id: "nx:feature:core#0",
         core: json::from_value(value.clone()).unwrap(),
     };
-    let wire = serde_json::json!({"id": record.id, "core": value});
+    let wire = cadmpeg_core::json!({"id": record.id, "core": value});
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }

@@ -513,7 +513,7 @@ fn maps_require_canonical_entries_and_bounded_kinds() {
         };
         assert_eq!(
             json::to_value(entries).unwrap(),
-            serde_json::json!([[32768, 2], [7, 239]])
+            cadmpeg_core::json!([[32768, 2], [7, 239]])
         );
         assert_eq!(<[u8; 4]>::from(*terminal_bytes), [0, 0, 0x7f, 0xff]);
     });

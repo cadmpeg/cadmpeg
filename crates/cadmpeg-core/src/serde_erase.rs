@@ -1039,6 +1039,23 @@ pub fn to_json_value<T: Serialize + ?Sized>(
     serialize_to_json_value(&|adapter| value.serialize(adapter))
 }
 
+struct ErasedValue<'a>(&'a dyn ErasedSerialize);
+
+impl Serialize for ErasedValue<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_with(serializer, |adapter: SerAdapter<'_>| {
+            self.0.erased_serialize(adapter.0)
+        })
+    }
+}
+
+/// Serializes an erased value via `serde_json::json!` using a single
+/// monomorphization (`ErasedValue`) inside `cadmpeg-core`.
+#[doc(hidden)]
+pub fn json_value_from_erased(value: &dyn ErasedSerialize) -> serde_json::Value {
+    crate::__serde_json::json!(ErasedValue(value))
+}
+
 /// Serializes an erased value directly into a compact JSON string inside
 /// `cadmpeg-core`, keeping `serde_json::Serializer` compiled once.
 pub fn serialize_to_json_string(

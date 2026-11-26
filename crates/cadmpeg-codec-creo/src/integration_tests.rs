@@ -733,8 +733,9 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                 .into_iter()
                 .flatten()
                 .any(|row| {
-                    row.fields()
-                        .is_ok_and(|fields| fields.get("curve_id") == Some(&serde_json::json!(21)))
+                    row.fields().is_ok_and(|fields| {
+                        fields.get("curve_id") == Some(&cadmpeg_core::json!(21))
+                    })
                 });
             assert_eq!(promoted, agrees || section == "VisibGeom");
             if agrees {

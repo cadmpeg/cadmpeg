@@ -17,6 +17,7 @@ use cadmpeg_ir::design::expr::{
     self, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::projection::fields::{ModelParameterField, ParameterField};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
@@ -124,6 +125,52 @@ fn dropped_inputs<'a>(
                 |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == *input),
             )
         })
+        .collect()
+}
+
+/// The model parameter fields [`project`] reads to build `field`. The kind
+/// is the signature's `value_type` property; a literal's tree is its stored
+/// value where the stored expression restates that value.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Dependencies,
+            ModelParameterField::Value,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::Value => &[ModelParameterField::Value, ModelParameterField::Properties],
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Unit
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
+}
+
+/// The projected parameters whose signature declares no kind.
+pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&ParameterId> {
+    let projected = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    ir.model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            projected.contains(parameter.id.as_str()) && property(parameter, "value_type").is_none()
+        })
+        .map(|parameter| &parameter.id)
         .collect()
 }
 

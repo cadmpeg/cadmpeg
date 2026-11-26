@@ -84,6 +84,12 @@ macro_rules! assign_unique_surface_owners {
             &std::collections::HashSet::default(),
             &mut Vec::new(),
         )
+        .map(|owned| {
+            owned
+                .iter()
+                .map(|id| id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        })
     }};
 }
 
@@ -735,7 +741,10 @@ fn persistent_surface_identity_binds_one_face_and_body() {
             &bindings,
             &std::collections::HashSet::default()
         ),
-        vec!["synthetic:test:tessellation#mesh"]
+        vec![
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .unwrap()
+        ]
     );
     assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert_eq!(
@@ -865,7 +874,10 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
             &[binding],
             &std::collections::HashSet::default()
         ),
-        vec!["synthetic:test:tessellation#mesh"]
+        vec![
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .unwrap()
+        ]
     );
     assert_eq!(ir.model.tessellations[0].of.faces(), vec![second]);
 }
@@ -895,7 +907,10 @@ fn face_key_binds_one_table_to_one_face_and_body() {
             &[key_binding("synthetic:test:tessellation#mesh", 0x4173_00a7)],
             &std::collections::HashSet::default(),
         ),
-        vec!["synthetic:test:tessellation#mesh"]
+        vec![
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .unwrap()
+        ]
     );
     assert_eq!(ir.model.tessellations[0].of.faces(), vec![second]);
     assert_eq!(
@@ -987,7 +1002,10 @@ fn a_face_key_repeated_on_a_stored_body_binds_the_active_face() {
             &[key_binding("synthetic:test:tessellation#mesh", 7)],
             &std::collections::HashSet::from([stored_body]),
         ),
-        vec!["synthetic:test:tessellation#mesh"]
+        vec![
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .unwrap()
+        ]
     );
     assert_eq!(ir.model.tessellations[0].of.faces(), vec![active]);
     assert_eq!(
@@ -1021,7 +1039,10 @@ fn a_persistent_identity_repeated_on_a_stored_body_binds_the_active_face() {
             &[binding],
             &std::collections::HashSet::from([stored_body]),
         ),
-        vec!["synthetic:test:tessellation#mesh"]
+        vec![
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
+                .unwrap()
+        ]
     );
     assert_eq!(ir.model.tessellations[0].of.faces(), vec![active]);
     assert_eq!(

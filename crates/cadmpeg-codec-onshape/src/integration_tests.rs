@@ -13,6 +13,7 @@ mod pipeline;
 mod projection;
 mod regions;
 mod rereview;
+mod restated_exactness;
 mod review;
 mod rollback;
 mod second_review;

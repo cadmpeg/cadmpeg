@@ -716,16 +716,6 @@
             "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
         }
       },
       "provenance": {
@@ -863,16 +853,6 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
-        },
-        "sldprt:model:sketch#348:0:0": {
-          "offset": 315,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-entity#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_profile_edge"
         }
       }
     },

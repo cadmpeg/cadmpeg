@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::{value, Found, Scanner, Unreadable};
 

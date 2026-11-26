@@ -39,7 +39,7 @@ fn source_normal_prefixes_require_the_semantic_version_and_bounded_boolean() {
         ),
     ] {
         let raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>> =
-            json::from_value(serde_json::json!(hex)).unwrap();
+            json::from_value(cadmpeg_core::json!(hex)).unwrap();
         assert_eq!(raw.len(), 36);
         let mut bytes = vec![0; 145];
         bytes[17..53].copy_from_slice(&raw);
@@ -133,14 +133,14 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
     for field in ["kind", "surface_patch_normal"] {
         let mut invalid = wire.clone();
         invalid[field] = if field == "kind" {
-            serde_json::json!("Sketch")
+            cadmpeg_core::json!("Sketch")
         } else {
             serde_json::Value::Null
         };
         assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     }
     let mut invalid = wire;
-    invalid["surface_patch_normal"]["reversed"]["offset"] = serde_json::json!(32);
+    invalid["surface_patch_normal"]["reversed"]["offset"] = cadmpeg_core::json!(32);
     assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
 }
 
