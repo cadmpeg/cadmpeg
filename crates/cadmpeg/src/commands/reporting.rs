@@ -599,7 +599,7 @@ mod tests {
             id("part"),
             Storage::File {
                 document: ExternalDocument::path("part.source"),
-                source: json::from_value(serde_json::json!({
+                source: json::from_value(cadmpeg_core::json!({
                     "identity": {"kind": "unclassified", "format": "step"},
                     "attributes": {},
                 }))

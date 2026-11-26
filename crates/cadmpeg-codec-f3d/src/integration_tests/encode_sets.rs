@@ -28,9 +28,9 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base
 /// A writer of a format that stores one definition per file. It keeps the
 /// document of each output it plans.
 #[derive(Default)]
-struct PerFileRecorder(Mutex<Vec<CadIr>>);
+struct PlannedDocuments(Mutex<Vec<CadIr>>);
 
-impl EncoderBackend for PerFileRecorder {
+impl EncoderBackend for PlannedDocuments {
     const FORMAT: FormatId = FormatId::new("cadir");
     const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -169,11 +169,11 @@ fn each_output_of_an_archive_holds_the_records_its_definition_reaches() {
         })
         .collect();
     assert_eq!(names.len(), 3);
-    let recorder = PerFileRecorder::default();
-    let plan = recorder
+    let planned = PlannedDocuments::default();
+    let plan = planned
         .plan(EncodeInput::new(ir, None).with_outputs(Outputs::Named(&names)))
         .unwrap();
-    let documents = recorder.0.into_inner().unwrap();
+    let documents = planned.0.into_inner().unwrap();
     let outputs: BTreeMap<ProductDefinitionId, CadIr> = plan
         .outputs()
         .iter()

@@ -158,17 +158,11 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
     }
 
     assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
-    let patched = super::super::patch_active_configuration_xml(&ctx, &payload, "New")
-        .unwrap()
-        .unwrap()
-        .expect("the UTF-16 envelope is recognized");
+    let patched =
+        with_ctx(|ctx| super::super::patch_active_configuration_xml(ctx, &payload, "New"))
+            .unwrap()
+            .unwrap()
+            .expect("the UTF-16 envelope is recognized");
     let envelope = container::first_solidworks_envelope([patched.as_slice()])
         .expect("the rewritten envelope remains recognizable");
     assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
@@ -1950,20 +1944,15 @@ fn semantic_writer_preserves_evaluated_equation_values() {
 
 #[test]
 fn active_metadata_edit_does_not_patch_only_one_field_of_a_structured_manifest() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
     for payload in [
         br#"<swSolidWorks><swModel id="m" swConfigurationName="Old" swConfigurationId="0"/><swConfiguration swName="Old" swID="0" swModelRef="m" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#.as_slice(),
         br#"<swSolidWorks><swModel swConfigurationName="First"/><swModel swConfigurationName="Second"/></swSolidWorks>"#.as_slice(),
     ] {
-        assert!(super::super::patch_active_configuration_xml(&ctx, payload, "New")
-            .unwrap()
-            .is_err());
+        assert!(
+            with_ctx(|ctx| super::super::patch_active_configuration_xml(ctx, payload, "New"))
+                .unwrap()
+                .is_err()
+        );
     }
 }
 
@@ -1975,13 +1964,6 @@ fn the_stale_mark_sets_needs_update_on_the_named_configuration_rows() {
     let source = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="B" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
     let expected = r#"<swSolidWorks><swModel swConfigurationName="A"/><swConfiguration swName="A" swConfigurationNeedsUpdate="YES"/><swConfiguration swName="B" swConfigurationNeedsUpdate="YES" swID="1"/><swConfiguration swName="C" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
     let names = std::collections::BTreeSet::from(["A".to_owned(), "B".to_owned()]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
     let utf16 = |text: &str| {
         let mut bytes = vec![0x85, 0xff, 0xfe];
         bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
@@ -1991,13 +1973,26 @@ fn the_stale_mark_sets_needs_update_on_the_named_configuration_rows() {
         (source.as_bytes().to_vec(), expected.as_bytes().to_vec()),
         (utf16(source), utf16(expected)),
     ] {
-        let (marked, rows) = crate::writer::stale::mark(&ctx, &payload, &names)
+        let (marked, rows) = with_ctx(|ctx| crate::writer::stale::mark(ctx, &payload, &names))
             .unwrap()
             .unwrap();
         assert_eq!(rows, ["A", "B"]);
         assert_eq!(marked, written);
     }
-    assert!(crate::writer::stale::mark(&ctx, b"<swSolidWorks/>", &names)
-        .unwrap()
-        .is_none());
+    assert!(
+        with_ctx(|ctx| crate::writer::stale::mark(ctx, b"<swSolidWorks/>", &names))
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// Runs `run` in a decode session under the default policy.
+fn with_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    run(&cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    ))
 }

@@ -71,10 +71,10 @@ fn a_synthesis_cause_crosses_the_wire_as_a_tagged_patch_declined_reason() {
     let cause = crate::report::export::SynthesisCause::PatchDeclined {
         reason: "the edit has no patch".to_owned(),
     };
-    let rendered = serde_json::to_value(&cause).unwrap();
+    let rendered = cadmpeg_core::serde_erase::json::to_value(&cause).unwrap();
     assert_eq!(
         rendered,
-        serde_json::json!({"kind": "patch_declined", "reason": "the edit has no patch"})
+        cadmpeg_core::json!({"kind": "patch_declined", "reason": "the edit has no patch"})
     );
     assert_eq!(
         json::from_value::<crate::report::export::SynthesisCause>(rendered).unwrap(),

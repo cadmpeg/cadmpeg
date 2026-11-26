@@ -1584,7 +1584,7 @@ impl EncoderBackend for ReusingEncoder {
 fn test_format_source() -> CadIr {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -1696,7 +1696,7 @@ fn a_patched_file_or_a_file_of_another_format_records_no_synthesis_cause() {
 fn a_writer_with_no_patch_or_replay_path_records_no_synthesis_cause() {
     let mut ir = test_format_source();
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "cadir"},
             "attributes": {},
         }))

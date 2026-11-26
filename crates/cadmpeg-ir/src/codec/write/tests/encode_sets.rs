@@ -163,7 +163,7 @@ fn two_file_document() -> CadIr {
         definition_id("part"),
         Storage::File {
             document: ExternalDocument::path("part.source"),
-            source: json::from_value(serde_json::json!({
+            source: json::from_value(cadmpeg_core::json!({
                 "identity": {"kind": "unclassified", "format": "step"},
                 "attributes": {},
             }))
@@ -516,9 +516,9 @@ fn an_output_that_cannot_be_written_leaves_the_others_written() {
 /// A writer of a format that stores one definition per file. It keeps the
 /// document of each output it plans.
 #[derive(Default)]
-struct DocumentRecorder(std::sync::Mutex<Vec<CadIr>>);
+struct PlannedDocuments(std::sync::Mutex<Vec<CadIr>>);
 
-impl EncoderBackend for DocumentRecorder {
+impl EncoderBackend for PlannedDocuments {
     const FORMAT: FormatId = FormatId::new("cadir");
     const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -596,12 +596,12 @@ fn a_record_no_definition_owns_is_held_by_the_root_output_and_where_it_is_named(
         (definition_id("root"), output_name("assembly.out")),
         (definition_id("part"), output_name("part.out")),
     ]);
-    let recorder = DocumentRecorder::default();
-    let plan = recorder
+    let planned = PlannedDocuments::default();
+    let plan = planned
         .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
         .unwrap();
     assert_eq!(plan.outputs().len(), 2);
-    let documents = recorder.0.into_inner().unwrap();
+    let documents = planned.0.into_inner().unwrap();
     let held = |document: &CadIr| {
         let model = &document.model;
         model

@@ -54,7 +54,7 @@ fn assembly_and_part() -> CadIr {
         definition("part"),
         Storage::File {
             document: ExternalDocument::path("part.step"),
-            source: json::from_value(serde_json::json!({
+            source: json::from_value(cadmpeg_core::json!({
                 "identity": {"kind": "unclassified", "format": "step"},
                 "attributes": {},
             }))
@@ -159,7 +159,7 @@ fn archive_of_two_designs() -> CadIr {
         } = &mut stated.storage
         {
             *document = ExternalDocument::path("part.f3d");
-            *source = json::from_value(serde_json::json!({
+            *source = json::from_value(cadmpeg_core::json!({
                 "identity": {"kind": "unclassified", "format": "f3d"},
                 "attributes": {},
             }))
