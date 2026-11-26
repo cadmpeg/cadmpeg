@@ -75,6 +75,7 @@ pub(crate) fn restate_exactness(
             feature: feature_inputs,
             parameter: parameters::inputs,
             arrangement: |_| &[],
+            active_arrangements: &[],
         },
     )
 }

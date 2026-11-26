@@ -76,6 +76,9 @@ pub struct Restatement {
     /// The model configuration fields each field of an arrangement that
     /// restates the configuration is built from.
     pub arrangement: fn(ArrangementField) -> &'static [ModelConfigurationField],
+    /// The fields of each model configuration that an arrangement of a
+    /// scope restates which the scope's `active_arrangements` is built from.
+    pub active_arrangements: &'static [ModelConfigurationField],
 }
 
 /// The less exact of `left` and `right`, in the declared order of
@@ -92,6 +95,15 @@ fn least_exact(left: Exactness, right: Exactness) -> Exactness {
     } else {
         left
     }
+}
+
+/// The mark of the model field `key` of `note`: the least exact of its own
+/// mark (else the entity exactness) and the marks on its sub-paths.
+fn model_mark(note: &ExactnessNote, key: &str) -> Exactness {
+    sub_marks(note, key).map(|(_, exactness)| exactness).fold(
+        note.fields().get(key).copied().unwrap_or(note.entity()),
+        least_exact,
+    )
 }
 
 /// The marks of `note` on sub-paths of `field`, with their path.
@@ -126,13 +138,7 @@ fn restated_fields<D: Field, M: Field>(
     inputs: fn(D) -> &'static [M],
 ) -> Vec<(String, Exactness)> {
     let entity = note.entity();
-    let input = |model: &M| {
-        let key = model.key();
-        sub_marks(note, key).map(|(_, exactness)| exactness).fold(
-            note.fields().get(key).copied().unwrap_or(entity),
-            least_exact,
-        )
-    };
+    let input = |model: &M| model_mark(note, model.key());
     let mut overrides = Vec::new();
     for (field, stated) in stated {
         if !stated {
@@ -182,6 +188,13 @@ fn restated_fields<D: Field, M: Field>(
 /// through the model fields `restatement` names for each design field. The
 /// CADIR wire carries the design record in place of the model record (§10).
 ///
+/// Each scope's `active_arrangements` takes the least exact mark of the
+/// fields `restatement.active_arrangements` names of each configuration that
+/// an arrangement of the scope restates. Where that mark is less exact than
+/// the scope's key, the id of its definition, it is stated there as the mark
+/// of the field `active_arrangements` (interim: §3.2 does not say which of
+/// the two records with that id a field path names).
+///
 /// # Errors
 ///
 /// A resource refusal while the overrides are stated.
@@ -209,6 +222,31 @@ pub fn restate_exactness(
         .map(|configuration| configuration.id.as_str())
         .collect::<BTreeSet<_>>();
     let exactness = annotations.annotations().exactness();
+    let mut scopes = Vec::new();
+    for scope in &ir.design.scopes {
+        let mark = ir
+            .design
+            .arrangements
+            .iter()
+            .filter(|arrangement| {
+                arrangement.scope == scope.definition
+                    && configurations.contains(arrangement.id.as_str())
+            })
+            .flat_map(|arrangement| {
+                let note = exactness.get(arrangement.id.as_str());
+                restatement.active_arrangements.iter().map(move |field| {
+                    note.map_or(Exactness::ByteExact, |note| model_mark(note, field.key()))
+                })
+            })
+            .reduce(least_exact);
+        let key = AnnotationKey::from(&scope.definition);
+        let entity = exactness
+            .get(key.as_str())
+            .map_or(Exactness::ByteExact, ExactnessNote::entity);
+        if let Some(mark) = mark.filter(|mark| least_exact(*mark, entity) != entity) {
+            scopes.push((key, mark));
+        }
+    }
     let mut restated = Vec::new();
     for feature in &ir.design.features {
         if let (true, Some(note)) = (
@@ -260,6 +298,9 @@ pub fn restate_exactness(
         for (field, exactness) in overrides {
             annotations.field_exactness(&key, field, exactness)?;
         }
+    }
+    for (key, mark) in scopes {
+        annotations.field_exactness(&key, "active_arrangements", mark)?;
     }
     Ok(())
 }

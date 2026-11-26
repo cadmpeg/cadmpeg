@@ -282,7 +282,7 @@ fn a_later_feature_naming_a_held_sketch_keeps_its_family() {
     );
     assert_eq!(
         unprojected(&losses),
-        ["NX sketch feature nx:feature-history:feature#b holds no decoded sketch, so its design feature states no sketch."]
+        ["NX sketch feature nx:feature-history:feature#b names sketch nx:feature-history:sketch#1, which the earlier sketch feature nx:feature-history:feature#a holds, so its design feature states no sketch."]
     );
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }

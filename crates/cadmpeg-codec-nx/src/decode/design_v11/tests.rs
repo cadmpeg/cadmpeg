@@ -287,7 +287,11 @@ fn an_unnamed_record_charges_a_loss_naming_it() {
     ir.geometry.bodies = vec![body("1")];
     let mut unnamed = configuration(1, "Open", false);
     unnamed.name = None;
-    ir.model.configurations = vec![configuration(0, "Default", true), unnamed];
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        unnamed,
+        configuration(2, " ", false),
+    ];
     ir.model.parameters = vec![expression("p1", "p1"), expression("p2", "")];
     let (_, losses) = project_charging(&mut ir);
     assert_eq!(ir.design.arrangements.len(), 1);
@@ -304,8 +308,12 @@ fn an_unnamed_record_charges_a_loss_naming_it() {
                 "NX arrangement nx:arrangements:arrangement#1 stores no name and has no design record."
             ),
             (
+                NxLossCode::ArrangementUnnamed.kind(),
+                "NX arrangement nx:arrangements:arrangement#2 stores a blank name and has no design record."
+            ),
+            (
                 NxLossCode::ParameterUnnamed.kind(),
-                "NX expression nx:om-entry-0:parameter#p2 stores no name and has no design record."
+                "NX expression nx:om-entry-0:parameter#p2 stores a blank name and has no design record."
             ),
         ]
     );

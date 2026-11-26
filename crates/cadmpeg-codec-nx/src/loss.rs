@@ -180,11 +180,13 @@ loss_codes! {
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
     /// A sketch record has no design record.
-    SketchDesignUnprojected => ("sketch.design-unprojected", Warning, FeatureHistoryRetained),
-    /// An arrangement stores no name, which a design arrangement requires.
-    ArrangementUnnamed => ("configuration.arrangement-unnamed", Warning, FeatureHistoryRetained),
-    /// An expression stores no name, which a design parameter requires.
-    ParameterUnnamed => ("expression.parameter-unnamed", Warning, FeatureHistoryRetained),
+    SketchDesignUnprojected => ("sketch.design-unprojected", Warning, ParametricRecordOmitted),
+    /// An arrangement stores no name or a blank name, and a design
+    /// arrangement requires a name.
+    ArrangementUnnamed => ("configuration.arrangement-unnamed", Warning, ParametricRecordOmitted),
+    /// An expression stores a blank name, and a design parameter requires a
+    /// name.
+    ParameterUnnamed => ("expression.parameter-unnamed", Warning, ParametricRecordOmitted),
 }
 
 impl NxLossCode {

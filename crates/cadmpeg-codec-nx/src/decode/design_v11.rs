@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::{Arrangement, ArrangementKind, Overrides};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -29,7 +29,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, SketchFeatureBinding,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -61,14 +62,13 @@ pub(super) fn project(
     let owners = sketches::owners(ir, &history);
     let mut features = Vec::with_capacity(history.len());
     for feature in &history {
-        let operation = match sketches::sketch_of(feature) {
-            Some(sketch) if owners.get(sketch) == Some(&feature.id) => {
+        let operation = match sketches::sketch_of(feature).map(SketchFeatureBinding::id) {
+            None => operation(feature)?,
+            Some(Some(sketch)) if owners.get(sketch) == Some(&feature.id) => {
                 FeatureOperation::Sketch(sketch.clone())
             }
-            _ => {
-                if sketches::is_sketch(feature) {
-                    losses.push(sketches::unheld(&feature.id));
-                }
+            Some(sketch) => {
+                losses.push(sketches::unheld(&feature.id, sketch, &owners));
                 operation(feature)?
             }
         };
@@ -135,6 +135,7 @@ pub(super) const RESTATEMENT: Restatement = Restatement {
     feature: feature_inputs,
     parameter: parameters::inputs,
     arrangement: arrangement_inputs,
+    active_arrangements: &[ModelConfigurationField::Active],
 };
 
 /// The model feature fields [`project`] reads to build `field`: the
@@ -216,11 +217,9 @@ fn is_history(feature: &LegacyFeature) -> bool {
 }
 
 /// One ordered timeline of the history in construction order. The decoder
-/// reads no current feature (part 11, entry B.96), so the rollback of a
-/// timeline with members is unstated and its one current state, at
-/// `After(Container(timeline))` (§5.3), holds every current body. A timeline
-/// with no member has no member to stand before: it is built through its end,
-/// and its current state is at its start.
+/// reads no current feature (part 11, entry B.96), so the rollback is
+/// unstated and the one current state, at `After(Container(timeline))`
+/// (§5.3), holds every current body.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -230,17 +229,13 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let (rollback, at) = if members.is_empty() {
-        (Some(Rollback::End), Position::Start(id.clone()))
-    } else {
-        (None, Position::After(Member::Container(id.clone())))
-    };
+    let at = Position::After(Member::Container(id.clone()));
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback,
+        rollback: None,
         placement: None,
     };
     let current = vec![CurrentState {
@@ -266,8 +261,13 @@ fn arrangements(
     let mut active = BTreeSet::new();
     for configuration in &ir.model.configurations {
         let Some(name) = configuration.name.clone().and_then(NonBlankString::new) else {
+            let stored = if configuration.name.is_some() {
+                "a blank name"
+            } else {
+                "no name"
+            };
             losses.push(NxLossCode::ArrangementUnnamed.note(format!(
-                "NX arrangement {} stores no name and has no design record.",
+                "NX arrangement {} stores {stored} and has no design record.",
                 configuration.id
             )));
             continue;

@@ -50,7 +50,7 @@ pub(super) fn project(
     for parameter in &ir.model.parameters {
         let Some(name) = NonBlankString::new(parameter.name.clone()) else {
             losses.push(NxLossCode::ParameterUnnamed.note(format!(
-                "NX expression {} stores no name and has no design record.",
+                "NX expression {} stores a blank name and has no design record.",
                 parameter.id
             )));
             continue;

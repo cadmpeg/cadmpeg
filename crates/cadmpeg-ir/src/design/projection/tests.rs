@@ -230,6 +230,7 @@ const RESTATEMENT: super::Restatement = super::Restatement {
     feature: feature_inputs,
     parameter: parameter_inputs,
     arrangement: arrangement_inputs,
+    active_arrangements: &[ModelConfigurationField::Active],
 };
 const WIDTH: &str = "test:design:parameter#width";
 
@@ -447,6 +448,7 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
         feature: without_definition,
         parameter: parameter_inputs,
         arrangement: arrangement_inputs,
+        active_arrangements: &[],
     };
     let [fillet] = <[_; 1]>::try_from(restated_with(
         restatement,
@@ -491,6 +493,40 @@ fn an_arrangement_takes_the_marks_of_the_configuration_it_restates() {
     assert_eq!(open, (ByteExact, fields(&[("name", Inferred)])));
 }
 
+/// A scope's `active_arrangements` is built from the `active` field of each
+/// configuration its arrangements restate. Its mark is stated at the scope's
+/// key, the id of its definition, where that key claims more, and with a
+/// restatement that reads no configuration field there is none.
+#[test]
+fn a_scope_takes_the_active_marks_of_the_configurations_its_arrangements_restate() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let scope = restated_document().design.scopes[0]
+        .definition
+        .as_str()
+        .to_owned();
+    let active = [(OPEN, "active", Derived)];
+    let [stated, covered, unmarked] = [
+        restated(&[], &active, &[&scope]),
+        restated(&[(&scope, Inferred)], &active, &[&scope]),
+        restated(&[], &[(OPEN, "name", Derived)], &[&scope]),
+    ]
+    .map(|marks| <[_; 1]>::try_from(marks).unwrap()[0].clone());
+    assert_eq!(
+        stated,
+        (ByteExact, fields(&[("active_arrangements", Derived)]))
+    );
+    assert_eq!(covered, (Inferred, Vec::new()));
+    assert_eq!(unmarked, (ByteExact, Vec::new()));
+    let unread = super::Restatement {
+        active_arrangements: &[],
+        ..RESTATEMENT
+    };
+    assert_eq!(
+        restated_with(unread, &[], &active, &[&scope]),
+        [(ByteExact, Vec::new())]
+    );
+}
+
 /// A mark under a shared name that the codec builds from no model field of
 /// that name may describe the model field, so the design field claims no
 /// more than its entity: a derived `definition` on an inferred fillet leaves,
@@ -508,6 +544,7 @@ fn an_unlisted_shared_name_mark_claims_no_more_than_its_entity() {
         feature: without_definition,
         parameter: parameter_inputs,
         arrangement: arrangement_inputs,
+        active_arrangements: &[],
     };
     for (mark, expected) in [
         (Derived, vec![]),

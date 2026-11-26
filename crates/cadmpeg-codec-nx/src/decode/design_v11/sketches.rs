@@ -20,35 +20,41 @@ use cadmpeg_ir::design::ops::sketch::{
 use cadmpeg_ir::design::projection::sketch::{native_entity_kind, planar_curve, stored_frame};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::{
+    Feature as LegacyFeature, FeatureId, FeatureOperation, SketchFeatureBinding,
+};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{Sketch as LegacySketch, SketchEntity as LegacyEntity, SketchId};
 
 use crate::loss::NxLossCode;
 
-/// The planar sketch a history feature names as its own.
-pub(super) fn sketch_of(feature: &LegacyFeature) -> Option<&SketchId> {
+/// The sketch binding of `feature`, where it is a sketch feature of the
+/// history.
+pub(super) fn sketch_of(feature: &LegacyFeature) -> Option<&SketchFeatureBinding> {
     match feature.evaluation.definition().operation() {
-        FeatureOperation::Sketch { sketch, .. } => sketch.id(),
+        FeatureOperation::Sketch { sketch, .. } => Some(sketch),
         _ => None,
     }
 }
 
-/// Whether `feature` is a sketch feature of the history.
-pub(super) fn is_sketch(feature: &LegacyFeature) -> bool {
-    matches!(
-        feature.evaluation.definition().operation(),
-        FeatureOperation::Sketch { .. }
-    )
-}
-
-/// The loss of a sketch feature that holds no decoded sketch: its design
-/// feature states no sketch.
-pub(super) fn unheld(feature: &FeatureId) -> LossNote {
-    NxLossCode::SketchDesignUnprojected.note(format!(
-        "NX sketch feature {feature} holds no decoded sketch, so its design feature states no \
-         sketch."
-    ))
+/// The loss of sketch feature `feature`, which names `sketch` and does not
+/// hold it: its design feature states no sketch.
+pub(super) fn unheld(
+    feature: &FeatureId,
+    sketch: Option<&SketchId>,
+    owners: &BTreeMap<SketchId, FeatureId>,
+) -> LossNote {
+    let message = match sketch.and_then(|sketch| Some((sketch, owners.get(sketch)?))) {
+        Some((sketch, holder)) => format!(
+            "NX sketch feature {feature} names sketch {sketch}, which the earlier sketch \
+             feature {holder} holds, so its design feature states no sketch."
+        ),
+        None => format!(
+            "NX sketch feature {feature} holds no decoded sketch, so its design feature states \
+             no sketch."
+        ),
+    };
+    NxLossCode::SketchDesignUnprojected.note(message)
 }
 
 /// The history feature that owns each decoded sketch: the first feature, in
@@ -62,10 +68,12 @@ pub(super) fn owners(ir: &CadIr, history: &[&LegacyFeature]) -> BTreeMap<SketchI
         .collect::<BTreeSet<_>>();
     let mut owners = BTreeMap::new();
     for feature in history {
-        if let Some(sketch) = sketch_of(feature).filter(|sketch| stored.contains(sketch)) {
-            owners
-                .entry(sketch.clone())
-                .or_insert_with(|| feature.id.clone());
+        if let Some(sketch) = sketch_of(feature).and_then(SketchFeatureBinding::id) {
+            if stored.contains(sketch) {
+                owners
+                    .entry(sketch.clone())
+                    .or_insert_with(|| feature.id.clone());
+            }
         }
     }
     owners

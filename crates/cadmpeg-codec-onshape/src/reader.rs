@@ -1390,6 +1390,7 @@ const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
         feature: feature_inputs,
         parameter: parameter_inputs,
         arrangement: |_| &[],
+        active_arrangements: &[],
     };
 
 #[deny(clippy::wildcard_enum_match_arm)]
