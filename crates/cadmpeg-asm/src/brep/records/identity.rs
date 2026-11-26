@@ -41,11 +41,11 @@ impl NativeRecordNamespace {
         }
     }
 
-    pub(super) fn rewrite<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    pub(super) fn rewrite(
         self,
         kind: &str,
         record_index: u32,
-        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let source = self.serialized_id(kind, record_index).to_string();
         let mut target = map.identity(&source)?;
@@ -153,29 +153,38 @@ mod tests {
         for namespace in [
             "f3d:asm",
             "sat:asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/asm",
-            "f3d:xref/role-part/reference-1/occurrence-0/xref/child/asm",
+            "f3d:role-part/reference-1/occurrence-0@asm",
+            "f3d:role-part/reference-1/occurrence-0/xref/child@asm",
             "custom-format:native%20scope",
         ] {
             let id = format!("{namespace}:{kind}#1");
             wire["id"] = id.clone().into();
-            let typed: T = serde_json::from_value(wire.clone()).expect("valid scoped record");
-            assert_eq!(serde_json::to_value(&typed).unwrap(), wire);
+            let typed: T = cadmpeg_core::serde_erase::json::from_value(wire.clone())
+                .expect("valid scoped record");
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(&typed).unwrap(),
+                wire
+            );
             let mut document = cadmpeg_ir::CadIr::empty();
             document
                 .native
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
                 .set_arena(&ctx, "namespace_probe", &[typed])
                 .unwrap();
-            let document: cadmpeg_ir::CadIr =
-                serde_json::from_value(serde_json::to_value(document).unwrap()).unwrap();
+            let document: cadmpeg_ir::CadIr = cadmpeg_core::serde_erase::json::from_value(
+                cadmpeg_core::serde_erase::json::to_value(document).unwrap(),
+            )
+            .unwrap();
             let admitted: Vec<T> = document
                 .native
                 .namespace("f3d")
                 .unwrap()
                 .arena_as("namespace_probe")
                 .unwrap();
-            assert_eq!(serde_json::to_value(&admitted[0]).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(&admitted[0]).unwrap(),
+                wire
+            );
         }
         for namespace in [
             "",
@@ -188,7 +197,7 @@ mod tests {
             "f3d:bad#scope",
         ] {
             wire["id"] = format!("{namespace}:{kind}#1").into();
-            let error = serde_json::from_value::<T>(wire.clone())
+            let error = cadmpeg_core::serde_erase::json::from_value::<T>(wire.clone())
                 .err()
                 .expect("malformed namespace must fail typed admission")
                 .to_string();
@@ -196,7 +205,7 @@ mod tests {
         }
         for id in [format!("f3d:asm:{kind}#2"), "f3d:asm:other-kind#1".into()] {
             wire["id"] = id.into();
-            let error = serde_json::from_value::<T>(wire.clone())
+            let error = cadmpeg_core::serde_erase::json::from_value::<T>(wire.clone())
                 .err()
                 .expect("identity must agree with kind and record index")
                 .to_string();

@@ -395,8 +395,9 @@ pub(crate) fn write_report_text(
     let mut bytes = if value["command"].as_str() == Some("check")
         && value["check_report"]["findings"].is_array()
     {
-        value["input_path"] = serde_json::to_value(std::fs::canonicalize(input)?)?;
-        serde_json::to_vec_pretty(&value)?
+        value["input_path"] =
+            cadmpeg_core::serde_erase::json::to_value(std::fs::canonicalize(input)?)?;
+        cadmpeg_core::serde_erase::json::to_vec_pretty(&value)?
     } else {
         text.as_bytes().to_vec()
     };
@@ -476,9 +477,10 @@ pub(crate) fn print_check_report(
     for finding in &report.findings {
         writeln!(
             writer,
-            "  [{}/{}] {} ({})",
+            "  [{}/{}] {}: {} ({})",
             finding.severity,
             finding.check,
+            finding.rule,
             finding.message,
             finding.entity.as_deref().unwrap_or("-")
         )?;
@@ -493,19 +495,19 @@ mod tests {
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
-            serde_json::to_value(FidelitySummary::None).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyLeft).unwrap(),
             serde_json::json!({ "present": "left_only" })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyRight).unwrap(),
             serde_json::json!({ "present": "right_only" })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
             }))
@@ -520,7 +522,7 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(FidelitySummary::Both(FidelityDiff {
+            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
             }))
@@ -533,6 +535,33 @@ mod tests {
                     "retained_records_changed": false
                 }
             })
+        );
+    }
+
+    #[test]
+    fn a_check_line_names_the_rule_of_its_finding() {
+        use cadmpeg_ir::report::check::{Check, Finding, ValidationReport};
+        use cadmpeg_ir::report::Severity;
+        let report = ValidationReport {
+            entity_counts: std::collections::BTreeMap::default(),
+            findings: vec![Finding {
+                check: Check::ReferentialIntegrity,
+                rule: cadmpeg_ir::rule_name!("referential_integrity.unresolved-typed-reference"),
+                severity: Severity::Error,
+                message: "unresolved typed reference f1".into(),
+                entity: Some("e1".into()),
+                related: Vec::new(),
+            }],
+            losses: Vec::new(),
+        };
+        let mut out = Vec::new();
+        super::print_check_report(&mut out, &report).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(
+            out.lines().any(|line| line
+                == "  [error/referential_integrity] referential_integrity.unresolved-typed-reference: \
+                    unresolved typed reference f1 (e1)"),
+            "{out}"
         );
     }
 }

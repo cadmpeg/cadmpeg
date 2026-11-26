@@ -570,9 +570,33 @@ pub(super) fn decode(
         "BREP_WITH_VOIDS",
     ];
     let mut root_sources = BTreeMap::new();
+    let mut root_names = BTreeMap::<RootKey, Vec<(u64, Option<String>)>>::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         if let Some(key) = root_key(record, exchange, &shells) {
+            root_names
+                .entry(key.clone())
+                .or_default()
+                .push((id, root_name(exchange, record, id, &mut losses)));
             root_sources.entry(key).or_insert((id, record));
+        }
+    }
+    let body_names = root_names
+        .iter()
+        .map(|(key, names)| {
+            let name = names.iter().find_map(|(_, name)| name.clone());
+            (key.clone(), name)
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (key, names) in &root_names {
+        let Some(Some(kept)) = body_names.get(key) else {
+            continue;
+        };
+        for (id, name) in names {
+            if let Some(name) = name.as_ref().filter(|name| *name != kept) {
+                losses.push(StepLossCode::TopologyAliasRootNameDropped.note(format!(
+                    "STEP topology root #{id} names its body '{name}', but the body it shares                      with its alias roots takes the first name in instance order, '{kept}'"
+                )));
+            }
         }
     }
     let scope_distinct_roots = root_sources.len() > 1;
@@ -589,9 +613,11 @@ pub(super) fn decode(
             .then(|| ModelIndex::new_model_only(commit_session.document()));
         for (key, (id, record)) in root_sources {
             let mut root_losses = Vec::new();
+            let name = body_names.get(&key).cloned().flatten();
             let outcome = build(
                 id,
                 record,
+                name.as_deref(),
                 BuildSources {
                     exchange,
                     index: index.as_ref(),
@@ -730,6 +756,7 @@ pub(super) fn decode(
                     exchange,
                     carrier_index,
                     index: &index,
+                    surfaces: &document.geometry.surfaces,
                     tolerance: document.tolerances.linear.get(),
                     ctx,
                 },
@@ -1612,6 +1639,7 @@ fn build_geometric_set(
         exchange,
         carrier_index,
         index,
+        surfaces,
         tolerance,
         ctx,
     } = sources;
@@ -1661,7 +1689,7 @@ fn build_geometric_set(
                         .dash(key_word!("set"))
                         .dash(id),
                 ));
-                let face_loops = match exchange.records().get(&surface_step) {
+                let bounded_face = match exchange.records().get(&surface_step) {
                     Some(record) if record.partial("CURVE_BOUNDED_SURFACE").is_some() => {
                         curve_bounded_face_loops(
                             &face_id,
@@ -1682,7 +1710,7 @@ fn build_geometric_set(
                             losses,
                         )?
                     }
-                    _ => None,
+                    _ => CurveBoundedFace::Bare,
                 };
                 let face_shell = if faces.is_empty() {
                     shell_id.clone()
@@ -1696,14 +1724,39 @@ fn build_geometric_set(
                             .dash(faces.len()),
                     ))
                 };
+                let face_loops = match bounded_face {
+                    CurveBoundedFace::Stated(face_loops) => face_loops,
+                    CurveBoundedFace::Unresolved { boundary } => {
+                        // The source bounds the face, so it is partial on
+                        // any surface.
+                        losses.push(StepLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                            "CURVE_BOUNDED_SURFACE #{surface_step} boundary #{boundary} does not resolve to a closed loop: face {face_id} is stated partial"
+                        )));
+                        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+                    }
+                    CurveBoundedFace::Bare => {
+                        // A set member that is a bare surface is a face with
+                        // no loop; on an unbounded surface it is partial.
+                        let geometry = surfaces
+                            .iter()
+                            .find(|record| record.id == surface)
+                            .map(|record| &record.geometry);
+                        let (face_loops, unbounded) =
+                            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), geometry);
+                        if let Some(kind) = unbounded {
+                            losses.push(StepLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                                "GEOMETRIC_SET #{set_id} holds #{surface_step}, a {kind} with no boundary, which no face covers whole: face {face_id} is stated partial"
+                            )));
+                        }
+                        face_loops
+                    }
+                };
                 let face = Face {
                     id: face_id,
                     shell: face_shell,
                     surface,
                     sense: Sense::Forward,
-                    loops: face_loops.unwrap_or_else(|| {
-                        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
-                    }),
+                    loops: face_loops,
                     name: None,
                     color: None,
                     tolerance: None,
@@ -1779,6 +1832,8 @@ struct GeometricSetSources<'a, 'b> {
     exchange: &'a Exchange,
     carrier_index: &'a CarrierIndex,
     index: &'a ModelIndex<'b>,
+    /// The surfaces of the document the set's faces lie on.
+    surfaces: &'a [Surface],
     tolerance: f64,
     ctx: &'a DecodeContext<'a>,
 }
@@ -1810,9 +1865,20 @@ struct BoundarySegment {
     ends: [Point3; 2],
 }
 
+/// What a geometric-set member states of its face's boundary.
+enum CurveBoundedFace {
+    /// A surface with no boundary of its own: its face has no loop.
+    Bare,
+    /// Every boundary of a `CURVE_BOUNDED_SURFACE`, as the face's loops.
+    Stated(cadmpeg_ir::topology::FaceLoops),
+    /// The `CURVE_BOUNDED_SURFACE` boundary that does not resolve to a closed
+    /// loop.
+    Unresolved { boundary: u64 },
+}
+
 /// The loops of a `CURVE_BOUNDED_SURFACE` face: one ring per boundary
-/// composite curve, one edge per segment. `None` when a boundary is not a
-/// closed chain of bounded segments.
+/// composite curve, one edge per segment. `Unresolved` names the first
+/// boundary that is not a closed chain of bounded segments.
 fn curve_bounded_face_loops(
     face: &FaceId,
     face_tail: &IdentityKeyTail,
@@ -1820,9 +1886,9 @@ fn curve_bounded_face_loops(
     sources: CurveBoundedSources<'_, '_>,
     parts: &mut BoundedFaceParts,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<cadmpeg_ir::topology::FaceLoops>, CodecError> {
+) -> Result<CurveBoundedFace, CodecError> {
     let Some(boundaries) = named_reference_values(record, "CURVE_BOUNDED_SURFACE", 2) else {
-        return Ok(None);
+        return Ok(CurveBoundedFace::Bare);
     };
     let support = entity_parameter(record, "CURVE_BOUNDED_SURFACE", 1)
         .and_then(Value::reference)
@@ -1841,7 +1907,9 @@ fn curve_bounded_face_loops(
     let mut measured = Vec::new();
     for boundary_step in boundaries.iter().filter_map(ValueExt::reference) {
         let Some(segments) = boundary_segments(boundary_step, sources)? else {
-            return Ok(None);
+            return Ok(CurveBoundedFace::Unresolved {
+                boundary: boundary_step,
+            });
         };
         let flagged = sources
             .exchange
@@ -1885,7 +1953,9 @@ fn curve_bounded_face_loops(
         let Some(loop_id) =
             stage_boundary_loop(face, &key, &segments, sources.tolerance, &mut staged)
         else {
-            return Ok(None);
+            return Ok(CurveBoundedFace::Unresolved {
+                boundary: boundary_step,
+            });
         };
         if is_outer {
             outer = Some(loop_id);
@@ -1894,14 +1964,14 @@ fn curve_bounded_face_loops(
         }
     }
     if outer.is_none() && inner.is_empty() {
-        return Ok(None);
+        return Ok(CurveBoundedFace::Bare);
     }
     parts.points.append(&mut staged.points);
     parts.vertices.append(&mut staged.vertices);
     parts.edges.append(&mut staged.edges);
     parts.coedges.append(&mut staged.coedges);
     parts.loops.append(&mut staged.loops);
-    Ok(Some(match outer {
+    Ok(CurveBoundedFace::Stated(match outer {
         Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
         None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
     }))
@@ -2872,6 +2942,8 @@ struct BuildRoot<'a> {
     shell_steps: &'a [u64],
     bid: BodyId,
     rid: &'a RegionId,
+    /// The name the root's body takes.
+    name: Option<&'a str>,
 }
 
 #[derive(Clone, Copy)]
@@ -2884,6 +2956,7 @@ struct BuildScope {
 fn build(
     id: u64,
     root: &RawRecord,
+    name: Option<&str>,
     sources: BuildSources<'_, '_>,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
@@ -2921,6 +2994,7 @@ fn build(
                 shell_steps: &shell_steps,
                 bid: body,
                 rid: &region,
+                name,
             },
             BuildScope {
                 faces: scope_shell_carriers,
@@ -2984,6 +3058,7 @@ fn build(
                 shell_steps: &[shell_reference],
                 bid: body,
                 rid: &region,
+                name,
             },
             BuildScope {
                 faces: scoped || scope_root,
@@ -3036,6 +3111,7 @@ fn build_one(
         shell_steps,
         bid,
         rid,
+        name,
     } = root_parts;
     let BuildScope {
         faces: scope_faces,
@@ -3063,7 +3139,7 @@ fn build_one(
             BodyKind::Sheet
         },
         transform: None,
-        name: None,
+        name: name.map(str::to_owned),
         color: None,
         visible: None,
         native_ref: None,
@@ -5800,6 +5876,46 @@ fn face_attributes_inner<'a>(
         _ => None,
     };
     Ok(result)
+}
+
+/// The `REPRESENTATION_ITEM.name` of topology root `id`, decoded, unless it
+/// is empty. A complex instance whose `REPRESENTATION_ITEM` partial is absent
+/// takes the name from its first root-type partial.
+fn root_name(
+    exchange: &Exchange,
+    root: &RawRecord,
+    id: u64,
+    losses: &mut Vec<LossNote>,
+) -> Option<String> {
+    let value = if root.partials.len() == 1 {
+        root.parameter(0)
+    } else {
+        root.partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+            .or_else(|| {
+                [
+                    "BREP_WITH_VOIDS",
+                    "FACETED_BREP",
+                    "MANIFOLD_SOLID_BREP",
+                    "FACE_BASED_SURFACE_MODEL",
+                    "SHELL_BASED_SURFACE_MODEL",
+                ]
+                .into_iter()
+                .find_map(|name| {
+                    root.partial(name)
+                        .and_then(|partial| partial.parameters.first())
+                })
+            })
+    }?;
+    super::decode_text(
+        exchange,
+        value,
+        losses,
+        id,
+        "body name",
+        StepLossCode::MetadataStringInvalid,
+    )
+    .filter(|name| !name.is_empty())
 }
 
 fn face_name_value(record: &RawRecord) -> Option<&Value> {

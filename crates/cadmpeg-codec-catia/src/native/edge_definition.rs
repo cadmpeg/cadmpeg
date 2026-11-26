@@ -201,8 +201,8 @@ mod tests {
         let value = edge_definition();
         let owned: EdgeDefinitionWire = value.clone().into();
         assert_eq!(
-            serde_json::to_vec(&value).expect("borrowed definition JSON"),
-            serde_json::to_vec(&owned).expect("owned definition JSON")
+            cadmpeg_core::serde_erase::json::to_vec(&value).expect("borrowed definition JSON"),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned definition JSON")
         );
     }
 
@@ -221,7 +221,9 @@ mod tests {
             definition: &value,
         };
         let arena_name = "edge_definitions";
-        let json_len = serde_json::to_vec(&record).expect("definition JSON").len();
+        let json_len = cadmpeg_core::serde_erase::json::to_vec(&record)
+            .expect("definition JSON")
+            .len();
         let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -294,20 +296,23 @@ mod tests {
                 },
             ),
         };
-        let mut wire = serde_json::to_value(&value).expect("serialize definition");
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(&value).expect("serialize definition");
         assert_eq!(wire["class"], serde_json::json!(0x24));
         assert_eq!(
             wire["data"],
             serde_json::json!({"kind": "compact24", "operand": 1})
         );
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
-                .expect("load derived data"),
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(
+                wire.clone()
+            )
+            .expect("load derived data"),
             value
         );
         wire["data"]["operand"] = serde_json::json!(2);
         assert!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire)
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(wire)
                 .expect_err("reject conflicting data")
                 .to_string()
                 .contains("data differs")
@@ -343,12 +348,14 @@ mod tests {
         let value = crate::test_support::with_service_context(|_ctx| {
             CatiaConsolidatedEdgeDefinition::from_source(source)
         });
-        let wire = serde_json::to_value(&value).expect("serialize affine map");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&value).expect("serialize affine map");
         assert_eq!(wire["data"]["kind"], "affine23");
         assert_eq!(wire["data"]["target_range"], serde_json::json!([4.0, 8.0]));
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
-                .expect("load affine map"),
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(
+                wire.clone()
+            )
+            .expect("load affine map"),
             value
         );
         for (field, replacement) in [
@@ -359,7 +366,10 @@ mod tests {
             let mut contradictory = wire.clone();
             contradictory["data"][field] = replacement;
             assert!(
-                serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(contradictory).is_err()
+                cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(
+                    contradictory
+                )
+                .is_err()
             );
         }
     }
@@ -397,12 +407,17 @@ mod tests {
         let written =
             cadmpeg_ir::hash::finite_json::to_json_value(&value).expect("write affine map");
         assert_eq!(written["data"]["offset"].to_string(), "0.0");
-        let read = serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(written.clone())
-            .expect("read the written affine map");
+        let read = cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(
+            written.clone(),
+        )
+        .expect("read the written affine map");
         assert_eq!(&*read.frame.payload, payload.as_slice());
         let mut moved = written;
         moved["data"]["offset"] = serde_json::json!(0.5);
-        assert!(serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(moved).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedEdgeDefinition>(moved)
+                .is_err()
+        );
     }
 }
 

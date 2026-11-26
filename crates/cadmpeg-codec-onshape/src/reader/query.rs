@@ -10,6 +10,31 @@ const BYTES: usize = 1024 * 1024;
 const CACHE_BYTES: usize = 4 * BYTES;
 const REFUSED: &str = "the compressed query encoding is not supported yet";
 
+pub(super) fn resolved_leaves(source: &Value) -> Mapping<Vec<Value>> {
+    let mut pending = vec![resolved(source)?];
+    let mut leaves = Vec::new();
+    while let Some(query) = pending.pop() {
+        if query.get("queryType").and_then(Value::as_str) == Some("UNION") {
+            let children = super::rows(&query, "subqueries")?;
+            if children.is_empty() {
+                return Err("the query union is empty".into());
+            }
+            pending.extend(children.iter().rev().cloned());
+        } else {
+            leaves.push(query);
+        }
+        if pending
+            .len()
+            .checked_add(leaves.len())
+            .ok_or("the query union exceeds the row limit")?
+            > super::ROWS
+        {
+            return Err("the query union exceeds the row limit".into());
+        }
+    }
+    Ok(leaves)
+}
+
 pub(crate) fn resolved(query: &Value) -> Mapping<Value> {
     let source = super::text(query, "queryString")?;
     if source.len() > BYTES {
@@ -157,7 +182,7 @@ impl Reader<'_> {
                 let index = self.count()?;
                 self.strings.get(index).cloned().ok_or(REFUSED)?
             };
-            if !matches!(class.as_str(), "Query" | "EntityType" | "Id") {
+            if !matches!(class.as_str(), "Query" | "QueryType" | "EntityType" | "Id") {
                 return Err("this compressed query value type is not supported yet".into());
             }
             return self.value(depth + 1);
@@ -199,7 +224,9 @@ impl Reader<'_> {
             _ => return Err(REFUSED.into()),
         };
         bounded_depth(&value, 0)?;
-        let size = serde_json::to_vec(&value).map_err(|_| REFUSED)?.len();
+        let size = cadmpeg_core::serde_erase::json::to_vec(&value)
+            .map_err(|_| REFUSED)?
+            .len();
         self.charge(size)?;
         self.values.push((value.clone(), size));
         Ok(value)

@@ -270,7 +270,7 @@ fn scope() -> DesignParameterScope {
 }
 
 fn group() -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "325",

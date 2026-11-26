@@ -8,9 +8,11 @@ use std::mem::discriminant;
 use super::records::{OwnerKey, ProcessRecords};
 use crate::design::ids::{MachineId, MachiningFeatureId};
 use crate::design::units::UnitSymbol;
+use crate::index::ModelIndex;
 use crate::process::feature::MachiningFeatureClass;
 use crate::process::groups::GroupKind;
 use crate::process::operation::{ProcessGeometry, Tooling};
+use crate::process::setup::{FunctionStep, ProgramStep, Step};
 use crate::report::check::Finding;
 use crate::validate::cycles::on_cycles;
 
@@ -44,7 +46,10 @@ fn check_tooling(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 operation.id.as_str(),
-                format_args!("operation's tooling names {target}, which is no {what}"),
+                crate::rule!(
+                    "process.operation-tooling-names-no",
+                    "operation's tooling names {target}, which is no {what}"
+                ),
             );
         }
     }
@@ -53,7 +58,11 @@ fn check_tooling(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 preset.id.as_str(),
-                format_args!("preset's tool {} is no tool", preset.tool.as_str()),
+                crate::rule!(
+                    "process.preset-tool-no-tool",
+                    "preset's tool {} is no tool",
+                    preset.tool.as_str()
+                ),
             );
         }
     }
@@ -65,14 +74,20 @@ fn check_tooling(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     machine.id.as_str(),
-                    format_args!("machine pocket holds {tool}, which is no tool"),
+                    crate::rule!(
+                        "process.machine-pocket-holds-no-tool",
+                        "machine pocket holds {tool}, which is no tool"
+                    ),
                 );
             }
             if !held.insert(tool) {
                 super::error(
                     findings,
                     machine.id.as_str(),
-                    format_args!("machine has two pockets holding {tool}"),
+                    crate::rule!(
+                        "process.machine-two-pockets-holding",
+                        "machine has two pockets holding {tool}"
+                    ),
                 );
             }
         }
@@ -83,7 +98,11 @@ fn check_tooling(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     holder,
-                    format_args!("machine {} is no machine", machine.as_str()),
+                    crate::rule!(
+                        "process.machine-no-machine",
+                        "machine {} is no machine",
+                        machine.as_str()
+                    ),
                 );
             }
         }
@@ -107,7 +126,8 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     operation.id.as_str(),
-                    format_args!(
+                    crate::rule!(
+                        "process.operation-lists-no-machining-feature",
                         "operation lists {}, which is no machining feature",
                         feature.as_str()
                     ),
@@ -122,7 +142,8 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.toolpath-operation-no-operation",
                     "toolpath's operation {} is no operation",
                     toolpath.operation.as_str()
                 ),
@@ -135,7 +156,8 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.toolpath-feature-no-machining-feature",
                     "toolpath's feature {} is no machining feature",
                     feature.as_str()
                 ),
@@ -144,7 +166,8 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.toolpath-feature-not-one-operation-lists",
                     "toolpath's feature {} is not one its operation lists",
                     feature.as_str()
                 ),
@@ -166,7 +189,10 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     id,
-                    format_args!("machining feature names {target}, which is no machining feature"),
+                    crate::rule!(
+                        "process.machining-feature-names-no-machining-feature",
+                        "machining feature names {target}, which is no machining feature"
+                    ),
                 );
             }
         }
@@ -176,7 +202,10 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
         super::error(
             findings,
             id,
-            format_args!("machining feature contains itself through `Replicate` and `Compound`"),
+            crate::rule!(
+                "process.machining-feature-contains-itself-through-replicate",
+                "machining feature contains itself through `Replicate` and `Compound`"
+            ),
         );
     }
 }
@@ -197,7 +226,11 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!("operation lists {}, which is no group", group.as_str()),
+                    crate::rule!(
+                        "process.operation-lists-no-group",
+                        "operation lists {}, which is no group",
+                        group.as_str()
+                    ),
                 );
                 continue;
             };
@@ -207,7 +240,8 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "process.operation-lists-second-group-one-kind",
                         "operation lists {}, a second group of one kind",
                         group.as_str()
                     ),
@@ -219,7 +253,7 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.operation-geometry-states-combine-operation-lists", 
                     "operation's geometry states `combine`, but the operation lists no geometry group"
                 ),
             );
@@ -233,7 +267,7 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!("group's geometry states `combine`, which only an operation's own geometry states"),
+                    crate::rule!("process.group-geometry-states-combine-only-operation", "group's geometry states `combine`, which only an operation's own geometry states"),
                 );
             }
         }
@@ -245,13 +279,19 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             None => super::error(
                 findings,
                 id,
-                format_args!("group's parent {parent} is no group"),
+                crate::rule!(
+                    "process.group-parent-no-group",
+                    "group's parent {parent} is no group"
+                ),
             ),
             Some(listed) if discriminant(&listed.kind) != discriminant(&group.kind) => {
                 super::error(
                     findings,
                     id,
-                    format_args!("group's parent {parent} is of another kind"),
+                    crate::rule!(
+                        "process.group-parent-another-kind",
+                        "group's parent {parent} is of another kind"
+                    ),
                 );
             }
             Some(_) => {}
@@ -262,7 +302,10 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!("group is its own ancestor through `parent`"),
+            crate::rule!(
+                "process.group-own-ancestor-through-parent",
+                "group is its own ancestor through `parent`"
+            ),
         );
     }
     for feature in &process.features {
@@ -270,7 +313,7 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 feature.id.as_str(),
-                format_args!("machining feature's geometry states `combine`, which only an operation's own geometry states"),
+                crate::rule!("process.machining-feature-geometry-states-combine-only", "machining feature's geometry states `combine`, which only an operation's own geometry states"),
             );
         }
     }
@@ -298,14 +341,19 @@ fn check_owners(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!("parameter's owner {} is no {what}", owner.id()),
+                crate::rule!(
+                    "process.parameter-owner-no",
+                    "parameter's owner {} is no {what}",
+                    owner.id()
+                ),
             );
         }
         if !names.insert((owner, parameter.name.as_str())) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.parameter-name-repeats-among-parameters",
                     "parameter name `{}` repeats among the parameters of {}",
                     parameter.name.as_str(),
                     owner.id()
@@ -313,6 +361,98 @@ fn check_owners(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+/// Every `native_ref` of a process record resolves (part 10, Scope and
+/// linkage), the steps of a setup's or a program's function steps included.
+pub(super) fn check_native_refs(
+    records: &ProcessRecords<'_>,
+    ids: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let ir = records.ir;
+    let mut check = |owner: &str, native_ref: Option<&String>| {
+        let Some(target) = native_ref else { return };
+        let resolves = crate::validate::annotations_native::native_link_resolves(
+            ir,
+            |target| ids.native_record_owns(target),
+            target,
+        );
+        if !resolves {
+            super::error(
+                findings,
+                owner,
+                crate::rule!(
+                    "process.native-ref-does-not-resolve",
+                    "native_ref `{target}` does not resolve"
+                ),
+            );
+        }
+    };
+    let process = &ir.process;
+    for setup in &process.setups {
+        check(setup.id.as_str(), setup.native_ref.as_ref());
+        for step in setup_functions(&setup.steps) {
+            check(setup.id.as_str(), step.native_ref.as_ref());
+        }
+    }
+    for operation in &process.operations {
+        check(operation.id.as_str(), operation.native_ref.as_ref());
+    }
+    for feature in &process.features {
+        check(feature.id.as_str(), feature.native_ref.as_ref());
+    }
+    for group in &process.groups {
+        check(group.id.as_str(), group.native_ref.as_ref());
+    }
+    for tool in &process.tools {
+        check(tool.id.as_str(), tool.native_ref.as_ref());
+    }
+    for preset in &process.presets {
+        check(preset.id.as_str(), preset.native_ref.as_ref());
+    }
+    for machine in &process.machines {
+        check(machine.id.as_str(), machine.native_ref.as_ref());
+    }
+    for program in &process.programs {
+        check(program.id.as_str(), program.native_ref.as_ref());
+        for step in program_functions(&program.steps) {
+            check(program.id.as_str(), step.native_ref.as_ref());
+        }
+    }
+    for parameter in &process.parameters {
+        check(parameter.id.as_str(), parameter.native_ref.as_ref());
+    }
+}
+
+/// The function steps of a setup's steps, folders included, walked without
+/// recursion.
+fn setup_functions(steps: &[Step]) -> Vec<&FunctionStep> {
+    let mut found = Vec::new();
+    let mut pending: Vec<&Step> = steps.iter().collect();
+    while let Some(step) = pending.pop() {
+        match step {
+            Step::Function(function) => found.push(function),
+            Step::Folder { steps, .. } => pending.extend(steps),
+            Step::Operation(_) => {}
+        }
+    }
+    found
+}
+
+/// The function steps of a program's steps, groups included, walked without
+/// recursion.
+fn program_functions(steps: &[ProgramStep]) -> Vec<&FunctionStep> {
+    let mut found = Vec::new();
+    let mut pending: Vec<&ProgramStep> = steps.iter().collect();
+    while let Some(step) = pending.pop() {
+        match step {
+            ProgramStep::Function(function) => found.push(function),
+            ProgramStep::Group { steps, .. } => pending.extend(steps),
+            ProgramStep::Setup(_) | ProgramStep::Operation(_) => {}
+        }
+    }
+    found
 }
 
 /// A unit named outside an expression is a length symbol where it states a
@@ -349,7 +489,11 @@ fn length_unit(holder: &str, what: &str, unit: UnitSymbol, findings: &mut Vec<Fi
         super::error(
             findings,
             holder,
-            format_args!("{what} `{}` is no length unit", unit.name()),
+            crate::rule!(
+                "process.no-length-unit",
+                "{what} `{}` is no length unit",
+                unit.name()
+            ),
         );
     }
 }

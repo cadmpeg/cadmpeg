@@ -13,7 +13,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Geometry role selected by a variable-blend support-side discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -31,7 +33,9 @@ pub enum VariableBlendSupportKind {
 }
 
 /// Convexity selected for a variable-radius blend surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -43,7 +47,9 @@ pub enum VariableBlendConvexity {
 }
 
 /// Solved-surface representation selected for a variable-radius blend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -55,7 +61,7 @@ pub enum VariableBlendRenderMode {
 }
 
 /// One interpolation control point in a variable blend-value law.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VariableBlendInterpolationPoint<R = f64, V = Vector3, P = Point3> {
@@ -72,7 +78,9 @@ pub struct VariableBlendInterpolationPoint<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Native edge-offset blend-value sub-discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "i64", into = "i64")]
 pub enum EdgeOffsetDiscriminator {
@@ -121,7 +129,7 @@ impl From<EdgeOffsetDiscriminator> for i64 {
 }
 
 /// Numeric or symbolic terminal of a functional blend-value law.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -133,7 +141,7 @@ pub enum VariableBlendTerminal<R = f64> {
 }
 
 /// Complete recursive native `getBlendValues` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VariableBlendValue<R = f64, V = Vector3, P = Point3> {
@@ -150,7 +158,7 @@ pub struct VariableBlendValue<R = f64, V = Vector3, P = Point3> {
 /// Each arm carries the native sub-discriminator it admits: the edge-offset
 /// arm is one of two codes, so an edge-offset value with any other
 /// sub-discriminator has no spelling.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum VariableBlendValuePayload<R = f64, V = Vector3, P = Point3> {
@@ -259,7 +267,7 @@ impl<R, V, P> VariableBlendValuePayload<R, V, P> {
 }
 
 /// Radius-law payloads of a variable blend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum VariableBlendRadii<R = f64, V = Vector3, P = Point3> {
@@ -303,7 +311,7 @@ impl<R, V, P> VariableBlendRadii<R, V, P> {
 }
 
 /// Cross-section clause following the variable-radius laws.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -347,9 +355,12 @@ pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
 
 /// Native zero-width variable-blend cross-section selectors whose framing is
 /// established while their geometric laws remain unclassified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
+#[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum VariableBlendBareCrossSection {
     /// Native selector `2`.
@@ -389,7 +400,17 @@ impl TryFrom<i64> for VariableBlendBareCrossSection {
 }
 
 /// Native variable-radius blend surface subtype.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    DeserializeName,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -410,7 +431,7 @@ pub enum VariableBlendSurfaceSubtype {
 /// Complete native variable-radius blend construction graph.
 // A source states raw values; a `VariableBlendSurfacePayload` holds the
 // admitted construction, whose scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]

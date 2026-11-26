@@ -212,7 +212,6 @@ fn resolve_operand_marker_excluding<'a>(
             NativeOperandTag::TAG_80CC
                 | NativeOperandTag::TAG_8152
                 | NativeOperandTag::TAG_8AB6
-                | NativeOperandTag::TAG_8DCB
                 | NativeOperandTag::TAG_929D
                 | NativeOperandTag::TAG_BD69
         )

@@ -326,7 +326,7 @@ mod tests {
     fn named_target_wire_preserves_canonical_reference_and_ownership() {
         let record: FeatureConstructionNamedTarget = serde_json::from_str(WIRE).unwrap();
         assert_eq!(
-            serde_json::to_value(record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
             serde_json::from_str::<serde_json::Value>(WIRE).unwrap()
         );
         for (field, value) in [
@@ -339,7 +339,10 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             wire[field] = value;
-            assert!(serde_json::from_value::<FeatureConstructionNamedTarget>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<FeatureConstructionNamedTarget>(wire)
+                    .is_err()
+            );
         }
     }
 
@@ -357,11 +360,15 @@ mod tests {
     fn named_target_optional_block_uses_omission_instead_of_null() {
         let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
         wire.as_object_mut().unwrap().remove("data_block");
-        let record: FeatureConstructionNamedTarget = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: FeatureConstructionNamedTarget =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
         wire["data_block"] = serde_json::Value::Null;
         assert!(
-            serde_json::from_value::<FeatureConstructionNamedTarget>(wire)
+            cadmpeg_core::serde_erase::json::from_value::<FeatureConstructionNamedTarget>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains("data_block: this key states a value")
@@ -383,7 +390,7 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             wire["source_offsets"] = serde_json::json!([10, 15, 103]);
             let record: FeatureConstructionNamedTarget =
-                serde_json::from_value(wire.clone()).unwrap();
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             record.validate_links(&namespace).unwrap();
             for (field, value) in [
                 ("operation_label", serde_json::json!("nx:test:other#0")),
@@ -393,27 +400,33 @@ mod tests {
             ] {
                 let mut wrong = wire.clone();
                 wrong[field] = value;
-                let record: FeatureConstructionNamedTarget = serde_json::from_value(wrong).unwrap();
+                let record: FeatureConstructionNamedTarget =
+                    cadmpeg_core::serde_erase::json::from_value(wrong).unwrap();
                 assert!(record.validate_links(&namespace).is_err());
             }
             wire["object_index"] = serde_json::json!(0);
             wire["raw_object_index"] = serde_json::json!("00");
             assert!(
-                serde_json::from_value::<FeatureConstructionNamedTarget>(wire.clone()).is_err()
+                cadmpeg_core::serde_erase::json::from_value::<FeatureConstructionNamedTarget>(
+                    wire.clone()
+                )
+                .is_err()
             );
             wire.as_object_mut().unwrap().remove("data_block");
             wire["source_offsets"] = serde_json::json!([10, 15, 102]);
-            let record: FeatureConstructionNamedTarget = serde_json::from_value(wire).unwrap();
+            let record: FeatureConstructionNamedTarget =
+                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
             record.validate_links(&namespace).unwrap();
             let mut rows: Vec<serde_json::Value> = namespace.arenas()["data_blocks"]
                 .iter()
-                .map(|row| serde_json::to_value(row).unwrap())
+                .map(|row| cadmpeg_core::serde_erase::json::to_value(row).unwrap())
                 .collect();
             rows.push(serde_json::json!({"id":"nx:test:other-store#128","role":"column","block_ordinal":128,"source_offset":300,"byte_len":1}));
             namespace.set_arena(ctx, "data_blocks", &rows).unwrap();
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             wire["source_offsets"] = serde_json::json!([10, 15, 103]);
-            let record: FeatureConstructionNamedTarget = serde_json::from_value(wire).unwrap();
+            let record: FeatureConstructionNamedTarget =
+                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
             assert!(record.validate_links(&namespace).is_err());
         });
     }

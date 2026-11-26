@@ -30,8 +30,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.source_fidelity_mut().content_digest =
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    decoded.source_fidelity_mut().content_digest = None;
 
     let mut encoded = Vec::new();
     let path = crate::test_support::plan_fixture_write_with_native_envelope(
@@ -1617,6 +1616,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &fidelity.codec_digests,
             &records,
             &[],
+            &[],
             &mut written,
         )
         .unwrap();
@@ -1656,6 +1656,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
         &baseline,
         &fidelity.annotations,
         &fidelity.codec_digests,
+        &[],
         &[],
         &[],
         &mut Vec::new(),

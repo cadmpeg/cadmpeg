@@ -10,14 +10,14 @@
 //! solid.
 
 use std::collections::{BTreeSet, HashSet};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 
@@ -26,11 +26,47 @@ use crate::history::hash::{configuration_hash, feature_hash, history_hash, param
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
-/// The losses of one write that the stored solid and the synthesized
-/// configuration snapshot cause: one stale-solid loss per construction edit
-/// that shapes the solid, and one loss per snapshot edit the model does not
-/// state. The writer has no modeling kernel, so the output keeps the stored
-/// solid and its caches as they were before the edit. `unwritten` names the
+/// What the stored solid and the synthesized configuration snapshot show of
+/// the edits of one write.
+#[derive(Default)]
+pub(crate) struct Agreement {
+    /// One stale-solid loss per construction edit that shapes the solid, and
+    /// one loss per snapshot edit the model does not state.
+    pub(crate) losses: Vec<LossNote>,
+    /// The edits that shape the solid.
+    pub(crate) shaped: Vec<ShapingEdit>,
+}
+
+/// An edit that shapes the solid: the configuration whose stored state it
+/// makes stale (`None` for the active configuration) and the id of the
+/// edited record.
+pub(crate) type ShapingEdit = (Option<ConfigurationId>, String);
+
+impl Agreement {
+    /// Charges the stale-solid loss `message` for the edit of `records`,
+    /// which shapes the solid of `configuration`.
+    fn stale(
+        &mut self,
+        configuration: Option<&ConfigurationId>,
+        records: impl IntoIterator<Item = String>,
+        message: impl Into<String>,
+    ) {
+        self.shaped
+            .extend(records.into_iter().map(|id| (configuration.cloned(), id)));
+        self.losses.push(stale(message));
+    }
+}
+
+/// The document the caller edited: the retained source image, or that image
+/// decoded.
+pub(crate) enum Source<'a> {
+    Image(&'a [u8]),
+    Decoded(&'a CadIr),
+}
+
+/// The agreement of one write with the stored solid. The writer has no
+/// modeling kernel, so the output keeps the stored solid and its caches as
+/// they were before the edit. `unwritten` names the
 /// edits the write does not carry: the construction edit of a feature in its
 /// `kept_definitions` is not written, and a part
 /// of a parameter edit it names does not reach the written history, so no
@@ -38,19 +74,19 @@ use crate::native::SldprtNative;
 /// tree place (`ordinal`) or output bodies (`outputs`) the written part reads
 /// back other than the document states; the read-back names them, and no
 /// stale-solid loss calls them written. Without the retained source image,
-/// [`imageless_losses`] names what it can tell. `digests` are the codec
-/// digests the decode recorded.
-pub(crate) fn stale_solid_losses(
+/// [`imageless_losses`] names what it can tell, and no edit is known to
+/// shape the solid. `digests` are the codec digests the decode recorded.
+pub(crate) fn agreement(
     ir: &CadIr,
     digests: &CodecDigests,
     native: Option<&SldprtNative>,
-    source_image: Option<&[u8]>,
+    source: Option<Source<'_>>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<Agreement, CodecError> {
     let kept_definitions = &unwritten.kept_definitions;
     let Some(native) = native else {
-        return Ok(Vec::new());
+        return Ok(Agreement::default());
     };
     let hash_arena = DecodeArena::new();
     let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy::service())?;
@@ -63,8 +99,8 @@ pub(crate) fn stale_solid_losses(
     let native_changed = differs(digests, "sldprt_native_history_sha256", || {
         history_hash(&hash_ctx, &native.feature_histories)
     })?;
-    let Some(source_image) = source_image else {
-        return imageless_losses(
+    let Some(source) = source else {
+        let losses = imageless_losses(
             ir,
             digests,
             &hash_ctx,
@@ -73,25 +109,36 @@ pub(crate) fn stale_solid_losses(
                 (parameters_changed, "parameters"),
                 (native_changed, "native history records"),
             ],
-        );
+        )?;
+        return Ok(Agreement {
+            losses,
+            shaped: Vec::new(),
+        });
     };
     let configurations_changed =
         differs(digests, "sldprt_neutral_configuration_local_sha256", || {
             configuration_hash(&hash_ctx, &ir.model.configurations)
         })?;
     if !(features_changed || parameters_changed || native_changed || configurations_changed) {
-        return Ok(Vec::new());
+        return Ok(Agreement::default());
     }
-    let decoded = crate::SldprtCodec
-        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
-            cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format_args!(
-                "SLDPRT retained source cannot be decoded: {other}"
-            )),
-        })?;
-    let baseline = decoded.ir();
-    let mut losses = Vec::new();
+    let decoded;
+    let baseline = match source {
+        Source::Decoded(baseline) => baseline,
+        Source::Image(image) => {
+            decoded =
+                crate::decode::decode_for_read_back_cached(image).map_err(
+                    |failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => CodecError::malformed(format_args!(
+                            "SLDPRT retained source cannot be decoded: {other}"
+                        )),
+                    },
+                )?;
+            decoded.ir()
+        }
+    };
+    let mut out = Agreement::default();
     // Features a model-level loss names; an active configuration with stated
     // states mirrors the model, so its state edit of the same feature is the
     // same edit.
@@ -104,19 +151,19 @@ pub(crate) fn stale_solid_losses(
             &hash_ctx,
             (kept_definitions, misread),
             &mut named,
-            &mut losses,
+            &mut out,
         )?;
     }
     if parameters_changed {
-        parameter_edits(ir, baseline, unwritten, &mut losses);
+        parameter_edits(ir, baseline, unwritten, &mut out);
     }
     if native_changed {
-        native_edits(ir, native, baseline, &mut losses)?;
+        native_edits(ir, native, baseline, &mut out)?;
     }
     if configurations_changed {
-        configuration_design_edits(ir, baseline, &named, unwritten, &mut losses);
+        configuration_design_edits(ir, baseline, &named, unwritten, &mut out);
     }
-    Ok(losses)
+    Ok(out)
 }
 
 /// The losses of a write without the retained source image, which leaves no
@@ -237,7 +284,7 @@ fn feature_edits(
     hash_ctx: &DecodeContext<'_>,
     (kept_definitions, misread): (&HashSet<FeatureId>, &HashSet<(FeatureId, String)>),
     named: &mut HashSet<FeatureId>,
-    losses: &mut Vec<LossNote>,
+    out: &mut Agreement,
 ) -> Result<(), CodecError> {
     let misread_field =
         |id: &FeatureId, field: &str| misread.contains(&(id.clone(), field.to_owned()));
@@ -250,10 +297,10 @@ fn feature_edits(
             explained = true;
             if feature_affects_brep(feature, &ir.model.features) {
                 named.insert(feature.id.clone());
-                losses.push(stale(format!(
+                out.stale(None, [feature.id.as_str().to_owned()], format!(
                     "Feature {} is added to the written history, and the stored solid does not include it.",
                     feature_label(feature)
-                )));
+                ));
             }
             continue;
         };
@@ -263,10 +310,10 @@ fn feature_edits(
             if misread_field(&feature.id, "outputs") {
                 continue;
             }
-            losses.push(stale(format!(
+            out.stale(None, [feature.id.as_str().to_owned()], format!(
                 "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
                 feature_label(feature)
-            )));
+            ));
             continue;
         }
         let definition_written = !kept_definitions.contains(&feature.id);
@@ -294,10 +341,14 @@ fn feature_edits(
                 _ => "written as edited",
             };
             named.insert(feature.id.clone());
-            losses.push(stale(format!(
-                "Feature {} is {edit}, and the stored solid shows the state before the edit.",
-                feature_label(feature)
-            )));
+            out.stale(
+                None,
+                [feature.id.as_str().to_owned()],
+                format!(
+                    "Feature {} is {edit}, and the stored solid shows the state before the edit.",
+                    feature_label(feature)
+                ),
+            );
         }
     }
     for removed in baseline.iter().filter(|original| {
@@ -309,10 +360,10 @@ fn feature_edits(
         explained = true;
         if feature_affects_brep(removed, baseline) {
             named.insert(removed.id.clone());
-            losses.push(stale(format!(
+            out.stale(None, [removed.id.as_str().to_owned()], format!(
                 "Feature {} is removed from the written history, and the stored solid still includes it.",
                 feature_label(removed)
-            )));
+            ));
         }
     }
     if explained {
@@ -350,28 +401,25 @@ fn feature_edits(
         })
         .collect::<Vec<_>>();
     if moved.is_empty() {
-        losses.push(stale(
+        out.stale(
+            None,
+            shaping.iter().map(|feature| feature.id.as_str().to_owned()),
             "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
-        ));
+        );
     }
     for feature in moved
         .into_iter()
         .filter(|feature| !misread_field(&feature.id, "ordinal"))
     {
-        losses.push(stale(format!(
+        out.stale(None, [feature.id.as_str().to_owned()], format!(
             "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
             feature_label(feature)
-        )));
+        ));
     }
     Ok(())
 }
 
-fn parameter_edits(
-    ir: &CadIr,
-    source: &CadIr,
-    unwritten: &UnwrittenEdits,
-    losses: &mut Vec<LossNote>,
-) {
+fn parameter_edits(ir: &CadIr, source: &CadIr, unwritten: &UnwrittenEdits, out: &mut Agreement) {
     let baseline = &source.model.parameters;
     for parameter in &ir.model.parameters {
         let part = unwritten.parameters.get(&parameter.id).copied();
@@ -395,11 +443,11 @@ fn parameter_edits(
                 }
                 _ => parameter.expression.clone(),
             };
-            losses.push(stale(format!(
+            out.stale(None, [parameter.id.as_str().to_owned()], format!(
                 "Parameter {} is written as edited ({written}), and the stored solid shows {} before the edit.",
                 parameter_label(parameter),
                 features_label(&driven)
-            )));
+            ));
         }
     }
     for removed in baseline.iter().filter(|original| {
@@ -412,11 +460,11 @@ fn parameter_edits(
     }) {
         let driven = driven_features(removed, ir);
         if !driven.is_empty() {
-            losses.push(stale(format!(
+            out.stale(None, [removed.id.as_str().to_owned()], format!(
                 "Parameter {} is removed from the written history, and the stored solid shows {} before the edit.",
                 parameter_label(removed),
                 features_label(&driven)
-            )));
+            ));
         }
     }
 }
@@ -425,7 +473,7 @@ fn native_edits(
     ir: &CadIr,
     native: &SldprtNative,
     source: &CadIr,
-    losses: &mut Vec<LossNote>,
+    out: &mut Agreement,
 ) -> Result<(), CodecError> {
     let source_native = source
         .native
@@ -453,10 +501,10 @@ fn native_edits(
         if modeling
             && original.is_none_or(|original| native_construction_changed(original, feature))
         {
-            losses.push(stale(format!(
+            out.stale(None, [feature.id.clone()], format!(
                 "Native feature {} is written as edited, and the stored solid shows the state before the edit.",
                 native_label(feature)
-            )));
+            ));
         }
     }
     for removed in baseline
@@ -470,10 +518,10 @@ fn native_edits(
             .chain(&source.model.features)
             .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()));
         if neutral.is_none_or(|feature| feature_affects_brep(feature, &source.model.features)) {
-            losses.push(stale(format!(
+            out.stale(None, [removed.id.clone()], format!(
                 "Native feature {} is removed from the written history, and the stored solid still includes it.",
                 native_label(removed)
-            )));
+            ));
         }
     }
     Ok(())
@@ -484,7 +532,7 @@ fn configuration_design_edits(
     baseline: &CadIr,
     named: &HashSet<FeatureId>,
     unwritten: &UnwrittenEdits,
-    losses: &mut Vec<LossNote>,
+    out: &mut Agreement,
 ) {
     // The writer writes no synthesized snapshot; the written part decodes with
     // the snapshot restated from the written model.
@@ -530,7 +578,7 @@ fn configuration_design_edits(
             if let Some(mirror) = mirror.filter(|_| value_edited) {
                 value_edited = false;
                 if configuration.parameter_values.get(id) != mirror.parameter_values.get(id) {
-                    losses.push(snapshot_unwritten(format!(
+                    out.losses.push(snapshot_unwritten(format!(
                         "The value of parameter {} in configuration {configuration_label} is edited only in the configuration snapshot the decoder synthesized from the model. The writer does not write that snapshot, and the written configuration states the value of the model parameter.",
                         parameter_id_label(
                             id,
@@ -558,18 +606,18 @@ fn configuration_design_edits(
                 .chain(&baseline.model.parameters)
                 .find(|parameter| &parameter.id == id);
             match parameter {
-                None => losses.push(stale(format!(
+                None => out.stale(Some(&configuration.id), [id.as_str().to_owned()], format!(
                     "Parameter {} in configuration {configuration_label} is written as edited, and that configuration's stored solid shows the state before the edit.",
                     id.as_str()
-                ))),
+                )),
                 Some(parameter) => {
                     let driven = driven_features(parameter, ir);
                     if !driven.is_empty() {
-                        losses.push(stale(format!(
+                        out.stale(Some(&configuration.id), [id.as_str().to_owned()], format!(
                             "Parameter {} in configuration {configuration_label} is written as edited, and that configuration's stored solid shows {} before the edit.",
                             parameter_label(parameter),
                             features_label(&driven)
-                        )));
+                        ));
                     }
                 }
             }
@@ -601,7 +649,7 @@ fn configuration_design_edits(
                 .map_or_else(|| id.as_str().to_owned(), feature_label);
             if let Some(mirror) = mirror {
                 if configuration.feature_states.get(id) != mirror.feature_states.get(id) {
-                    losses.push(snapshot_unwritten(format!(
+                    out.losses.push(snapshot_unwritten(format!(
                         "The state of feature {label} in configuration {configuration_label} is edited only in the configuration snapshot the decoder synthesized from the model. The writer does not write that snapshot, and the written configuration states the feature as the model states it."
                     )));
                 }
@@ -618,9 +666,9 @@ fn configuration_design_edits(
                 })
                 .unwrap_or(true);
             if modeling {
-                losses.push(stale(format!(
+                out.stale(Some(&configuration.id), [id.as_str().to_owned()], format!(
                     "Feature {label} in configuration {configuration_label} is written with its edited state, and that configuration's stored solid shows the state before the edit."
-                )));
+                ));
             }
         }
     }

@@ -90,7 +90,17 @@ fn is_valid_identity_unicode(id: &str) -> bool {
 }
 
 /// An entity identity with validated namespace and key grammar.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Deserialize,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[serde(try_from = "String")]
 pub struct Identity(String);
 
@@ -934,18 +944,24 @@ impl IdentityKeyTail {
         }
     }
 
-    /// Escape identity separators, the escape byte, and Unicode whitespace
-    /// in one source component.
+    /// Escape identity separators, the decode-set qualifier `@`, the escape
+    /// byte, and Unicode whitespace in one source component.
     #[inline]
     #[must_use]
     pub fn percent_encode(value: &str) -> Self {
         if value
             .bytes()
-            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%'))
+            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%' | b'@'))
         {
             return Self(value.to_owned());
         }
         Self::percent_encode_slow(value)
+    }
+
+    /// Whether [`Self::percent_encode`] escapes `character`.
+    #[must_use]
+    pub fn escapes(character: char) -> bool {
+        matches!(character, ':' | '#' | '%' | '@') || character.is_whitespace()
     }
 
     #[cold]
@@ -953,7 +969,7 @@ impl IdentityKeyTail {
     fn percent_encode_slow(value: &str) -> Self {
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            if Self::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     const HEX: &[u8; 16] = b"0123456789ABCDEF";
@@ -1264,21 +1280,22 @@ impl std::error::Error for IdentityError {}
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident $(, $helper:ident)*) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
 
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                $crate::schema::rewrite::typed::visiting_id_type(std::any::type_name::<Self>(), || {
+                    $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                })
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
         }
@@ -1370,6 +1387,7 @@ macro_rules! local_id_type {
         $(#[$meta])*
         #[derive(
             Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+            cadmpeg_derive::StructuralOrd,
         )]
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
@@ -1381,8 +1399,7 @@ macro_rules! local_id_type {
             fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 visitor(&self.0)
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("typed rewrite tuple")?;
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
@@ -1528,7 +1545,7 @@ id_type!(
 );
 id_type!(
     /// Identifies a [`crate::subd::SubdSurface`] carrier.
-    SubdId, compose
+    SubdId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
@@ -1561,10 +1578,10 @@ impl NativeId {
 }
 
 impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         <Identity as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(
             ctx, value, map,
@@ -1579,10 +1596,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map)
             .map(Self)

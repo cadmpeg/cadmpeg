@@ -53,7 +53,7 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
             .try_admit_append(
                 candidate,
                 annotations.sparse_transaction(),
-                crate::RHINO_DRAFT_CHECKS,
+                crate::RHINO_DRAFT,
                 |report, _| {
                     let valid = report.unwrap().is_ok();
                     Ok(if accept && valid { Ok(()) } else { Err(valid) })
@@ -79,7 +79,7 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
             .try_admit_append(
                 candidate,
                 annotations.sparse_transaction(),
-                crate::RHINO_DRAFT_CHECKS,
+                crate::RHINO_DRAFT,
                 |report, _| {
                     assert!(report.unwrap().is_ok());
                     Ok(Ok::<_, ()>(()))
@@ -136,7 +136,7 @@ fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
         .try_admit_append(
             candidate,
             annotations.sparse_transaction(),
-            crate::RHINO_DRAFT_CHECKS,
+            crate::RHINO_DRAFT,
             |report, _| {
                 assert!(report.unwrap().is_ok());
                 Ok(Ok::<_, ()>(()))

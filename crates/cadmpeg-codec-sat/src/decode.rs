@@ -417,17 +417,10 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
     let (matched, kernel) = layers(evidence);
     let dialects = match DialectLayers::of(matched).with(kernel) {
         Ok(dialects) => dialects,
-        Err(rejected) => {
-            return match rejected {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
-                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
-                }
-                cadmpeg_core::dialect::DialectLayerError::MissingInstance(layer) => {
-                    CodecError::malformed(format_args!(
-                        "SAT extra dialect layer in the primary format needs an instance: {layer:?}"
-                    ))
-                }
-            };
+        Err(cadmpeg_core::dialect::DuplicateDialectLayer(layer)) => {
+            return CodecError::malformed(format_args!(
+                "SAT repeated dialect layer key: {layer:?}"
+            ));
         }
     };
     CodecError::UnsupportedDialect {
@@ -446,18 +439,11 @@ fn build_result(
     (matched, kernel): (DialectMatch, DialectMatch),
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
-        DialectLayers::of(matched)
-            .with(kernel.clone())
-            .map_err(|rejected| match rejected {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
-                    CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
-                }
-                cadmpeg_core::dialect::DialectLayerError::MissingInstance(layer) => {
-                    CodecError::malformed(format_args!(
-                        "SAT extra dialect layer in the primary format needs an instance: {layer:?}"
-                    ))
-                }
-            })?,
+        DialectLayers::of(matched).with(kernel.clone()).map_err(
+            |cadmpeg_core::dialect::DuplicateDialectLayer(layer)| {
+                CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
+            },
+        )?,
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
@@ -524,8 +510,17 @@ fn build_result(
             unknowns,
             stats,
             annotation_records,
+            unbounded_faces,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
+    for face in &unbounded_faces {
+        losses.push(SatLossCode::TopologyFaceBoundaryUnstated.note(format!(
+            "face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
+            face.record_index,
+            face.surface_kind,
+            face.face.as_str()
+        )));
+    }
 
     let geometry_transferred = !(ir.geometry.surfaces.is_empty()
         && ir.geometry.points.is_empty()

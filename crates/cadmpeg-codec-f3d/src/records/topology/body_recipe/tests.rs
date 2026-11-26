@@ -17,8 +17,8 @@ fn body_recipe_operand_borrowed_wire_matches_owned_wire_bytes() {
             serde_json::from_str(&format!("{prefix}{fields}{suffix}")).unwrap();
         let owned = super::DesignBodyRecipeOperandWire::from(value.clone());
         assert_eq!(
-            serde_json::to_vec(&value).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -56,7 +56,7 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         let value: super::DesignBodyRecipeOperand =
             serde_json::from_str(&wire).expect("body recipe operand");
         assert_eq!(
-            serde_json::to_string(&value).expect("body recipe operand wire"),
+            cadmpeg_core::serde_erase::json::to_string(&value).expect("body recipe operand wire"),
             wire
         );
     }
@@ -104,8 +104,9 @@ fn body_recipe_serialization_form_is_independent_of_class_tag() {
             let mut candidate = wire.clone();
             candidate["class_tag"] = class_tag.into();
             candidate["selector_tail"] = encoded.into();
-            let operand = serde_json::from_value::<DesignBodyRecipeOperand>(candidate)
-                .unwrap_or_else(|error| panic!("class {class_tag}, form {form}: {error}"));
+            let operand =
+                cadmpeg_core::serde_erase::json::from_value::<DesignBodyRecipeOperand>(candidate)
+                    .unwrap_or_else(|error| panic!("class {class_tag}, form {form}: {error}"));
             assert_eq!(operand.serialization_form(), Some(form));
             let mut draft = operand.into_draft();
             draft.class_tag = class_tag.to_owned().try_into().unwrap();
@@ -147,19 +148,24 @@ fn body_recipe_reference_count_fixes_nested_frame_offsets() {
         let mut candidate = wire.clone();
         candidate["next_record_index"] = next_record_index.into();
         assert_eq!(
-            serde_json::from_value::<DesignBodyRecipeOperand>(candidate).is_ok(),
+            cadmpeg_core::serde_erase::json::from_value::<DesignBodyRecipeOperand>(candidate)
+                .is_ok(),
             admitted,
             "{next_record_index}"
         );
     }
-    let mut admitted = serde_json::from_value::<DesignBodyRecipeOperand>(wire.clone())
-        .unwrap()
-        .into_draft();
+    let mut admitted =
+        cadmpeg_core::serde_erase::json::from_value::<DesignBodyRecipeOperand>(wire.clone())
+            .unwrap()
+            .into_draft();
     admitted.references.clear();
     assert!(DesignBodyRecipeOperand::try_new(admitted).is_err());
     for field in ["design_reference_offset", "form_offset"] {
         let mut invalid = wire.clone();
         invalid["references"][0][field] = 0.into();
-        assert!(serde_json::from_value::<DesignBodyRecipeOperand>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignBodyRecipeOperand>(invalid)
+                .is_err()
+        );
     }
 }

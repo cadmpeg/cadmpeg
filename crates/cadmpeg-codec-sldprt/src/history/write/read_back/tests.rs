@@ -21,12 +21,13 @@ fn edited() -> (CadIr, CadIr, FeatureId) {
         if feature.name.is_none() {
             continue;
         }
-        let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
         let Some(leaf) = first_real(&mut wire) else {
             continue;
         };
         *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
-        if let Ok(definition) = serde_json::from_value(wire) {
+        if let Ok(definition) = cadmpeg_core::serde_erase::json::from_value(wire) {
             feature.evaluation.set_definition(definition);
             let id = feature.id.clone();
             return (source, input, id);
@@ -186,10 +187,14 @@ fn a_change_with_no_written_edit_left_is_unexplained() {
 /// `ir` with every id that names block `from` naming block `to`, as a write
 /// that moves the block re-lays it.
 fn moved(ir: &CadIr, from: &str, to: &str) -> CadIr {
-    let text = serde_json::to_string(ir)
-        .unwrap()
-        .replace(&format!("#{from}:"), &format!("#{to}:"));
-    serde_json::from_str(&text).unwrap()
+    let replace = |text: &str| text.replace(&format!("#{from}:"), &format!("#{to}:"));
+    crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            *value = serde_json::from_str(&replace(&value.to_string())).unwrap();
+        },
+        &replace,
+    )
 }
 
 /// The block that holds the feature history: the offset in the id of the
@@ -236,16 +241,17 @@ fn a_moved_sketch_is_a_difference_of_that_sketch() {
         .sketches
         .iter()
         .position(|sketch| {
-            serde_json::to_value(sketch)
+            cadmpeg_core::serde_erase::json::to_value(sketch)
                 .unwrap()
                 .pointer(pointer)
                 .is_some()
         })
         .expect("a planar sketch states its origin");
-    let mut wire = serde_json::to_value(&written.model.sketches[index]).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(&written.model.sketches[index]).unwrap();
     let origin = wire.pointer_mut(pointer).unwrap();
     *origin = serde_json::json!(origin.as_f64().unwrap() + 1.0);
-    written.model.sketches[index] = serde_json::from_value(wire).unwrap();
+    written.model.sketches[index] = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     let (stated, read) = (
         Document::of(&source).unwrap(),
         Document::of(&written).unwrap(),
@@ -283,14 +289,16 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
         .features
         .iter_mut()
         .find(|feature| {
-            let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+            let wire =
+                cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
             super::settled_travel(&wire) == Some("/value/value/direction")
                 && wire.pointer("/value/value/direction/kind")
                     == Some(&serde_json::json!("profile_normal"))
                 && !crate::history::extrude_direction::reversal_flag(&feature.source_properties)
         })
         .expect("an extrusion along its profile normal");
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire =
+        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
     *wire.pointer_mut("/value/value/direction").unwrap() =
         serde_json::json!({"kind": "reversed_profile_normal"});
     if other {
@@ -299,7 +307,7 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
     }
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
     let id = feature.id.clone();
     (source, input, id)
 }
@@ -399,15 +407,25 @@ fn with_string(ir: &CadIr, matches: fn(&str) -> bool, edit: fn(&str) -> String) 
             _ => false,
         }
     }
-    let mut wire = serde_json::to_value(ir).unwrap();
     let homes = ["geometry", "model", "design", "process"];
-    assert!(
-        homes
-            .iter()
-            .any(|home| walk(&mut wire[*home], matches, edit)),
-        "a string to edit"
+    let mut edited = false;
+    let ir = crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            if edited {
+                return;
+            }
+            edited = match value.as_object() {
+                Some(fields) if homes.iter().any(|home| fields.contains_key(*home)) => homes
+                    .iter()
+                    .any(|home| walk(&mut value[*home], matches, edit)),
+                _ => walk(value, matches, edit),
+            };
+        },
+        &str::to_owned,
     );
-    serde_json::from_value(wire).unwrap()
+    assert!(edited, "a string to edit");
+    ir
 }
 
 /// The differences between FTC-06 and FTC-06 written at another block

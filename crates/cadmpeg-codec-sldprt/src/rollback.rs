@@ -385,14 +385,18 @@ fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
     let Some(body) = stream.get(RESOLVED_FEATURES_HEAD..) else {
         return Vec::new();
     };
-    body.windows(tag.len())
-        .enumerate()
-        .filter(|(_, window)| *window == tag.as_slice())
-        .filter_map(|(offset, _)| {
-            let at = RESOLVED_FEATURES_HEAD + offset + tag.len();
-            record_mark(stream, at).map(|mark| MarkRecord { at, mark })
-        })
-        .collect()
+    let finder = memchr::memmem::Finder::new(tag.as_slice());
+    let mut out = Vec::new();
+    let mut cursor = 0;
+    while let Some(rel) = finder.find(&body[cursor..]) {
+        let offset = cursor + rel;
+        cursor = offset + 1;
+        let at = RESOLVED_FEATURES_HEAD + offset + tag.len();
+        if let Some(mark) = record_mark(stream, at) {
+            out.push(MarkRecord { at, mark });
+        }
+    }
+    out
 }
 
 /// Join the current mark to the feature records, whose holders the archive

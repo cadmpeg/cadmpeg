@@ -4,6 +4,7 @@
 
 pub(crate) mod coil;
 pub(crate) mod combine;
+pub(crate) mod history_carrier;
 pub(crate) mod rse_compression;
 pub(crate) mod test_fixtures;
 pub(crate) mod truncation;

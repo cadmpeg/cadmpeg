@@ -1,9 +1,8 @@
 #!/bin/sh
 # Fast pre-filter for the CI gate in .github/workflows/ci.yml. It runs the
-# checks that finish in about a second, rustfmt on the crates that own the
-# staged files, and clippy on those crates plus their workspace dependents.
-# CI runs the tests, the whole-tree policy scans, and the dialect identity
-# registry check. Skip with: git commit --no-verify
+# checks that finish in about a second, and rustfmt and clippy on the crates
+# that own the staged files. CI runs the tests, the lints of dependent crates,
+# the whole-tree policy scans, and the dialect identity registry check. Skip with: git commit --no-verify
 set -e
 
 staged=$(git diff --cached --name-only)
@@ -57,36 +56,27 @@ if ! staged_matches '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(
   exit 0
 fi
 
-# `cargo fmt -p` checks the crates that own a staged file. It supplies the
-# edition and follows the module tree, so files a crate pulls in with
-# `include!`, such as the generated `registry_ids.rs`, stay unchecked as under
-# `cargo fmt --all`. Clippy checks the staged crates plus their transitive
-# workspace dependents, so a shared-crate commit (cadmpeg-ir, cadmpeg-core)
-# still lints every dependent codec. Manifest, lockfile, Cargo-config, and
-# toolchain changes fall back to the full workspace, as does any staged Rust
-# file that no workspace crate owns.
+# `cargo fmt -p` and `cargo clippy -p` check the crates that own a staged file.
+# `cargo fmt -p` supplies the edition and follows the module tree, so files a
+# crate pulls in with `include!`, such as the generated `registry_ids.rs`, stay
+# unchecked as under `cargo fmt --all`. CI lints the dependents of a shared
+# crate. Manifest, lockfile, Cargo-config, and toolchain changes fall back to
+# the full workspace, as does any staged Rust file that no workspace crate owns.
 if staged_matches '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
   owners="WORKSPACE"
-  scope="WORKSPACE"
 else
-  owners=$(python3 scripts/staged-crates.py --owners)
-  scope=$(python3 scripts/staged-crates.py)
+  owners=$(python3 scripts/staged-crates.py)
 fi
 
 if [ "$owners" = "WORKSPACE" ]; then
   echo "pre-commit: cargo fmt --all --check"
   cargo fmt --all --check
-elif [ -n "$owners" ]; then
-  fmt_flags=$(printf ' -p %s' $owners)
-  echo "pre-commit: cargo fmt$fmt_flags --check"
-  cargo fmt $fmt_flags --check
-fi
-
-if [ "$scope" = "WORKSPACE" ]; then
   echo "pre-commit: cargo clippy --workspace --all-targets"
   cargo clippy --workspace --all-targets
-elif [ -n "$scope" ]; then
-  pkg_flags=$(printf ' -p %s' $scope)
+elif [ -n "$owners" ]; then
+  pkg_flags=$(printf ' -p %s' $owners)
+  echo "pre-commit: cargo fmt$pkg_flags --check"
+  cargo fmt $pkg_flags --check
   # `--all-targets` keeps test targets under the lint, and it type-checks a
   # binary-only package such as `crates/cadmpeg`, where `--lib` fails.
   echo "pre-commit: cargo clippy$pkg_flags --all-targets"

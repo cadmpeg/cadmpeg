@@ -4962,7 +4962,7 @@ fn decode_graph_inner(
                     if derived_cache {
                         annotations.field_exactness(
                             id_surf(f.bridge_attr).as_str(),
-                            "geometry.cache",
+                            "geometry.value.cache",
                             Exactness::Derived,
                         )?;
                     }
@@ -5592,28 +5592,25 @@ fn annotate_surface_frame(
     id: &str,
     mut geometry: &SolvedSurfaceGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    loop {
+    let mut path = String::from("geometry.value");
+    let fields: &[&str] = loop {
         match geometry {
-            SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness(id, "geometry.u_axis", Exactness::Derived)?;
-                break;
-            }
+            SolvedSurfaceGeometry::Plane(_) => break &["u_axis"],
             SolvedSurfaceGeometry::Cylinder(_)
             | SolvedSurfaceGeometry::Cone(_)
-            | SolvedSurfaceGeometry::Torus(_) => {
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
+            | SolvedSurfaceGeometry::Torus(_) => break &["ref_direction"],
+            SolvedSurfaceGeometry::Sphere(_) => break &["axis", "ref_direction"],
+            SolvedSurfaceGeometry::Transformed(placed) => {
+                path.push_str(".basis");
+                geometry = placed.basis();
             }
-            SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness(id, "geometry.axis", Exactness::Derived)?;
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Unknown { .. } => break,
+            | SolvedSurfaceGeometry::Unknown { .. } => break &[],
         }
+    };
+    for field in fields {
+        annotations.field_exactness(id, format!("{path}.{field}"), Exactness::Derived)?;
     }
     Ok(())
 }

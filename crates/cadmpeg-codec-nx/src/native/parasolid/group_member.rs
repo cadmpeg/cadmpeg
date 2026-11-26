@@ -389,7 +389,10 @@ mod tests {
             );
             let member: ParasolidGroupMember = serde_json::from_str(&json).unwrap();
             assert_eq!(member.target, target);
-            assert_eq!(serde_json::to_string(&member).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&member).unwrap(),
+                json
+            );
         }
         for kind in [10, 12, 13, 17, 100] {
             assert!(
@@ -418,17 +421,22 @@ mod tests {
                 r#"{{"id":"member","primary_stream_ordinal":4,"group_xmt":10,"group_node_id":7,"ordinal":0,"list_record_xmt":20,"member_xmt":30,{fields}}}"#
             );
             let member: ParasolidGroupMember = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&member).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&member).unwrap(),
-                serde_json::to_vec(&MemberWire::from(member.clone())).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&member).unwrap(),
+                json
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_vec(&member).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&MemberWire::from(member.clone())).unwrap()
             );
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             wire["member_node_id"] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<ParasolidGroupMember>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("member_node_id"));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidGroupMember>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("member_node_id")
+            );
         }
     }
 

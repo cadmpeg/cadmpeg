@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One paired surface and parameter-space curve in an intcurve construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct IntcurveSupportSide {
@@ -105,7 +105,7 @@ impl IntcurveSupportSide {
 
 /// Version-stamp prefix and unbounded interval carried by the stamped
 /// `law_int_cur` serializer form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LawCurveVersionFormWire")]
 pub struct LawCurveVersionForm {
@@ -173,7 +173,7 @@ impl LawCurveVersionForm {
 }
 
 /// Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[serde(try_from = "IntcurveSupportContextWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct IntcurveSupportContext {
@@ -295,7 +295,7 @@ impl IntcurveSupportContext {
 }
 
 /// Finite endpoint witnesses and distinct supports of a tolerant intersection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TolerantIntersectionConstructionWire")]
 pub struct TolerantIntersectionConstruction {
@@ -385,7 +385,7 @@ impl TolerantIntersectionConstruction {
 }
 
 /// Complete neutral parameterization of one topology-bounded intersection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TolerantIntersectionParameterizationWire")]
 pub struct TolerantIntersectionParameterization {

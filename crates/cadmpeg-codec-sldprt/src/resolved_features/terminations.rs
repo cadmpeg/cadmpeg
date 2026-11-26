@@ -253,7 +253,15 @@ fn end_specs(
             0
         };
         let mut grouped_blind = HashMap::<String, usize>::new();
-        for offset in 0..scan_end {
+        // `compact_extrusion_blind_at` requires `offset + 2..offset + 4 == [0, 0]`
+        // and `offset + 4..offset + 8 == 1u32.to_le_bytes()` (`EndSpecDirections::One`).
+        let blind_header_tag: &[u8] = &[0, 0, 1, 0, 0, 0];
+        let blind_offsets = if scan_end > 0 {
+            &lane.native_payload[2..scan_end + 7]
+        } else {
+            &[][..]
+        };
+        for offset in memchr::memmem::find_iter(blind_offsets, blind_header_tag) {
             if !compact_end_spec_identity_at(&lane.native_payload, offset) {
                 continue;
             }

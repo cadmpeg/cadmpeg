@@ -11,6 +11,7 @@ use super::endpoints::{
 use super::grid::quantize;
 use super::scalars::FeatureObjectNames;
 use super::transforms::{feature_sketch_marker_transform, MarkerTransform};
+use super::turn_sense::{turn_sense, TurnSense};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::revolution_line_reference_nested_end as nested_end;
 use crate::layout::revolution_line_reference_record_tail as record_tail;
@@ -1006,6 +1007,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         String,
         Vec<Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)>>,
     >::new();
+    let mut senses = HashMap::<String, Vec<Option<TurnSense>>>::new();
     let mut tail_read = HashSet::<String>::new();
     let mut tail_conflict = HashSet::<String>::new();
     for (lane, names) in lanes.iter().zip(&lane_names) {
@@ -1074,6 +1076,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .entry(feature.id.clone())
                     .or_default()
                     .push(placed_axis);
+                senses
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(turn_sense(&lane.native_payload, start, end));
             }
         }
     }
@@ -1119,6 +1125,23 @@ pub(crate) fn enrich_history_revolution_inputs(
                 }
             }
             if let Some(first) = agreed {
+                let sense = senses.get(&feature.id).and_then(|votes| {
+                    let first = (*votes.first()?)?;
+                    votes
+                        .iter()
+                        .all(|vote| *vote == Some(first))
+                        .then_some(first)
+                });
+                let turned = |value: f64| match sense {
+                    Some(TurnSense::Reversed) => 0.0 - value,
+                    Some(TurnSense::Stored) | None => value,
+                };
+                if let Some(sense) = sense {
+                    feature.properties.insert(
+                        cadmpeg_core::nonblank_literal!("TurnSense"),
+                        sense.property().into(),
+                    );
+                }
                 let origin = format!(
                     "{}mm,{}mm,{}mm",
                     first.0.get().x,
@@ -1127,9 +1150,9 @@ pub(crate) fn enrich_history_revolution_inputs(
                 );
                 let direction = format!(
                     "{},{},{}",
-                    first.1.as_raw().x,
-                    first.1.as_raw().y,
-                    first.1.as_raw().z
+                    turned(first.1.as_raw().x),
+                    turned(first.1.as_raw().y),
+                    turned(first.1.as_raw().z)
                 );
                 feature
                     .properties

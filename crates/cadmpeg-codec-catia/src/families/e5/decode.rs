@@ -257,7 +257,6 @@ parameter_range: None,
                 native_ref: None,
             });
             admitted!(annotate(&mut annotations, &procedural_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_definition", Exactness::ByteExact));
-            admitted!(annotations.derived(&procedural_id, "surface").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&procedural_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -1955,7 +1954,6 @@ fn emit_e5_curves_and_edges(
             "c1_surface_intersection",
             Exactness::Derived,
         )?;
-        annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
         let _attached = ir.geometry.add_procedural_curve(
@@ -1988,7 +1986,6 @@ fn emit_e5_curves_and_edges(
             "parametric_surface_curve",
             Exactness::Derived,
         )?;
-        annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
         let _attached = ir.geometry.add_procedural_curve(
@@ -2032,8 +2029,8 @@ fn emit_e5_curves_and_edges(
             annotations.derived(&id, field)?;
         }
         if edge_curve_ids.contains_key(&record_id) {
-            annotations.derived(&id, "curve")?;
-            annotations.derived(&id, "param_range")?;
+            annotations.derived(&id, "carrier.curve")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         admission.charge()?;
         ir.geometry.edges.push(Edge {
@@ -2275,18 +2272,23 @@ fn emit_e5_faces_loops_coedges(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = match loop_ids.split_first() {
+            // The source states the outer boundary first.
+            Some((outer, inner)) => {
+                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
+            }
+            None => crate::assemble::unspecified_loops_on(
+                ir,
+                &surface_for_ref[&face.surface].0,
+                Vec::new(),
+            ),
+        };
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
             sense: face_plan.sense,
-            loops: match loop_ids.split_first() {
-                // The source states the outer boundary first.
-                Some((outer, inner)) => {
-                    cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-                }
-                None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            },
+            loops,
             name: None,
             color: None,
             tolerance: None,
@@ -2332,7 +2334,7 @@ fn emit_e5_faces_loops_coedges(
                 "09_loop",
                 Exactness::ByteExact,
             )?;
-            for field in ["face", "coedges", "vertex_uses"] {
+            for field in ["face", "boundary.coedges", "boundary.vertex_uses"] {
                 annotations.derived(&loop_id, field)?;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {

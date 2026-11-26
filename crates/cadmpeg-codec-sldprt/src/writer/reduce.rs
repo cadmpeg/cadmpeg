@@ -221,6 +221,9 @@ pub(super) fn unwritable_content(
     retained: bool,
     digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
+    // The SLDPRT form holds no cage, so a cage body is not written either
+    // (§5.6); `WriterSubdOmitted` below names the cage and its body.
+    let cage_bodies = cadmpeg_ir::codec::write::remove_cage_bodies(ir);
     let mut losses = Vec::new();
     let mut named = Vec::new();
     for face in &mut ir.geometry.faces {
@@ -276,14 +279,21 @@ pub(super) fn unwritable_content(
          record has no field for; each is written with its name and base colour",
         &named,
     ));
-    losses.extend(note(
-        SldprtLossCode::WriterSubdOmitted,
-        "subdivision surface(s) have no SLDPRT form and are not written",
-        &std::mem::take(&mut ir.geometry.subds)
-            .iter()
-            .map(|subd| subd.id.as_str().to_owned())
-            .collect::<Vec<_>>(),
-    ));
+    losses.extend(
+        note(
+            SldprtLossCode::WriterSubdOmitted,
+            "subdivision surface(s) have no SLDPRT form and are not written",
+            &std::mem::take(&mut ir.geometry.subds)
+                .iter()
+                .map(|subd| subd.id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .map(|mut loss| {
+            loss.message
+                .push_str(&cadmpeg_ir::codec::write::cage_bodies_clause(&cage_bodies));
+            loss
+        }),
+    );
     losses.extend(pmi(ir, retained, digests)?);
     losses.extend(active_configuration(ir));
     Ok(losses)
@@ -547,8 +557,8 @@ pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
 
 /// Each Error the written document's validation finds is written from the
 /// canonical side (§3.4, Refusals): one note per kind of the records the
-/// findings name, and one for the findings that name no record of a model
-/// arena.
+/// findings name, and one that names the rule of each finding that names no
+/// record of a model arena.
 pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<LossNote> {
     let index = ModelIndex::new_model_only(ir);
     let mut grouped = Vec::<(EntityKind, Vec<String>)>::new();
@@ -560,8 +570,8 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
         let entity = finding.entity.as_deref();
         let Some((id, kind)) = entity.and_then(|id| Some((id, index.neutral_kind(id)?))) else {
             rules.push(match entity {
-                Some(id) => format!("{} ({id}: {})", finding.check, finding.message),
-                None => format!("{} ({})", finding.check, finding.message),
+                Some(id) => format!("{} ({id}: {})", finding.rule, finding.message),
+                None => format!("{} ({})", finding.rule, finding.message),
             });
             continue;
         };

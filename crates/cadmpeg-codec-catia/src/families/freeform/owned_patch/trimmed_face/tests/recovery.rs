@@ -85,6 +85,7 @@ fn transfer(patch: Patch) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
     })
     .expect("transfer recovered patch");
     ir.finalize();
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate cylinder patch");
     assert!(validation.is_ok(), "{:?}", validation.findings);
     (ir, notes.take_notes())

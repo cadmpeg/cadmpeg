@@ -50,7 +50,7 @@ use super::super::sweep::surfaces::{
     transfer_feature_extrusion_surfaces, transfer_saved_spline_curves,
 };
 use crate::decode::analytic::carriers::{
-    retain_unresolved_surface_carriers, transfer_topology_bound_planes,
+    report_non_visible_carriers, retain_unresolved_surface_carriers, transfer_topology_bound_planes,
 };
 use crate::decode::analytic::pcurves::{
     reconcile_support_apex_cone_parameter_branches, transfer_analytic_pcurve_carriers,
@@ -305,6 +305,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         source_carriers,
     )?;
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
+    report_non_visible_carriers(ir, transfer_losses);
     let transferred_part_product = transfer_part_product(ctx, scan, ir, annotations)?;
     report_unresolved_round_carriers(scan, ir, transfer_losses);
     super::super::assembly::transfer_assembly_members(

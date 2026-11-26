@@ -149,6 +149,8 @@ pub(crate) mod sweeps;
 mod grid;
 mod transforms;
 
+pub(crate) mod turn_sense;
+
 pub(crate) mod typed_relations;
 
 pub(crate) mod validate;

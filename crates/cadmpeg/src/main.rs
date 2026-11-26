@@ -28,7 +28,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
 use crate::application::artifact_store::{OptionalFileDestination, OutputDestinations};
-use crate::application::transcoder::{ConversionDestinations, DestinationPolicy, LossPolicy};
+use crate::application::transcoder::{
+    ConversionDestinations, DestinationPolicy, LossyFloor, LossyScope, StrictnessFlags,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -87,6 +89,27 @@ struct DecodePolicyArgs {
     max_input_bytes: Option<u64>,
 }
 
+/// The `--missing-states` values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum MissingStates {
+    /// The current geometry is written exactly.
+    GeometryTrue,
+    /// The stated run is written with its states; later features follow the
+    /// timeline marker rolled back. Where the writer cannot write the state
+    /// of the first feature that changes one, the marker stands before that
+    /// feature and the file holds no body.
+    HistoryTrue,
+}
+
+impl From<MissingStates> for cadmpeg_ir::codec::write::MissingStateForm {
+    fn from(form: MissingStates) -> Self {
+        match form {
+            MissingStates::GeometryTrue => Self::GeometryTrue,
+            MissingStates::HistoryTrue => Self::HistoryTrue,
+        }
+    }
+}
+
 /// Which caller-owned resource-limit profile a decode runs under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum LimitProfile {
@@ -116,15 +139,15 @@ impl DecodeArgs {
 impl DecodePolicyArgs {
     /// Options for a decode at `depth`.
     fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
-        let limits = self.limits.limits(self.max_input_bytes);
-        let mode = if self.no_salvage {
-            cadmpeg_core::decode::DecodeMode::Strict
-        } else {
-            cadmpeg_core::decode::DecodeMode::Salvage
-        };
         cadmpeg_ir::DecodeOptions {
             depth,
-            policy: cadmpeg_core::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_core::decode::DecodePolicy {
+                limits: self.limits.limits(self.max_input_bytes),
+            },
+            strictness: cadmpeg_ir::report::strictness::Strictness {
+                pinned: self.no_salvage,
+                ..Default::default()
+            },
         }
     }
 }
@@ -161,7 +184,8 @@ enum Command {
     /// With no `--to`, a same-format conversion keeps the dialect the input
     /// already is, and a cross-format conversion writes the format's default.
     ///
-    /// Convert writes the file when the check finds errors and reports them. `--reject-errors` refuses when the check finds an error in what the output writes.
+    /// Convert writes the file and reports its losses. Each `--reject-*` flag
+    /// and `--no-salvage` names report entries that refuse the conversion.
     #[command(
         display_order = 1,
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
@@ -178,17 +202,23 @@ enum Command {
         format: Option<String>,
         #[command(flatten)]
         destinations: ConversionDestinations,
-        /// Do not write if the check finds an error in what the output writes.
+        /// Do not write if the check finds an error in what the output writes
+        /// (`export:record.invalid`), or cannot run to its end.
         #[arg(long)]
         reject_errors: bool,
+        /// Do not write if the output holds no geometry
+        /// (`export:output.empty`).
+        #[arg(long)]
+        reject_empty: bool,
         /// Decode the whole source, design intent included, even when the
         /// output format needs only its geometry.
         #[arg(long, conflicts_with = "container_only")]
         full_decode: bool,
-        /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
-        /// only on decode loss, `=export` only on export loss, and the bare
-        /// flag on either. Every scope decodes the whole source, as
-        /// `--full-decode` does, so a loss in its design intent counts.
+        /// Do not write if a loss at or above `--reject-lossy-floor` was
+        /// reported. `--reject-lossy=decode` judges this decode's report or
+        /// the CADIR read's, `=export` the write's, and the bare flag both. Every scope decodes
+        /// the whole source, as `--full-decode` does, so a loss in its design
+        /// intent counts.
         #[arg(
             long,
             value_enum,
@@ -197,7 +227,22 @@ enum Command {
             default_missing_value = "any",
             value_name = "SCOPE"
         )]
-        reject_lossy: Option<LossPolicy>,
+        reject_lossy: Option<LossyScope>,
+        /// The least severity `--reject-lossy` refuses. At `info` a replay
+        /// that carries undecoded records (`export:source.carried`) refuses.
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = LossyFloor::Info,
+            requires = "reject_lossy",
+            value_name = "SEVERITY"
+        )]
+        reject_lossy_floor: LossyFloor,
+        /// The form a writer to a target that holds no feature without its
+        /// state gives features whose states the document lacks. Every other
+        /// target ignores it.
+        #[arg(long, value_enum, default_value_t = MissingStates::GeometryTrue)]
+        missing_states: MissingStates,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -261,7 +306,7 @@ enum Command {
     #[command(
         display_order = 7,
         subcommand_help_heading = "Views",
-        after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json\n  cadmpeg query graph part.cadir.json model.features ID\n  cadmpeg query join part.cadir.json model.features native.rhino.unknowns --left-key native_ref --right-key id"
+        after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json\n  cadmpeg query graph part.cadir.json design.features ID\n  cadmpeg query join part.cadir.json model.occurrences model.product_definitions --left-key prototype --right-key id"
     )]
     Query {
         /// Table to print.
@@ -330,6 +375,10 @@ enum Command {
         density: Option<cadmpeg_measure::Density>,
         #[command(flatten)]
         report: OptionalFileDestination,
+        /// Refuse when the document's scope holds no model class
+        /// (`measure:output.empty`).
+        #[arg(long)]
+        reject_empty: bool,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -525,14 +574,23 @@ fn main() -> ExitCode {
             format,
             destinations,
             reject_errors,
+            reject_empty,
             full_decode,
             reject_lossy,
+            reject_lossy_floor,
+            missing_states,
             input_args,
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
-                losses: reject_lossy.unwrap_or_default(),
-                reject_errors,
+                strictness: StrictnessFlags {
+                    reject_errors,
+                    reject_empty,
+                    reject_lossy,
+                    lossy_floor: reject_lossy_floor,
+                    no_salvage: decode.policy.no_salvage,
+                },
+                missing_states: missing_states.into(),
                 full_decode,
                 destination: destinations.destination,
                 report: destinations.report,
@@ -554,6 +612,7 @@ fn main() -> ExitCode {
             tsv,
             density,
             report,
+            reject_empty,
             input_args,
             decode,
         } => measure::measure(
@@ -573,6 +632,7 @@ fn main() -> ExitCode {
                 forced: input_args.input_format,
                 options: decode.options_at(cadmpeg_core::decode::DecodeDepth::Geometry),
                 profile: decode.limits.work_profile(),
+                reject_empty,
             },
         ),
         Command::Formats => print_formats(&inputs)

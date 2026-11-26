@@ -33,8 +33,8 @@ fn design_parallel_table_borrowed_wire_preserves_json_bytes() {
     let table = parallel_table();
     let owned: crate::native::CatiaDesignParallelReferenceTableWire = table.clone().into();
     assert_eq!(
-        serde_json::to_vec(&table).expect("borrowed table JSON"),
-        serde_json::to_vec(&owned).expect("owned table JSON")
+        cadmpeg_core::serde_erase::json::to_vec(&table).expect("borrowed table JSON"),
+        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned table JSON")
     );
 }
 
@@ -53,7 +53,9 @@ fn design_parallel_table_retained_limit_refuses_json_record() {
         table: &table,
     };
     let arena_name = "parallel_tables";
-    let json_len = serde_json::to_vec(&record).expect("table JSON").len();
+    let json_len = cadmpeg_core::serde_erase::json::to_vec(&record)
+        .expect("table JSON")
+        .len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -87,8 +89,8 @@ fn design_reference_cell_borrowed_wire_preserves_json_bytes() {
     let cell = design_reference_cell();
     let owned: crate::native::CatiaDesignReferenceCellWire = cell.clone().into();
     assert_eq!(
-        serde_json::to_vec(&cell).expect("borrowed cell JSON"),
-        serde_json::to_vec(&owned).expect("owned cell JSON")
+        cadmpeg_core::serde_erase::json::to_vec(&cell).expect("borrowed cell JSON"),
+        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned cell JSON")
     );
 }
 
@@ -107,7 +109,9 @@ fn design_reference_cell_retained_limit_refuses_json_record() {
         cell: &cell,
     };
     let arena_name = "design_reference_cells";
-    let json_len = serde_json::to_vec(&record).expect("cell JSON").len();
+    let json_len = cadmpeg_core::serde_erase::json::to_vec(&record)
+        .expect("cell JSON")
+        .len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();

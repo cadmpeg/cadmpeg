@@ -10,7 +10,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use super::annotations::AnnotationRecord;
 use super::stats::Stats;
-use super::AsmBrep;
+use super::{AsmBrep, UnboundedFace};
 
 const ASM_NATIVE_ARENAS: [&str; 12] = [
     "edge_continuities",
@@ -35,6 +35,9 @@ pub struct AsmTransferRemainder {
     pub stats: Stats,
     /// Source offsets used to build decode annotations.
     pub annotation_records: Vec<AnnotationRecord>,
+    /// Faces stated partial because their record states no loop on an
+    /// unbounded surface; the embedding codec charges one loss for each.
+    pub unbounded_faces: Vec<UnboundedFace>,
 }
 
 /// Moves one complete ASM graph into the IR and serializes every ASM-native arena.
@@ -95,6 +98,7 @@ pub fn transfer_into_ir<'ir>(
         unknowns,
         stats,
         annotation_records,
+        unbounded_faces,
         chain_order: _,
     } = brep;
     super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
@@ -167,6 +171,7 @@ pub fn transfer_into_ir<'ir>(
             unknowns,
             stats,
             annotation_records,
+            unbounded_faces,
         },
     ))
 }

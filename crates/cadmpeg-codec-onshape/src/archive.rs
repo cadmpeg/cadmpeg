@@ -49,10 +49,15 @@ impl<'a> Bundle<'a> {
         let manifest_text = std::str::from_utf8(manifest_view.window())
             .map_err(|e| failure(format!("manifest.json: {e}")))?;
         let manifest = ctx.parse_json_value(manifest_text, "Onshape manifest")?;
-        let prefix = manifest
-            .pointer("/elements/0/id")
-            .and_then(Value::as_str)
-            .map(|id| format!("partstudios/{id}/"));
+        let prefixes: Vec<String> = manifest
+            .get("elements")
+            .and_then(Value::as_array)
+            .filter(|elements| elements.len() <= super::reader::ROWS)
+            .into_iter()
+            .flatten()
+            .filter_map(|element| element.get("id").and_then(Value::as_str))
+            .map(|id| format!("partstudios/{id}/"))
+            .collect();
         let mut members = BTreeMap::new();
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
@@ -113,9 +118,9 @@ impl<'a> Bundle<'a> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
                     Err(error)
-                        if prefix.as_deref().is_some_and(|prefix| {
-                            name.strip_prefix(prefix) == Some("export.step")
-                        }) =>
+                        if prefixes
+                            .iter()
+                            .any(|prefix| name.strip_prefix(prefix) == Some("export.step")) =>
                     {
                         losses.push(
                             OnshapeLossCode::StepUnreadable
@@ -139,9 +144,9 @@ impl<'a> Bundle<'a> {
                 )));
                 continue;
             }
-            if prefix
-                .as_deref()
-                .is_some_and(|prefix| schema_response(name, prefix))
+            if prefixes.iter().any(|prefix| schema_response(name, prefix))
+                || (name.starts_with("assemblies/")
+                    && (name.ends_with("/definition.json") || name.ends_with("/features.json")))
             {
                 let parsed = match std::str::from_utf8(data.window()) {
                     Ok(text) => {
@@ -162,11 +167,19 @@ impl<'a> Bundle<'a> {
                         json.insert(name.clone(), value);
                     }
                     Err(error) => {
+                        let retained = name.ends_with("/sketches.json");
+                        let action = if retained {
+                            "retained the member bytes"
+                        } else {
+                            "omitted the member"
+                        };
                         losses.push(
                             OnshapeLossCode::MemberUnreadable
-                                .note(format!("{name}: {error}; omitted the member")),
+                                .note(format!("{name}: {error}; {action}")),
                         );
-                        continue;
+                        if !retained {
+                            continue;
+                        }
                     }
                 }
             }
@@ -201,9 +214,14 @@ impl<'a> Bundle<'a> {
             }
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
+                    let action = if path.ends_with("/sketches.json") {
+                        "retained the member bytes"
+                    } else {
+                        "omitted the member"
+                    };
                     self.losses.push(
                         OnshapeLossCode::MemberUnreadable
-                            .note(format!("{path}: {reason}; omitted the member")),
+                            .note(format!("{path}: {reason}; {action}")),
                     );
                     omitted.push(path.clone());
                     break;
@@ -212,7 +230,9 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
-            self.members.remove(&path);
+            if !path.ends_with("/sketches.json") {
+                self.members.remove(&path);
+            }
         }
     }
     pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
@@ -362,7 +382,11 @@ fn schema_response(name: &str, prefix: &str) -> bool {
     };
     if matches!(
         member,
-        "features.json" | "configuration.json" | "variables.json" | "bodydetails/index.json"
+        "features.json"
+            | "sketches.json"
+            | "configuration.json"
+            | "variables.json"
+            | "bodydetails/index.json"
     ) {
         return true;
     }

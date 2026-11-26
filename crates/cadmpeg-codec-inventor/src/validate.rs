@@ -209,7 +209,9 @@ pub(crate) fn validate_native(
         &data.feature_history_states,
         &data.pm_dc_features,
         &data.active_carrier,
-        &ir.model.history_bodies,
+        ir.model
+            .omitted_arenas_held()
+            .then_some(ir.model.history_bodies.as_slice()),
     ) {
         findings.push(finding(Check::NativeLinks, detail, None));
     }
@@ -2536,6 +2538,10 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
+                            crate::feature::history_states::loft_state_bound(
+                                &data.feature_history_states,
+                                &raw_feature.id(),
+                            ),
                         )
                     })
                 });
@@ -4087,6 +4093,7 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
     Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("inventor/validate.native-records"),
         severity: Severity::Error,
         message,
         entity,

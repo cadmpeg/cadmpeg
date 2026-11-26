@@ -454,8 +454,9 @@ fn thicken_selection_record_round_trip_retains_its_family_and_qualifiers() {
     let [property] = inventory.properties.as_slice() else {
         panic!("one selection list")
     };
-    let wire = serde_json::to_value(property).expect("selection wire");
-    let admitted: PmDcFeatureProperty = serde_json::from_value(wire).expect("selection admission");
+    let wire = cadmpeg_core::serde_erase::json::to_value(property).expect("selection wire");
+    let admitted: PmDcFeatureProperty =
+        cadmpeg_core::serde_erase::json::from_value(wire).expect("selection admission");
     assert_eq!(&admitted, property);
 }
 

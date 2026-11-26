@@ -676,7 +676,8 @@ mod tests {
             UnavailableReason::AggregateMemberUnavailable
         );
         assert_eq!(unavailable.category(), Category::Budget);
-        let value = serde_json::to_value(Quantity::Unavailable(unavailable)).unwrap();
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(Quantity::Unavailable(unavailable)).unwrap();
         assert_eq!(value["status"], "unavailable");
         assert_eq!(value["reason"], "aggregate.member-unavailable");
         assert_eq!(value["category"], "budget");
@@ -691,13 +692,13 @@ mod tests {
             Errors::new(1.0e-13, 2.0e-6),
             "test:model:face#a",
         );
-        let text = serde_json::to_string(&quantity).unwrap();
+        let text = cadmpeg_core::serde_erase::json::to_string(&quantity).unwrap();
         assert_eq!(
             text,
             "{\"status\":\"measured\",\"value\":1.5,\"unit\":\"mm2\",\"method\":\"boundary_quadrature\",\"numeric_error\":1e-13,\"model_uncertainty\":2e-6}"
         );
         assert_eq!(
-            serde_json::to_value(BoxKind::Conservative).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(BoxKind::Conservative).unwrap(),
             "conservative"
         );
     }

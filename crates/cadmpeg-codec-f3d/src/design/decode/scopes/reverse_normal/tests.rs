@@ -117,7 +117,7 @@ fn type_guid_selects_reverse_normal_for_a_localized_compact_scope() {
         [GROUP, BODIES[0], BODIES[1]]
     );
     let restored: DesignParameterScope =
-        serde_json::from_str(&serde_json::to_string(&scope).unwrap()).unwrap();
+        serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 
@@ -177,7 +177,8 @@ fn a_linked_scope_keeps_its_link_guid() {
         let link = operation.link.as_ref().expect("link GUID");
         assert_eq!((link.value.as_str(), link.offset), (guid, offset));
         let restored: DesignParameterScope =
-            serde_json::from_str(&serde_json::to_string(&scope).unwrap()).unwrap();
+            serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&scope).unwrap())
+                .unwrap();
         assert_eq!(restored, scope);
     }
 }

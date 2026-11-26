@@ -33,7 +33,7 @@ fn unresolved(family: UnresolvedFamily) -> LegacyOperation {
 }
 
 fn body(key: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("creo:visibgeom:body#{key}"),
         "kind": "solid",
     }))

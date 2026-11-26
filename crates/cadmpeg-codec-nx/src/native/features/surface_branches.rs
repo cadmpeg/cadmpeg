@@ -292,7 +292,10 @@ mod tests {
                 .replace("\"source_offset\":116", "\"source_offset\":119"),
         ] {
             let branch: FeatureSurfaceConstructionBranch = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&branch).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&branch).unwrap(),
+                wire
+            );
         }
     }
 

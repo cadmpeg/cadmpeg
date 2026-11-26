@@ -14,9 +14,13 @@ fn wire() -> serde_json::Value {
 #[test]
 fn symbolic_thread_wire_requires_exact_atoms_reference_widths_and_span() {
     let wire = wire();
-    let construction: SymbolicThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+    let construction: SymbolicThreadConstruction =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(construction.point_mm(), [0., 0., 250.]);
-    assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&construction).unwrap(),
+        wire
+    );
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &Record {
             id: "nx:test:thread#0",
@@ -31,7 +35,10 @@ fn symbolic_thread_wire_requires_exact_atoms_reference_widths_and_span() {
     ] {
         let mut invalid = wire.clone();
         invalid[key] = value;
-        assert!(serde_json::from_value::<SymbolicThreadConstruction>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<SymbolicThreadConstruction>(invalid)
+                .is_err()
+        );
     }
     for coordinate in [
         serde_json::json!({"value":0.0,"raw":"0000"}),
@@ -40,9 +47,14 @@ fn symbolic_thread_wire_requires_exact_atoms_reference_widths_and_span() {
     ] {
         let mut invalid = wire.clone();
         invalid["coordinates"][0] = coordinate;
-        assert!(serde_json::from_value::<SymbolicThreadConstruction>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<SymbolicThreadConstruction>(invalid)
+                .is_err()
+        );
     }
     let mut invalid = wire;
     invalid["tail_references"][0] = serde_json::json!({"object_index":0,"raw_object_index":"00"});
-    assert!(serde_json::from_value::<SymbolicThreadConstruction>(invalid).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<SymbolicThreadConstruction>(invalid).is_err()
+    );
 }

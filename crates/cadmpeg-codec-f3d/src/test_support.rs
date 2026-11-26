@@ -20,7 +20,6 @@ pub(crate) mod shell_slots;
 
 use std::io::Write;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
@@ -75,7 +74,7 @@ pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
     let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -111,23 +110,40 @@ pub(crate) fn assert_written_with_loss(
 }
 
 /// The written file's B-rep frames, and a write that charged no
-/// `export:output.empty` decodes with no blocking loss.
+/// `export:output.empty` decodes with no blocking loss. A write that charged
+/// `writer.geometry-omitted` for a design with no body decodes with the
+/// blocking losses of empty body maps.
 pub(crate) fn assert_decodes_back(
     written: &cadmpeg_ir::report::export::ExportReport,
     decoded: &cadmpeg_ir::report::decode::DecodeReport,
 ) {
-    let empty = written
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "export/output.empty");
+    let charged = |code: &str| {
+        written
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code)
+    };
+    let empty = charged("export/output.empty");
+    let body_less = charged(
+        &crate::loss::F3dLossCode::WriterGeometryOmitted
+            .kind()
+            .to_string(),
+    );
     for loss in &decoded.losses {
         assert!(
             !loss.message.contains("not a decodable"),
             "the written B-rep frames: {}",
             loss.message
         );
+        let empty_maps = body_less
+            && (loss
+                .message
+                .starts_with("No physical model BREP was selected")
+                || loss
+                    .message
+                    .starts_with("No physical B-rep topology was selected"));
         assert!(
-            empty || loss.severity < cadmpeg_ir::report::Severity::Blocking,
+            empty || empty_maps || loss.severity < cadmpeg_ir::report::Severity::Blocking,
             "the written file decodes without a blocking loss: {:#?}",
             decoded.losses
         );
