@@ -69,6 +69,25 @@ fn faces_without_a_body_node_state_the_modeller_default() {
         "{linear}"
     );
     assert!((angular - MODELLER_ANGULAR_RADIANS).abs() <= COMPARISON_SLACK);
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic part decodes");
+    let code = SldprtLossCode::BodyResolutionUnread.kind();
+    let unread = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let held = decoded.ir().geometry.bodies[0].id.as_str();
+    assert!(
+        matches!(unread.as_slice(), [message] if message.contains(held)),
+        "{unread:?}"
+    );
 }
 
 #[test]

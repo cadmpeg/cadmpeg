@@ -720,6 +720,83 @@ fn invalid_body_resolution_keeps_geometry_and_reports_a_loss() {
     assert_geometry_valid(result.ir());
 }
 
+/// The sphere partition under an embedded schema whose BODY declaration
+/// deletes `res_linear`.
+fn sphere_partition_without_resolution() -> Vec<u8> {
+    let base = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&base)
+        .unwrap()
+        .unwrap();
+    let description = b": TRANSMIT FILE (partition)";
+    let schema = b"SCH_999_999_13006";
+    let mut bytes = b"PS".to_vec();
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    bytes.extend_from_slice(&u32::try_from(schema.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(schema);
+    bytes.extend_from_slice(&250u16.to_be_bytes());
+    bytes.extend_from_slice(&0u32.to_be_bytes());
+    let mut declared = std::collections::BTreeSet::new();
+    let mut end = 0;
+    for node in records.nodes() {
+        let range = node.range();
+        bytes.extend_from_slice(&base[range.start..range.start + 2]);
+        let is_body = node.kind() == cadmpeg_parasolid::records::node_type::BODY;
+        if declared.insert(node.kind()) {
+            if is_body {
+                bytes.push(22);
+                bytes.extend_from_slice(&[b'C'; 8]);
+                bytes.push(b'D');
+                bytes.extend_from_slice(&[b'C'; 14]);
+                bytes.push(b'Z');
+            } else {
+                bytes.push(255);
+            }
+        }
+        if is_body {
+            let resolution = node.field_range("res_linear").unwrap();
+            bytes.extend_from_slice(&base[range.start + 2..resolution.start]);
+            bytes.extend_from_slice(&base[resolution.end..range.end]);
+        } else {
+            bytes.extend_from_slice(&base[range.start + 2..range.end]);
+        }
+        end = range.end;
+    }
+    bytes.extend_from_slice(&base[end..]);
+    bytes
+}
+
+#[test]
+fn a_body_without_a_stored_resolution_keeps_geometry_and_reports_a_loss() {
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&[
+                sphere_partition_without_resolution(),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
+    );
+    let body = result.ir().geometry.bodies[0].id.as_str();
+    let unread = crate::loss::SolidEdgeLossCode::BodyResolutionUnread
+        .note("")
+        .code;
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unread && loss.message.contains(body)),
+        "{:?}",
+        result.report().losses
+    );
+    assert_geometry_valid(result.ir());
+}
+
 #[test]
 fn empty_partition_preserves_stated_body_resolution() {
     let mut partition = test_support::sphere_partition();

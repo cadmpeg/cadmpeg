@@ -632,17 +632,23 @@ pub(super) fn simple_hole_native_properties(
 
 /// The linear bound (millimetres) below which evaluated B-rep geometry carries
 /// no meaning for the feature recognisers.
-const RECOGNITION_LINEAR_FLOOR: PositiveLength = match PositiveLength::new(1.0e-9) {
-    Some(value) => value,
-    None => panic!("the recognition linear floor must be positive and finite"),
-};
+const RECOGNITION_LINEAR_FLOOR_MM: f64 = 1.0e-9;
+
+const RECOGNITION_LINEAR_FLOOR: PositiveLength =
+    match PositiveLength::new(RECOGNITION_LINEAR_FLOOR_MM) {
+        Some(value) => value,
+        None => panic!("the recognition linear floor must be positive and finite"),
+    };
 
 /// The angular bound (radians) below which evaluated B-rep geometry carries no
 /// meaning for the feature recognisers.
-const RECOGNITION_ANGULAR_FLOOR: PositiveAngle = match PositiveAngle::new(1.0e-12) {
-    Some(value) => value,
-    None => panic!("the recognition angular floor must be positive and finite"),
-};
+const RECOGNITION_ANGULAR_FLOOR_RAD: f64 = 1.0e-12;
+
+const RECOGNITION_ANGULAR_FLOOR: PositiveAngle =
+    match PositiveAngle::new(RECOGNITION_ANGULAR_FLOOR_RAD) {
+        Some(value) => value,
+        None => panic!("the recognition angular floor must be positive and finite"),
+    };
 
 /// The tolerances at which the feature recognisers compare evaluated B-rep
 /// geometry: each document tolerance, raised to its recognition floor.
