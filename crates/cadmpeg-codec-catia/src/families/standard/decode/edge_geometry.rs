@@ -73,6 +73,27 @@ pub(super) fn standard_pcurve_geometry(
             }
         }
     }
+    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface {
+        let center = sphere_surface.center().get();
+        let axis = *sphere_surface.frame().axis().as_raw();
+        let radius = sphere_surface.radius().get();
+        let poles = [
+            center.translated(axis, radius),
+            center.translated(axis, -radius),
+        ];
+        if poles
+            .iter()
+            .any(|pole| start.distance_squared(*pole) <= EPS_STANDARD_DECODE_COARSE_GEOMETRY)
+        {
+            uv[0].u = uv[1].u;
+        }
+        if poles
+            .iter()
+            .any(|pole| end.distance_squared(*pole) <= EPS_STANDARD_DECODE_COARSE_GEOMETRY)
+        {
+            uv[1].u = uv[0].u;
+        }
+    }
     let reference_uv = uv[0];
     unwrap_standard_uv(surface, &mut uv[1], reference_uv);
 
@@ -1119,6 +1140,15 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     pub(super) admission: &'input11 mut FamilyEntityAdmission<'input9, 'input10>,
 }
 
+pub(super) struct DeferredConicFallback {
+    pub(super) curve_id: CurveId,
+    pub(super) ellipse: cadmpeg_ir::geometry::analytic::EllipseCurve,
+    pub(super) range: [f64; 2],
+    pub(super) source_pos: usize,
+    pub(super) gap: f64,
+}
+
+#[cfg(test)]
 pub(super) fn build_standard_edge_curve(
     ctx: &DecodeContext<'_>,
     inputs: BuildStandardEdgeCurveInputs<
@@ -1136,6 +1166,28 @@ pub(super) fn build_standard_edge_curve(
         '_,
         impl cadmpeg_ir::annotations::AnnotationStorage,
     >,
+) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
+    build_standard_edge_curve_with_deferred(ctx, inputs, None)
+}
+
+pub(super) fn build_standard_edge_curve_with_deferred(
+    ctx: &DecodeContext<'_>,
+    inputs: BuildStandardEdgeCurveInputs<
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        impl cadmpeg_ir::annotations::AnnotationStorage,
+    >,
+    mut deferred_conic: Option<&mut Option<DeferredConicFallback>>,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let BuildStandardEdgeCurveInputs {
         ir,
@@ -1472,12 +1524,33 @@ pub(super) fn build_standard_edge_curve(
                 }
                 selected = Some(candidate);
             }
+            let mut pending_conic: Option<(
+                cadmpeg_ir::geometry::analytic::EllipseCurve,
+                [f64; 2],
+                f64,
+            )> = None;
             if let Some((ellipse, range, gap)) = selected.filter(|_| !conflicting) {
-                if gap > 0.0 {
-                    refusal.push_conic_branch_bounds_inferred(support.pos, gap);
+                if gap > 0.0 && deferred_conic.is_some() {
+                    pending_conic = Some((ellipse, range, gap));
+                } else {
+                    if gap > 0.0 {
+                        refusal.push_conic_branch_bounds_inferred(support.pos, gap);
+                    }
+                    geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse));
+                    param_range = Some(range);
                 }
-                geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse));
-                param_range = Some(range);
+            }
+            if let (Some(slot), Some((ellipse, range, gap))) =
+                (deferred_conic.as_deref_mut(), pending_conic)
+            {
+                let id = standard_id("curve", format_args!("{}", support.pos), CurveId::mint)?;
+                *slot = Some(DeferredConicFallback {
+                    curve_id: id,
+                    ellipse,
+                    range,
+                    source_pos: support.pos,
+                    gap,
+                });
             }
         }
     }
