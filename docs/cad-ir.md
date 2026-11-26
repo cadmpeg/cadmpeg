@@ -196,7 +196,7 @@ Procedural curve definitions are intersection, projection, offset, blend spine, 
 - `inferred`: selected from context or convention;
 - `unknown`: source fidelity remains unresolved.
 
-Absence from sidecar exactness means `byte_exact` for a decoded source-backed value. A field override takes precedence over entity exactness. Codecs record every decoded entity and field whose exactness is `derived`, `inferred`, or `unknown`. Source-less product documents omit the source-fidelity sidecar. Annotation keys resolve to globally identified product entities or retained source records. Unknown field paths are warnings so additive product fields remain readable.
+Absence from sidecar exactness means `byte_exact` for a decoded source-backed value. A field override takes precedence over entity exactness. Codecs record every decoded entity and field whose exactness is `derived`, `inferred`, or `unknown`. Source-less product documents omit the source-fidelity sidecar. Annotation keys resolve to globally identified product entities, retained source records, or records inside the delta of an evaluation or a process state, keyed `<qualifier id> <record id>` (`docs/cadir-v11.md` §3.2). Unknown field paths are warnings so additive product fields remain readable.
 
 ## Neutral feature model
 
@@ -311,7 +311,7 @@ A point cloud holds measured or sampled points. `definition` names the product d
 
 ## History bodies
 
-A history body is a body that only an earlier state of a source history holds, such as the result of a feature that a later feature consumes. The `history_bodies` arena lists them. A history body has an `id`, a `state` with the `ordinal` of the state, oldest state first, and its source `identifier`, an optional `produced_by` feature, an optional `consumed_by` feature, and a `topology`.
+A history body is a body that only an earlier state of a source history holds, such as the result of a feature that a later feature consumes. The `history_bodies` arena lists them. A history body has an `id`, a `state` with the `ordinal` of the state, oldest state first, and its source `identifier`, an optional `produced_by` feature, an optional `consumed_by` feature, an optional `state_of` model body whose earlier state it is, and a `topology`.
 
 The `topology` holds one `body` and the `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `surfaces`, `curves`, `pcurves`, and `points` of that body. Every reference in the `topology` names a record of the same `topology`. A carrier in the `topology` states solved geometry and has no procedural construction. The identity of each record of a `topology` differs from every identity in the arenas of `model` and from every identity in the `topology` of another history body. `produced_by` and `consumed_by` name members of `features` and state the origin of the body: `produced_by` makes it the body as it stands after that feature, and `consumed_by` makes it the body as it stands before that feature. A history body names at least one of them, and a body that one feature produces and a later feature consumes names both.
 

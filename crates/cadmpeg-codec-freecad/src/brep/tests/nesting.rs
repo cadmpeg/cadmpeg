@@ -5,6 +5,7 @@ use super::{
     BinaryCursor, FinitePoint3, FiniteReal, FiniteVector3, ShapePayload, ShapePayloadRecord,
     TextCurve, TextCurve2d, TextSurface, TokenCursor,
 };
+use cadmpeg_core::serde_erase::json;
 
 /// `wrappers` offset surface records over one plane leaf, as text tokens.
 fn text_offset_surface_tokens(wrappers: usize) -> Vec<String> {
@@ -291,11 +292,9 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
         },
     };
 
-    let admitted =
-        cadmpeg_core::serde_erase::json::to_value(&record).expect("a retained payload serializes");
+    let admitted = json::to_value(&record).expect("a retained payload serializes");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ShapePayloadRecord>(admitted.clone())
-            .expect("the bound round-trips"),
+        json::from_value::<ShapePayloadRecord>(admitted.clone()).expect("the bound round-trips"),
         record
     );
 
@@ -306,7 +305,7 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
         "distance": 1.0,
         "basis": basis,
     });
-    let error = cadmpeg_core::serde_erase::json::from_value::<ShapePayloadRecord>(refused)
+    let error = json::from_value::<ShapePayloadRecord>(refused)
         .expect_err("one record past the bound is refused");
     assert!(
         error.to_string().contains("surface nesting exceeds 64"),

@@ -104,15 +104,13 @@ mod tests {
     use super::{
         NativeBytes, ThruCurveBranchSuffix, ThruCurveGroupTerminator, TERMINATOR_INTO_VEC_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn branch_suffix_wire_is_closed() {
         for wire in ["\"8148\"", "\"8158\""] {
             let value: ThruCurveBranchSuffix = serde_json::from_str(wire).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_string(&value).unwrap(), wire);
         }
         for wire in ["\"8048\"", "\"8149\"", "\"81\"", "\"814800\""] {
             assert!(serde_json::from_str::<ThruCurveBranchSuffix>(wire).is_err());
@@ -123,14 +121,10 @@ mod tests {
     fn group_terminator_wire_is_closed() {
         for wire in ["\"000000000000ff00ff01\"", "\"000000000000ffff01\""] {
             let value: ThruCurveGroupTerminator = serde_json::from_str(wire).unwrap();
+            assert_eq!(json::to_string(&value).unwrap(), wire);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                wire
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&NativeBytes::from(Vec::<u8>::from(value)))
-                    .unwrap()
+                json::to_vec(&value).unwrap(),
+                json::to_vec(&NativeBytes::from(Vec::<u8>::from(value))).unwrap()
             );
         }
         for wire in [

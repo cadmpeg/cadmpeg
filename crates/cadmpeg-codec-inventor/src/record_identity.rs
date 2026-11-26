@@ -207,6 +207,7 @@ impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
@@ -225,10 +226,7 @@ mod tests {
         ] {
             assert!(super::RecordTypeId::try_from(type_id.to_owned()).is_err());
             let wire = serde_json::json!({"id": "inventor:pmdc:test#segment-0", "type_id": type_id, "segment_token": "segment", "record_ordinal": 0});
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::Located<Payload>>(wire)
-                    .is_err()
-            );
+            assert!(json::from_value::<super::Located<Payload>>(wire).is_err());
         }
     }
 

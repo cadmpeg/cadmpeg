@@ -4,6 +4,7 @@
 //! states, the timeline marker after it, and the later features rolled back
 //! (f3d.md §3.1, "Feature item tail").
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -616,7 +617,7 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
         &[corners.map(|corner| (corner, Side::Line)).to_vec()],
         [0.0, SIDE],
     );
-    let renamed = cadmpeg_core::serde_erase::json::to_string(&solid.geometry)
+    let renamed = json::to_string(&solid.geometry)
         .expect("the prism serializes")
         .replace('#', "#second-");
     let serde_json::Value::Object(arenas) =
@@ -624,8 +625,7 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     else {
         panic!("the prism's arenas");
     };
-    let mut merged =
-        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("the cube serializes");
+    let mut merged = json::to_value(&ir.geometry).expect("the cube serializes");
     let mut body = None;
     for (arena, records) in arenas {
         let serde_json::Value::Array(records) = records else {
@@ -641,9 +641,8 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
         slot.as_array_mut().expect("an arena").extend(records);
     }
-    ir.geometry = cadmpeg_core::serde_erase::json::from_value(merged).expect("the merged arenas");
-    let body = cadmpeg_core::serde_erase::json::from_value(body.expect("the prism's body"))
-        .expect("a body id");
+    ir.geometry = json::from_value(merged).expect("the merged arenas");
+    let body = json::from_value(body.expect("the prism's body")).expect("a body id");
     ir.design.scopes[0].current[0].bodies.push(body);
     ir.finalize();
     (ir, second_id)
@@ -1031,8 +1030,7 @@ fn sharing_carriers() -> (CadIr, usize) {
     use std::collections::BTreeMap;
     let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
     let content = |surface: &cadmpeg_ir::geometry::Surface| {
-        let mut value =
-            cadmpeg_core::serde_erase::json::to_value(surface).expect("a surface serializes");
+        let mut value = json::to_value(surface).expect("a surface serializes");
         value
             .as_object_mut()
             .expect("a surface object")

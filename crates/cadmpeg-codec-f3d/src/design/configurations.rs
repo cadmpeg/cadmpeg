@@ -111,7 +111,7 @@ fn attach_roots(
 
 /// The table document that holds `table_id`; with no such document, the only
 /// table document.
-fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
+pub(crate) fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
     let table_documents = || {
         documents
             .iter()

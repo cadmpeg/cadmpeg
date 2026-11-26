@@ -52,6 +52,7 @@ mod tracking_path_headers;
 mod treatment_losses;
 mod work_planes;
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
@@ -65,7 +66,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native};
 use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
@@ -221,7 +222,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = cadmpeg_core::serde_erase::json::to_vec(&table_document(
+    let payload = json::to_vec(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
@@ -270,7 +271,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
 fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = None;
-    drop(f3d_native_mut(&mut ir));
+    add_empty_f3d_native(&mut ir);
     let mut bytes = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)

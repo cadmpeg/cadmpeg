@@ -12,6 +12,7 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -28,6 +29,7 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use configuration_root::{assert_active_row_written, write_and_decode};
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
@@ -107,8 +109,7 @@ fn generated_configuration_document() -> serde_json::Value {
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload =
-        cadmpeg_core::serde_erase::json::to_vec(&generated_configuration_document()).unwrap();
+    let payload = json::to_vec(&generated_configuration_document()).unwrap();
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
@@ -241,28 +242,17 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     let mut rooted = source_less.clone();
     set_active_row(&mut rooted, "medium");
-    crate::test_support::assert_written_with_loss(
-        &rooted,
-        None,
-        "export/native.records-omitted",
-        "writes no DesignConfigurationRoot record",
+    let (rooted_report, rooted_round_trip) = write_and_decode(&rooted);
+    let medium_id = crate::ids::neutral_configuration_id(name, "medium");
+    assert!(
+        rooted_report.losses.iter().any(|loss| loss.code.to_string()
+            == "export/record.residual-unavailable"
+            && loss.message.contains("DR-1063")
+            && loss.message.contains(medium_id.as_str())),
+        "{:#?}",
+        rooted_report.losses
     );
-    let mut rooted_bytes = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&rooted, None), TargetRequest::Unnamed)
-        .and_then(|plan| plan.write_to(&mut rooted_bytes))
-        .expect("an active row is written without its root record");
-    let rooted_round_trip = F3dCodec
-        .decode(&mut Cursor::new(rooted_bytes), &DecodeOptions::default())
-        .expect("the design without its root record decodes");
-    assert_eq!(
-        f3d_native(rooted_round_trip.ir()).design_configurations,
-        native.design_configurations
-    );
-    assert_eq!(
-        rooted_round_trip.ir().model.configurations,
-        expected_projected
-    );
+    assert_active_row_written(&rooted_round_trip, &rooted, "medium");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
@@ -1896,6 +1886,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 }
 
 mod closed_edges;
+mod configuration_root;
 mod family_changes;
 mod reversed_edges;
 mod tolerant_tails;

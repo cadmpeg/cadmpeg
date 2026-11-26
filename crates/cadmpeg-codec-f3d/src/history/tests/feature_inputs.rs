@@ -332,6 +332,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -401,6 +402,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -536,6 +538,7 @@ fn input_face_owners_keep_only_the_faces_a_feature_selects() {
     };
     let mut topologies = vec![FeatureInputTopology {
         face_owners: vec![owner(2, 1), owner(6, 5)],
+        face_geometry: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: DistinctMembers::try_from(vec![body(1), body(5)]).unwrap(),
@@ -556,4 +559,128 @@ fn input_face_owners_keep_only_the_faces_a_feature_selects() {
     )
     .unwrap();
     assert_eq!(topologies[0].face_owners, vec![owner(6, 5)]);
+}
+
+fn face_surfaces() -> [cadmpeg_ir::features::evaluation::HistoricalFaceSurface; 2] {
+    use cadmpeg_ir::features::evaluation::HistoricalFaceSurface;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    [
+        HistoricalFaceSurface::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        HistoricalFaceSurface::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .unwrap(),
+        ),
+    ]
+}
+
+#[test]
+fn input_face_geometry_carries_planar_and_cylindrical_surfaces_of_the_state() {
+    use crate::history_records::{AsmHistoricalFaceSample, AsmHistoricalTopology};
+    use cadmpeg_ir::features::evaluation::HistoricalFaceGeometry;
+
+    let [plane, cylinder] = face_surfaces();
+    let topology = AsmHistoricalTopology {
+        faces: vec![2, 3, 9],
+        face_samples: vec![
+            AsmHistoricalFaceSample {
+                face: 2,
+                surface: plane.clone(),
+                reversed: false,
+            },
+            AsmHistoricalFaceSample {
+                face: 3,
+                surface: cylinder.clone(),
+                reversed: true,
+            },
+            AsmHistoricalFaceSample {
+                face: 7,
+                surface: plane.clone(),
+                reversed: false,
+            },
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    let feature: cadmpeg_ir::features::FeatureId =
+        "f3d:model:feature#offset".to_owned().try_into().unwrap();
+    let prefix = crate::ids::feature_input_prefix(&feature, 4);
+    assert_eq!(
+        super::super::input_topologies::project_input_face_geometry(&topology, &prefix),
+        vec![
+            HistoricalFaceGeometry {
+                face: crate::ids::history_input_face_id(&prefix, 2),
+                surface: plane,
+                reversed: false,
+            },
+            HistoricalFaceGeometry {
+                face: crate::ids::history_input_face_id(&prefix, 3),
+                surface: cylinder,
+                reversed: true,
+            },
+        ]
+    );
+}
+
+#[test]
+fn input_face_geometry_keeps_only_the_faces_a_feature_selects() {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalFaceGeometry};
+    use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
+
+    let (mut feature, _, _) = input_fixture();
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
+    let face = |slot| crate::ids::history_input_face_id(&prefix, slot);
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::historical(
+                crate::ids::history_input_state_id(&prefix),
+                vec![face(3)],
+                "f3d:test:offset-faces".to_owned(),
+            )
+            .unwrap(),
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+            },
+        }),
+    );
+    let [plane, cylinder] = face_surfaces();
+    let geometry = |slot, surface| HistoricalFaceGeometry {
+        face: face(slot),
+        surface,
+        reversed: false,
+    };
+    let mut topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
+        face_geometry: vec![geometry(2, plane), geometry(3, cylinder.clone())],
+        id: crate::ids::history_input_state_id(&prefix),
+        input_of: feature.id.clone(),
+        bodies: Default::default(),
+        faces: DistinctMembers::try_from(vec![face(2), face(3)]).unwrap(),
+        edges: Default::default(),
+        vertices: Default::default(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::input_topologies::retain_selected_face_geometry(
+        &ctx,
+        std::slice::from_ref(&feature),
+        &mut topologies,
+    )
+    .unwrap();
+    assert_eq!(topologies[0].face_geometry, vec![geometry(3, cylinder)]);
 }

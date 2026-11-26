@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 fn active_body() -> cadmpeg_ir::topology::Body {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
@@ -541,7 +543,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
     );
     if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
         *slot = Some(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "body_entity_suffixes":[81], "body_entity_suffix_offsets":[22],
                 "body_reference_records":[81], "body_reference_record_offsets":[22],
                 "parameter_body_record":91, "parameter_body_record_offset":100,
@@ -666,7 +668,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
     let (mut feature, mut scope, _, _) = native_base_feature();
     if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
         *slot = Some(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "body_entity_suffixes":[81], "body_entity_suffix_offsets":[22],
                 "body_reference_records":[81], "body_reference_record_offsets":[22],
                 "parameter_body_record":91, "parameter_body_record_offset":100,
