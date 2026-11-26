@@ -1014,8 +1014,6 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         )
         .is_err());
     }
-    // A collection that lists bodies can store a zero u32 before its owner
-    // reference.
     for count in [1, 2] {
         let length = 77 + 11 * u64::from(count);
         let collection = crate::records::mesh::DesignMeshCollection::new(

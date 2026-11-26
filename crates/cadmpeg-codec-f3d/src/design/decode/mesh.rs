@@ -3540,6 +3540,14 @@ mod tests {
 
         let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
         assert_eq!(frame.end - frame.start, 77 + 11);
+        let wire = json::to_value(feature).unwrap();
+        assert_eq!(wire["collection_record"]["frame_length"], 88);
+        assert_eq!(
+            wire["collection_owner_reference_offset"],
+            cadmpeg_core::json!(frame.start + 77)
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
         let owner_gap = frame.start + 38 + 11 + 9 + 4 + 11;
         graph.bytes[owner_gap] = 1;
         assert!(parse(&graph).is_err());
