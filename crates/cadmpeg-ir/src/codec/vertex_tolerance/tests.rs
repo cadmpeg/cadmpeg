@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use super::widen;
-use crate::annotations::{AnnotationBuilder, Annotations};
+use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
 use crate::document::Topology;
@@ -19,6 +19,8 @@ use crate::source_fidelity::SourceFidelity;
 use crate::topology::PcurveUse;
 use crate::validate::validate_neutral;
 use crate::CadIr;
+
+mod stored_history;
 
 /// The unit cube (side 10, each edge a line ranged from its start corner)
 /// with the point of `corner` moved to `position`.
@@ -497,6 +499,137 @@ fn a_process_state_vertex_off_its_edges_ends_is_widened_in_its_delta() {
         }
     }
     assert_eq!(gaps_on(&ir, &holder), 0);
+}
+
+/// The line of the cube's edge 0 (corner 0 to corner 1) moved `offset`
+/// along -z.
+fn moved_edge_line(ir: &CadIr, offset: f64) -> crate::geometry::Curve {
+    let mut line = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str().ends_with("curve#0"))
+        .unwrap()
+        .clone();
+    line.geometry =
+        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, -offset),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ));
+    line
+}
+
+#[test]
+fn a_base_vertex_copied_into_a_delta_is_annotated_as_the_base_record_with_a_derived_tolerance() {
+    // As below, with corner 0's vertex annotated as read from offset 11 of
+    // a stream, and a second evaluation, based on the first, that moves the
+    // line 0.08: it copies the vertex from the first evaluation's delta, which
+    // copied it from the current geometry.
+    let mut ir = crate::validate::design::fixture::document();
+    let first = ir.design.evaluations[0].id.clone();
+    let line = moved_edge_line(&ir, 0.05);
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .curves = vec![line];
+    let mut chained = ir.design.evaluations[0].clone();
+    chained.id = crate::validate::design::fixture::id("evaluation", "a-chained");
+    let content = chained.content.as_mut().unwrap();
+    content.base = crate::design::evaluation::StateBase::Evaluation(first.clone());
+    content.delta.records.curves = vec![moved_edge_line(&ir, 0.08)];
+    let second = chained.id.clone();
+    ir.design.evaluations.insert(0, chained);
+    let vertex = vertex_id(&ir, 0);
+    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let mut builder = AnnotationBuilder::new();
+    builder.note(&vertex, &stream, 11, None);
+    let mut annotations = builder.build();
+    let read = annotations.provenance[vertex.as_str()].clone();
+    let losses = widen(&mut ir, &mut annotations, &DecodePolicy::default());
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    for holder in [first.as_str(), second.as_str()] {
+        let key = format!("{holder} {vertex}");
+        assert_eq!(annotations.provenance[key.as_str()], read);
+        let note = &annotations.exactness()[key.as_str()];
+        assert_eq!(note.entity(), Exactness::ByteExact);
+        assert_eq!(
+            note.fields()
+                .iter()
+                .map(|(field, exactness)| (field.as_str(), *exactness))
+                .collect::<Vec<_>>(),
+            [("tolerance", Exactness::Derived)]
+        );
+    }
+    let other = format!("{first} {}", vertex_id(&ir, 1));
+    assert!(!annotations.provenance.contains_key(other.as_str()));
+    let [chained, base] = &ir.design.evaluations[..2] else {
+        unreachable!()
+    };
+    assert_close(
+        delta_vertex_tolerance(&chained.content.as_ref().unwrap().delta, 0),
+        0.08,
+    );
+    assert_close(
+        delta_vertex_tolerance(&base.content.as_ref().unwrap().delta, 0),
+        0.05,
+    );
+}
+
+#[test]
+fn a_ceiling_met_in_the_resolved_states_keeps_the_current_widening_and_is_charged() {
+    // Corner 0 of the current geometry lies off its three edges' ends, and
+    // the evaluation's delta moves the line of edge 0. The session admits
+    // the current geometry's measure and refuses the reading of the
+    // references of the resolved states' records.
+    let mut ir = crate::validate::design::fixture::document();
+    let corner = moved_origin_corner(&ir);
+    for point in &mut ir.geometry.points {
+        if point.id == corner.id {
+            *point = corner.clone();
+        }
+    }
+    let line = moved_edge_line(&ir, 0.05);
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .curves = vec![line];
+    let before = ir.design.clone();
+    let mut annotations = Annotations::default();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 1;
+    let losses = widen(&mut ir, &mut annotations, &policy);
+    let [widened, unmeasured] = &losses[..] else {
+        panic!("two losses: {losses:?}");
+    };
+    assert_eq!(
+        widened.code,
+        DecodeLossCode::VertexToleranceWidened.note("").code
+    );
+    assert!(
+        widened
+            .message
+            .ends_with(&format!(": {}", vertex_id(&ir, 0))),
+        "{}",
+        widened.message
+    );
+    assert_eq!(
+        unmeasured.code,
+        DecodeLossCode::VertexToleranceUnmeasured.note("").code
+    );
+    assert_close(
+        vertex_tolerance(&ir.geometry, 0).unwrap(),
+        moved_corner_gap(),
+    );
+    assert_eq!(ir.design, before);
 }
 
 #[test]

@@ -14,17 +14,21 @@
 //! range is off, not the vertex.
 //!
 //! The pass measures the current geometry, then the resolved state of each
-//! evaluation and process state whose delta holds a topology record: its
-//! base with its delta applied, as validation resolves it. A vertex that only
-//! a resolved state compares with a moved position states its widened
-//! tolerance in that state's delta: the delta's own record, or a copy of the
-//! base's record that the delta then restates. Each state is measured after
-//! the states its chain of bases passes, with the tolerances they widen. A
-//! record inside a history body or a witness body has no annotation key of
-//! its own, so its widened tolerance could not be marked derived; it keeps
-//! its stored tolerance, and validation reports its gaps.
+//! evaluation and process state with content: its base with its delta
+//! applied, as validation resolves it. A vertex that only a resolved state
+//! compares with a moved position states its widened tolerance in that
+//! state's delta: the delta's own record, or a copy of the base's record,
+//! annotated as the base's record is, that the delta then restates. Each
+//! state is measured after the states its chain of bases passes, with the
+//! tolerances they widen, and over the records connected through references
+//! with a record its delta changes or with a vertex its base widens: every
+//! other vertex is compared as in the base, where it was measured. A state
+//! whose base is the current state or empty is measured whole. A record
+//! inside a history body or a witness body has no annotation key of its own,
+//! so its widened tolerance could not be marked derived; it keeps its stored
+//! tolerance, and validation reports its gaps.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -41,7 +45,7 @@ use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
 use crate::scalar::PositiveLength;
 use crate::topology::{IncreasingParameterInterval, Vertex};
-use crate::validate::design::resolved::StateTopology;
+use crate::validate::design::resolved::visit::StateView;
 use crate::validate::geometry_consistency::{
     pcurve_image_comparisons, ComparedCarrier, CurveEndComparisons, VertexComparison,
 };
@@ -74,15 +78,36 @@ pub(super) fn widen(
     annotations: &mut Annotations,
     policy: &DecodePolicy,
 ) -> Vec<LossNote> {
+    widen_measuring(ir, annotations, policy, Measured::Region)
+}
+
+/// What the pass measures of the resolved state of an evaluation or a
+/// process state.
+#[derive(Clone, Copy)]
+enum Measured {
+    /// The records connected with a record its delta changes or with a
+    /// vertex its base widens, over a base the pass measured.
+    Region,
+    /// Every record, which widens as `Region` does.
+    #[cfg(test)]
+    Whole,
+}
+
+fn widen_measuring(
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
+    policy: &DecodePolicy,
+    measured: Measured,
+) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let read = |key: &str| !computed(annotations, key);
     let measured = DecodeContext::from_root_bytes_limit(&[], &arena, policy)
         .map_err(CodecError::from)
         .and_then(|(ctx, _)| {
             let current = measure(&ctx, ir, &read)?;
-            let mut states = StateWidening::new(&current);
+            let mut states = StateWidening::new(&current, measured);
             let stopped = visit_resolved_states(&ctx, ir, &mut |state| {
-                states.measure(&ctx, ir, &read, state)
+                states.measure(&ctx, ir, &read, &state)
             })
             .err();
             let deltas = states.widened;
@@ -97,6 +122,16 @@ pub(super) fn widen(
             ))]
         }
     };
+    let mut written = Vec::new();
+    for delta in deltas {
+        let Some((key, inserted)) = write_into_delta(ir, &delta.holder, delta.vertex) else {
+            continue;
+        };
+        if inserted {
+            annotations.copy_entity(&delta.source, key.clone());
+        }
+        written.push((key, delta.increase));
+    }
     let linear = ir.tolerances.linear;
     let mut largest = 0.0_f64;
     let mut widened = Vec::new();
@@ -115,12 +150,9 @@ pub(super) fn widen(
         largest = largest.max(tolerance.get() - before);
         widened.push(vertex.id.as_str().to_owned());
     }
-    for delta in deltas {
-        let Some(key) = write_into_delta(ir, &delta.holder, delta.vertex) else {
-            continue;
-        };
+    for (key, increase) in written {
         builder.derived_field(&key, TOLERANCE);
-        largest = largest.max(delta.increase);
+        largest = largest.max(increase);
         widened.push(key.as_str().to_owned());
     }
     *annotations = builder.build();
@@ -135,6 +167,7 @@ pub(super) fn widen(
         )));
     }
     if let Some(stopped) = stopped {
+        let stopped = CodecError::from(stopped);
         losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
             "the decode wrapper's vertex tolerance pass stopped ({stopped}), so it widened no \
              vertex tolerance of the resolved states of evaluations and process states it had not \
@@ -151,6 +184,8 @@ struct DeltaWidening {
     holder: String,
     /// The vertex as the resolved state holds it, with its widened tolerance.
     vertex: Vertex,
+    /// The annotation key of the resolved state's record of the vertex.
+    source: String,
     /// The widened tolerance less the tolerance in force before.
     increase: f64,
 }
@@ -160,17 +195,25 @@ struct DeltaWidening {
 struct StateWidening<'w> {
     /// The tolerances widened in the current geometry.
     current: &'w BTreeMap<String, f64>,
+    measured: Measured,
     /// For each vertex, each evaluation or process state that widens it,
     /// with the tolerance it states there.
     by_state: HashMap<String, Vec<(String, PositiveLength)>>,
+    /// For each evaluation or process state, the vertices it widens.
+    by_holder: HashMap<String, Vec<String>>,
+    /// The evaluations and process states the pass measured.
+    measured_states: HashSet<String>,
     widened: Vec<DeltaWidening>,
 }
 
 impl<'w> StateWidening<'w> {
-    fn new(current: &'w BTreeMap<String, f64>) -> Self {
+    fn new(current: &'w BTreeMap<String, f64>, measured: Measured) -> Self {
         Self {
             current,
+            measured,
             by_state: HashMap::new(),
+            by_holder: HashMap::new(),
+            measured_states: HashSet::new(),
             widened: Vec::new(),
         }
     }
@@ -180,7 +223,7 @@ impl<'w> StateWidening<'w> {
     /// widenings of the states its chain of bases passes.
     fn widened_below(
         &self,
-        state: &StateTopology<'_>,
+        state: &StateView<'_, '_>,
         id: &str,
         source: Option<&str>,
     ) -> Option<PositiveLength> {
@@ -210,21 +253,38 @@ impl<'w> StateWidening<'w> {
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
         read: &dyn Fn(&str) -> bool,
-        mut state: StateTopology<'_>,
-    ) -> Result<(), CodecError> {
-        let mut vertices = std::mem::take(&mut state.topology.vertices);
-        for vertex in &mut vertices {
-            let source = state.sources.get(vertex.id.as_str()).copied();
-            if let Some(tolerance) = self.widened_below(&state, vertex.id.as_str(), source) {
+        state: &StateView<'_, '_>,
+    ) -> Result<(), ResourceLimit> {
+        let base = state
+            .bases
+            .first()
+            .filter(|base| self.measured_states.contains(**base));
+        let mut topology = match (self.measured, base) {
+            (Measured::Region, Some(base)) => state.region(
+                ctx,
+                self.by_holder
+                    .get(*base)
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str),
+            )?,
+            _ => state.whole(),
+        };
+        self.measured_states.insert(state.holder.to_owned());
+        if topology.vertices.is_empty() {
+            return Ok(());
+        }
+        for vertex in &mut topology.vertices {
+            let source = state.source(vertex.id.as_str());
+            if let Some(tolerance) = self.widened_below(state, vertex.id.as_str(), source) {
                 vertex.tolerance = Some(tolerance);
             }
         }
         let mut alone = CadIr::empty();
         alone.fragment = ir.fragment;
         alone.tolerances = ir.tolerances;
-        alone.geometry = std::mem::take(&mut state.topology);
-        alone.geometry.vertices = vertices;
-        let key = |id: &str| match state.sources.get(id) {
+        alone.geometry = topology;
+        let key = |id: &str| match state.source(id) {
             Some(holder) => format!("{holder} {id}"),
             None => id.to_owned(),
         };
@@ -242,8 +302,13 @@ impl<'w> StateWidening<'w> {
                 .entry(vertex.id.as_str().to_owned())
                 .or_default()
                 .push((state.holder.to_owned(), tolerance));
+            self.by_holder
+                .entry(state.holder.to_owned())
+                .or_default()
+                .push(vertex.id.as_str().to_owned());
             self.widened.push(DeltaWidening {
                 holder: state.holder.to_owned(),
+                source: key(vertex.id.as_str()),
                 vertex: Vertex {
                     tolerance: Some(tolerance),
                     ..vertex
@@ -257,9 +322,10 @@ impl<'w> StateWidening<'w> {
 
 /// States `vertex` in the delta of the evaluation or process state `holder`:
 /// replaces the delta's record of its id, or adds it in id order. Returns the
-/// vertex's annotation key in that delta; `None` where no evaluation or
-/// process state of that id has content.
-fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<AnnotationKey> {
+/// vertex's annotation key in that delta and whether the delta gained the
+/// record; `None` where no evaluation or process state of that id has
+/// content.
+fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(AnnotationKey, bool)> {
     let (key, delta) = if let Some(evaluation) = ir
         .design
         .evaluations
@@ -278,11 +344,18 @@ fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<Anno
         (key, &mut state.content.as_mut()?.delta)
     };
     let vertices = &mut delta.records.vertices;
-    match vertices.binary_search_by(|stated| stated.id.as_str().cmp(vertex.id.as_str())) {
-        Ok(at) => vertices[at] = vertex,
-        Err(at) => vertices.insert(at, vertex),
-    }
-    Some(key)
+    let inserted =
+        match vertices.binary_search_by(|stated| stated.id.as_str().cmp(vertex.id.as_str())) {
+            Ok(at) => {
+                vertices[at] = vertex;
+                false
+            }
+            Err(at) => {
+                vertices.insert(at, vertex);
+                true
+            }
+        };
+    Some((key, inserted))
 }
 
 /// The annotated field of a vertex's tolerance.

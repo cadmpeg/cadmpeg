@@ -1032,107 +1032,6 @@ pub(in crate::validate) fn check_process_states<'a>(
     Ok(())
 }
 
-/// The resolved state of an evaluation or a process state, as a `Topology`
-/// of its own.
-pub(crate) struct StateTopology<'a> {
-    /// The id of the evaluation or process state.
-    pub(crate) holder: &'a str,
-    /// The records of the resolved state.
-    pub(crate) topology: Topology,
-    /// For each record of `topology` that a delta holds, the id of the
-    /// evaluation or process state whose delta holds it. A record of the
-    /// current geometry has no entry.
-    pub(crate) sources: BTreeMap<&'a str, &'a str>,
-    /// The ids of the evaluations and process states that the chain of bases
-    /// below `holder` passes, nearest first.
-    pub(crate) bases: Vec<&'a str>,
-}
-
-impl<'a> StateTopology<'a> {
-    fn of(holder: &'a str, state: &ResolvedState<'a>, bases: Vec<&'a str>) -> Self {
-        Self {
-            holder,
-            topology: state.topology(),
-            sources: state
-                .records
-                .iter()
-                .filter_map(|(id, located)| Some((*id, located.holder?)))
-                .collect(),
-            bases,
-        }
-    }
-}
-
-/// Visits the resolved state of each evaluation, then of each process state,
-/// whose delta holds a topology record and whose chain of bases resolves,
-/// with the same resolution the checks of resolved states use. The first
-/// record of each id is visited, each after the records of its chain of
-/// bases. `scope` gives the design scope of a process state's setup, which a
-/// `Current` base reads.
-pub(in crate::validate) fn visit_states<'a>(
-    ctx: &DecodeContext<'_>,
-    index: &DesignRecords<'a>,
-    scope: impl Fn(&ProcessState) -> Option<&'a str>,
-    visit: &mut dyn FnMut(StateTopology<'a>) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
-    let ir = index.ir;
-    let evaluations = &ir.design.evaluations;
-    let states = &ir.process.states;
-    if evaluations
-        .iter()
-        .all(|evaluation| evaluation.content.is_none())
-        && states.iter().all(|state| state.content.is_none())
-    {
-        return Ok(());
-    }
-    let resolver = Resolver {
-        ctx,
-        index,
-        geometry: locate(&ir.geometry),
-        children: ir.geometry.child_lists(),
-    };
-    let mut chain = Chain::new(evaluations, evaluations.iter().filter_map(Stored::base));
-    for evaluation in chain.bases_first(evaluations) {
-        let base = chain.base_state(evaluation, |below| resolver.below_evaluation(below))?;
-        let (Some(base), Some(delta)) = (base, evaluation.delta()) else {
-            continue;
-        };
-        let id = evaluation.id.as_str();
-        let mut state = (*base).clone();
-        apply(&mut state, delta, id, None);
-        if delta.records != Topology::default() {
-            visit(StateTopology::of(id, &state, chain.below(evaluation).0))?;
-        }
-        chain.keep(evaluation, state);
-    }
-    let mut evaluations = Chain::new(evaluations, states.iter().filter_map(design_base));
-    let mut chain = Chain::new(states, states.iter().filter_map(Stored::base));
-    for state in chain.bases_first(states) {
-        let base = chain.base_state(state, |below| {
-            below_process_state(&resolver, &mut evaluations, &scope, below)
-        })?;
-        if let Some(evaluation) = design_base(state) {
-            evaluations.release(evaluation);
-        }
-        let (Some(base), Some(delta)) = (base, state.delta()) else {
-            continue;
-        };
-        let id = state.id.as_str();
-        let mut resolved = (*base).clone();
-        apply(&mut resolved, delta, id, None);
-        if delta.records != Topology::default() {
-            let (mut bases, last) = chain.below(state);
-            if let Some(&evaluation) = design_base(last).and_then(|id| evaluations.by_id.get(id)) {
-                bases.push(evaluation.id.as_str());
-                bases.extend(evaluations.below(evaluation).0);
-            }
-            visit(StateTopology::of(id, &resolved, bases))?;
-        }
-        chain.keep(state, resolved);
-    }
-    Ok(())
-}
-
 /// The evaluation that a process state's design base names.
 fn design_base(state: &ProcessState) -> Option<&str> {
     match &state.content.as_ref()?.base {
@@ -1173,3 +1072,4 @@ fn below_process_state<'a>(
 mod state_topology;
 #[cfg(test)]
 mod tests;
+pub(crate) mod visit;
