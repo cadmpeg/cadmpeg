@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import textwrap
@@ -21,7 +22,8 @@ from scripts.ci_rustc_lock import (
 )
 
 # Answers `--list` like a libtest binary and runs the tests its arguments
-# select: `passes` passes, `fails` fails, and `hangs` never finishes.
+# select: `passes` passes, `fails` fails, `hangs` never finishes, and `slow`
+# reports 20 seconds.
 FAKE_LIBTEST = textwrap.dedent('''\
     import sys, time
     TESTS = {TESTS}
@@ -31,7 +33,7 @@ FAKE_LIBTEST = textwrap.dedent('''\
         raise SystemExit(0)
     skips = [args[i + 1] for i, a in enumerate(args) if a == '--skip']
     filters = [a for i, a in enumerate(args)
-               if not a.startswith('--') and (i == 0 or args[i - 1] != '--skip')]
+               if not a.startswith('-') and (i == 0 or args[i - 1] != '--skip')]
     failed = False
     for name in TESTS:
         if any(s in name for s in skips) or (filters and not any(f in name for f in filters)):
@@ -39,11 +41,12 @@ FAKE_LIBTEST = textwrap.dedent('''\
         if name.endswith('hangs'):
             print(f'test {{name}} has been running for over 60 seconds', flush=True)
             time.sleep(60)
+        seconds = 20 if name.endswith('slow') else 0.001
         if name.endswith('fails'):
-            print(f'test {{name}} ... FAILED')
+            print(f'test {{name}} ... FAILED <{{seconds:.3f}}s>')
             failed = True
         else:
-            print(f'test {{name}} ... ok')
+            print(f'test {{name}} ... ok <{{seconds:.3f}}s>')
     raise SystemExit(101 if failed else 0)
 ''')
 
@@ -140,6 +143,12 @@ class RunTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual([(binary.name, binary.tests) for binary in planned], [('big', 3), ('small', 1)])
 
+    def test_slow_tests_are_listed_with_their_times(self):
+        status, output, _ = self.plan_and_run({'crate': ['a::passes', 'a::slow']})
+        self.assertEqual(status, 0)
+        self.assertIn('[   20.0s] crate a::slow', output)
+        self.assertNotIn('a::passes', output.split('or more:')[1])
+
     def test_a_failing_test_is_named_and_fails_the_run(self):
         status, output, _ = self.plan_and_run({'crate': ['a::passes', 'a::fails']})
         self.assertEqual(status, 1)
@@ -152,6 +161,29 @@ class RunTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn('still running: a::hangs', output)
         self.assertIn('TIMEOUT: crate', output)
+
+    def test_run_defaults_cadmpeg_threads_to_one(self):
+        script = self.directory / 'env_check'
+        script.write_text(textwrap.dedent(f'''\
+            #!{sys.executable}
+            import os, sys
+            if '--list' in sys.argv:
+                print('a::env: test')
+                raise SystemExit(0)
+            assert os.environ.get('CADMPEG_THREADS') == os.environ['EXPECT_THREADS']
+            assert os.environ.get('RUSTC_BOOTSTRAP') == '1'
+            print('test a::env ... ok <0.001s>')
+        '''))
+        script.chmod(0o755)
+        with patch.dict(os.environ, {'EXPECT_THREADS': '1'}, clear=False):
+            os.environ.pop('CADMPEG_THREADS', None)
+            planned = plan([('env_check', str(script), str(self.directory))], threads=2)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(run(planned, jobs=1), 0)
+        with patch.dict(os.environ, {'CADMPEG_THREADS': '3', 'EXPECT_THREADS': '3'}, clear=False):
+            planned = plan([('env_check', str(script), str(self.directory))], threads=2)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(run(planned, jobs=1), 0)
 
 
 if __name__ == "__main__":

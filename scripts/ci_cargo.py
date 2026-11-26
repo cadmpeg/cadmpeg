@@ -54,7 +54,13 @@ def low_ram_rustc_wrapper() -> Path:
 # as many binaries at a time as the runner has cores. A binary still running
 # after this many seconds is killed as hung.
 DEADLINE_SECONDS = 1200
-RESULT = re.compile(r'^test (\S+) \.\.\. (ok|FAILED|ignored)')
+# A test that runs this many seconds or more is listed with its time.
+SLOW_SECONDS = 15
+# `--report-time` prints each test's time. It is a stable toolchain's
+# unstable libtest option, which `RUSTC_BOOTSTRAP` unlocks for the test
+# process only; nothing is compiled under it.
+REPORT_TIME = ['-Zunstable-options', '--report-time']
+RESULT = re.compile(r'^test (\S+) \.\.\. (ok|FAILED|ignored)(?:.* <([0-9.]+)s>)?')
 STILL_RUNNING = re.compile(r'^test (\S+) has been running for over 60 seconds$')
 
 
@@ -110,7 +116,8 @@ def plan(built: list[tuple[str, str, str]], threads: int) -> list[Binary]:
     binaries = []
     for name, executable, cwd in built:
         if tests := count_tests(executable, cwd):
-            binaries.append(Binary(name, [executable, f'--test-threads={threads}'], cwd, tests))
+            binaries.append(Binary(name, [executable, f'--test-threads={threads}', *REPORT_TIME],
+                                   cwd, tests))
     binaries.sort(key=lambda binary: -binary.tests)
     return binaries
 
@@ -138,6 +145,11 @@ def finish(binary: Binary, now: float, timed_out: bool) -> None:
 
 def run(binaries: list[Binary], jobs: int) -> int:
     """Run the binaries with at most `jobs` at a time; return the exit status."""
+    env = {
+        **os.environ,
+        'RUSTC_BOOTSTRAP': '1',
+        'CADMPEG_THREADS': os.environ.get('CADMPEG_THREADS') or '1',
+    }
     pending = list(binaries)
     running: list[Binary] = []
     start = time.monotonic()
@@ -148,7 +160,7 @@ def run(binaries: list[Binary], jobs: int) -> int:
                 binary.log = Path(logs) / f'{len(pending)}.log'
                 with binary.log.open('w') as log:
                     binary.process = subprocess.Popen(binary.argv, cwd=binary.cwd, stdout=log,
-                                                    stderr=subprocess.STDOUT)
+                                                      stderr=subprocess.STDOUT, env=env)
                 binary.started = time.monotonic()
                 running.append(binary)
             time.sleep(0.1)
@@ -168,10 +180,14 @@ def run(binaries: list[Binary], jobs: int) -> int:
           f'{wall:.1f}s wall; slowest binaries:')
     for binary in sorted(binaries, key=lambda binary: -binary.seconds)[:5]:
         print(f'  [{binary.seconds:7.1f}s] {binary.name}')
-    slow = [f'{match.group(1)} ({binary.name})' for binary in binaries for line in binary.lines
-            if (match := STILL_RUNNING.match(line))]
+    slow = sorted(((float(match.group(3)), binary.name, match.group(1))
+                   for binary in binaries for line in binary.lines
+                   if (match := RESULT.match(line)) and match.group(3)
+                   and float(match.group(3)) >= SLOW_SECONDS), reverse=True)
     if slow:
-        print('tests running past 60 seconds:\n  ' + '\n  '.join(slow))
+        print(f'tests that ran {SLOW_SECONDS}s or more:')
+        for seconds, name, test in slow:
+            print(f'  [{seconds:7.1f}s] {name} {test}')
     for binary in failed:
         print(f'{binary.outcome}: {binary.name}')
     return 1 if failed else 0
