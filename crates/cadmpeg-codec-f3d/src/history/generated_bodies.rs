@@ -789,6 +789,7 @@ fn live_seed_binding(
             || changes_existing_rows(&rows.vertex_points, &delta.vertices.inserted)
             || changes_existing_rows(&rows.point_positions, &delta.points.inserted)
             || changes_existing_rows(&rows.edge_samples, &delta.edges.inserted)
+            || changes_existing_rows(&rows.face_samples, &delta.faces.inserted)
         {
             return None;
         }

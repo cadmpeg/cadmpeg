@@ -174,6 +174,21 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                 carrier: None,
             })
             .collect(),
+        face_samples: keys
+            .iter()
+            .map(|&key| AsmHistoricalFaceSample {
+                face: key,
+                surface: cadmpeg_ir::features::evaluation::HistoricalFaceSurface::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        origin,
+                        axis,
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+                reversed: changed,
+            })
+            .collect(),
         ..AsmHistoricalTopology::default()
     };
     for attribute in [10, 20] {
@@ -293,6 +308,7 @@ fn expected_topology(state_id: i64, scope: AsmTopologyScope) -> Option<AsmHistor
         expected.vertex_points.clear();
         expected.point_positions.clear();
         expected.edge_samples.clear();
+        expected.face_samples.clear();
         if !expected.has_retained_rows() {
             return None;
         }
