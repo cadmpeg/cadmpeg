@@ -183,7 +183,8 @@ fn viewport_plot_weight_keeps_the_exact_unset_sentinel() {
         Some(settings::LayerPlotWeight::Unset)
     );
     assert_eq!(
-        serde_json::to_value(values[0].plot_weight_mm).expect("serialized plot weight"),
+        cadmpeg_core::serde_erase::json::to_value(values[0].plot_weight_mm)
+            .expect("serialized plot weight"),
         serde_json::json!(-1.0)
     );
 }

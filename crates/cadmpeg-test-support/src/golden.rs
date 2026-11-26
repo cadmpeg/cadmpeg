@@ -592,7 +592,8 @@ pub const NATIVE_ELISION_MARKER: &str =
 /// The fidelity does not serialize.
 #[must_use]
 pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
-    let mut value = serde_json::to_value(fidelity).expect("serialize source_fidelity");
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(fidelity).expect("serialize source_fidelity");
     if let Some(digest) = value.get_mut("content_digest") {
         *digest = ELIDED_DIGEST.into();
     }
@@ -749,8 +750,9 @@ mod tests {
             serde_json::Value::Null,
             serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
         ] {
-            let expected =
-                serde_json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
+            let expected = cadmpeg_core::serde_erase::json::to_string_pretty(&value)
+                .expect("pretty JSON for the fixture")
+                + "\n";
             assert_eq!(snapshot_text(&value), expected);
         }
     }

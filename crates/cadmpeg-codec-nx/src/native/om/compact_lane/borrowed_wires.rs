@@ -103,10 +103,10 @@ mod tests {
     fn counted_lane_borrowed_bytes_and_limit() {
         let json = r#"{"id":"nx:om-counted-lane:lane#0","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":"01","anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":["02"],"member_data_blocks":["member"],"source_offset":9,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
         let record: DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
-        let borrowed = serde_json::to_vec(&record).unwrap();
-        let owned = serde_json::to_vec(&super::super::wire::DataBlockCountedIndexLaneWire::from(
-            record.clone(),
-        ))
+        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
+        let owned = cadmpeg_core::serde_erase::json::to_vec(
+            &super::super::wire::DataBlockCountedIndexLaneWire::from(record.clone()),
+        )
         .unwrap();
         assert_eq!(borrowed, owned);
         assert_eq!(borrowed, json.as_bytes());
@@ -132,12 +132,15 @@ mod tests {
             frame,
             source_entry: "entry".to_owned(),
         };
-        let borrowed = serde_json::to_vec(&record).unwrap();
-        let owned = serde_json::to_vec(&super::super::wire::DataBlockAbrReferenceLaneWire::from(
-            record.clone(),
-        ))
+        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
+        let owned = cadmpeg_core::serde_erase::json::to_vec(
+            &super::super::wire::DataBlockAbrReferenceLaneWire::from(record.clone()),
+        )
         .unwrap();
         assert_eq!(borrowed, owned);
-        assert_native_limit(&record, serde_json::to_value(&record).unwrap());
+        assert_native_limit(
+            &record,
+            cadmpeg_core::serde_erase::json::to_value(&record).unwrap(),
+        );
     }
 }

@@ -343,7 +343,7 @@ impl Serialize for SemanticUuid {
 }
 
 pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
-    serde_json::to_string(&SemanticJson(polyedge)).ok()
+    cadmpeg_core::serde_erase::json::to_string(&SemanticJson(polyedge)).ok()
 }
 
 #[cfg(test)]

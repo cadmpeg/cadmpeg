@@ -2598,7 +2598,7 @@ mod tests {
     }
 
     fn legacy_face_candidate_limit_fixture() -> DesignFaceOperand {
-        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        let mut operand: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -2686,7 +2686,7 @@ mod tests {
     fn split_face_updated_transition_resolves_legacy_target_group() {
         fn operand(record_index: u32, ordinal: u32, preceding: &[i64]) -> DesignFaceOperand {
             let preceding = preceding.iter().copied().map(face).collect::<Vec<_>>();
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": format!("f3d:test:face-operand#{record_index}"),
                 "scope_record_index": 100,
                 "scope_reference_ordinal": 1,
@@ -2716,50 +2716,52 @@ mod tests {
             .expect("legacy SplitFace target operand")
         }
 
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:scope#100",
-            "byte_offset": 0,
-            "class_tag": "277",
-            "record_index": 100,
-            "frame_length": 407,
-            "kind": "SplitFace",
-            "kind_offset": 65,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 335,
-            "history_state_id": 50,
-            "history_state_id_offset": 57,
-            "previous_history_state_id": 49,
-            "previous_history_state_id_offset": 365,
-            "reference_count_offset": 9,
-            "reference_members": [150, 200, 201, 202],
-            "reference_member_offsets": [14, 25, 36, 47],
-            "paired_class_tag": "258",
-            "paired_byte_offset": 407
-        }))
-        .expect("legacy SplitFace scope");
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 1,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "262",
-            "members": [200, 201, 202],
-            "member_offsets": [0, 11, 22],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x0000_0010_0000_0000_u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
-        .expect("legacy SplitFace target group");
+        let scope: DesignParameterScope =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:scope#100",
+                "byte_offset": 0,
+                "class_tag": "277",
+                "record_index": 100,
+                "frame_length": 407,
+                "kind": "SplitFace",
+                "kind_offset": 65,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 335,
+                "history_state_id": 50,
+                "history_state_id_offset": 57,
+                "previous_history_state_id": 49,
+                "previous_history_state_id_offset": 365,
+                "reference_count_offset": 9,
+                "reference_members": [150, 200, 201, 202],
+                "reference_member_offsets": [14, 25, 36, 47],
+                "paired_class_tag": "258",
+                "paired_byte_offset": 407
+            }))
+            .expect("legacy SplitFace scope");
+        let group: DesignConstructionOperandGroup =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:construction-group#150",
+                "scope_record_index": 100,
+                "scope_reference_ordinal": 1,
+                "record_index": 150,
+                "byte_offset": 0,
+                "class_tag": "262",
+                "members": [200, 201, 202],
+                "member_offsets": [0, 11, 22],
+                "frame": {
+                    "member_count_offset": 0,
+                    "opaque_index": 1,
+                    "opaque_index_offset": 18,
+                    "opaque_scalar": 0.0,
+                    "opaque_scalar_offset": 22,
+                    "variant": false
+                },
+                "role": 0x0000_0010_0000_0000_u64,
+                "role_offset": 0,
+                "paired_class_tag": "258",
+                "paired_byte_offset": 0
+            }))
+            .expect("legacy SplitFace target group");
         let operands = vec![
             operand(200, 0, &[10, 20]),
             operand(201, 1, &[20, 30]),
@@ -2823,57 +2825,59 @@ mod tests {
             crate::records::feature::scope::DesignFeatureKind::SplitFace,
             100,
         );
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 1,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "262",
-            "members": [200],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x0000_0010_0000_0000_u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
-        .unwrap();
-        let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:face-operand#200",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 1,
-            "group_record_index": 150,
-            "group_member_ordinal": 0,
-            "record_index": 200,
-            "byte_offset": 0,
-            "class_tag": "277",
-            "paired_byte_offset": 407,
-            "paired_class_tag": "258",
-            "recipe_record_index": 203,
-            "recipe_record_byte_offset": 423,
-            "recipe_id": "f3d:test:recipe#200",
-            "recipe_prefix_offset": 434,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0, -1, 2],
-            "recipe_node_offsets": [],
-            "recipe_nodes": [],
-            "candidate_faces": ["f3d:brep:entity#10"],
-            "preceding_candidate_faces": ["f3d:brep:entity#10"],
-            "next_record_index": 204,
-            "next_byte_offset": 551
-        }))
-        .unwrap();
+        let group: DesignConstructionOperandGroup =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:construction-group#150",
+                "scope_record_index": 100,
+                "scope_reference_ordinal": 1,
+                "record_index": 150,
+                "byte_offset": 0,
+                "class_tag": "262",
+                "members": [200],
+                "member_offsets": [0],
+                "frame": {
+                    "member_count_offset": 0,
+                    "opaque_index": 1,
+                    "opaque_index_offset": 18,
+                    "opaque_scalar": 0.0,
+                    "opaque_scalar_offset": 22,
+                    "variant": false
+                },
+                "role": 0x0000_0010_0000_0000_u64,
+                "role_offset": 0,
+                "paired_class_tag": "258",
+                "paired_byte_offset": 0
+            }))
+            .unwrap();
+        let operand: DesignFaceOperand =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:face-operand#200",
+                "scope_record_index": 100,
+                "scope_reference_ordinal": 1,
+                "group_record_index": 150,
+                "group_member_ordinal": 0,
+                "record_index": 200,
+                "byte_offset": 0,
+                "class_tag": "277",
+                "paired_byte_offset": 407,
+                "paired_class_tag": "258",
+                "recipe_record_index": 203,
+                "recipe_record_byte_offset": 423,
+                "recipe_id": "f3d:test:recipe#200",
+                "recipe_prefix_offset": 434,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_kind": "bounded_face",
+                "recipe_program_offset": 0,
+                "recipe_program": [0, -1, 2],
+                "recipe_node_offsets": [],
+                "recipe_nodes": [],
+                "candidate_faces": ["f3d:brep:entity#10"],
+                "preceding_candidate_faces": ["f3d:brep:entity#10"],
+                "next_record_index": 204,
+                "next_byte_offset": 551
+            }))
+            .unwrap();
         assert_eq!(
             super::split_face_updated_target_slots(
                 &scope,
@@ -3015,27 +3019,28 @@ mod tests {
                 reference_context(1, target_slot, target_edge_count),
             ]
         };
-        let mut operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
-            "id": format!("f3d:test:edge-operand#{record_index}"),
-            "scope_record_index": 1811,
-            "scope_reference_ordinal": 3 + record_index - 1,
-            "record_index": record_index,
-            "byte_offset": 0,
-            "class_tag": "376",
-            "paired_byte_offset": 16,
-            "paired_class_tag": "260",
-            "recipe_record_index": record_index + 3,
-            "recipe_record_byte_offset": 32,
-            "recipe_id": "f3d:test:recipe",
-            "recipe_prefix_offset": 43,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_program_offset": 0,
-            "recipe_program": [-1, -1, 2],
-            "next_record_index": record_index + 4,
-            "next_byte_offset": 160
-        }))
-        .expect("edge recipe operand");
+        let mut operand: DesignEdgeOperand =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": format!("f3d:test:edge-operand#{record_index}"),
+                "scope_record_index": 1811,
+                "scope_reference_ordinal": 3 + record_index - 1,
+                "record_index": record_index,
+                "byte_offset": 0,
+                "class_tag": "376",
+                "paired_byte_offset": 16,
+                "paired_class_tag": "260",
+                "recipe_record_index": record_index + 3,
+                "recipe_record_byte_offset": 32,
+                "recipe_id": "f3d:test:recipe",
+                "recipe_prefix_offset": 43,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_program_offset": 0,
+                "recipe_program": [-1, -1, 2],
+                "next_record_index": record_index + 4,
+                "next_byte_offset": 160
+            }))
+            .expect("edge recipe operand");
         operand.recipe_references = references;
         operand.recipe_structure = Some(DesignEdgeRecipeStructure {
             root: 2,
@@ -3074,7 +3079,7 @@ mod tests {
     }
 
     fn loft_scope() -> DesignParameterScope {
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:test:scope#1811",
             "byte_offset": 0,
             "class_tag": "272",
@@ -3098,7 +3103,7 @@ mod tests {
     }
 
     fn loft_group() -> DesignConstructionOperandGroup {
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:test:group#111045",
             "scope_record_index": 1811,
             "scope_reference_ordinal": 2,
@@ -3238,45 +3243,46 @@ mod tests {
             program: vec![-1, -1, 2],
             recipe_structure: None,
         };
-        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:surface-delete-face-operand#1",
-            "scope_record_index": 10,
-            "scope_reference_ordinal": 1,
-            "group_record_index": 20,
-            "group_member_ordinal": 0,
-            "record_index": 21,
-            "byte_offset": 0,
-            "class_tag": "282",
-            "paired_byte_offset": 12,
-            "paired_class_tag": "259",
-            "recipe_record_index": 24,
-            "recipe_record_byte_offset": 24,
-            "recipe_id": "f3d:test:recipe#22",
-            "recipe_prefix_offset": 35,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0, -1, 1],
-            "recipe_node_offsets": [],
-            "recipe_nodes": [],
-            "next_record_index": 23,
-            "next_byte_offset": 36,
-            "candidate_faces": [
-                "f3d:brep:entity#10",
-                "f3d:brep:entity#11",
-                "f3d:brep:entity#12"
-            ],
-            "preceding_candidate_faces": [
-                "f3d:brep:entity#10",
-                "f3d:brep:entity#11"
-            ],
-            "changed_candidate_faces": [
-                "f3d:brep:entity#10",
-                "f3d:brep:entity#11"
-            ]
-        }))
-        .expect("surface-delete-face operand");
+        let mut operand: DesignFaceOperand =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:surface-delete-face-operand#1",
+                "scope_record_index": 10,
+                "scope_reference_ordinal": 1,
+                "group_record_index": 20,
+                "group_member_ordinal": 0,
+                "record_index": 21,
+                "byte_offset": 0,
+                "class_tag": "282",
+                "paired_byte_offset": 12,
+                "paired_class_tag": "259",
+                "recipe_record_index": 24,
+                "recipe_record_byte_offset": 24,
+                "recipe_id": "f3d:test:recipe#22",
+                "recipe_prefix_offset": 35,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_kind": "bounded_face",
+                "recipe_program_offset": 0,
+                "recipe_program": [0, -1, 1],
+                "recipe_node_offsets": [],
+                "recipe_nodes": [],
+                "next_record_index": 23,
+                "next_byte_offset": 36,
+                "candidate_faces": [
+                    "f3d:brep:entity#10",
+                    "f3d:brep:entity#11",
+                    "f3d:brep:entity#12"
+                ],
+                "preceding_candidate_faces": [
+                    "f3d:brep:entity#10",
+                    "f3d:brep:entity#11"
+                ],
+                "changed_candidate_faces": [
+                    "f3d:brep:entity#10",
+                    "f3d:brep:entity#11"
+                ]
+            }))
+            .expect("surface-delete-face operand");
         operand.recipe_nodes = vec![node];
         operand.historical_support_contexts =
             vec![support(10, &[(10, 4)]), support(11, &[(11, 4)])];
@@ -3441,7 +3447,7 @@ mod tests {
     }
 
     fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {
-        let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        let operand: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -3495,29 +3501,30 @@ mod tests {
             "next_byte_offset": 469
         }))
         .expect("nested bounded-face operand");
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 0,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "338",
-            "role": 0,
-            "members": [200],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role_offset": 0,
-            "paired_class_tag": "261",
-            "paired_byte_offset": 0
-        }))
-        .expect("FromFace group");
+        let group: DesignConstructionOperandGroup =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "f3d:test:construction-group#150",
+                "scope_record_index": 100,
+                "scope_reference_ordinal": 0,
+                "record_index": 150,
+                "byte_offset": 0,
+                "class_tag": "338",
+                "role": 0,
+                "members": [200],
+                "member_offsets": [0],
+                "frame": {
+                    "member_count_offset": 0,
+                    "opaque_index": 1,
+                    "opaque_index_offset": 18,
+                    "opaque_scalar": 0.0,
+                    "opaque_scalar_offset": 22,
+                    "variant": false
+                },
+                "role_offset": 0,
+                "paired_class_tag": "261",
+                "paired_byte_offset": 0
+            }))
+            .expect("FromFace group");
         let faces = vec![Face {
             id: face(10),
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),

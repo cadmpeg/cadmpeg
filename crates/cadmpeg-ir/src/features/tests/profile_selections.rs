@@ -51,9 +51,9 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         ),
     ];
     for (profile, field) in profiles {
-        let wire = serde_json::to_value(&profile).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&profile).unwrap();
         assert_eq!(
-            serde_json::from_value::<ProfileRef>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<ProfileRef>(wire.clone()).unwrap(),
             profile
         );
         let payload = if profile.planar().is_some() {
@@ -65,12 +65,16 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
         for invalid in [serde_json::json!([]), serde_json::json!([first, first])] {
             let mut invalid_wire = wire.clone();
             invalid_wire.pointer_mut(payload).unwrap()[field] = invalid;
-            assert!(serde_json::from_value::<ProfileRef>(invalid_wire.clone()).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<ProfileRef>(
+                invalid_wire.clone()
+            )
+            .is_err());
             if profile.planar().is_some() {
-                let message =
-                    serde_json::from_value::<PlanarProfileRef>(invalid_wire["value"].clone())
-                        .unwrap_err()
-                        .to_string();
+                let message = cadmpeg_core::serde_erase::json::from_value::<PlanarProfileRef>(
+                    invalid_wire["value"].clone(),
+                )
+                .unwrap_err()
+                .to_string();
                 assert!(message.contains(field), "{message}");
             }
         }
@@ -139,19 +143,21 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
         ),
     ];
     for (path, field) in paths {
-        let wire = serde_json::to_value(&path).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&path).unwrap();
         assert_eq!(
-            serde_json::from_value::<PathRef>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<PathRef>(wire.clone()).unwrap(),
             path
         );
         let first = wire["value"][field][0].clone();
         for invalid in [serde_json::json!([]), serde_json::json!([first, first])] {
             let mut invalid_wire = wire.clone();
             invalid_wire["value"][field] = invalid;
-            assert!(serde_json::from_value::<PathRef>(invalid_wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<PathRef>(invalid_wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
     }
     for curves in [vec![], vec![entity.clone(), entity]] {
@@ -194,12 +200,14 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
     let feature = FeatureId::mint("test:test:feature#one").unwrap();
     for invalid in ["", " \t"] {
         assert!(GeneratedCurveRef::new(feature.clone(), invalid.into()).is_err());
-        assert!(serde_json::from_value::<GeneratedCurveRef>(
-            serde_json::json!({"feature": feature, "local_id": invalid})
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("local_id"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<GeneratedCurveRef>(
+                serde_json::json!({"feature": feature, "local_id": invalid})
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("local_id")
+        );
     }
     let curve = GeneratedCurveRef::new(feature, "curve".into()).unwrap();
     assert!(PlanarProfileRef::generated(vec![], "group".into()).is_err());
@@ -209,13 +217,13 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
     let profile = ProfileRef::Planar(
         PlanarProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into()).unwrap(),
     );
-    let wire = serde_json::to_value(&profile).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&profile).unwrap();
     assert_eq!(
         wire["value"]["value"]["curves"],
         serde_json::json!([curve, curve])
     );
     assert_eq!(
-        serde_json::from_value::<ProfileRef>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ProfileRef>(wire.clone()).unwrap(),
         profile
     );
     for (field, value) in [
@@ -224,12 +232,16 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
     ] {
         let mut invalid = wire.clone();
         invalid["value"]["value"][field] = value;
-        assert!(serde_json::from_value::<ProfileRef>(invalid.clone()).is_err());
         assert!(
-            serde_json::from_value::<PlanarProfileRef>(invalid["value"].clone())
-                .unwrap_err()
-                .to_string()
-                .contains(field)
+            cadmpeg_core::serde_erase::json::from_value::<ProfileRef>(invalid.clone()).is_err()
+        );
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PlanarProfileRef>(
+                invalid["value"].clone()
+            )
+            .unwrap_err()
+            .to_string()
+            .contains(field)
         );
     }
 }
@@ -241,12 +253,17 @@ fn a_spatial_profile_where_a_planar_one_is_required_is_refused_as_an_unknown_var
         vec![0],
     )
     .unwrap();
-    let wire = serde_json::to_value(&spatial).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&spatial).unwrap();
     assert_eq!(wire["kind"], "spatial_sketch_profiles");
-    let error = serde_json::from_value::<PlanarProfileRef>(wire.clone())
+    let error = cadmpeg_core::serde_erase::json::from_value::<PlanarProfileRef>(wire.clone())
         .expect_err("a spatial profile is not a planar profile");
     assert!(error.to_string().contains("unknown variant"), "{error}");
     let section = serde_json::json!({ "kind": "profile", "value": wire });
-    assert!(serde_json::from_value::<crate::features::sweeps::SweepSection>(section).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<crate::features::sweeps::SweepSection>(
+            section
+        )
+        .is_err()
+    );
     assert!(spatial.planar().is_none());
 }

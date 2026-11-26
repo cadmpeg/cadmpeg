@@ -292,7 +292,8 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         .into_iter()
         .find(|point| point.point_id == 2)
         .expect("conflicting point record");
-    let conflicting_record = serde_json::to_value(conflicting_record).expect("point record");
+    let conflicting_record =
+        cadmpeg_core::serde_erase::json::to_value(conflicting_record).expect("point record");
     assert_eq!(conflicting_record["state"], "conflicting");
     assert_eq!(
         [&conflicting_record["u"], &conflicting_record["v"]],

@@ -156,7 +156,7 @@ fn stored_frame_model(clockwise: bool) -> Model {
     geometries.extend(half.edges.into_iter().map(|(e, _)| e.geometry));
     for (i, g) in geometries.into_iter().enumerate() {
         model.sketch_entities.push(
-            serde_json::from_value(json!({"id":format!("synthetic:model:sketch-entity#{i}"),
+            cadmpeg_core::serde_erase::json::from_value(json!({"id":format!("synthetic:model:sketch-entity#{i}"),
             "sketch":"synthetic:model:sketch#frame","construction":false,"endpoint_refs":[],"geometry":g}))
             .unwrap(),
         );
@@ -186,12 +186,12 @@ fn unrelated_semicircle_does_not_enclose_the_rectangle_hole_witness() {
 #[test]
 fn long_escaped_ids_exhaust_bytes_before_boundary_expansion() {
     let mut model = frame_model();
-    let mut wire = serde_json::to_value(&model.sketch_entities[0]).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&model.sketch_entities[0]).unwrap();
     wire["id"] = json!(format!(
         "synthetic:model:sketch-entity#{}",
         "quoted\"".repeat(512)
     ));
-    model.sketch_entities[0] = serde_json::from_value(wire).unwrap();
+    model.sketch_entities[0] = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     let witness = edge(
         "synthetic:model:sketch-entity#4",
         json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
@@ -280,7 +280,7 @@ fn signed_area(model: &Model, boundary: &Value) -> f64 {
         model
             .sketch_entities
             .iter()
-            .map(|e| serde_json::to_value(e).unwrap())
+            .map(|e| cadmpeg_core::serde_erase::json::to_value(e).unwrap())
             .find(|e| e["id"] == *id)
             .map(|e| e["geometry"].clone())
             .unwrap()
@@ -418,7 +418,7 @@ fn tangent_model(sketch: &str, active: Option<bool>, driving: Option<bool>) -> M
     }
     model
         .sketch_constraints
-        .push(serde_json::from_value(row).unwrap());
+        .push(cadmpeg_core::serde_erase::json::from_value(row).unwrap());
     model
 }
 

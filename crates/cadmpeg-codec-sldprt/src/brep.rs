@@ -972,8 +972,8 @@ mod tests {
             assert_eq!(old.offset, accepted.offset);
             assert_eq!(old.end, accepted.end);
             assert_eq!(
-                serde_json::to_value(old.geometry).unwrap(),
-                serde_json::to_value(accepted.geometry).unwrap()
+                cadmpeg_core::serde_erase::json::to_value(old.geometry).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(accepted.geometry).unwrap()
             );
             assert!(super::parse_carrier_for_role(&delta, 0, false).is_none());
             let mut malformed = delta.clone();

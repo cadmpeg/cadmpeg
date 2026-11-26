@@ -177,7 +177,7 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
         ),
         attribute(ON_DOCUMENT, AttributeTarget::Document, Vec::new()),
     ]);
-    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
     let read = CadIr::read(
         value.to_string().as_bytes(),
@@ -439,7 +439,8 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        cadmpeg_core::serde_erase::json::to_value(&refusal).expect("serialize refusal")["refusal"]
+            ["kind"],
         "unknown_explicit"
     );
     assert!(refusal.available().is_empty());
@@ -500,7 +501,7 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 fn a_pinned_strictness_writes_a_displaced_target() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -601,10 +602,11 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
             .unwrap();
         let mut encoded = Vec::new();
         plan.write_to(&mut encoded).unwrap();
-        let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        let written: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&encoded).unwrap();
         assert_eq!(
             written["scope"],
-            serde_json::to_value(depth.scope()).unwrap()
+            cadmpeg_core::serde_erase::json::to_value(depth.scope()).unwrap()
         );
     }
 }
@@ -1224,7 +1226,7 @@ fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
         },
     );
     let native = serde_json::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
-    ir.design.names = serde_json::from_value(serde_json::json!([
+    ir.design.names = cadmpeg_core::serde_erase::json::from_value(serde_json::json!([
         [{"kind": "face", "value": named}, {"name": deep, "native": native}],
         [{"kind": "face", "value": unnamed}, {"name": deep}]
     ]))

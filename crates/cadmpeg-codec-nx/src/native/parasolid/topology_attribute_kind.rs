@@ -81,7 +81,10 @@ mod tests {
     fn topology_attribute_kind_preserves_codes_and_rejects_other_kinds() {
         for (kind, code) in TopologyAttributeKind::ALL.into_iter().zip(13..=18) {
             let wire = code.to_string();
-            assert_eq!(serde_json::to_string(&kind).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&kind).unwrap(),
+                wire
+            );
             assert_eq!(
                 serde_json::from_str::<TopologyAttributeKind>(&wire).unwrap(),
                 kind

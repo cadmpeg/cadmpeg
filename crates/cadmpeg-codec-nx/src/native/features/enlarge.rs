@@ -185,8 +185,11 @@ mod tests {
     fn enlarge_wire_checks_atoms_and_complete_span_before_native_admission() {
         let wire = wire();
         let envelope: FeatureEnlargeConstructionEnvelope =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&envelope).unwrap(), wire);
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&envelope).unwrap(),
+            wire
+        );
         cadmpeg_test_support::native_serialization::assert_native_limit(&envelope, wire.clone());
         for (field, value) in [
             ("parameter_class_index", serde_json::json!(0)),
@@ -195,16 +198,34 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
-            assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                FeatureEnlargeConstructionEnvelope,
+            >(invalid)
+            .is_err());
         }
         let mut invalid = wire.clone();
         invalid["scalars"][0] = serde_json::json!(2.0);
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureEnlargeConstructionEnvelope>(
+                invalid
+            )
+            .is_err()
+        );
         let mut invalid = wire.clone();
         invalid["raw_scalars"][1] = serde_json::json!("0000");
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureEnlargeConstructionEnvelope>(
+                invalid
+            )
+            .is_err()
+        );
         let mut invalid = wire.clone();
         invalid["references"][0]["raw_object_index"] = serde_json::json!("00");
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureEnlargeConstructionEnvelope>(
+                invalid
+            )
+            .is_err()
+        );
     }
 }

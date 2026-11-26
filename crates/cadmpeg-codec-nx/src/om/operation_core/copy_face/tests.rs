@@ -25,9 +25,13 @@ fn face_copy_admits_signed_recipe_and_complete_wire_with_exact_limits() {
     let bytes = core();
     assert_eq!(read(&bytes), Some([1, 2, 3, 4, 5, 6, 7]));
     let value = wire(bytes.clone());
-    let decoded: OperationCore = serde_json::from_value(value.clone()).unwrap();
+    let decoded: OperationCore =
+        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
     assert_eq!(decoded.as_bytes(), bytes);
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), value);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&decoded).unwrap(),
+        value
+    );
     let record = Record {
         id: "nx:feature:core#0",
         core: decoded,
@@ -41,12 +45,12 @@ fn face_copy_admits_signed_recipe_and_complete_wire_with_exact_limits() {
     }
     let mut trailing = bytes.clone();
     trailing.push(0);
-    assert!(serde_json::from_value::<OperationCore>(wire(trailing)).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(trailing)).is_err());
     for offset in [0, 7, 8, bytes.len() - 3] {
         let mut invalid = bytes.clone();
         invalid[offset] = 0;
         assert!(
-            serde_json::from_value::<OperationCore>(wire(invalid)).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(invalid)).is_err(),
             "offset {offset}"
         );
     }

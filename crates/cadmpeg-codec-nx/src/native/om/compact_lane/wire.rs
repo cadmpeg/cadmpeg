@@ -225,18 +225,26 @@ mod tests {
             "member_indices": [2, 3], "raw_member_indices": ["8002","03"], "member_data_blocks": ["a", "b"],
             "source_offset": 9, "anchor_source_offset": 11, "member_source_offsets": [13, 15],
         });
-        let lane: DataBlockCountedIndexLane = serde_json::from_value(json.clone()).unwrap();
-        assert_eq!(serde_json::to_value(lane).unwrap(), json);
+        let lane: DataBlockCountedIndexLane =
+            cadmpeg_core::serde_erase::json::from_value(json.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(lane).unwrap(),
+            json
+        );
         for field in ["source_offset", "anchor_source_offset"] {
             let mut invalid = json.clone();
             invalid[field] = serde_json::json!(u64::MAX);
-            let error = serde_json::from_value::<DataBlockCountedIndexLane>(invalid).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<DataBlockCountedIndexLane>(invalid)
+                    .unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
         for member in 0..2 {
             let mut invalid = json.clone();
             invalid["member_source_offsets"][member] = serde_json::json!(u64::MAX);
-            let error = serde_json::from_value::<DataBlockCountedIndexLane>(invalid).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<DataBlockCountedIndexLane>(invalid)
+                    .unwrap_err();
             assert!(
                 error.to_string().contains("member_source_offsets"),
                 "{error}"
@@ -263,8 +271,9 @@ mod tests {
             source_entry: "entry".into(),
             frame,
         };
-        let json = serde_json::to_value(&lane).unwrap();
-        let decoded: DataBlockAbrReferenceLane = serde_json::from_value(json.clone()).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_value(&lane).unwrap();
+        let decoded: DataBlockAbrReferenceLane =
+            cadmpeg_core::serde_erase::json::from_value(json.clone()).unwrap();
         assert_eq!(decoded, lane);
         assert_eq!(
             json["slot_source_offsets"],
@@ -273,12 +282,16 @@ mod tests {
         for slot in 0..16 {
             let mut invalid = json.clone();
             invalid["slot_source_offsets"][slot] = serde_json::json!(u64::MAX);
-            let error = serde_json::from_value::<DataBlockAbrReferenceLane>(invalid).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<DataBlockAbrReferenceLane>(invalid)
+                    .unwrap_err();
             assert!(error.to_string().contains("slot_source_offsets"), "{error}");
         }
         let mut invalid = json;
         invalid["source_offset"] = serde_json::json!(u64::MAX);
-        let error = serde_json::from_value::<DataBlockAbrReferenceLane>(invalid).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<DataBlockAbrReferenceLane>(invalid)
+                .unwrap_err();
         assert!(error.to_string().contains("source_offset"), "{error}");
     }
     #[test]
@@ -297,7 +310,10 @@ mod tests {
                 12
             )]
         );
-        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+            json
+        );
         for field in [
             "member_indices",
             "raw_member_indices",
@@ -306,7 +322,7 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = serde_json::json!([]);
-            assert!(serde_json::from_value::<
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
                 crate::native::om::compact_lane::DataBlockCountedIndexLane,
             >(malformed)
             .is_err());
@@ -318,7 +334,7 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = invalid;
-            let error = serde_json::from_value::<
+            let error = cadmpeg_core::serde_erase::json::from_value::<
                 crate::native::om::compact_lane::DataBlockCountedIndexLane,
             >(malformed)
             .unwrap_err();
@@ -349,7 +365,10 @@ mod tests {
         assert!(lane.frame.slots()[1..]
             .iter()
             .all(|slot| slot.atom.is_none()));
-        assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&lane).unwrap(),
+            json
+        );
         for field in [
             "slot_indices",
             "raw_slot_indices",
@@ -358,7 +377,7 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field].as_array_mut().unwrap().pop();
-            assert!(serde_json::from_value::<
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
                 crate::native::om::compact_lane::DataBlockAbrReferenceLane,
             >(malformed)
             .is_err());
@@ -366,7 +385,7 @@ mod tests {
         for field in ["slot_indices", "slot_data_blocks"] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field][0] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
                 crate::native::om::compact_lane::DataBlockAbrReferenceLane,
             >(malformed)
             .is_err());
@@ -375,7 +394,7 @@ mod tests {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed["raw_slot_indices"][slot] =
                 serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
-            let error = serde_json::from_value::<
+            let error = cadmpeg_core::serde_erase::json::from_value::<
                 crate::native::om::compact_lane::DataBlockAbrReferenceLane,
             >(malformed)
             .unwrap_err();

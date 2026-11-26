@@ -581,7 +581,8 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         0.01,
         SerializedSupportUv::default(),
     )];
-    let lanes_before = serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap();
+    let lanes_before =
+        cadmpeg_core::serde_erase::json::to_value(&result.ir().geometry.procedural_curves).unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
@@ -604,7 +605,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         assert!(ctx.resource_refusal().is_none());
     });
     assert_eq!(
-        serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&result.ir().geometry.procedural_curves).unwrap(),
         lanes_before
     );
     // A loose-fit/prior-validation certificate cannot rescue a structural

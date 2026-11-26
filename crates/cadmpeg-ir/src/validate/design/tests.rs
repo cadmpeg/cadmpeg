@@ -36,7 +36,7 @@ fn key(kind: &str, key: &str) -> String {
 }
 
 fn from<T: DeserializeOwned>(value: Value) -> T {
-    serde_json::from_value(value).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(value).unwrap()
 }
 
 fn feature(name: &str, operation: Value) -> Feature {
@@ -1002,7 +1002,9 @@ fn the_walk_of_the_deepest_construction_runs_on_the_smallest_default_stack() {
     let (depth, ir) = (1..)
         .map(|depth| timeline(vec![feature("a", plane_datum(nested_plane(depth)))]))
         .map_while(|ir| {
-            let depth = crate::bounds::text_depth(&serde_json::to_string(&ir).unwrap());
+            let depth = crate::bounds::text_depth(
+                &cadmpeg_core::serde_erase::json::to_string(&ir).unwrap(),
+            );
             (depth <= crate::bounds::MAX_DOCUMENT_DEPTH).then_some((depth, ir))
         })
         .last()
