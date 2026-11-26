@@ -182,3 +182,64 @@ fn manifest_reference_blank_identity_shares_present_target_identity() {
         });
     }
 }
+
+fn without_classification(bytes: &mut Vec<u8>, count: u32) {
+    let mut pair = Vec::new();
+    crate::test_support::lp_utf16(&mut pair, "linkClassification");
+    crate::test_support::lp_utf16(&mut pair, "OriginalDesign");
+    let at = bytes
+        .windows(pair.len())
+        .position(|window| window == pair)
+        .unwrap();
+    bytes.drain(at..at + pair.len());
+    let prefix: Vec<u8> = [2u32, 4, 1, 0, 6]
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
+    let at = bytes
+        .windows(prefix.len())
+        .position(|window| window == prefix)
+        .unwrap()
+        + 16;
+    bytes[at..at + 4].copy_from_slice(&count.to_le_bytes());
+}
+
+#[test]
+fn a_five_property_reference_stores_no_classification() {
+    let mut bytes = api_reference_extension(&[(
+        "11111111-2222-4333-8444-555555555555",
+        "Target",
+        "target.f3d",
+    )]);
+    without_classification(&mut bytes, 5);
+    crate::test_support::with_decode_context(|ctx| {
+        let table = parse(ctx, View::over_retained(&bytes)).unwrap();
+        assert_eq!(table.references.len(), 1);
+        let identity = &table.documents["target.f3d"];
+        assert_eq!(
+            identity.document_id.as_ref().unwrap().as_str(),
+            "urn:adsk.wipprod:dm.lineage:Target"
+        );
+        assert_eq!(
+            identity.version.as_ref().unwrap().as_str(),
+            "urn:adsk.wipprod:fs.file:vf.Target?version=7"
+        );
+        assert!(table.identity_losses.is_empty());
+    });
+}
+
+#[test]
+fn a_six_property_reference_requires_its_classification() {
+    let mut bytes = api_reference_extension(&[(
+        "11111111-2222-4333-8444-555555555555",
+        "Target",
+        "target.f3d",
+    )]);
+    let mut unclassified = bytes.clone();
+    without_classification(&mut unclassified, 6);
+    replace_property(&mut bytes, "linkClassification", "Derived");
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(parse(ctx, View::over_retained(&bytes)).is_err());
+        assert!(parse(ctx, View::over_retained(&unclassified)).is_err());
+    });
+}
