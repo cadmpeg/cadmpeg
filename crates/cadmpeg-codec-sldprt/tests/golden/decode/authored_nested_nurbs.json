@@ -2,7 +2,22 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#968:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#968:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [
         {
           "kind": "unordered",
@@ -52,6 +67,7 @@
       "scopes": [
         {
           "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#968:0",
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
@@ -79,7 +95,7 @@
                 },
                 {
                   "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:2"
+                  "value": "sldprt:model:sketch-entity#348:0:0:2:end"
                 }
               ],
               "values": []
@@ -102,7 +118,7 @@
                 },
                 {
                   "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:1"
+                  "value": "sldprt:model:sketch-entity#348:0:0:1:start"
                 }
               ],
               "values": []
@@ -115,20 +131,16 @@
           "id": "sldprt:model:sketch-constraint#348:0:0:2",
           "native_options": {},
           "relation": {
-            "kind": "native",
+            "kind": "coincident",
             "value": {
-              "kind": "sldprt:coincident_loci",
-              "operands": [
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:1"
-                },
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:2"
-                }
-              ],
-              "values": []
+              "a": {
+                "kind": "entity",
+                "value": "sldprt:model:sketch-entity#348:0:0:1:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "sldprt:model:sketch-entity#348:0:0:2:start"
+              }
             }
           },
           "sketch": "sldprt:model:sketch#348:0:0",
@@ -148,7 +160,7 @@
                 },
                 {
                   "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:1:0:2"
+                  "value": "sldprt:model:sketch-entity#348:1:0:2:end"
                 }
               ],
               "values": []
@@ -171,7 +183,7 @@
                 },
                 {
                   "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:1:0:1"
+                  "value": "sldprt:model:sketch-entity#348:1:0:1:start"
                 }
               ],
               "values": []
@@ -184,20 +196,16 @@
           "id": "sldprt:model:sketch-constraint#348:1:0:5",
           "native_options": {},
           "relation": {
-            "kind": "native",
+            "kind": "coincident",
             "value": {
-              "kind": "sldprt:coincident_loci",
-              "operands": [
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:1:0:1"
-                },
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:1:0:2"
-                }
-              ],
-              "values": []
+              "a": {
+                "kind": "entity",
+                "value": "sldprt:model:sketch-entity#348:1:0:1:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "sldprt:model:sketch-entity#348:1:0:2:start"
+              }
             }
           },
           "sketch": "sldprt:model:sketch#348:1:0",
@@ -276,6 +284,54 @@
           "definition": {
             "kind": "free",
             "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:1",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 1000.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:1",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
               "kind": "line",
               "value": {
                 "end": {
@@ -293,6 +349,54 @@
           "native_options": {},
           "native_ref": "0:sldprt:brep:edge#42",
           "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:2:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:2",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:2:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:2",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
           "sketch": "sldprt:model:sketch#348:0:0",
           "source_settings": {}
         },
@@ -376,6 +480,54 @@
           "definition": {
             "kind": "free",
             "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:1:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:1:0:1",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:1:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 1000.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:1:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:1:0:1",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:1:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
               "kind": "line",
               "value": {
                 "end": {
@@ -393,6 +545,54 @@
           "native_options": {},
           "native_ref": "1:sldprt:brep:edge#42",
           "roles": [],
+          "sketch": "sldprt:model:sketch#348:1:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:2:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:1:0:2",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:1:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:2:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:1:0:2",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
           "sketch": "sldprt:model:sketch#348:1:0",
           "source_settings": {}
         }
@@ -1100,12 +1300,12 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "design.sketch-outside-history",
+            "code": "design.sketch-locus-unplaced",
             "kind": "decode_diagnostic",
             "namespace": "sldprt"
           }
         },
-        "message": "2 sketches that no feature-history node lists are each the operation of a feature of one unordered Group of the part's scope (interim): sldprt:model:sketch#348:0:0, sldprt:model:sketch#348:1:0",
+        "message": "4 sketch relations name the start, end, or center of a curve whose position there is not stored, and state the curve: sldprt:model:sketch-constraint#348:0:0:0, sldprt:model:sketch-constraint#348:0:0:1, sldprt:model:sketch-constraint#348:1:0:3, sldprt:model:sketch-constraint#348:1:0:4",
         "severity": "warning"
       }
     ],

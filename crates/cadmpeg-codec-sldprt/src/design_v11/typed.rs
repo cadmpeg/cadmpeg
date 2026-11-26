@@ -8,6 +8,7 @@ use cadmpeg_ir::design::construction::InputReference;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation};
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::parameter::DimensionDisplay;
+use cadmpeg_ir::design::projection::spatial_sketch;
 use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::document::Model;
@@ -223,47 +224,63 @@ pub(super) fn project(
 /// entities stated by their native kind, and one naming the dimensions that
 /// bind no parameter of the design.
 fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
-    let outside = sketches
-        .outside
+    let spatial = |field: fn(&spatial_sketch::Restated) -> &Vec<String>| {
+        sketches
+            .spatial
+            .iter()
+            .flat_map(field)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let native_entities = sketches
+        .native_entities
         .iter()
-        .filter_map(|feature| match &feature.definition.operation {
-            FeatureOperation::Sketch(sketch) => Some(sketch.as_str().to_owned()),
-            _ => None,
-        })
+        .map(|entity| entity.as_str().to_owned())
+        .chain(spatial(|restated| &restated.native_entities))
+        .collect::<Vec<_>>();
+    let unbound = sketches
+        .unbound
+        .iter()
+        .map(|constraint| constraint.as_str().to_owned())
+        .chain(spatial(|restated| &restated.unbound))
+        .collect::<Vec<_>>();
+    let native_relations = spatial(|restated| &restated.native_relations);
+    let unplaced = sketches
+        .unplaced
+        .iter()
+        .map(|constraint| constraint.as_str().to_owned())
         .collect::<Vec<_>>();
     let mut notes = Vec::new();
-    if !outside.is_empty() {
-        notes.push(SldprtLossCode::DesignSketchOutsideHistory.note(format!(
-            "{} sketches that no feature-history node lists are each the operation of a \
-             feature of one unordered Group of the part's scope (interim): {}",
-            outside.len(),
-            listed(outside.into_iter()),
-        )));
-    }
-    if !sketches.native_entities.is_empty() {
+    if !native_entities.is_empty() {
         notes.push(SldprtLossCode::DesignSketchEntityNative.note(format!(
-            "{} sketch entities have no planar curve and state their native kind with no \
-             solved curve: {}",
-            sketches.native_entities.len(),
-            listed(
-                sketches
-                    .native_entities
-                    .iter()
-                    .map(|entity| entity.as_str().to_owned())
-            ),
+            "{} sketch entities have no planar or spatial curve and state their native kind \
+             with no solved curve: {}",
+            native_entities.len(),
+            listed(native_entities.into_iter()),
         )));
     }
-    if !sketches.unbound.is_empty() {
+    if !unbound.is_empty() {
         notes.push(SldprtLossCode::DesignSketchDimensionUnbound.note(format!(
             "{} sketch dimensions bind no parameter of the design and state the value their \
              parameter record stores, or no value: {}",
-            sketches.unbound.len(),
-            listed(
-                sketches
-                    .unbound
-                    .iter()
-                    .map(|constraint| constraint.as_str().to_owned())
-            ),
+            unbound.len(),
+            listed(unbound.into_iter()),
+        )));
+    }
+    if !unplaced.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchLocusUnplaced.note(format!(
+            "{} sketch relations name the start, end, or center of a curve whose position \
+             there is not stored, and state the curve: {}",
+            unplaced.len(),
+            listed(unplaced.into_iter()),
+        )));
+    }
+    if !native_relations.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchRelationNative.note(format!(
+            "{} spatial sketch relations have no typed relation of their operands and \
+             value, and state their native kind: {}",
+            native_relations.len(),
+            listed(native_relations.into_iter()),
         )));
     }
     notes

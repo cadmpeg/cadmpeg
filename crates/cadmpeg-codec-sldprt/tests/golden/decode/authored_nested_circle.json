@@ -2,7 +2,22 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#806:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#806:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [
         {
           "kind": "unordered",
@@ -38,6 +53,7 @@
       "scopes": [
         {
           "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#806:0",
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
@@ -680,18 +696,6 @@
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "design.sketch-outside-history",
-            "kind": "decode_diagnostic",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "1 sketches that no feature-history node lists are each the operation of a feature of one unordered Group of the part's scope (interim): sldprt:model:sketch#348:0:0",
         "severity": "warning"
       }
     ],

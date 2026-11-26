@@ -8,18 +8,20 @@ use cadmpeg_core::text::NonBlankString;
 use crate::design::construction::{FrameValue, ScalarDimension};
 use crate::design::dimension::Dimension;
 use crate::design::ops::sketch::{
-    AngleOperands, DistanceAxis, Operand, Planar, PlanarCurve, RadialMeasure, SketchRelation,
+    AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar,
+    PlanarCurve, RadialMeasure, SketchEntity, SketchRelation,
 };
+use crate::design::options::NativeOptions;
 use crate::design::units::Quantity;
 use crate::features::parameters::ParameterValue as StoredValue;
 use crate::features::ParameterId;
 use crate::math::portable::Portable;
-use crate::scalar::{Angle, Length};
+use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchLocus, SketchPlacement,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
 };
-use crate::units::{UnitVector2, UnitVector3};
+use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 /// The planar curve of a decoded sketch geometry, where the geometry is a
 /// point, a line, a circle, an arc, an ellipse, or a NURBS curve whose
@@ -132,19 +134,51 @@ impl DimensionValue {
         }
     }
 
-    /// The value as a scalar of `quantity`, an angle or a length.
+    /// The dimensionless value the value states, where it is a parameter or
+    /// a stored real.
+    #[must_use]
+    pub fn ratio(&self) -> Option<Dimension<FiniteReal>> {
+        match self {
+            Self::Parameter(parameter) => Some(Dimension::Parameter(parameter.clone())),
+            Self::Stored(StoredValue::Real(value)) => Some(Dimension::Literal(*value)),
+            Self::Stored(_) => None,
+        }
+    }
+
+    /// The value as a scalar of `quantity`: an angle, a dimensionless
+    /// ratio, or a length.
     #[must_use]
     pub fn scalar(&self, quantity: Quantity) -> Option<ScalarDimension> {
-        if quantity == Quantity::ANGLE {
-            self.angle().map(ScalarDimension::Angle)
-        } else {
-            self.length().map(ScalarDimension::Length)
+        match quantity {
+            Quantity::ANGLE => self.angle().map(ScalarDimension::Angle),
+            Quantity::REAL => self.ratio().map(ScalarDimension::Ratio),
+            _ => self.length().map(ScalarDimension::Length),
         }
     }
 }
 
+/// The quantity of the value that the decoded parameter record `parameter`
+/// of `parameters` stores: a length, an angle, or a real.
+#[must_use]
+pub fn stored_quantity(
+    parameters: &[crate::features::parameters::DesignParameter],
+    parameter: &ParameterId,
+) -> Option<Quantity> {
+    match parameters
+        .iter()
+        .find(|candidate| &candidate.id == parameter)?
+        .value
+        .as_ref()?
+    {
+        StoredValue::Length(_) => Some(Quantity::LENGTH),
+        StoredValue::Angle(_) => Some(Quantity::ANGLE),
+        StoredValue::Real(_) => Some(Quantity::REAL),
+        _ => None,
+    }
+}
+
 /// The value that the decoded parameter record `parameter` of `parameters`
-/// stores, where it is a value of `quantity`, a length or an angle.
+/// stores, where it is a value of `quantity`: a length, an angle, or a real.
 #[must_use]
 pub fn stored_value(
     parameters: &[crate::features::parameters::DesignParameter],
@@ -157,10 +191,51 @@ pub fn stored_value(
         .value
         .as_ref()?;
     match (quantity, value) {
-        (Quantity::LENGTH, StoredValue::Length(_)) | (Quantity::ANGLE, StoredValue::Angle(_)) => {
-            Some(DimensionValue::Stored(value.clone()))
-        }
+        (Quantity::LENGTH, StoredValue::Length(_))
+        | (Quantity::ANGLE, StoredValue::Angle(_))
+        | (Quantity::REAL, StoredValue::Real(_)) => Some(DimensionValue::Stored(value.clone())),
         _ => None,
+    }
+}
+
+/// The `Driven` parameter `parameter` of `quantity` that a reference
+/// dimension of the sketch of `owner` binds where its scope states no
+/// parameter of that id (§6.1 Dimensions, D11). Its value is the one its
+/// record stores where that is of `quantity`.
+pub fn driven_parameter(
+    parameters: &[crate::features::parameters::DesignParameter],
+    parameter: &ParameterId,
+    quantity: Quantity,
+    scope: &crate::ids::ProductDefinitionId,
+    owner: &crate::features::FeatureId,
+    name: Option<NonBlankString>,
+) -> crate::design::parameter::DesignParameter {
+    use crate::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue};
+    let value = match stored_value(parameters, parameter, quantity) {
+        Some(DimensionValue::Stored(StoredValue::Length(length))) => FiniteReal::new(length.get()),
+        Some(DimensionValue::Stored(StoredValue::Angle(angle))) => FiniteReal::new(angle.get()),
+        Some(DimensionValue::Stored(StoredValue::Real(value))) => Some(value),
+        _ => None,
+    };
+    crate::design::parameter::DesignParameter {
+        id: parameter.clone(),
+        scope: scope.clone(),
+        owner: Some(ParameterOwner::Feature(owner.clone())),
+        name,
+        kind: crate::design::units::ValueKind::Quantity(quantity),
+        unit: None,
+        definition: ParameterDefinition::Driven,
+        value: value.map(ParameterValue::Number),
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: parameters
+            .iter()
+            .find(|candidate| &candidate.id == parameter)
+            .and_then(|source| source.native_ref.clone()),
     }
 }
 
@@ -235,9 +310,13 @@ pub fn geometric(kind: &Kind, loci: &impl Loci) -> Option<SketchRelation<Planar>
 }
 
 /// The parameter that the dimension `kind` binds and the quantity it
-/// measures, where `kind` is a distance, a radius, a diameter, or an angle.
-#[must_use]
-pub fn dimension_parameter(kind: &Kind) -> Option<(&ParameterId, Quantity)> {
+/// measures, where `kind` is a distance, a radius, a diameter, or an angle,
+/// or a native relation that names a parameter and whose quantity `native`
+/// gives from its native class and its parameter.
+pub fn dimension_parameter(
+    kind: &Kind,
+    native: impl FnOnce(&str, &ParameterId) -> Option<Quantity>,
+) -> Option<(&ParameterId, Quantity)> {
     Some(match kind {
         Kind::Distance { parameter, .. }
         | Kind::DistanceLoci { parameter, .. }
@@ -246,6 +325,11 @@ pub fn dimension_parameter(kind: &Kind) -> Option<(&ParameterId, Quantity)> {
         | Kind::Radius { parameter, .. }
         | Kind::Diameter { parameter, .. } => (parameter, Quantity::LENGTH),
         Kind::Angle { parameter, .. } => (parameter, Quantity::ANGLE),
+        Kind::Native {
+            native_kind,
+            parameter: Some(parameter),
+            ..
+        } => (parameter, native(native_kind.as_str(), parameter)?),
         _ => return None,
     })
 }
@@ -318,10 +402,11 @@ pub fn dimension(
 }
 
 /// Whether `kind` is a relation of the decoded vocabulary that states a
-/// value. A `Native` relation states one where its decoder's table says so.
+/// value. A `Native` relation states one where it names a parameter.
 #[must_use]
 pub fn is_dimension(kind: &Kind) -> bool {
     match kind {
+        Kind::Native { parameter, .. } => parameter.is_some(),
         Kind::PointCoordinateValues { .. }
         | Kind::MidpointCoordinate { .. }
         | Kind::Offset { .. }
@@ -345,8 +430,7 @@ pub fn is_dimension(kind: &Kind) -> bool {
         | Kind::RepeatedDiameter { .. }
         | Kind::SnellsLaw { .. }
         | Kind::Weight { .. } => true,
-        Kind::Native { .. }
-        | Kind::Disabled {}
+        Kind::Disabled {}
         | Kind::Coincident { .. }
         | Kind::Polygon { .. }
         | Kind::SplineGroup { .. }
@@ -384,23 +468,34 @@ pub fn is_dimension(kind: &Kind) -> bool {
 
 /// The relation that states `kind` in its decoder's vocabulary, named
 /// `<codec>:<native class>` for a native relation and `<codec>:<decoded
-/// kind>` otherwise, on the entities `kind` names and with `values`.
+/// kind>` otherwise, on the operands `kind` names and with `values`. A
+/// point that `loci` states is its operand, and the curve it lies on
+/// otherwise.
 #[must_use]
 pub fn native_relation(
-    codec: &str,
+    codec: &NonBlankString,
     kind: &Kind,
     values: Vec<ScalarDimension>,
+    loci: &impl Loci,
 ) -> SketchRelation<Planar> {
     let name = match kind {
         Kind::Native { native_kind, .. } => qualified(codec, native_kind.as_str()),
-        _ => qualified(
-            codec,
-            &tag(kind).unwrap_or_else(|| "sketch_relation".to_owned()),
-        ),
+        _ => qualified(codec, relation_name(kind)),
     };
+    let mut operands = Vec::new();
+    for operand in named(kind).into_iter().map(|named| match named {
+        Named::Entity(id) => Operand::Entity(id.clone()),
+        Named::Locus(locus) => loci
+            .operand(locus)
+            .unwrap_or_else(|| Operand::Entity(locus_entity(locus).clone())),
+    }) {
+        if !operands.contains(&operand) {
+            operands.push(operand);
+        }
+    }
     SketchRelation::Native {
         kind: name,
-        operands: operands(kind),
+        operands,
         values,
     }
 }
@@ -408,62 +503,144 @@ pub fn native_relation(
 /// The kind of an entity with no planar curve, named `<codec>:<native
 /// class>` for a native geometry and `<codec>:<decoded kind>` otherwise.
 #[must_use]
-pub fn native_entity_kind(codec: &str, geometry: &SketchGeometry) -> NonBlankString {
-    match geometry.definition() {
-        SketchGeometryDefinition::Native { native_kind } => qualified(codec, native_kind.as_str()),
-        _ => qualified(
-            codec,
-            &tag(geometry).unwrap_or_else(|| "sketch_entity".to_owned()),
-        ),
-    }
+pub fn native_entity_kind(codec: &NonBlankString, geometry: &SketchGeometry) -> NonBlankString {
+    let name = match geometry.definition() {
+        SketchGeometryDefinition::Native { native_kind } => native_kind.as_str(),
+        SketchGeometryDefinition::Point { .. } => "point",
+        SketchGeometryDefinition::Line { .. } => "line",
+        SketchGeometryDefinition::ReferenceLine { .. } => "reference_line",
+        SketchGeometryDefinition::Circle { .. } => "circle",
+        SketchGeometryDefinition::Arc { .. } => "arc",
+        SketchGeometryDefinition::Ellipse { .. } => "ellipse",
+        SketchGeometryDefinition::Hyperbola { .. } => "hyperbola",
+        SketchGeometryDefinition::Parabola { .. } => "parabola",
+        SketchGeometryDefinition::Nurbs { .. } => "nurbs",
+        SketchGeometryDefinition::Text { .. } => "text",
+        SketchGeometryDefinition::ExternalReference { .. } => "external_reference",
+    };
+    qualified(codec, name)
 }
 
 /// `name` in the namespace of `codec`.
-fn qualified(codec: &str, name: &str) -> NonBlankString {
-    let prefix = format!("{codec}:");
-    let name = if name.starts_with(&prefix) {
-        name.to_owned()
-    } else {
-        format!("{prefix}{name}")
-    };
-    NonBlankString::new(name).unwrap_or_else(|| cadmpeg_core::nonblank_literal!("sketch"))
+pub(crate) fn qualified(codec: &NonBlankString, name: &str) -> NonBlankString {
+    match name
+        .strip_prefix(codec.as_str())
+        .filter(|tail| tail.starts_with(':'))
+    {
+        Some(tail) => codec.with_suffix(tail),
+        None => codec.with_suffix(&format!(":{name}")),
+    }
 }
 
-/// The serialized `kind` tag of `value`.
-fn tag(value: &impl serde::Serialize) -> Option<String> {
-    cadmpeg_core::serde_erase::to_json_value(value)
-        .ok()?
-        .get("kind")?
-        .as_str()
-        .map(str::to_owned)
+/// The decoded kind of a relation.
+fn relation_name(kind: &Kind) -> &'static str {
+    match kind {
+        Kind::Native { .. } => "native",
+        Kind::Disabled {} => "disabled",
+        Kind::Coincident { .. } => "coincident",
+        Kind::Polygon { .. } => "polygon",
+        Kind::SplineGroup { .. } => "spline_group",
+        Kind::RectangularPattern { .. } => "rectangular_pattern",
+        Kind::CircularPattern { .. } => "circular_pattern",
+        Kind::TextFrame { .. } => "text_frame",
+        Kind::TextPath { .. } => "text_path",
+        Kind::CoincidentLoci { .. } => "coincident_loci",
+        Kind::SameCoordinate { .. } => "same_coordinate",
+        Kind::PointOnObject { .. } => "point_on_object",
+        Kind::Midpoint { .. } => "midpoint",
+        Kind::PointCoordinateValues { .. } => "point_coordinate_values",
+        Kind::MidpointCoordinate { .. } => "midpoint_coordinate",
+        Kind::Offset { .. } => "offset",
+        Kind::ProjectedCopy { .. } => "projected_copy",
+        Kind::AtIntersection { .. } => "at_intersection",
+        Kind::Concentric { .. } => "concentric",
+        Kind::Coradial { .. } => "coradial",
+        Kind::Collinear { .. } => "collinear",
+        Kind::Symmetric { .. } => "symmetric",
+        Kind::PointSymmetric { .. } => "point_symmetric",
+        Kind::Horizontal { .. } => "horizontal",
+        Kind::Vertical { .. } => "vertical",
+        Kind::Parallel { .. } => "parallel",
+        Kind::Perpendicular { .. } => "perpendicular",
+        Kind::Tangent { .. } => "tangent",
+        Kind::TangentLoci { .. } => "tangent_loci",
+        Kind::Curvature { .. } => "curvature",
+        Kind::Equal { .. } => "equal",
+        Kind::Fixed { .. } => "fixed",
+        Kind::ArcAngle { .. } => "arc_angle",
+        Kind::EllipseAngle { .. } => "ellipse_angle",
+        Kind::Distance { .. } => "distance",
+        Kind::DistanceLoci { .. } => "distance_loci",
+        Kind::DistanceLociValue { .. } => "distance_loci_value",
+        Kind::PolarDistance { .. } => "polar_distance",
+        Kind::AngleDifference { .. } => "angle_difference",
+        Kind::ScalarEquality { .. } => "scalar_equality",
+        Kind::EqualDistance { .. } => "equal_distance",
+        Kind::HorizontalDistance { .. } => "horizontal_distance",
+        Kind::VerticalDistance { .. } => "vertical_distance",
+        Kind::RepeatedDistance { .. } => "repeated_distance",
+        Kind::RepeatedLength { .. } => "repeated_length",
+        Kind::ParallelLineSetDistance { .. } => "parallel_line_set_distance",
+        Kind::Angle { .. } => "angle",
+        Kind::AngleToAxis { .. } => "angle_to_axis",
+        Kind::Radius { .. } => "radius",
+        Kind::RepeatedRadius { .. } => "repeated_radius",
+        Kind::Diameter { .. } => "diameter",
+        Kind::RepeatedDiameter { .. } => "repeated_diameter",
+        Kind::SnellsLaw { .. } => "snells_law",
+        Kind::Weight { .. } => "weight",
+        Kind::InternalAlignment { .. } => "internal_alignment",
+        Kind::Group { .. } => "group",
+        Kind::Text { .. } => "text",
+    }
 }
 
-/// The distinct entities that `kind` names, in the order it names them.
-fn operands(kind: &Kind) -> Vec<Operand<Planar>> {
-    let entities = match kind {
+/// An operand that a decoded relation names: an entity, or a point on an
+/// entity.
+enum Named<'k> {
+    Entity(&'k SketchEntityId),
+    Locus(&'k SketchLocus),
+}
+
+/// The operands that `kind` names, in the order it names them, for the
+/// relations whose operands a native relation states.
+fn named(kind: &Kind) -> Vec<Named<'_>> {
+    match kind {
         Kind::Native { entities, .. }
         | Kind::Coincident { entities }
-        | Kind::Distance { entities, .. } => entities.clone(),
-        Kind::CoincidentLoci { loci } => loci.iter().map(locus_entity).cloned().collect(),
+        | Kind::Distance { entities, .. } => entities.iter().map(Named::Entity).collect(),
+        Kind::CoincidentLoci { loci } => loci.iter().map(Named::Locus).collect(),
         Kind::PointOnObject { point, entity } | Kind::Midpoint { point, entity } => {
-            vec![locus_entity(point).clone(), entity.clone()]
+            vec![Named::Locus(point), Named::Entity(entity)]
         }
         Kind::DistanceLoci { first, second, .. }
         | Kind::HorizontalDistance { first, second, .. }
         | Kind::VerticalDistance { first, second, .. } => {
-            vec![locus_entity(first).clone(), locus_entity(second).clone()]
+            vec![Named::Locus(first), Named::Locus(second)]
         }
-        Kind::Radius { entity, .. } | Kind::Diameter { entity, .. } => vec![entity.clone()],
-        Kind::Angle { first, second, .. } => vec![first.clone(), second.clone()],
+        Kind::Symmetric {
+            first,
+            second,
+            axis,
+        } => vec![
+            Named::Locus(first),
+            Named::Locus(second),
+            Named::Entity(axis),
+        ],
+        Kind::Radius { entity, .. } | Kind::Diameter { entity, .. } => {
+            vec![Named::Entity(entity)]
+        }
+        Kind::Angle { first, second, .. } => vec![Named::Entity(first), Named::Entity(second)],
         _ => Vec::new(),
-    };
-    let mut operands = Vec::with_capacity(entities.len());
-    for entity in entities {
-        if !operands.contains(&entity) {
-            operands.push(entity);
-        }
     }
-    operands.into_iter().map(Operand::Entity).collect()
+}
+
+/// The loci at a curve's start, end, or center that `kind` names.
+fn point_loci(kind: &Kind) -> impl Iterator<Item = &SketchLocus> {
+    named(kind).into_iter().filter_map(|named| match named {
+        Named::Locus(locus) if !matches!(locus, SketchLocus::Entity(_)) => Some(locus),
+        _ => None,
+    })
 }
 
 /// The entity a locus lies on.
@@ -473,6 +650,201 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
         | SketchLocus::Start(id)
         | SketchLocus::End(id)
         | SketchLocus::Center(id) => id,
+    }
+}
+
+/// The points at the start, end, or center of a curve that the relations of
+/// one sketch name, where the decoded sketch states no point entity there
+/// (§6.1, Points are entities). Each is a point entity minted for its locus,
+/// with the role it holds on its curve, or the point entity that the locus
+/// names on a point.
+#[derive(Debug, Default)]
+pub struct LocusPoints {
+    points: Vec<LocusPoint>,
+    unplaced: Vec<SketchLocus>,
+}
+
+#[derive(Debug)]
+struct LocusPoint {
+    locus: SketchLocus,
+    entity: SketchEntityId,
+    position: FinitePoint2,
+    minted: bool,
+}
+
+impl LocusPoints {
+    /// The points of the loci that `kinds`, the relations of a sketch whose
+    /// entities are `entities`, name and that `stated` does not resolve.
+    pub fn new<'k>(
+        kinds: impl IntoIterator<Item = &'k Kind>,
+        entities: &[&crate::sketches::SketchEntity],
+        stated: impl Fn(&SketchLocus) -> bool,
+    ) -> Self {
+        let mut out = Self::default();
+        for locus in kinds.into_iter().flat_map(point_loci) {
+            if stated(locus)
+                || out.points.iter().any(|point| &point.locus == locus)
+                || out.unplaced.contains(locus)
+            {
+                continue;
+            }
+            let curve = locus_entity(locus);
+            let geometry = entities
+                .iter()
+                .find(|entity| entity.id() == curve)
+                .map(|entity| &entity.geometry);
+            let point = geometry.and_then(|geometry| match geometry.definition() {
+                SketchGeometryDefinition::Point { position } => Some(LocusPoint {
+                    locus: locus.clone(),
+                    entity: curve.clone(),
+                    position: *position,
+                    minted: false,
+                }),
+                _ => locus_position(geometry, locus).and_then(|position| {
+                    let entity = SketchEntityId::mint(format!(
+                        "{}:{}",
+                        curve.as_str(),
+                        match locus {
+                            SketchLocus::Start(_) => "start",
+                            SketchLocus::End(_) => "end",
+                            _ => "center",
+                        }
+                    ))
+                    .ok()
+                    .filter(|id| entities.iter().all(|entity| entity.id() != id))?;
+                    Some(LocusPoint {
+                        locus: locus.clone(),
+                        entity,
+                        position,
+                        minted: true,
+                    })
+                }),
+            });
+            match point {
+                Some(point) => out.points.push(point),
+                None => out.unplaced.push(locus.clone()),
+            }
+        }
+        out
+    }
+
+    /// The point entity that `locus` names.
+    #[must_use]
+    pub fn operand(&self, locus: &SketchLocus) -> Option<Operand<Planar>> {
+        self.point(locus)
+            .map(|point| Operand::Entity(point.entity.clone()))
+    }
+
+    /// The position of the point that `locus` names.
+    #[must_use]
+    pub fn position(&self, locus: &SketchLocus) -> Option<[f64; 2]> {
+        self.point(locus)
+            .map(|point| [point.position.u, point.position.v])
+    }
+
+    /// Whether `kind` names a point that the sketch states no entity for and
+    /// whose position is not stored; such a point is stated as its curve.
+    #[must_use]
+    pub fn unplaced(&self, kind: &Kind) -> bool {
+        point_loci(kind).any(|locus| self.unplaced.contains(locus))
+    }
+
+    /// The minted point entities of the sketch `sketch`.
+    #[must_use]
+    pub fn entities(&self, sketch: &SketchId) -> Vec<SketchEntity<Planar>> {
+        self.points
+            .iter()
+            .filter(|point| point.minted)
+            .map(|point| {
+                let (of, role) = match &point.locus {
+                    SketchLocus::Start(of) => (of, DefiningRole::Start),
+                    SketchLocus::End(of) => (of, DefiningRole::End),
+                    SketchLocus::Center(of) | SketchLocus::Entity(of) => (of, DefiningRole::Center),
+                };
+                SketchEntity {
+                    id: point.entity.clone(),
+                    sketch: sketch.clone(),
+                    definition: EntityDefinition::Free(PlanarCurve::Point(point.position)),
+                    roles: vec![EntityRole {
+                        of: of.clone(),
+                        role,
+                    }],
+                    construction: None,
+                    centerline: None,
+                    native: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
+                    native_ref: None,
+                }
+            })
+            .collect()
+    }
+
+    fn point(&self, locus: &SketchLocus) -> Option<&LocusPoint> {
+        self.points.iter().find(|point| &point.locus == locus)
+    }
+}
+
+/// The position of the point `locus` names on the curve `geometry`: the
+/// ends of a line, an arc, or a bounded ellipse, and the center of a circle,
+/// an arc, or an ellipse.
+fn locus_position(geometry: &SketchGeometry, locus: &SketchLocus) -> Option<FinitePoint2> {
+    let at = |center: &FinitePoint2, [x, y]: [f64; 2]| {
+        FinitePoint2::new(crate::math::Point2 {
+            u: center.u + x,
+            v: center.v + y,
+        })
+    };
+    match (geometry.definition(), locus) {
+        (SketchGeometryDefinition::Line { start, .. }, SketchLocus::Start(_)) => Some(*start),
+        (SketchGeometryDefinition::Line { end, .. }, SketchLocus::End(_)) => Some(*end),
+        (
+            SketchGeometryDefinition::Circle { center, .. }
+            | SketchGeometryDefinition::Arc { center, .. }
+            | SketchGeometryDefinition::Ellipse { center, .. },
+            SketchLocus::Center(_),
+        ) => Some(*center),
+        (
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            SketchLocus::Start(_) | SketchLocus::End(_),
+        ) => {
+            let angle = match locus {
+                SketchLocus::Start(_) => start_angle.get(),
+                _ => end_angle.get(),
+            };
+            let (sin, cos) = angle.portable_sin_cos();
+            at(center, [radius.get() * cos, radius.get() * sin])
+        }
+        (
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle,
+                radii,
+                bounds: Some([start, end]),
+            },
+            SketchLocus::Start(_) | SketchLocus::End(_),
+        ) => {
+            let parameter = match locus {
+                SketchLocus::Start(_) => start.get(),
+                _ => end.get(),
+            };
+            let (sin_major, cos_major) = major_angle.get().portable_sin_cos();
+            let (sin, cos) = parameter.portable_sin_cos();
+            let (major, minor) = (radii.major().get() * cos, radii.minor().get() * sin);
+            at(
+                center,
+                [
+                    major * cos_major - minor * sin_major,
+                    major * sin_major + minor * cos_major,
+                ],
+            )
+        }
+        _ => None,
     }
 }
 

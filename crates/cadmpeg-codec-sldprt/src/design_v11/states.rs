@@ -65,6 +65,7 @@ pub(super) struct Scope<'a> {
 }
 
 /// The states of the configurations that are not active.
+#[derive(Default)]
 pub(super) struct States {
     /// The evaluation of each configuration whose state the source stores
     /// or flags.

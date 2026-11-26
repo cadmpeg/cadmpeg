@@ -177,12 +177,10 @@ impl GeneratedDesignRegistry {
                 (None, BodySelection::Stated) => continue,
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
-            let asm_body_key = match metadata {
-                Some(metadata) => metadata.asm_body_key(),
-                None => u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {
+            let asm_body_key =
+                u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {
                     CodecError::NotImplemented("source-less ASM body key is negative".into())
-                })?,
-            };
+                })?;
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {
                 return Err(CodecError::malformed(format_args!(

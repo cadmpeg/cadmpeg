@@ -1663,4 +1663,5 @@ mod parameters;
 mod pattern;
 mod revolve;
 mod rollback;
+mod sketch_kinds;
 mod state_zero;

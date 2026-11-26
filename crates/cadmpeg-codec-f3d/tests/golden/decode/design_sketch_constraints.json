@@ -617,7 +617,15 @@
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p801"
                 }
               ],
-              "values": []
+              "values": [
+                {
+                  "kind": "length",
+                  "value": {
+                    "kind": "parameter",
+                    "value": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1201"
+                  }
+                }
+              ]
             }
           },
           "native_options": {},

@@ -202,16 +202,17 @@ fn attempt<W: Write + Seek>(
     if write_design {
         validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
     }
-    // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
+    if has_native {
+        validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
+    }
+    // A Base Feature design keys its history stream's bodies, and the body
+    // visibilities that name them, from `0`.
     let attributes = if stamped {
         attributes.with_body_keys(target, |ordinal| ordinal)
     } else {
         attributes
     };
-    if has_native {
-        validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
-    }
     let brep = if body_less {
         Ok(Vec::new())
     } else {

@@ -610,9 +610,12 @@ pub(crate) enum SldprtLossCode {
     /// out, its dimension naming the stored curve they lie on, or states
     /// construction where no face of the solid witnesses them.
     DesignSketchDimensionCircle,
-    /// Sketches that no feature-history node lists, each the operation of a
-    /// feature of one unordered `Group` of the part's scope.
-    DesignSketchOutsideHistory,
+    /// Sketch relations on the start, end, or center of a curve whose
+    /// position there is not stored: they state the curve.
+    DesignSketchLocusUnplaced,
+    /// Spatial sketch relations with no typed relation of their operands and
+    /// value: they state their native kind.
+    DesignSketchRelationNative,
     /// Sketch entities with no planar curve, stated by their native kind
     /// with no solved curve.
     DesignSketchEntityNative,
@@ -881,7 +884,8 @@ impl SldprtLossCode {
         Self::DesignExtrudeSketchEmpty,
         Self::DesignExtrudeProfileUnchecked,
         Self::DesignSketchDimensionCircle,
-        Self::DesignSketchOutsideHistory,
+        Self::DesignSketchLocusUnplaced,
+        Self::DesignSketchRelationNative,
         Self::DesignSketchEntityNative,
         Self::DesignSketchDimensionUnbound,
         Self::DesignRevolveAxisLineInferred,
@@ -1162,7 +1166,8 @@ impl SldprtLossCode {
             Self::DesignDatumPlaneAxisAngled => "design.datum-plane-axis-angled",
             Self::DesignDatumConfigurationDropped => "design.datum-configuration-dropped",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
-            Self::DesignSketchOutsideHistory => "design.sketch-outside-history",
+            Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
+            Self::DesignSketchRelationNative => "design.sketch-relation-native",
             Self::DesignSketchEntityNative => "design.sketch-entity-native",
             Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
         }
@@ -1382,7 +1387,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeProfileDiffers
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
-            | Self::DesignSketchOutsideHistory
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchRelationNative
             | Self::DesignSketchEntityNative
             | Self::DesignSketchDimensionUnbound
             | Self::DesignRevolveAxisDerived
@@ -1509,7 +1515,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignExtrudeProfileUnchecked
             | Self::DesignSketchDimensionCircle
-            | Self::DesignSketchOutsideHistory
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchRelationNative
             | Self::DesignSketchEntityNative
             | Self::DesignSketchDimensionUnbound
             | Self::DesignRevolveAxisLineInferred
@@ -2061,7 +2068,8 @@ mod tests {
                 "design.extrude-sketch-empty",
                 "design.extrude-profile-unchecked",
                 "design.sketch-dimension-circle",
-                "design.sketch-outside-history",
+                "design.sketch-locus-unplaced",
+                "design.sketch-relation-native",
                 "design.sketch-entity-native",
                 "design.sketch-dimension-unbound",
                 "design.revolve-axis-line-inferred",

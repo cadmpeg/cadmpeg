@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests of the planar sketches of a Fusion design.
+//! Tests of the planar and spatial sketches of a Fusion design.
 #![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::InputReference;
+use cadmpeg_ir::design::construction::ScalarDimension;
 use cadmpeg_ir::design::container::{Container, OrderedKind, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
-    DistanceAxis, EntityDefinition, EntityForm, Operand, RadialMeasure, SketchPlane, SketchRelation,
+    DefiningRole, DistanceAxis, EntityDefinition, EntityForm, EntityRole, Operand, RadialMeasure,
+    SketchPlane, SketchRelation,
 };
+use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::Anchor;
 use cadmpeg_ir::document::Model;
@@ -160,6 +163,24 @@ fn unresolved_sketch(id: &str) -> Feature {
     }
 }
 
+static ROOT: std::sync::LazyLock<cadmpeg_ir::ids::ProductDefinitionId> =
+    std::sync::LazyLock::new(crate::tree::file_root_id);
+
+/// The scope of the root definition, whose design parameters are
+/// `parameters` and whose unordered members are `unordered`.
+fn scope<'a>(
+    model: &'a Model,
+    unordered: &'a BTreeSet<FeatureId>,
+    parameters: &'a [&'a cadmpeg_ir::design::parameter::DesignParameter],
+) -> super::Scope<'a> {
+    super::Scope {
+        model,
+        definition: &ROOT,
+        unordered,
+        parameters,
+    }
+}
+
 fn names(losses: &[LossNote], code: F3dLossCode, record: &str) -> bool {
     losses
         .iter()
@@ -174,7 +195,8 @@ fn a_sketch_whose_owner_has_no_timeline_item_is_owned_by_its_v10_feature_or_a_mi
     loose.name = Some("Loose".to_owned());
     model.sketches.push(loose);
 
-    let outside = super::outside(&model, &BTreeSet::new()).unwrap();
+    let outside =
+        super::outside(&model, &BTreeSet::new(), &BTreeSet::new(), &mut Vec::new()).unwrap();
     let owners = outside.get("").unwrap();
     let [owned, minted] = owners.as_slice() else {
         panic!("two owners: {owners:#?}");
@@ -192,7 +214,7 @@ fn a_sketch_whose_owner_has_no_timeline_item_is_owned_by_its_v10_feature_or_a_mi
     );
 
     let timeline = BTreeSet::from([FeatureId::mint(OWNER).unwrap()]);
-    let outside = super::outside(&model, &timeline).unwrap();
+    let outside = super::outside(&model, &timeline, &BTreeSet::new(), &mut Vec::new()).unwrap();
     let [minted] = outside.get("").unwrap().as_slice() else {
         panic!("one owner: {outside:#?}");
     };
@@ -213,7 +235,8 @@ fn the_group_and_a_minted_owner_of_an_archive_member_take_the_member_key() {
     let mut model = model();
     model.features.clear();
     model.sketches[0].id = SketchId::mint("f3d:member.f3d@model:sketch#21").unwrap();
-    let outside = super::outside(&model, &BTreeSet::new()).unwrap();
+    let outside =
+        super::outside(&model, &BTreeSet::new(), &BTreeSet::new(), &mut Vec::new()).unwrap();
     let [minted] = outside.values().flatten().collect::<Vec<_>>()[..] else {
         panic!("one owner: {outside:#?}");
     };
@@ -224,15 +247,13 @@ fn the_group_and_a_minted_owner_of_an_archive_member_take_the_member_key() {
 }
 
 #[test]
-fn a_sketch_group_beside_a_timeline_is_named_and_a_group_alone_is_not() {
+fn a_group_beside_a_timeline_and_a_group_alone_are_roots_that_hold_their_members() {
     const GROUP: &str = "f3d:design:container#sketches";
     let hold = |into: &mut super::timeline::Projected| {
-        let mut losses = Vec::new();
         crate::test_support::with_decode_context(|ctx| {
-            super::hold(ctx, "", vec![unresolved_sketch(OWNER)], into, &mut losses)
+            super::hold(ctx, "", vec![unresolved_sketch(OWNER)], into)
         })
         .unwrap();
-        losses
     };
     let group = |into: &super::timeline::Projected| {
         into.containers
@@ -247,8 +268,7 @@ fn a_sketch_group_beside_a_timeline_is_named_and_a_group_alone_is_not() {
     let owner = Member::Feature(FeatureId::mint(OWNER).unwrap());
 
     let mut alone = super::timeline::Projected::default();
-    let losses = hold(&mut alone);
-    assert!(losses.is_empty(), "{losses:?}");
+    hold(&mut alone);
     assert_eq!(
         group(&alone),
         Some((UnorderedKind::Group, BTreeSet::from([owner.clone()])))
@@ -264,16 +284,13 @@ fn a_sketch_group_beside_a_timeline_is_named_and_a_group_alone_is_not() {
         rollback: None,
         placement: None,
     });
-    let losses = hold(&mut beside);
-    assert!(
-        names(&losses, F3dLossCode::DesignSketchOutsideTimeline, GROUP),
-        "{losses:?}"
-    );
-    assert_eq!(losses.len(), 1);
+    hold(&mut beside);
     assert_eq!(
         group(&beside),
         Some((UnorderedKind::Group, BTreeSet::from([owner])))
     );
+    assert_eq!(beside.containers.len(), 2);
+    assert!(matches!(beside.containers[0], Container::Ordered { .. }));
 }
 
 #[test]
@@ -297,10 +314,8 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
     let mut features = [unresolved_sketch(OWNER)];
     let mut out = super::Sketches::default();
     super::project(
-        &model,
+        &scope(&model, &BTreeSet::new(), &in_scope),
         &mut features,
-        &BTreeSet::new(),
-        &in_scope,
         &mut out,
         &mut losses,
     );
@@ -406,11 +421,10 @@ fn a_sketch_of_an_unordered_member_anchors_its_plane_in_the_current_state() {
     let model = model();
     let mut features = [unresolved_sketch(OWNER)];
     let mut out = super::Sketches::default();
+    let unordered = BTreeSet::from([FeatureId::mint(OWNER).unwrap()]);
     super::project(
-        &model,
+        &scope(&model, &unordered, &[]),
         &mut features,
-        &BTreeSet::from([FeatureId::mint(OWNER).unwrap()]),
-        &[],
         &mut out,
         &mut Vec::new(),
     );
@@ -421,4 +435,226 @@ fn a_sketch_of_an_unordered_member_anchors_its_plane_in_the_current_state() {
         panic!("an unread input");
     };
     assert_eq!(selection.at, Anchor::Current);
+}
+
+/// The design parameters of the scope of `model` whose ids are `keys`.
+fn in_scope(model: &Model, keys: &[&str]) -> Vec<cadmpeg_ir::design::parameter::DesignParameter> {
+    let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    super::super::parameters::project(
+        &model.parameters,
+        &definitions,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut Vec::new(),
+    )
+    .into_iter()
+    .filter(|parameter| {
+        keys.iter()
+            .any(|key| parameter.id.as_str() == parameter_id(key))
+    })
+    .collect()
+}
+
+#[test]
+fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driven_one() {
+    let mut model = model();
+    model.parameters.push(length("gap", 7.0));
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    let list = constraints.as_array_mut().unwrap();
+    list.push(
+        cadmpeg_core::json!({"id": constraint("native"), "sketch": SKETCH,
+        "definition": {"kind": "native", "native_kind": "Linear Dimension",
+            "native_properties": {}, "entities": [entity("line")],
+            "parameter": parameter_id("width"), "operands": []}}),
+    );
+    list.push(
+        cadmpeg_core::json!({"id": constraint("gap"), "sketch": SKETCH, "driving": false,
+        "definition": {"kind": "distance", "entities": [entity("p0"), entity("p1")],
+            "parameter": parameter_id("gap")}}),
+    );
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let parameters = in_scope(&model, &["width"]);
+    let parameters = parameters.iter().collect::<Vec<_>>();
+    let mut features = [unresolved_sketch(OWNER)];
+    let mut out = super::Sketches::default();
+    let mut losses = Vec::new();
+    super::project(
+        &scope(&model, &BTreeSet::new(), &parameters),
+        &mut features,
+        &mut out,
+        &mut losses,
+    );
+    let relation = |key: &str| {
+        &out.constraints
+            .iter()
+            .find(|candidate| candidate.id.as_str() == constraint(key))
+            .unwrap()
+            .relation
+    };
+    let width = ParameterId::mint(parameter_id("width")).unwrap();
+    let SketchRelation::Native { kind, values, .. } = relation("native") else {
+        panic!("a native dimension: {:#?}", relation("native"));
+    };
+    assert_eq!(kind.as_str(), "f3d:Linear Dimension");
+    assert_eq!(
+        values,
+        &vec![ScalarDimension::Length(Dimension::Parameter(width))]
+    );
+    assert!(!names(
+        &losses,
+        F3dLossCode::DesignSketchDimensionUnbound,
+        &constraint("native")
+    ));
+
+    let gap = ParameterId::mint(parameter_id("gap")).unwrap();
+    let SketchRelation::Distance { value, .. } = relation("gap") else {
+        panic!("a distance: {:#?}", relation("gap"));
+    };
+    assert_eq!(value, &Dimension::Parameter(gap.clone()));
+    let [minted] = out.parameters.as_slice() else {
+        panic!("one minted parameter: {:#?}", out.parameters);
+    };
+    assert_eq!(minted.id, gap);
+    assert_eq!(minted.definition, ParameterDefinition::Driven);
+    assert_eq!(
+        minted
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("gap")
+    );
+    assert_eq!(
+        minted.owner,
+        Some(ParameterOwner::Feature(FeatureId::mint(OWNER).unwrap()))
+    );
+    assert!(matches!(
+        minted.value,
+        Some(ParameterValue::Number(value)) if value.get() == 7.0
+    ));
+    assert!(!names(
+        &losses,
+        F3dLossCode::DesignSketchDimensionUnbound,
+        &constraint("gap")
+    ));
+}
+
+#[test]
+fn a_relation_on_a_line_end_names_a_point_minted_there() {
+    let mut model = model();
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    constraints
+        .as_array_mut()
+        .unwrap()
+        .push(cadmpeg_core::json!({
+        "id": constraint("on"), "sketch": SKETCH,
+        "definition": {"kind": "point_on_object",
+            "point": {"kind": "end", "value": entity("line")}, "entity": entity("circle")}}));
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let mut features = [unresolved_sketch(OWNER)];
+    let mut out = super::Sketches::default();
+    super::project(
+        &scope(&model, &BTreeSet::new(), &[]),
+        &mut features,
+        &mut out,
+        &mut Vec::new(),
+    );
+    let end = format!("{}:end", entity("line"));
+    let point = out
+        .entities
+        .iter()
+        .find(|candidate| candidate.id.as_str() == end)
+        .unwrap();
+    assert_eq!(
+        point.roles,
+        vec![EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint(entity("line")).unwrap(),
+            role: DefiningRole::End,
+        }]
+    );
+    let on = out
+        .constraints
+        .iter()
+        .find(|candidate| candidate.id.as_str() == constraint("on"))
+        .unwrap();
+    assert!(
+        matches!(&on.relation, SketchRelation::Coincident {
+            a: Operand::Entity(a), ..
+        } if a.as_str() == end),
+        "{:#?}",
+        on.relation
+    );
+}
+
+#[test]
+fn a_spatial_sketch_is_the_operation_of_its_feature_and_construction_joins_its_group() {
+    const SPATIAL: &str = "f3d:model:spatial-sketch#20";
+    let mut model = model();
+    model.sketches.clear();
+    model.sketch_entities.clear();
+    model.sketch_constraints.clear();
+    model.features[0].evaluation = FeatureEvaluation::from_definition(LegacyDefinition::Operation(
+        LegacyOperation::SpatialSketch {
+            sketch: Some(cadmpeg_ir::sketches::SpatialSketchId::mint(SPATIAL).unwrap()),
+        },
+    ));
+    let mut point = sketch_feature("f3d:model:feature#point:21", SKETCH);
+    point.evaluation = FeatureEvaluation::from_definition(LegacyDefinition::Operation(
+        LegacyOperation::PointGeometry {
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            )
+            .unwrap(),
+        },
+    ));
+    model.features.push(point);
+    model.spatial_sketches = json::from_value(cadmpeg_core::json!([{
+        "id": SPATIAL, "name": "Path", "profiles": []
+    }]))
+    .unwrap();
+    model.spatial_sketch_entities = json::from_value(cadmpeg_core::json!([{
+        "id": "f3d:model:spatial-sketch-entity#20:line", "sketch": SPATIAL,
+        "construction": false, "endpoint_refs": [],
+        "geometry": {"kind": "line", "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "end": {"x": 0.0, "y": 0.0, "z": 2.0}}
+    }]))
+    .unwrap();
+
+    let mut losses = Vec::new();
+    let outside = super::outside(&model, &BTreeSet::new(), &BTreeSet::new(), &mut losses).unwrap();
+    let [owner, construction] = outside.get("").unwrap().as_slice() else {
+        panic!("a sketch owner and a construction point: {outside:#?}");
+    };
+    assert_eq!(owner.id.as_str(), OWNER);
+    assert_eq!(
+        owner.definition.operation,
+        FeatureOperation::SpatialSketch(
+            cadmpeg_ir::sketches::SpatialSketchId::mint(SPATIAL).unwrap()
+        )
+    );
+    assert_eq!(construction.id.as_str(), "f3d:model:feature#point:21");
+    assert_eq!(
+        construction.definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Datum
+        }
+    );
+    let listing = BTreeSet::from([String::new()]);
+    let beside = super::outside(&model, &BTreeSet::new(), &listing, &mut losses).unwrap();
+    assert_eq!(beside.get("").unwrap().len(), 1, "{beside:#?}");
+
+    let mut features = [owner.clone()];
+    let mut out = super::Sketches::default();
+    super::project(
+        &scope(&model, &BTreeSet::new(), &[]),
+        &mut features,
+        &mut out,
+        &mut losses,
+    );
+    let [sketch] = out.spatial.as_slice() else {
+        panic!("one spatial sketch: {:#?}", out.spatial);
+    };
+    assert_eq!(sketch.owner.as_str(), OWNER);
+    assert_eq!(sketch.name.as_deref(), Some("Path"));
+    assert_eq!(out.spatial_entities.len(), 1);
+    assert!(out.records.is_empty());
 }

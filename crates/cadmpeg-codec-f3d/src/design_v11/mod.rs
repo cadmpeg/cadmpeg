@@ -13,12 +13,13 @@
 //! of the scope that encloses it. A stream that lists no item states no
 //! container.
 //!
-//! Each planar sketch is the operation of the feature that owns it (§6.1). A
-//! sketch whose owner has no item of a listing timeline is the operation of a
-//! member of one unordered `Group` of its document's scope, a root after the
-//! timelines; a document whose streams list no item and hold such a sketch
-//! has a scope whose roots are that group and whose bodies are unproduced
-//! (§5.2, §5.5). A document with neither has no scope.
+//! Each planar and spatial sketch is the operation of the feature that owns
+//! it (§6.1). A sketch whose owner has no item of a listing timeline is the
+//! operation of a member of one unordered `Group` of its document's scope, a
+//! root after the timelines; a document whose streams list no item
+//! and hold such a sketch has a scope whose roots are that group, with its
+//! construction planes, axes, and points as members, and whose
+//! bodies are unproduced (§5.2, §5.5). A document with neither has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
@@ -91,6 +92,7 @@ pub(crate) fn project(
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
     if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
         && timelines
             .iter()
             .all(|timeline| timeline.frame().items().is_empty())
@@ -134,6 +136,7 @@ pub(crate) fn project(
         &current,
         losses,
     )?;
+    let listing = documents.keys().cloned().collect::<BTreeSet<_>>();
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
     for (prefix, projected) in documents {
@@ -167,7 +170,7 @@ pub(crate) fn project(
         .flat_map(|(_, projected)| &projected.features)
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
-    for (prefix, owners) in sketch::outside(&ir.model, &restated)? {
+    for (prefix, owners) in sketch::outside(&ir.model, &restated, &listing, losses)? {
         let enclosing = if scopes.contains_key(&prefix) {
             prefix.clone()
         } else if let Some(definition) = scope_definition(&ir.model.product_definitions, &prefix) {
@@ -182,7 +185,7 @@ pub(crate) fn project(
                 timeline::Projected::default(),
             )
         });
-        sketch::hold(ctx, &prefix, owners, into, losses)?;
+        sketch::hold(ctx, &prefix, owners, into)?;
     }
     definitions.extend(
         scopes
@@ -275,10 +278,13 @@ pub(crate) fn project(
             .filter(|parameter| parameter.scope == definition)
             .collect::<Vec<_>>();
         sketch::project(
-            &ir.model,
+            &sketch::Scope {
+                model: &ir.model,
+                definition: &definition,
+                unordered: &unordered,
+                parameters: &in_scope,
+            },
             &mut projected.features,
-            &unordered,
-            &in_scope,
             &mut sketches,
             losses,
         );
@@ -306,7 +312,13 @@ pub(crate) fn project(
     )?;
     ctx.charge_entities(
         u64::try_from(
-            sketches.records.len() + sketches.entities.len() + sketches.constraints.len(),
+            sketches.records.len()
+                + sketches.entities.len()
+                + sketches.constraints.len()
+                + sketches.spatial.len()
+                + sketches.spatial_entities.len()
+                + sketches.spatial_constraints.len()
+                + sketches.parameters.len(),
         )
         .map_err(|_| CodecError::malformed("F3D v11 sketch record count exceeds u64"))?,
         "project F3D v11 sketches",
@@ -314,7 +326,15 @@ pub(crate) fn project(
     ir.design.sketches.extend(sketches.records);
     ir.design.sketch_entities.extend(sketches.entities);
     ir.design.sketch_constraints.extend(sketches.constraints);
+    ir.design.spatial_sketches.extend(sketches.spatial);
+    ir.design
+        .spatial_sketch_entities
+        .extend(sketches.spatial_entities);
+    ir.design
+        .spatial_sketch_constraints
+        .extend(sketches.spatial_constraints);
     ir.design.parameters.extend(scoped_parameters);
+    ir.design.parameters.extend(sketches.parameters);
     ir.design
         .configurations
         .extend(scoped_configurations.records);
