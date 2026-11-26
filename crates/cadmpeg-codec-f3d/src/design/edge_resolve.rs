@@ -77,7 +77,7 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        (EdgeGroupProof::Generic, None, &mut false),
+        (EdgeGroupProof::Generic, None, &mut EdgeGroupAssumptions::default()),
         ctx,
     )
 }
@@ -370,21 +370,22 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
-    let mut deleted_set_assumed = false;
-    let selection = resolved_edge_treatment_group_with_corners_inner(
-        group,
-        input,
-        ctx,
-        &mut deleted_set_assumed,
-    )?;
-    if deleted_set_assumed
-        && matches!(
-            selection,
-            cadmpeg_ir::features::selections::EdgeSelection::Historical { .. }
-        )
-    {
+    let mut assumptions = EdgeGroupAssumptions::default();
+    let selection =
+        resolved_edge_treatment_group_with_corners_inner(group, input, ctx, &mut assumptions)?;
+    let historical = matches!(
+        selection,
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { .. }
+    );
+    if historical && assumptions.deleted_set {
         losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(format!(
             "Group {} is read with the assumption that the treated edge set equals the transition-deleted set.",
+            group.id
+        )));
+    }
+    if historical && assumptions.first_side_pair {
+        losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionFirstSidePairAssumed.note(format!(
+            "Group {} is read with the assumption that each member whose first side names three faces selects an edge that two of those faces share, and that the members select distinct edges.",
             group.id
         )));
     }
@@ -395,7 +396,7 @@ fn resolved_edge_treatment_group_with_corners_inner(
     group: &DesignConstructionOperandGroup,
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
-    deleted_set_assumed: &mut bool,
+    assumptions: &mut EdgeGroupAssumptions,
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::selections::EdgeSelection;
     let EdgeTreatmentInputs {
@@ -430,7 +431,7 @@ fn resolved_edge_treatment_group_with_corners_inner(
                     radius: treatment_radius,
                 },
                 None,
-                deleted_set_assumed,
+                assumptions,
             ),
             ctx,
         );
@@ -490,7 +491,7 @@ fn resolved_edge_treatment_group_with_corners_inner(
                 radius: treatment_radius,
             },
             Some(&edge_members),
-            deleted_set_assumed,
+            assumptions,
         ),
         ctx,
     )?;
@@ -547,6 +548,16 @@ fn resolved_edge_treatment_group_with_corners_inner(
     }
 }
 
+/// Readings that a resolved treatment group assumes.
+#[derive(Default)]
+struct EdgeGroupAssumptions {
+    /// The treated edge set equals the transition-deleted set.
+    deleted_set: bool,
+    /// A member whose first side names three faces selects an edge that two
+    /// of them share, and the members select distinct edges.
+    first_side_pair: bool,
+}
+
 #[derive(Clone, Copy)]
 enum EdgeGroupProof {
     /// Member-local recipe and persistent-identity proofs only.
@@ -567,10 +578,10 @@ fn resolved_edge_group_with_transition_chain(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override, deleted_set_assumed): (
+    (proof, members_override, assumptions): (
         EdgeGroupProof,
         Option<&[crate::records::identity::Located<u32>]>,
-        &mut bool,
+        &mut EdgeGroupAssumptions,
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
@@ -979,6 +990,10 @@ fn resolved_edge_group_with_transition_chain(
     if exact_slots.is_none() {
         exact_slots = unique_edge_group_assignment(&matched_operands, ctx)?;
     }
+    if exact_slots.is_none() && allow_edge_treatment_transition_chain {
+        exact_slots = first_side_pair_edge_group_assignment(&matched_operands, ctx)?;
+        assumptions.first_side_pair = exact_slots.is_some();
+    }
     if exact_slots.is_none() {
         exact_slots = changed_reference_edge_group_candidates(&matched_operands, ctx)?;
     }
@@ -1032,7 +1047,7 @@ fn resolved_edge_group_with_transition_chain(
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
-            *deleted_set_assumed = slots.is_some();
+            assumptions.deleted_set = slots.is_some();
         }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members);
@@ -1059,7 +1074,7 @@ fn resolved_edge_group_with_transition_chain(
         // take the edges its transition deletes.
         if allow_edge_treatment_transition_chain {
             let slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
-            *deleted_set_assumed = slots.is_some();
+            assumptions.deleted_set = slots.is_some();
             slots
         } else {
             None
@@ -1925,6 +1940,82 @@ fn radius_edge_identity_group_candidates(
     chain.sort_unstable_by(Ord::cmp);
     chain.dedup();
     (!chain.is_empty()).then_some(chain)
+}
+
+/// Assign the members of a treatment group whose first sides name three face
+/// references. Such a member's candidates are the transition-deleted edges
+/// that two of its three first-side reference lanes share, when the three
+/// lanes share no edge. Every other member contributes its proven edge. The
+/// group resolves when exactly one assignment gives each member a distinct
+/// candidate.
+fn first_side_pair_edge_group_assignment(
+    operands: &[&DesignEdgeOperand],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut candidate_sets = Vec::new();
+    let mut has_pair_member = false;
+    for operand in operands {
+        if let Some(edge) = resolved_edge_operand(operand) {
+            candidate_sets.push(vec![edge]);
+            continue;
+        }
+        let Some(candidates) = first_side_pair_edge_candidates(operand) else {
+            return Ok(None);
+        };
+        has_pair_member = true;
+        candidate_sets.push(candidates);
+    }
+    if !has_pair_member {
+        return Ok(None);
+    }
+    unique_bipartite_assignment(&candidate_sets, ctx)
+}
+
+fn first_side_pair_edge_candidates(operand: &DesignEdgeOperand) -> Option<Vec<i64>> {
+    let structure = operand.recipe_structure.as_ref()?;
+    if structure.root != 2 || structure.sides.len() != 2 {
+        return None;
+    }
+    let side = structure.sides.first()?;
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    let [first, second, third] = ordinals.as_slice() else {
+        return None;
+    };
+    let mut lanes = Vec::new();
+    for &ordinal in [first, second, third] {
+        let context = operand.recipe_reference_contexts.get(ordinal)?;
+        if usize::try_from(context.reference_ordinal).ok()? != ordinal
+            || context.shared_edge_slots.is_empty()
+        {
+            return None;
+        }
+        lanes.push(context.shared_edge_slots.as_slice());
+    }
+    let [a, b, c] = lanes.as_slice() else {
+        return None;
+    };
+    if a.iter().any(|edge| b.contains(edge) && c.contains(edge)) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for (left, right) in [(a, b), (a, c), (b, c)] {
+        for edge in left.iter() {
+            if right.contains(edge) && operand.transition_deleted_edge_slots.contains(edge) {
+                candidates.push(*edge);
+            }
+        }
+    }
+    candidates.sort_unstable_by(Ord::cmp);
+    candidates.dedup();
+    (!candidates.is_empty()).then_some(candidates)
 }
 
 fn unique_edge_assignment(
