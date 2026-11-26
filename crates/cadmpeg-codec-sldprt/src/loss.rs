@@ -28,7 +28,8 @@ pub(crate) enum SldprtLossCode {
     MetadataPartRootUnsupported,
     /// Configuration-manager class has no proven scalar roles or serializer.
     MetadataConfigurationManagerOpaque,
-    /// Default-property carrier has no complete supported reading.
+    /// Default-property carrier stores its properties in a form the decoder
+    /// does not read.
     MetadataDefaultCarrierUnsupported,
     /// Default properties have multiple physical namespace owners.
     MetadataDefaultOwnerAmbiguous,
@@ -40,7 +41,8 @@ pub(crate) enum SldprtLossCode {
     MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
-    /// Configuration-property XML has no complete unambiguous reading.
+    /// Configuration-property carrier stores its properties in a form the
+    /// decoder does not read.
     MetadataConfigurationPropertyCarrierUnsupported,
     /// Configuration-property record has no supported literal scalar fact.
     MetadataConfigurationPropertyValueUnsupported,
@@ -335,7 +337,8 @@ pub(crate) enum SldprtLossCode {
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
-    /// A face has no decoded loop, so the face and its surface are withheld.
+    /// A face names no loop and does not cover a whole closed surface, so
+    /// the face and its surface are withheld.
     TopologyFaceWithheld,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
@@ -345,17 +348,18 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN forward link names no reciprocal same-loop backward link, so
-    /// its ring is withheld instead of walked on doubt.
+    /// A FIN ring does not close, or a FIN forward link names no reciprocal
+    /// same-loop backward link, so its loop is withheld instead of walked on
+    /// doubt; the face keeps its other loops.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
-    /// A vertex loop names no resolved vertex, so its face and surface are
-    /// withheld.
+    /// A vertex loop names no resolved vertex, so the loop is withheld; the
+    /// face keeps its other loops.
     TopologyVertexLoopWithheld,
-    /// A loop of a face holds an ambiguous FIN, so the face and its surface
-    /// are withheld.
+    /// The ring of a loop holds an ambiguous FIN, so the loop is withheld;
+    /// the face keeps its other loops.
     TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
@@ -547,8 +551,8 @@ pub(crate) enum SldprtLossCode {
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
     AssemblySuppressedComponentsOmitted,
-    /// A component instance has no valid placement or names no component
-    /// model; the instance and the instances below it are omitted.
+    /// A component instance has no valid identity, placement, or component
+    /// model; the instance is omitted.
     AssemblyPlacementUnresolved,
     /// Assembly configurations other than the active one are not transferred.
     AssemblyConfigurationsNotTransferred,

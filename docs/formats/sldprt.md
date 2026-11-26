@@ -366,6 +366,8 @@ The part kind names the part in a `record.unreadable` loss.
 | `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
 | `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
 | `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
+| `wrapped-member` | One ZLB-wrapped zlib member whose inflated size is not its declared size | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -384,20 +386,32 @@ trees. Each tree section is then given up as a `component-tree` part. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
+The decoder gives up a wrapped member only when its declared size is within
+the frame ceiling. A property carrier that stores its properties in a form
+that the decoder does not read is kept with the loss
+`metadata.default-carrier-unsupported` or
+`metadata.configuration-property-carrier-unsupported`.
+
 A record that the decoder parses and then drops is given up without a part.
 Its `record.unreadable` loss names the record by its id, and gives its stream
-and offset where the decoder holds them. Such records are a B-rep face or
-ring edge that the topology walk withholds, a PMI dimension map that does not
-parse, and a feature-input sketch whose face projects no edge to a sketch
-entity. A record of an alternate configuration is named by its id with the
+and offset where the decoder holds them. Such records are a B-rep face that
+names no loop and does not cover a whole closed surface, a B-rep loop whose
+ring or vertex does not decode, a B-rep edge that the topology walk
+withholds, a component instance that has a valid identity and no placement, no
+defined model, or a model that contains the instance, a PMI dimension map that
+does not parse, and a feature-input sketch whose face projects no edge to a
+sketch entity. A record of an alternate configuration is named by its id with the
 `@<site>` suffix of that configuration.
 
 A record that the decoder drops only because it needs a given-up record is
 not given up by itself. The loss of the given-up record lists it as dropped.
 A withheld face drops its surface, its loops, and the coedges, surface-parameter
 curves, edges, curves, vertices, and points that only its loops use. A loop
-that uses a withheld edge drops with the edge, and the face that owns that
-loop keeps its other loops.
+that uses a withheld edge drops with the edge. A given-up loop drops its
+coedges, and the edges that only those coedges use. A face that names a loop
+is kept: where a loop of the face is given up, drops, or is not found, the
+face states the loops that decode in the partial form (CADIR §5.6). A shell
+that holds such a face is not split into components on its edges.
 
 ---
 
@@ -2655,7 +2669,7 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
-A vertex loop decodes to a vertex boundary on its vertex-use. A FACE with a vertex loop whose vertex-use does not resolve is the loss `topology.vertex-loop-withheld`.
+A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
 The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
 
@@ -3593,6 +3607,8 @@ The `id` values of `swModel` and `swReference` elements are decimal numbers, dis
 `swTransform` is 16 decimal numbers: a 4x4 matrix `M` in row-major order for row vectors, `p' = p M`. Rows 0 to 2 hold the rotation, with a fourth column of `0`. Row 3 holds the translation in metres, then `1`. The column-vector rotation is the transpose of the upper-left 3x3 block. The translation converts to millimetres by a factor of `1000` (§9).
 
 The placement is relative to the assembly model that contains the `swReference`. The world placement of an occurrence is the product of the placements on its path from the root model.
+
+An instance with a valid, unrepeated identity is given up by its occurrence id when it names no model, when its model is not defined, when its `swTransform` is not a proper rigid motion, or when its model contains the instance. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
 
 ### 11.3 Mate lists
 

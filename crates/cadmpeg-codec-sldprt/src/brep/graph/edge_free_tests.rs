@@ -5,6 +5,19 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::loss::SldprtLossCode;
+
+/// The records the decode gave up with `code`.
+fn given_up(out: &super::Brep, code: SldprtLossCode) -> usize {
+    let prefix = format!("{}:", code.kind());
+    out.dropped
+        .iter()
+        .filter(|dropped| {
+            matches!(dropped, super::DroppedRecord::GivenUp { error, .. } if error.starts_with(&prefix))
+        })
+        .count()
+}
+
 fn decode(nodes: &[(u16, u16, Vec<F>)]) -> super::Brep {
     let (payload, _) = sequence_of(nodes);
     let header = crate::parasolid::stream_header(&payload).unwrap().unwrap();
@@ -142,12 +155,16 @@ fn a_loopless_plane_stays_withheld_with_ownership_loss() {
 }
 
 #[test]
-fn a_missing_spherical_loop_is_withheld() {
+fn a_spherical_face_whose_loop_record_is_missing_keeps_a_partial_loop_list() {
     let mut nodes = loopless_nodes(53);
     nodes[3].2[5] = F::P(6);
     let out = decode(&nodes);
-    assert!(out.faces.is_empty());
-    assert_eq!(out.stats.withheld_faces, 1);
+    let [face] = &out.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert_eq!(given_up(&out, SldprtLossCode::TopologyFaceWithheld), 0);
 }
 
 fn indexed(geometry: SolvedCurveGeometry) -> super::IndexedCurve {
@@ -217,15 +234,18 @@ fn a_reciprocal_ellipse_ring_keeps_its_sheet_face() {
         out.edges[0].param_range().unwrap().get(),
         [0.0, std::f64::consts::TAU]
     );
-    assert_eq!(out.stats.withheld_ring_edges, 0);
+    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 0);
 }
 
 #[test]
 fn an_ellipse_ring_without_a_mutual_partner_stays_withheld() {
     let out = decode(&ellipse_sheet(false));
-    assert!(out.faces.is_empty());
+    let [face] = &out.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
     assert!(out.edges.is_empty());
-    assert_eq!(out.stats.withheld_ring_edges, 1);
+    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 1);
 }
 
 #[test]
@@ -309,8 +329,14 @@ fn a_bounded_ellipse_ring_requires_one_complete_revolution() {
         bound_ellipse(&mut nodes, range);
         let out = decode(&nodes);
         assert_eq!(out.edges.len(), usize::from(admitted));
-        assert_eq!(out.faces.len(), usize::from(admitted));
-        assert_eq!(out.stats.withheld_ring_edges, usize::from(!admitted));
+        let [face] = &out.faces[..] else {
+            panic!("the face is kept");
+        };
+        assert_eq!(face.loops.is_partial(), !admitted);
+        assert_eq!(
+            given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld),
+            usize::from(!admitted)
+        );
     }
 }
 
@@ -335,7 +361,11 @@ fn a_vertexless_ring_recovers_a_canonical_boundary_dummy() {
         (1, 1, 1)
     );
     assert_eq!(out.stats.withheld_fin_partners, 0);
-    assert_eq!(out.stats.withheld_ring_edges, 0);
+    assert_eq!(
+        given_up(&out, SldprtLossCode::TopologyFinPartnerUnresolved),
+        0
+    );
+    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 0);
 }
 
 #[test]
@@ -445,6 +475,8 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         unresolved_fins: Vec::new(),
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: false,
     };
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let resolved = super::resolve_sweep_surface(

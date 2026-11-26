@@ -512,6 +512,17 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
             candidates.push(&face.id);
         }
     }
+    // A face that does not state all its loops does not state all its
+    // neighbours, so the shell is not split on its edges.
+    if out
+        .faces
+        .iter()
+        .any(|face| face.shell.as_str() == native_shell_id && face.loops.is_partial())
+    {
+        let mut component: Vec<FaceId> = candidates.into_iter().cloned().collect();
+        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        return vec![component];
+    }
     let mut candidate_ids = HashSet::new();
     for face in &candidates {
         let key = face.as_str();
@@ -614,21 +625,12 @@ pub(crate) struct Stats {
     pub(crate) unresolved_topology_loops: usize,
     pub(crate) unresolved_topology_fins: usize,
     pub(crate) unresolved_topology_vertices: usize,
-    /// Canonical edges withheld when a partner FIN contradicts the ring order
-    /// or an unwalked boundary-dummy canonical lacks partner corroboration.
+    /// Canonical edges with no edge record, withheld when a partner FIN
+    /// contradicts the ring order or an unwalked boundary-dummy canonical
+    /// lacks partner corroboration.
     pub(crate) withheld_fin_partners: usize,
-    /// Vertexless ring edges withheld by the strict admission gate.
-    pub(crate) withheld_ring_edges: usize,
     /// Rings withheld because a FIN forward link is not reciprocal.
     pub(crate) withheld_fin_links: usize,
-    /// Faces withheld with their surface because no loop of the face decodes.
-    pub(crate) withheld_faces: usize,
-    /// Faces withheld with their surface because a vertex loop of the face
-    /// names no resolved vertex.
-    pub(crate) withheld_vertex_loop_faces: usize,
-    /// Faces withheld with their surface because a loop of the face holds an
-    /// ambiguous FIN.
-    pub(crate) withheld_ambiguous_fin_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -836,6 +838,44 @@ struct WalkedFace {
     withheld_forward_links: usize,
     /// Walked loops that are not forward linked.
     unlinked_loops: HashSet<u32>,
+    /// The loop records of the face whose FIN ring does not close, by cause,
+    /// in sibling order.
+    lost_loops: Vec<(u32, RingLoss)>,
+    /// The loop chain names a loop the walk does not reach: a missing record
+    /// or a loop of another face.
+    chain_cut: bool,
+}
+
+/// Why the FIN ring of a loop record does not build a loop.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RingLoss {
+    /// The walk reaches a FIN that complete records claim in conflict.
+    AmbiguousFin,
+    /// The ring closes, and a forward link has no reciprocal backward link.
+    NonReciprocal,
+    /// The ring ends before it returns to its first FIN.
+    Open,
+}
+
+impl RingLoss {
+    fn code(self) -> crate::loss::SldprtLossCode {
+        match self {
+            Self::AmbiguousFin => crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+            Self::NonReciprocal | Self::Open => {
+                crate::loss::SldprtLossCode::TopologyFinLinkUnresolved
+            }
+        }
+    }
+
+    const fn why(self) -> &'static str {
+        match self {
+            Self::AmbiguousFin => "the ring of the loop holds an ambiguous FIN",
+            Self::NonReciprocal => {
+                "a FIN forward link of the loop names no reciprocal backward link"
+            }
+            Self::Open => "the FIN ring of the loop does not close",
+        }
+    }
 }
 
 impl WalkedFace {
@@ -1352,38 +1392,14 @@ fn ensure_surface_support(
     result
 }
 
-/// Whether a walked face enters the model with its surface.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FaceAdmission {
-    Admitted,
-    VertexLoopUnresolved,
-    FinAmbiguous,
-    NoLoop,
-}
-
-fn face_admission(
-    face: &WalkedFace,
-    loop_set: &HashSet<u32>,
-    t: &topology::Tables,
-    carriers: &CarrierIndex,
-) -> FaceAdmission {
-    if face
-        .vertex_loops
-        .iter()
-        .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
-    {
-        FaceAdmission::VertexLoopUnresolved
-    } else if !face.unresolved_fins.is_empty() {
-        FaceAdmission::FinAmbiguous
-    } else if face
-        .loop_attrs()
-        .any(|loop_attr| loop_set.contains(&loop_attr))
+/// Whether a walked face enters the model with its surface: a face whose
+/// record names a loop keeps the loops that decode, and a face that names
+/// none enters only where it covers a whole closed surface.
+fn face_admitted(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
+    t.bridges()
+        .get(&face.bridge_attr)
+        .is_some_and(|bridge| bridge.refs[2] > 1)
         || covers_whole_closed_surface(face, t, carriers)
-    {
-        FaceAdmission::Admitted
-    } else {
-        FaceAdmission::NoLoop
-    }
 }
 
 fn face_has_exact_boundary(
@@ -1502,6 +1518,8 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut unresolved_fins = Vec::new();
     let mut withheld_forward_links = 0usize;
     let mut unlinked_loops = HashSet::new();
+    let mut lost_loops = Vec::new();
+    let mut chain_cut = false;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1511,10 +1529,12 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             if t.loop_is_ambiguous(loop_ref) {
                 unresolved_loop = Some(loop_ref);
             }
+            chain_cut = loop_ref > 1;
             break;
         };
         let owner_bridge = lp.refs[2];
         if owner_bridge != bridge.attr {
+            chain_cut = true;
             break;
         }
         let first = lp.refs[1];
@@ -1531,6 +1551,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
+        let mut ambiguous_fin = false;
         while ce_ref != 0 {
             if !ce_guard.insert(ce_ref) {
                 break;
@@ -1538,6 +1559,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             let Some(ce) = t.coedges().get(&ce_ref) else {
                 if t.coedge_is_ambiguous(ce_ref) {
                     unresolved_fins.push(ce_ref);
+                    ambiguous_fin = true;
                 }
                 break;
             };
@@ -1562,6 +1584,11 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             loops.push((loop_ref, ring));
         } else if ring_closed {
             withheld_forward_links += 1;
+            lost_loops.push((loop_ref, RingLoss::NonReciprocal));
+        } else if ambiguous_fin {
+            lost_loops.push((loop_ref, RingLoss::AmbiguousFin));
+        } else {
+            lost_loops.push((loop_ref, RingLoss::Open));
         }
         loop_ref = lp.refs[3];
     }
@@ -1575,6 +1602,8 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         unresolved_fins,
         withheld_forward_links,
         unlinked_loops,
+        lost_loops,
+        chain_cut,
     }
 }
 
@@ -3627,18 +3656,54 @@ fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u32>) -> Vec<u32> {
     sorted
 }
 
-fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
-    let Some(attrs) = facts.valid_ownership_face_attrs() else {
+fn report_withheld_ownership(
+    out: &mut Brep,
+    facts: &typed::Facts,
+    stream: &cadmpeg_ir::StreamName,
+) {
+    let Some(face_nodes) = facts.valid_ownership_faces() else {
         return;
     };
-    let face_ids: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
-    let faces = attrs
-        .iter()
-        .filter(|attr| {
-            let id = id_face(**attr);
-            !face_ids.contains(id.as_str())
-        })
-        .count();
+    let attrs: HashSet<u32> = face_nodes.keys().copied().collect();
+    // A face a give-up names carries its own charge. A typed face that names
+    // no loop is read and left out, so it is given up; the note counts only
+    // the face nodes that no record states.
+    let mut accounted: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
+    for dropped in &out.dropped {
+        match dropped {
+            DroppedRecord::GivenUp {
+                record, dropping, ..
+            } => {
+                accounted.insert(record.as_str());
+                accounted.extend(dropping.iter().map(String::as_str));
+            }
+            DroppedRecord::With { record, .. } => {
+                accounted.insert(record.as_str());
+            }
+        }
+    }
+    let mut faces = 0;
+    let mut given_up = Vec::new();
+    for attr in sorted_graph_attrs(attrs.iter().copied()) {
+        let id = id_face(attr);
+        if accounted.contains(id.as_str()) {
+            continue;
+        }
+        let node = &face_nodes[&attr];
+        if node.refs[2] > 1 {
+            faces += 1;
+            continue;
+        }
+        given_up.push(topology_given_up(
+            id,
+            stream,
+            Some(node.offset),
+            crate::loss::SldprtLossCode::TopologyFaceWithheld,
+            "the face names no loop and does not cover a whole closed surface",
+            &[id_surf(attr)],
+        ));
+    }
+    out.dropped.extend(given_up);
     let mut bodies = 0;
     let mut shells = 0;
     if let Some(hierarchies) = facts.hierarchies(&attrs) {
@@ -3678,7 +3743,7 @@ fn decode_graph(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
     out.losses.extend(out.approximations.take_notes());
-    report_withheld_ownership(&mut out, typed_facts);
+    report_withheld_ownership(&mut out, typed_facts, stream);
     Ok(out)
 }
 
@@ -3831,6 +3896,22 @@ fn decode_graph_inner(
     let mut tolerant_edges: HashSet<EdgeId> = HashSet::new();
 
     let mut unresolved_points = HashSet::new();
+    let mut withheld_edges = HashSet::<u32>::new();
+    let mut withhold_partnerless_edge = |out: &mut Brep, edge_attr: u32| {
+        if let Some(record) = t.edge_uses().get(&edge_attr) {
+            withheld_edges.insert(edge_attr);
+            out.dropped.push(topology_given_up(
+                id_edge(edge_attr),
+                stream,
+                Some(record.offset),
+                crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
+                "the FIN partners of the edge do not corroborate its ends",
+                &[],
+            ));
+        } else {
+            out.stats.withheld_fin_partners += 1;
+        }
+    };
     for (edge_attr, incidences) in edge_incidence {
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
@@ -3885,15 +3966,13 @@ fn decode_graph_inner(
                         partner.fin,
                     );
                 }
-                DummyRecovery::Withheld => {
-                    out.stats.withheld_fin_partners += 1;
-                }
+                DummyRecovery::Withheld => withhold_partnerless_edge(&mut out, edge_attr),
                 DummyRecovery::Absent => {}
             }
             continue;
         };
         let Some(ring_vuse) = edge_ring_vuse(incidence, &incidences, t.coedges()) else {
-            out.stats.withheld_fin_partners += 1;
+            withhold_partnerless_edge(&mut out, edge_attr);
             continue;
         };
         if !incidence.forward_linked {
@@ -3987,7 +4066,6 @@ fn decode_graph_inner(
     let mut emitted_curves: HashSet<u32> = HashSet::new();
     let mut surface_curve_attrs = Vec::new();
     let mut edge_set: HashSet<u32> = HashSet::new();
-    let mut withheld_edges = HashSet::<u32>::new();
     let mut edge_endpoint_positions = HashMap::<u32, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
@@ -4013,7 +4091,6 @@ fn decode_graph_inner(
                 t,
             )
         {
-            out.stats.withheld_ring_edges += 1;
             withheld_edges.insert(e);
             out.dropped.push(topology_given_up(
                 id_edge(e),
@@ -4026,6 +4103,17 @@ fn decode_graph_inner(
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
+            if let Some(record) = t.edge_uses().get(&e) {
+                withheld_edges.insert(e);
+                out.dropped.push(topology_given_up(
+                    id_edge(e),
+                    stream,
+                    Some(record.offset),
+                    crate::loss::SldprtLossCode::TopologyVertexRecordUnresolved,
+                    "an end vertex of the edge does not resolve",
+                    &[],
+                ));
+            }
             continue;
         }
         let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
@@ -4526,6 +4614,7 @@ fn decode_graph_inner(
     }
 
     // Loops.
+    let mut broken_rings = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
             if !kept_loops.contains(loop_attr) {
@@ -4533,6 +4622,10 @@ fn decode_graph_inner(
             }
             let mut coedges = Vec::new();
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
+                broken_rings.insert(*loop_attr);
+                continue;
+            };
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
                 id_loop(*loop_attr),
@@ -4540,9 +4633,6 @@ fn decode_graph_inner(
                 u64_from_index(off),
                 Some("00_0f"),
             );
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
-                continue;
-            };
             admit_brep_entity(ctx)?;
             out.loops.push(Loop {
                 id: id_loop(*loop_attr),
@@ -4575,7 +4665,26 @@ fn decode_graph_inner(
             kept_loops.insert(*loop_attr);
         }
     }
+    kept_loops.retain(|loop_attr| !broken_rings.contains(loop_attr));
     let loop_set = kept_loops;
+    let kept_coedges: HashSet<u32> = faces
+        .iter()
+        .flat_map(|f| f.loops.iter())
+        .filter(|(loop_attr, _)| loop_set.contains(loop_attr))
+        .flat_map(|(_, ring)| ring.iter().copied())
+        .collect();
+    let mut coedges_by_loop = HashMap::<u32, Vec<u32>>::new();
+    for (attr, coedge) in t.coedges() {
+        if !kept_coedges.contains(attr) {
+            coedges_by_loop
+                .entry(coedge.refs[1])
+                .or_default()
+                .push(*attr);
+        }
+    }
+    for coedges in coedges_by_loop.values_mut() {
+        coedges.sort_unstable();
+    }
 
     // Surfaces + faces.
     let bind_bridges = |body_records: &[BodyRecord],
@@ -4666,10 +4775,7 @@ fn decode_graph_inner(
         let bounded_offset = carriers.offset(face.surface_attr).is_none()
             || offset_for_face(face, t, carriers, &exact_boundary_edges).is_some();
         let bounded_sweep = sweep_face_can_alias(ctx, face, t, carriers, &exact_boundary_edges)?;
-        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted
-            && bounded_offset
-            && bounded_sweep
-        {
+        if face_admitted(face, t, carriers) && bounded_offset && bounded_sweep {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -4677,43 +4783,69 @@ fn decode_graph_inner(
         }
     }
     for f in &faces {
-        match face_admission(f, &loop_set, t, carriers) {
-            FaceAdmission::Admitted => {}
-            FaceAdmission::VertexLoopUnresolved => {
-                out.stats.withheld_vertex_loop_faces += 1;
-                out.dropped.push(topology_given_up(
-                    id_face(f.bridge_attr),
-                    stream,
-                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+        if !face_admitted(f, t, carriers) {
+            out.dropped.push(topology_given_up(
+                id_face(f.bridge_attr),
+                stream,
+                t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyFaceWithheld,
+                "the face names no loop and does not cover a whole closed surface",
+                &[id_surf(f.bridge_attr)],
+            ));
+            continue;
+        }
+        let mut lost = Vec::new();
+        for (loop_attr, loss) in &f.lost_loops {
+            lost.push((*loop_attr, loss.code(), loss.why()));
+        }
+        for (loop_attr, ring) in &f.loops {
+            if loop_set.contains(loop_attr) {
+                continue;
+            }
+            if broken_rings.contains(loop_attr) {
+                lost.push((
+                    *loop_attr,
+                    crate::loss::SldprtLossCode::TopologyFinLinkUnresolved,
+                    "the coedges of the loop do not form a ring",
+                ));
+            } else if !ring.iter().any(|c| {
+                t.coedges()
+                    .get(c)
+                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
+            }) {
+                lost.push((
+                    *loop_attr,
+                    crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
+                    "an edge of the loop has no canonical FIN the decode reads",
+                ));
+            }
+        }
+        for (loop_attr, _) in &f.vertex_loops {
+            if !loop_set.contains(loop_attr) {
+                lost.push((
+                    *loop_attr,
                     crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
-                    "a vertex loop of the face names no resolved vertex",
-                    &[id_surf(f.bridge_attr)],
+                    "the vertex loop names no resolved vertex",
                 ));
-                continue;
             }
-            FaceAdmission::FinAmbiguous => {
-                out.stats.withheld_ambiguous_fin_faces += 1;
-                out.dropped.push(topology_given_up(
-                    id_face(f.bridge_attr),
-                    stream,
-                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
-                    "a loop of the face holds an ambiguous FIN",
-                    &[id_surf(f.bridge_attr)],
-                ));
-                continue;
-            }
-            FaceAdmission::NoLoop => {
-                out.stats.withheld_faces += 1;
-                out.dropped.push(topology_given_up(
-                    id_face(f.bridge_attr),
-                    stream,
-                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
-                    "no loop of the face decodes",
-                    &[id_surf(f.bridge_attr)],
-                ));
-                continue;
+        }
+        for (loop_attr, code, why) in lost {
+            let loop_id = id_loop(loop_attr);
+            out.dropped.push(topology_given_up(
+                &loop_id,
+                stream,
+                t.loops().get(&loop_attr).map(|record| record.offset),
+                code,
+                why,
+                &[],
+            ));
+            for c in coedges_by_loop.get(&loop_attr).into_iter().flatten() {
+                let coedge = id_coedge(*c);
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), loop_id.as_str()));
+                if let Some(edge) = t.coedges().get(c).map(|ce| ce.refs[6]).filter(|e| *e > 1) {
+                    unbuilt_uses.push((id_edge(edge), coedge));
+                }
             }
         }
         let loops: Vec<_> = f
@@ -4721,6 +4853,10 @@ fn decode_graph_inner(
             .filter(|loop_attr| loop_set.contains(loop_attr))
             .map(id_loop)
             .collect();
+        let partial = f.chain_cut
+            || f.unresolved_loop.is_some()
+            || !f.lost_loops.is_empty()
+            || loops.len() < f.loop_attrs().count();
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges().get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
@@ -5256,7 +5392,11 @@ fn decode_graph_inner(
             shell: ShellId::compose(&shell_namespace(), shell_attr),
             surface: id_surf(f.bridge_attr),
             sense: surface_sense(f.sense, surface_orientation_reversed),
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops: if partial {
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+            } else {
+                cadmpeg_ir::topology::FaceLoops::unspecified(loops)
+            },
             name: None,
             color: t
                 .bridges()
@@ -10837,9 +10977,10 @@ mod tests {
     }
 
     /// FIN 30 names FIN 31 as its forward link, and FIN 31 does not name it
-    /// back, so the only loop of the face is withheld.
+    /// back, so the only loop of the face is given up and the face keeps a
+    /// partial loop list.
     #[test]
-    fn a_face_without_a_decoded_loop_is_withheld_with_its_surface() {
+    fn a_face_whose_only_loop_is_given_up_keeps_a_partial_loop_list() {
         let mut body = crate::test_support::parasolid::triangle_body();
         let at = body
             .windows(4)
@@ -10854,11 +10995,28 @@ mod tests {
                 false,
             )
             .expect("triangle decodes");
+            let mut decoded = decoded;
             assert!(decoded.loops.is_empty());
-            assert!(decoded.faces.is_empty());
-            assert!(decoded.surfaces.is_empty());
+            let [face] = &decoded.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
+            assert_eq!(face.loops.stated().count(), 0);
+            assert_eq!(decoded.surfaces.len(), 1);
             assert_eq!(decoded.stats.withheld_fin_links, 1);
-            assert_eq!(decoded.stats.withheld_faces, 1);
+            let losses = decoded.take_losses().unwrap();
+            let charges = losses
+                .iter()
+                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+                .map(|loss| loss.message.as_str())
+                .collect::<Vec<_>>();
+            let [charge] = charges[..] else {
+                panic!("one charge gives up the loop: {charges:?}");
+            };
+            assert!(
+                charge.starts_with("record sldprt:brep:loop#20 "),
+                "{charge}"
+            );
         });
     }
 

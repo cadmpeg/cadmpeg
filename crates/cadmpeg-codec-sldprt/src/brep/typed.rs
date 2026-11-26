@@ -360,6 +360,11 @@ impl Facts {
             .map(|(_, _, _, faces)| faces.into_keys().collect())
     }
 
+    /// The FACE nodes of a valid typed ownership graph, by transmit index.
+    pub(super) fn valid_ownership_faces(&self) -> Option<HashMap<u32, FaceNode>> {
+        self.valid_ownership_maps().map(|(_, _, _, faces)| faces)
+    }
+
     /// Physical FACE records selected by a closed typed ownership set.
     pub(super) fn selected_face_offsets(&self, attrs: Option<&HashSet<u32>>) -> HashSet<usize> {
         let mut offsets = HashSet::new();
