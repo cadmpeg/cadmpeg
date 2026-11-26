@@ -521,7 +521,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
                 let value = json::to_value(&hatch_patterns[0]).expect("hatch JSON");
                 assert_eq!(
                     value["lines"][0]["base_millimeters"],
-                    serde_json::json!(expected)
+                    cadmpeg_core::json!(expected)
                 );
             }
             None => assert!(hatch_patterns.is_empty()),
@@ -540,7 +540,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
             let value = json::to_value(&records[0]).expect("admitted hatch JSON");
             assert_eq!(
                 value["lines"][0]["base_millimeters"],
-                serde_json::json!(expected)
+                cadmpeg_core::json!(expected)
             );
         } else {
             assert!(decoded

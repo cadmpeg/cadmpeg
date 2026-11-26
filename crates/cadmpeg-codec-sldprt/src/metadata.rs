@@ -356,7 +356,7 @@ fn attribute(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         section.source_stream(),
         u64_from_index(offset),
         std::str::from_utf8(token).unwrap_or(name.as_str()),

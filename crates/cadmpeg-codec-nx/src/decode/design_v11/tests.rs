@@ -398,7 +398,7 @@ fn a_wave_face_link_is_a_linked_stored_copy() {
     };
     assert_eq!(bodies, &[body("1").id]);
     assert!(tessellations.is_empty());
-    assert_eq!(json::to_value(link).unwrap(), serde_json::json!({}));
+    assert_eq!(json::to_value(link).unwrap(), cadmpeg_core::json!({}));
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 

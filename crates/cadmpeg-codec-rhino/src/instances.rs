@@ -308,6 +308,9 @@ pub(crate) struct DefinitionDiagnostic {
     pub(crate) diagnostic: RhinoDiagnostic,
     /// Complete table-record range.
     source_range: Range<usize>,
+    /// The definition that did not parse, which its retained opaque record
+    /// keeps.
+    pub(crate) given_up: Option<Record>,
 }
 
 impl DefinitionDiagnostic {
@@ -1218,6 +1221,7 @@ pub(crate) fn parse_definitions(
             .extend(warnings.into_iter().map(|diagnostic| DefinitionDiagnostic {
                 diagnostic,
                 source_range: record.range.clone(),
+                given_up: None,
             }));
         match parsed {
             Ok((definition, userdata_degraded)) => {
@@ -1243,6 +1247,7 @@ pub(crate) fn parse_definitions(
                                 message: duplicate_message(),
                             },
                             source_range: records[first].range.clone(),
+                            given_up: None,
                         });
                     }
 
@@ -1252,6 +1257,7 @@ pub(crate) fn parse_definitions(
                             message: duplicate_message(),
                         },
                         source_range: record.range.clone(),
+                        given_up: None,
                     });
                 } else {
                     seen.insert(definition.id, source_order);
@@ -1269,6 +1275,7 @@ pub(crate) fn parse_definitions(
                         message: format!("instance definition retained: {error}"),
                     },
                     source_range: record.range.clone(),
+                    given_up: Some(record.clone()),
                 });
                 insert_opaque_index(&mut opaque_indices, source_order);
             }

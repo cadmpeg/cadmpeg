@@ -91,7 +91,7 @@ fn surface_routes(
     [
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            ir,
+            &crate::index::ModelIndex::new_model_only(ir),
             geometry,
             u,
             v,

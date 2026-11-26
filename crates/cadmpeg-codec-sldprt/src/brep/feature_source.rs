@@ -40,14 +40,14 @@ mod tests {
     fn source_id_admission_excludes_only_absent_values() {
         for value in [0, u32::MAX] {
             assert!(FeatureSourceId::try_from(value).is_err());
-            assert!(json::from_value::<FeatureSourceId>(serde_json::json!(value)).is_err());
+            assert!(json::from_value::<FeatureSourceId>(cadmpeg_core::json!(value)).is_err());
         }
         for value in [1, 75, u32::MAX - 1] {
             let source = FeatureSourceId::try_from(value).expect("present source ID");
             assert_eq!(source.value(), value);
             assert_eq!(
                 json::to_value(source).expect("source ID JSON"),
-                serde_json::json!(value)
+                cadmpeg_core::json!(value)
             );
         }
     }

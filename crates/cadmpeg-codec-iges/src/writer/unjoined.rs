@@ -10,16 +10,21 @@ use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The infix of the id of each body, region, shell, and edge that a
+/// restatement adds, between the id it restates and its ordinal.
+const RESTATED: &str = ":unjoined.";
+
 /// The document with each sheet body of more than one face, and each solid
 /// body where `version` defines no solid (Type 186), restated as one sheet
 /// body per face, with a copy of each edge for each further use, and a
 /// `writer.open-shell-unjoined` or `writer.solid-unjoined` note per restated
-/// body. `None` when `version` defines the open shell (Type 514 Form 2), or
-/// when the document needs no restatement or has no trimmed-surface form.
+/// body, and the body each added sheet body is split from, by its id. `None`
+/// when `version` defines the open shell (Type 514 Form 2), or when the
+/// document needs no restatement or has no trimmed-surface form.
 pub(super) fn unjoined_open_shells(
     ir: &CadIr,
     version: crate::IgesVersion,
-) -> Option<(CadIr, Vec<LossNote>)> {
+) -> Option<(CadIr, Vec<LossNote>, BTreeMap<BodyId, BodyId>)> {
     let geometry = &ir.geometry;
     let restated_kind = |body: &Body| {
         !is_decoder_free_geometry_body(body)
@@ -49,6 +54,7 @@ pub(super) fn unjoined_open_shells(
     }
     let mut unjoined = ir.clone();
     let mut split_bodies = BTreeMap::new();
+    let mut sources = BTreeMap::new();
     for body in unjoined
         .geometry
         .bodies
@@ -112,9 +118,9 @@ pub(super) fn unjoined_open_shells(
         .with_native_ref(native_ref);
         let mut bodies = Vec::new();
         for (ordinal, face) in faces.iter().enumerate().skip(1) {
-            let body_id = BodyId::try_from(format!("{}:unjoined.{ordinal}", body.id)).ok()?;
-            let region_id = RegionId::try_from(format!("{kept_region}:unjoined.{ordinal}")).ok()?;
-            let shell_id = ShellId::try_from(format!("{kept_shell}:unjoined.{ordinal}")).ok()?;
+            let body_id = BodyId::try_from(format!("{}{RESTATED}{ordinal}", body.id)).ok()?;
+            let region_id = RegionId::try_from(format!("{kept_region}{RESTATED}{ordinal}")).ok()?;
+            let shell_id = ShellId::try_from(format!("{kept_shell}{RESTATED}{ordinal}")).ok()?;
             let mut split = body.clone();
             split.id = body_id.clone();
             split.kind = BodyKind::Sheet;
@@ -135,6 +141,7 @@ pub(super) fn unjoined_open_shells(
                 .find(|record| record.id == face.id)?
                 .shell = shell_id;
             bodies.push(body_id.to_string());
+            sources.insert(body_id, body.id.clone());
         }
         split_bodies.insert(body.id.as_str(), (faces.len(), bodies));
     }
@@ -151,7 +158,7 @@ pub(super) fn unjoined_open_shells(
         }
         let edge = geometry.edges.iter().find(|edge| edge.id == coedge.edge)?;
         let mut copy = edge.clone();
-        copy.id = EdgeId::try_from(format!("{}:unjoined.{count}", edge.id)).ok()?;
+        copy.id = EdgeId::try_from(format!("{}{RESTATED}{count}", edge.id)).ok()?;
         coedge.edge = copy.id.clone();
         copies.push(copy);
         shared.extend(body_of_loop.get(coedge.owner_loop.as_str()).copied());
@@ -198,7 +205,7 @@ pub(super) fn unjoined_open_shells(
             body.id
         )));
     }
-    Some((unjoined, losses))
+    Some((unjoined, losses, sources))
 }
 
 /// The body that owns each face loop.

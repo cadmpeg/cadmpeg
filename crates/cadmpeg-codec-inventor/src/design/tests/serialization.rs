@@ -36,7 +36,7 @@ fn unit_definition_borrowed_wire_refuses_retained_limit_before_clone() {
     PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 }
@@ -62,6 +62,6 @@ fn unit_base_borrowed_wire_preserves_symbol_bytes() {
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
 }

@@ -77,7 +77,7 @@ fn native_topology_link_must_resolve() {
             cadmpeg_core::nonblank_literal!("sketch_curve_links"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
-                json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
+                json::from_value(cadmpeg_core::json!({"links": ["missing"]})).unwrap(),
             )
             .expect("valid native identity")],
         );
@@ -170,19 +170,19 @@ fn unresolved_unknown_record_link_is_reported_once() {
 #[test]
 fn complete_document_native_link_validation_reports_malformed_shapes() {
     for links in [
-        serde_json::json!(null),
-        serde_json::json!(true),
-        serde_json::json!(3),
-        serde_json::json!("test:model:body#0"),
-        serde_json::json!({}),
-        serde_json::json!([null]),
-        serde_json::json!([false]),
-        serde_json::json!([3]),
-        serde_json::json!([{}]),
-        serde_json::json!([[]]),
+        cadmpeg_core::json!(null),
+        cadmpeg_core::json!(true),
+        cadmpeg_core::json!(3),
+        cadmpeg_core::json!("test:model:body#0"),
+        cadmpeg_core::json!({}),
+        cadmpeg_core::json!([null]),
+        cadmpeg_core::json!([false]),
+        cadmpeg_core::json!([3]),
+        cadmpeg_core::json!([{}]),
+        cadmpeg_core::json!([[]]),
     ] {
         let mut wire = json::to_value(unit_cube().unwrap()).unwrap();
-        wire["native"] = serde_json::json!({"test": {"unknowns": [{
+        wire["native"] = cadmpeg_core::json!({"test": {"unknowns": [{
             "id": "test:source:unknown#malformed", "links": links
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
@@ -203,17 +203,17 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
 #[test]
 fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
     for links in [
-        serde_json::json!(null),
-        serde_json::json!(false),
-        serde_json::json!(3),
-        serde_json::json!("source-specific value"),
-        serde_json::json!({"target": 42}),
-        serde_json::json!([null]),
-        serde_json::json!([{"object": "source-object", "subelements": ["Face1"]}]),
-        serde_json::json!(["source-specific value", {"row": 7}]),
+        cadmpeg_core::json!(null),
+        cadmpeg_core::json!(false),
+        cadmpeg_core::json!(3),
+        cadmpeg_core::json!("source-specific value"),
+        cadmpeg_core::json!({"target": 42}),
+        cadmpeg_core::json!([null]),
+        cadmpeg_core::json!([{"object": "source-object", "subelements": ["Face1"]}]),
+        cadmpeg_core::json!(["source-specific value", {"row": 7}]),
     ] {
         let mut wire = json::to_value(unit_cube().unwrap()).unwrap();
-        wire["native"] = serde_json::json!({"test": {"properties": [{
+        wire["native"] = cadmpeg_core::json!({"test": {"properties": [{
             "id": "test:native:property#links", "links": links
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
@@ -249,7 +249,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
                     ),
                     (
                         "nested".into(),
-                        serde_json::json!({"null": null, "rows": [{"value": true}]}),
+                        cadmpeg_core::json!({"null": null, "rows": [{"value": true}]}),
                     ),
                 ]),
             )
@@ -377,7 +377,7 @@ fn a_native_record_links_no_neutral_record_while_a_stub_may() {
     let face = cube.geometry.faces[0].id.as_str().to_owned();
     let native_links = |links: serde_json::Value| {
         let mut wire = json::to_value(&cube).unwrap();
-        wire["native"] = serde_json::json!({"test": {
+        wire["native"] = cadmpeg_core::json!({"test": {
             "properties": [
                 {"id": "test:native:property#a", "links": links},
                 {"id": "test:native:property#b", "links": []}
@@ -393,10 +393,10 @@ fn a_native_record_links_no_neutral_record_while_a_stub_may() {
             .collect::<Vec<_>>()
     };
 
-    let findings = native_links(serde_json::json!(["test:native:property#b"]));
+    let findings = native_links(cadmpeg_core::json!(["test:native:property#b"]));
     assert!(findings.is_empty(), "{findings:?}");
 
-    let findings = native_links(serde_json::json!([face]));
+    let findings = native_links(cadmpeg_core::json!([face]));
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].entity.as_deref(),
@@ -456,13 +456,47 @@ fn annotation_findings(
 #[test]
 fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
-    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, &vertex);
+    let vertex = &ir.geometry.vertices[0].id;
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, vertex);
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.note(&key, &stream, 0, None);
     annotations.derived(&key, "point").unwrap();
-    annotations.derived(&vertex, "point").unwrap();
+    annotations.derived(vertex, "point").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
+    use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
+    use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
+    let (mut ir, _) = cube_with_vertex_state();
+    let edge = ir.geometry.edges[0].clone();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    let mut records = crate::document::Topology::default();
+    records.edges.push(edge.clone());
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: Some(ProcessContent {
+            base: ProcessBase::Design(StateBase::Empty),
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        feature: None,
+    });
+    let key = crate::annotations::AnnotationKey::in_delta(&state, &edge.id);
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.note(&key, &stream, 0, None);
+    annotations.exactness(&key, crate::provenance::Exactness::Inferred);
     let findings = annotation_findings(&ir, annotations.build());
     assert!(findings.is_empty(), "{findings:?}");
 }
@@ -470,12 +504,15 @@ fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
 #[test]
 fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str();
-    let edge = ir.geometry.edges[0].id.as_str();
+    let vertex = &ir.geometry.vertices[0].id;
     let other = crate::design::ids::EvaluationId::mint("test:design:evaluation#2").unwrap();
     let keys = [
-        crate::annotations::AnnotationKey::in_evaluation(&other, vertex),
-        crate::annotations::AnnotationKey::in_evaluation(&evaluation, edge),
+        crate::annotations::AnnotationKey::in_delta(&other, vertex).to_string(),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &ir.geometry.edges[0].id)
+            .to_string(),
+        format!("{}  {vertex}", evaluation.as_str()),
+        format!(" {vertex}"),
+        format!("{} ", evaluation.as_str()),
     ];
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
@@ -499,14 +536,13 @@ fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
             );
         }
     }
-    assert_eq!(findings.len(), 4, "{findings:?}");
+    assert_eq!(findings.len(), 2 * keys.len(), "{findings:?}");
 }
 
 #[test]
 fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
     let (ir, evaluation) = cube_with_vertex_state();
-    let vertex = ir.geometry.vertices[0].id.as_str();
-    let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, vertex);
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, &ir.geometry.vertices[0].id);
     let mut annotations = crate::AnnotationBuilder::new();
     annotations.derived(&key, "not_a_serialized_field").unwrap();
     let findings = annotation_findings(&ir, annotations.build());
@@ -514,6 +550,117 @@ fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
         matches!(findings.as_slice(), [finding]
             if finding.severity == crate::report::Severity::Warning
                 && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}
+
+/// The design fixture with a process state that has no content.
+fn design_with_process_state() -> (crate::CadIr, crate::design::ids::ProcessStateId) {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::process::state::{ProcessState, ProcessStateOf};
+    let mut ir = crate::validate::design::fixture::document();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: None,
+        feature: None,
+    });
+    (ir, state)
+}
+
+#[test]
+fn keys_of_design_and_process_records_resolve() {
+    let (ir, state) = design_with_process_state();
+    let named = [
+        "test:design:feature#extrude",
+        "test:design:evaluation#after-extrude",
+        state.as_str(),
+    ];
+    let absent = "test:design:feature#absent";
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in named.into_iter().chain([absent]) {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    for rule in [
+        "annotations_native.provenance-key-does-not-resolve-entity",
+        "annotations_native.exactness-key-does-not-resolve-entity",
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.severity == crate::report::Severity::Error
+                    && finding.entity.as_deref() == Some(absent)
+                    && finding.rule.as_str() == rule
+            }),
+            "{rule}: {findings:?}"
+        );
+    }
+    assert_eq!(findings.len(), 2, "{findings:?}");
+}
+
+#[test]
+fn a_field_path_of_a_design_record_is_checked_against_that_record() {
+    let (ir, _) = design_with_process_state();
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations
+        .derived("test:design:feature#extrude", "definition")
+        .unwrap();
+    annotations
+        .derived("test:design:feature#fillet", "not_a_serialized_field")
+        .unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.entity.as_deref() == Some("test:design:feature#fillet")
+                && finding.rule.as_str() == "annotations_native.exactness-field-path-does-not-resolve"
+                && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}
+
+/// A design record and the model record it restates share an id, and the
+/// CADIR wire carries the design record alone: a field path names a field of
+/// the design record.
+#[test]
+fn a_design_record_takes_its_field_paths_from_the_model_record_it_restates() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    let (mut ir, _) = design_with_process_state();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("test:design:feature#fillet").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
+    let mut annotations = crate::AnnotationBuilder::new();
+    for field in ["definition", "ordinal"] {
+        annotations
+            .derived("test:design:feature#fillet", field)
+            .unwrap();
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.entity.as_deref() == Some("test:design:feature#fillet")
+                && finding.message.contains("`ordinal`")),
         "{findings:?}"
     );
 }

@@ -98,6 +98,10 @@
           {
             "id": "sldprt:file:block#8",
             "links": []
+          },
+          {
+            "id": "sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0",
+            "links": []
           }
         ]
       }
@@ -265,6 +269,24 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=149 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 149,
+          "stream": "Contents/Config-0-Partition"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "topology.vertex-record-unresolved",
             "kind": "topology_not_transferred",
             "namespace": "sldprt"
@@ -284,6 +306,25 @@
         },
         "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part parasolid-site \"partition body\" stream=\"Contents/Config-0-Partition\" offset=0 length=602 record=sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0: malformed container: sldprt/geometry.parasolid-not-transferred: 1 Parasolid entity record(s) frame and build no geometry; dropped=[]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "parasolid-site"
+        },
+        "severity": "error"
       }
     ],
     "notes": [
@@ -358,6 +399,18 @@
         "offset": 0,
         "stream": "source",
         "untyped": []
+      },
+      "sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0": {
+        "bytes": {
+          "byte_len": 602,
+          "kind": "digest",
+          "sha256": "5b1504d820335fd8233c12b225e907aa50dc5cece6cdf2ea9bb59f4d6338b4e4"
+        },
+        "offset": 0,
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       }
     },
     "unrepresented": [

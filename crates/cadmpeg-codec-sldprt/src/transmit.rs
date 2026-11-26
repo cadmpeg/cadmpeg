@@ -48,7 +48,7 @@ pub fn decode(
         ));
     }
     let mut brep = crate::brep::graph::decode_bodies(ctx, &[(transmit, &header)], stream)?;
-    let losses = crate::decode::brep_losses(&mut brep);
+    let losses = crate::decode::brep_losses(&mut brep)?;
     let geometry = Topology {
         bodies: brep.bodies,
         regions: brep.regions,

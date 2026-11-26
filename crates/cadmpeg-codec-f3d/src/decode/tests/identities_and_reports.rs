@@ -52,9 +52,11 @@ fn failed_mesh_resource_limit_propagates() {
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
+    let mut failed = Vec::new();
     let error = super::super::collect_mesh_outcome(
         &mut bodies,
         &mut report,
+        &mut failed,
         crate::design::decode::mesh::MeshContainerOutcome::Failed {
             entry_name: "mesh.paramesh".into(),
             error: refusal,
@@ -66,6 +68,7 @@ fn failed_mesh_resource_limit_propagates() {
         if limit.operation == "synthetic mesh refusal")
     );
     assert!(report.losses.is_empty());
+    assert!(failed.is_empty());
 }
 
 #[test]

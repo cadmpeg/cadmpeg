@@ -296,17 +296,17 @@ mod tests {
             ),
         };
         let mut wire = json::to_value(&value).expect("serialize definition");
-        assert_eq!(wire["class"], serde_json::json!(0x24));
+        assert_eq!(wire["class"], cadmpeg_core::json!(0x24));
         assert_eq!(
             wire["data"],
-            serde_json::json!({"kind": "compact24", "operand": 1})
+            cadmpeg_core::json!({"kind": "compact24", "operand": 1})
         );
         assert_eq!(
             json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
                 .expect("load derived data"),
             value
         );
-        wire["data"]["operand"] = serde_json::json!(2);
+        wire["data"]["operand"] = cadmpeg_core::json!(2);
         assert!(json::from_value::<CatiaConsolidatedEdgeDefinition>(wire)
             .expect_err("reject conflicting data")
             .to_string()
@@ -344,16 +344,19 @@ mod tests {
         });
         let wire = json::to_value(&value).expect("serialize affine map");
         assert_eq!(wire["data"]["kind"], "affine23");
-        assert_eq!(wire["data"]["target_range"], serde_json::json!([4.0, 8.0]));
+        assert_eq!(
+            wire["data"]["target_range"],
+            cadmpeg_core::json!([4.0, 8.0])
+        );
         assert_eq!(
             json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
                 .expect("load affine map"),
             value
         );
         for (field, replacement) in [
-            ("offset", serde_json::json!(3.0)),
-            ("scale", serde_json::json!(3.0)),
-            ("slots", serde_json::json!([2, 1])),
+            ("offset", cadmpeg_core::json!(3.0)),
+            ("scale", cadmpeg_core::json!(3.0)),
+            ("slots", cadmpeg_core::json!([2, 1])),
         ] {
             let mut contradictory = wire.clone();
             contradictory["data"][field] = replacement;
@@ -398,7 +401,7 @@ mod tests {
             .expect("read the written affine map");
         assert_eq!(&*read.frame.payload, payload.as_slice());
         let mut moved = written;
-        moved["data"]["offset"] = serde_json::json!(0.5);
+        moved["data"]["offset"] = cadmpeg_core::json!(0.5);
         assert!(json::from_value::<CatiaConsolidatedEdgeDefinition>(moved).is_err());
     }
 }

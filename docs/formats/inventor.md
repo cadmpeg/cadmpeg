@@ -79,6 +79,8 @@ Segment major versions 15 through 22 use a 17-byte footer. Segment major version
 
 Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM header and SAB grammar in [asm.md](asm.md). Kernel bytes beginning with `ACIS BinaryFile` use the 32-bit ACIS header and SAB grammar in [asm.md](asm.md) at every save format. Save-format majors 217 and 218 are the verified bands. A kernel signature validates the already typed record. It is not a record locator.
 
+The reader gives up a carrier that it cannot read. When the record envelope does not parse, the part is an `rse-record` part over the record payload. When the kernel header or the kernel stream does not decode, the part is a `kernel-carrier` part over the kernel bytes. Each part is in the expanded bulk stream of its segment, and its stub links to the RSe record that frames the carrier.
+
 ## 6. OLE properties and preview
 
 Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
@@ -88,6 +90,8 @@ Root streams that contain an OLE Property Set self-identify through their byte-o
 The root `Protein` stream starts with a u32 payload length. Zero length is the complete four-byte empty form. A nonzero length equals the exact remaining byte count, and the remaining bytes are one ZIP archive. ZIP entry names are unique and do not contain absolute, parent, current-directory, empty, NUL, or backslash path components.
 
 The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed property records are specified in [`protein.md`](protein.md). Asset definitions form a catalog. A topology assignment requires a separate typed assignment record.
+
+When the schema catalog of the package does not decode, the reader gives up the `Protein` stream as a `protein-stream` part.
 
 ## 8. External references
 
@@ -189,7 +193,7 @@ The remaining bytes of a visibility-off record are retained. A visibility-off re
 
 A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurrence_id`. It joins its external prototype through `reference_id`: the one external reference with the same `reference_id` is the prototype. Copies of one file keep its document identifier, so the document identifier alone does not select a copy. When the occurrence stores a first-section document identifier, the prototype must store the same document identifier. Otherwise, and when no reference or several references have the `reference_id`, the occurrence is unresolved. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
 
-Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss. The reader gives up each occurrence that it does not transfer once, by its occurrence id. An occurrence id that another `UFRxDoc` occurrence transfers is not given up.
 
 ## 10. Part appearance assignments
 
@@ -1452,6 +1456,8 @@ A Split with a solid target is bound only when its target body key leaves betwee
 
 A bound Split or Base feature that projects to a neutral feature has a history body when the state that holds its body materializes to a closed solid. The state is `state_before` for a Split and `state_after` for a Base. The record table of a state has, for each slot of the entity-version map of the state, the record of the revision that the map selects. The record index is the slot, and each non-negative reference names the slot of the revision it referred to. The table exists when every reference names a slot of the map. The body of the feature is the `body` record with the checked body key, and the records it reaches through references. The body is closed when it is a solid body and each edge that has a carrier joins exactly two coedges. A carrier that a procedural construction produces keeps its solved cache as its geometry; a carrier without a cache gives no history body. The history body of a Split is consumed by the Split feature. The history body of a Base is produced by the Base feature. The native record of the feature names its history body.
 
+When the carrier has a `delta_state` record and the chain has no states, or the state scan passes its work limit, the reader gives up the chain as a `history-chain` part. The part starts at the first `delta_state` record and ends at the end of the kernel bytes. The features then have no history states. When the reader retains the whole carrier, the part keeps only its length and digest.
+
 ### 13.11 Part annotations
 
 A part-model annotation is a PmDc feature label whose owner reference selects an annotation owner. The owner type gives the dimension kind:
@@ -1687,5 +1693,7 @@ The modeled-document browser prefix contains `prefix:bytes[49]`. A u32-counted U
 The cached-view prefix contains `prefix:bytes[28]` and `view_reference:u32`. The view reference is non-null and unqualified. It is a one-based index in metadata section 10. In the zero-high-word, zero-key-extension form, the first u32 of the section-10 entry is a zero-based index in section 8. The selected revision entry gives a zero-based segment-pair index in section 7. It selects one drawing-view record of type `5942cb22d111c557600037bd861c3cb0` in the selected sheet segment by `header_value = 0` and equal `header_id`. A cached view whose reference selects any other record keeps its record untyped. The opaque tail follows the reference.
 
 Drawing metadata section 7 has 32-byte segment-pair entries. Section 8 has 20-byte revision entries. Section 10 has 8-byte entries containing a u32 reference word and two u16 values. The section-8 count field is `reference_count:u16`. Section 9 has the tagged entries of section 3.
+
+A typed drawing record that does not parse is an `rse-record` part over its payload. When metadata sections 6, 7, and 9 of a segment do not read as reference tables, the reader gives up the reference-tables record of the segment. When the section-8 entries of a segment do not read, the reader gives up section 8 as a `meta-section` part. A record whose operand references do not select their target types is given up by its record id. A sheet whose view list names a given-up record, and a cached view whose segment has given-up reference tables, are dropped with that record. Any other sheet or cached view whose links do not resolve is given up by its record id.
 
 `RSeEmbeddings/ThirdPartyStorages/_DWFSnapshot` contains opaque file bytes.

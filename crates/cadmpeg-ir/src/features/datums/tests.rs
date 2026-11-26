@@ -421,7 +421,7 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
 fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
     use crate::design::construction::{InputRole, Relation, ScalarDimension, Subject};
     use crate::design::selection::OrderedSelection;
-    let picks: OrderedSelection = json::from_value(serde_json::json!({
+    let picks: OrderedSelection = json::from_value(cadmpeg_core::json!({
         "at":{"kind":"input"}, "picks":{"kind":"named","value":[
             {"target":{"kind":"principal","value":{"entity":"x_axis"}}},
             {"target":{"kind":"principal","value":{"entity":"origin"}}}

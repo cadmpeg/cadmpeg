@@ -23,6 +23,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
+const EPS_PATTERN_FULL_TURN: f64 = 1.0e-12;
 
 #[test]
 fn decode_resolves_feature_topology_selections() {
@@ -1222,4 +1223,40 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
+}
+
+#[test]
+fn a_circular_pattern_reads_its_count_and_angle_from_the_dimensions_its_record_names() {
+    use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Cut-Extrude2" Type="Cut" id="41"/><Feature Name="CirPattern1" Type="CirPattern" id="86" AxisOrigin="0mm,5mm,0mm" AxisDirection="0,0,1" Seeds="41" CountDimension="D1" AngleDimension="D3"><Dimension Name="D1">6</Dimension><Dimension Name="D3">360deg</Dimension></Feature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let features = &decoded.ir().model.features;
+    let seed = features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Cut-Extrude2"))
+        .unwrap();
+    let pattern = features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("CirPattern1"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        pattern.evaluation.definition()
+    else {
+        panic!("a pattern: {:?}", pattern.evaluation.definition());
+    };
+    assert_eq!(seeds, &[PatternSeed::Feature(seed.id.clone())]);
+    let PatternTransform::Circular { angle, count, .. } = pattern.definition() else {
+        panic!("a circular pattern: {:?}", pattern.definition());
+    };
+    assert_eq!(*count, 6);
+    assert!((angle.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_FULL_TURN);
 }

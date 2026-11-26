@@ -348,8 +348,14 @@ fn check_witness_body(
     else {
         return Ok(());
     };
-    let nested =
-        crate::validate::nested_topology_findings(ctx, document, body.clone(), true, true)?;
+    let file_keys = crate::validate::products::decode_set::file_keys(document.ir);
+    let nested = crate::validate::topology::nested::check(
+        ctx,
+        document,
+        body.clone(),
+        Some(&file_keys),
+        crate::validate::topology::nested::NestRules::All { caches: true },
+    )?;
     for finding in nested {
         findings.push(crate::validate::nested_finding(
             finding,

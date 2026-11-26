@@ -235,7 +235,7 @@ fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
     );
     assert_eq!(
         source["observation"]["points"][0]["position"],
-        serde_json::json!([0.25, 0.5, 0.75])
+        cadmpeg_core::json!([0.25, 0.5, 0.75])
     );
     assert_eq!(
         source["observation"]["points"][0]["rule"]["reference_type"],
@@ -248,7 +248,7 @@ fn pipe_projection_preserves_partial_point_data_and_prefix_controls() {
     assert!(source["observation"]["prefix_references"]
         .as_array()
         .unwrap()
-        .contains(&serde_json::json!([500, 29])));
+        .contains(&cadmpeg_core::json!([500, 29])));
     assert_eq!(
         losses,
         [

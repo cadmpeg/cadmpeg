@@ -51,7 +51,7 @@ fn scope() -> DesignParameterScope {
         DesignFeatureKind::CylinderPrimitive,
         1,
     );
-    let primitive = json::from_value(serde_json::json!({
+    let primitive = json::from_value(cadmpeg_core::json!({
         "height": 2.6, "height_record_index": 259,
         "height_offset": 1000, "diameter": 0.5, "diameter_record_index": 262,
         "diameter_offset": 1100, "operation": "join", "operation_offset": 20,
