@@ -170,7 +170,7 @@ fn validate_model_with_index<'ir>(
     check_pmi(ir, &mut findings);
     check_topology_rules(ctx, ids, ids.native_view(), true, &mut findings)?;
     check_native_links(ids.native_view(), ids, &mut findings);
-    check_tessellations(ir, &mut findings);
+    check_tessellations(ids, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
@@ -210,9 +210,9 @@ fn check_topology_rules(
     check_coedge_pairing(ir, findings)?;
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
-    check_shell_connectivity(ir, findings);
-    check_loopless_faces(ir, findings);
-    check_solid_edge_uses(ir, findings);
+    check_shell_connectivity(index, findings);
+    check_loopless_faces(index, findings);
+    check_solid_edge_uses(index, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {
@@ -222,7 +222,7 @@ fn check_topology_rules(
         check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
     }
     check_parameter_domains(ctx, ir, findings)?;
-    check_edge_endpoint_consistency(ctx, ir, findings)?;
+    check_edge_endpoint_consistency(ctx, index, findings)?;
     let evaluations = crate::eval::admission::ModelEvaluationPass::new();
     check_pcurve_surface_consistency(ctx, index, &evaluations, findings)?;
     if caches {

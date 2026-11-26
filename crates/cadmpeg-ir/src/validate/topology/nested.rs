@@ -55,9 +55,9 @@ pub(in crate::validate) fn check(
     match rules {
         NestRules::Admission => {
             super::graphs::check_coedge_pairing(&alone, &mut findings)?;
-            super::graphs::check_shell_connectivity(&alone, &mut findings);
+            super::graphs::check_shell_connectivity(&index, &mut findings);
             super::graphs::check_wire_topology(&alone, &mut findings);
-            check_edge_endpoint_consistency(ctx, &alone, &mut findings)?;
+            check_edge_endpoint_consistency(ctx, &index, &mut findings)?;
             super::check_topology_tolerances(&alone, &mut findings);
         }
         NestRules::All { caches } => {

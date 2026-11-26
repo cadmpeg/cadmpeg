@@ -38,7 +38,6 @@ use crate::scalar::{
 use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
-use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 
@@ -5881,10 +5880,8 @@ fn surface_point_evaluation(
                 surface_point_evaluation(scratch, placed.basis(), u, v),
             )
         }
-        _ => analytic_surface_second_partials(geometry, u, v)
-            .map_or(Err(EvaluationFailure::NoValue), |partials| {
-                admit_point(partials.point)
-            }),
+        _ => analytic_surface_point(geometry, u, v)
+            .map_or(Err(EvaluationFailure::NoValue), admit_point),
     }
 }
 
@@ -6247,6 +6244,87 @@ pub fn surface_partials_solved<'ctx, 'arena: 'ctx>(
     scratch.settle(result)
 }
 
+/// The raw point of an analytic surface at `(u, v)`, or none for a carrier
+/// that is not analytic. Each arm states the point term of
+/// [`analytic_surface_second_partials`] in the same order.
+fn analytic_surface_point(geometry: &SolvedSurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+    match geometry {
+        SolvedSurfaceGeometry::Plane(plane_surface) => {
+            let u_axis = plane_surface.frame().reference().as_raw();
+            let v_axis = plane_surface.frame().axis().as_raw().cross(*u_axis);
+            Some(offset(
+                plane_surface.origin().get(),
+                &[(u, *u_axis), (v, v_axis)],
+            ))
+        }
+        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
+            let radius = cylinder_surface.radius().get();
+            Some(offset(
+                cylinder_surface.origin().get(),
+                &[
+                    (radius * u.portable_cos(), *ref_direction),
+                    (radius * u.portable_sin(), axis.cross(*ref_direction)),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SolvedSurfaceGeometry::Cone(cone_surface) => {
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
+            let local_radius =
+                cone_surface.radius().get() + v * cone_surface.half_angle().get().portable_tan();
+            Some(offset(
+                cone_surface.origin().get(),
+                &[
+                    (local_radius * u.portable_cos(), *ref_direction),
+                    (
+                        local_radius * cone_surface.ratio().get() * u.portable_sin(),
+                        axis.cross(*ref_direction),
+                    ),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
+            let radius = sphere_surface.radius().get();
+            let v_cosine = v.portable_cos();
+            Some(offset(
+                sphere_surface.center().get(),
+                &[
+                    (radius * v_cosine * u.portable_cos(), *ref_direction),
+                    (
+                        radius * v_cosine * u.portable_sin(),
+                        axis.cross(*ref_direction),
+                    ),
+                    (radius * v.portable_sin(), *axis),
+                ],
+            ))
+        }
+        SolvedSurfaceGeometry::Torus(torus_surface) => {
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
+            let minor_radius = torus_surface.minor_radius().get();
+            let ring = torus_surface.major_radius().get() + minor_radius * v.portable_cos();
+            Some(offset(
+                torus_surface.center().get(),
+                &[
+                    (ring * u.portable_cos(), *ref_direction),
+                    (ring * u.portable_sin(), axis.cross(*ref_direction)),
+                    (minor_radius * v.portable_sin(), *axis),
+                ],
+            ))
+        }
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
 /// The raw point and exact first and second partials of an analytic surface
 /// at `(u, v)`, or none for a carrier that is not analytic. The lanes are
 /// formed from finite frames and can leave the finite range.
@@ -6586,45 +6664,21 @@ pub fn surface_second_partials_solved<'ctx, 'arena: 'ctx>(
     scratch.settle(result)
 }
 
-/// Evaluate a surface carrier with access to construction and child-carrier
-/// arenas in `ir`.
+/// Evaluate a surface carrier against the caller's index of its model, which
+/// supplies its construction and child carriers.
 pub fn model_surface_point(
-    admission: admission::EvaluationAdmission<'_, '_>,
-    ir: &CadIr,
-    geometry: &SurfaceGeometry,
-    u: f64,
-    v: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    admission.within_model(|admission| {
-        model_surface_point_inner(admission, ModelSource::Document(ir), geometry, u, v)
-    })
-}
-
-/// Evaluate a surface carrier against the caller's index of its model.
-pub fn model_surface_point_in_index(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    admission.within_model(|admission| {
-        model_surface_point_inner(admission, ModelSource::Index(index), geometry, u, v)
-    })
-}
-
-/// The model that a surface point reads its construction from: an index the
-/// caller holds, or a document that is indexed only when a construction is
-/// read.
-#[derive(Clone, Copy)]
-enum ModelSource<'index, 'ir> {
-    Index(&'index crate::index::ModelIndex<'ir>),
-    Document(&'ir CadIr),
+    admission.within_model(|admission| model_surface_point_inner(admission, index, geometry, u, v))
 }
 
 fn model_surface_point_inner(
     admission: admission::EvaluationAdmission<'_, '_>,
-    source: ModelSource<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
@@ -6636,14 +6690,6 @@ fn model_surface_point_inner(
     }
     let Some(construction) = geometry.procedural_construction() else {
         return crate::eval::decode::surface_point(admission, geometry, u, v);
-    };
-    let built;
-    let index = match source {
-        ModelSource::Index(index) => index,
-        ModelSource::Document(ir) => {
-            built = crate::index::ModelIndex::build(ir);
-            &built
-        }
     };
     let procedural = index
         .procedural_surface_construction(construction.as_str(), admission)

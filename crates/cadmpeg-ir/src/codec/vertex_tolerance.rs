@@ -145,14 +145,14 @@ fn measure(
         .filter_map(|vertex| Some((vertex.id.as_str(), *points.get(vertex.point.as_str())?)))
         .collect();
     let mut comparisons: Vec<VertexComparison<'_>> = Vec::new();
-    let curve_ends = CurveEndComparisons::new(ir);
+    let index = ModelIndex::new_model_only(ir);
+    let curve_ends = CurveEndComparisons::new(&index);
     for edge in &ir.geometry.edges {
         comparisons.extend(curve_ends.edge(ctx, edge)?);
     }
     for coedge in &ir.geometry.coedges {
         comparisons.extend(curve_ends.coedge(ctx, coedge)?);
     }
-    let index = ModelIndex::new_model_only(ir);
     pcurve_image_comparisons(ctx, &index, &ModelEvaluationPass::new(), |comparison| {
         comparisons.push(comparison);
     })?;
