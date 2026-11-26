@@ -226,7 +226,7 @@ pub(super) fn remove(value: &mut Value, site: &Site, name: &str) {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     use super::{member, refusal, variant, MemberRepair, Refusal};
 

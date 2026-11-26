@@ -13,7 +13,7 @@ use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record_index: u32, role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,

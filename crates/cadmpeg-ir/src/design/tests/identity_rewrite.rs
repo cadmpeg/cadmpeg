@@ -17,29 +17,29 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (source, expected, target) in [
         (
-            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
-            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:placed:container#one"}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"start","value":"test:placed:container#one"}}),
             "test:model:container#one",
         ),
         (
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:model:feature#one"}}}),
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:placed:feature#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:model:feature#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:placed:feature#one"}}}),
             "test:model:feature#one",
         ),
         (
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:model:container#one"}}}),
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:placed:container#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:model:container#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:placed:container#one"}}}),
             "test:model:container#one",
         ),
         (
-            serde_json::json!({"kind":"tool","value":"test:model:feature#one"}),
-            serde_json::json!({"kind":"tool","value":"test:placed:feature#one"}),
+            cadmpeg_core::json!({"kind":"tool","value":"test:model:feature#one"}),
+            cadmpeg_core::json!({"kind":"tool","value":"test:placed:feature#one"}),
             "test:model:feature#one",
         ),
     ] {
         for configuration in [false, true] {
-            let mut source = serde_json::json!({"of":source});
-            let mut expected = serde_json::json!({"of":expected});
+            let mut source = cadmpeg_core::json!({"of":source});
+            let mut expected = cadmpeg_core::json!({"of":expected});
             let mut targets = vec![target.to_owned()];
             if configuration {
                 source["configuration"] = "test:model:configuration#one".into();
@@ -67,7 +67,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
 #[test]
 fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() {
     let literal = "test:model:parameter#one";
-    let selection: OrderedSelection = json::from_value(serde_json::json!({
+    let selection: OrderedSelection = json::from_value(cadmpeg_core::json!({
         "at":{"kind":"input"},
         "picks":{"kind":"named","value":[{
             "target":{"kind":"datum","value":{"feature":"test:model:feature#datum"}},

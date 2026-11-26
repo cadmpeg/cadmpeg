@@ -30,7 +30,7 @@ fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
     let wire = json::to_value(&definition).unwrap();
     assert_eq!(
         wire["parameter_ranges"],
-        serde_json::json!([[2.0, -1.0], [0.0, 1.0]])
+        cadmpeg_core::json!([[2.0, -1.0], [0.0, 1.0]])
     );
     assert_eq!(
         json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
@@ -40,14 +40,14 @@ fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
     for range in [[0.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(subset([range, [0.0, 1.0]]).is_err());
         let mut invalid = json::to_value(&before).unwrap();
-        invalid["definition"]["parameter_ranges"][0] = serde_json::json!(range);
+        invalid["definition"]["parameter_ranges"][0] = cadmpeg_core::json!(range);
         assert!(
             json::from_value::<ProceduralSurfaceDefinition>(invalid["definition"].clone()).is_err()
         );
         assert!(json::from_value::<ProceduralSurface>(invalid).is_err());
     }
     let mut wire = json::to_value(&before).unwrap();
-    wire["definition"]["parameter_ranges"][0] = serde_json::json!([1.0, 1.0]);
+    wire["definition"]["parameter_ranges"][0] = cadmpeg_core::json!([1.0, 1.0]);
     assert!(json::from_value::<ProceduralSurfaceDefinition>(wire["definition"].clone()).is_err());
     assert!(json::from_value::<ProceduralSurface>(wire).is_err());
 }
@@ -88,7 +88,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     // so no construction can carry one. Whitespace alone is blank too.
     for blank in ["", " ", "\t"] {
         assert!(json::from_value::<LawExpression>(
-            serde_json::json!({"kind": "text", "value": blank})
+            cadmpeg_core::json!({"kind": "text", "value": blank})
         )
         .is_err());
     }
@@ -118,7 +118,7 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
     let wire = json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["direction"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0})
     );
     assert_eq!(
         json::from_value::<ProceduralSurface>(wire.clone()).unwrap(),

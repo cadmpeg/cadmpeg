@@ -273,10 +273,10 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
         .unwrap();
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
-        serde_json::json!(crate::test_support::native_bytes(
+        cadmpeg_core::json!(crate::test_support::native_bytes(
             &annotations[0].fields().unwrap()["strings"][0]["text"]
         )),
-        serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
+        cadmpeg_core::json!([51, 52, 52, 49, 51, 66, 55, 65])
     );
     assert!(
         result

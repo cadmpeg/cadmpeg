@@ -301,11 +301,11 @@ mod tests {
 
     #[test]
     fn table_wire_carries_the_table_facts_once() {
-        let group = serde_json::json!({
+        let group = cadmpeg_core::json!({
             "id": "group", "opener": "0100", "count_prefix": null, "declared_count": 0,
             "rows": [], "source_offset": 0
         });
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "section_link": "section",
             "source_entry": "om",
             "table_trailing_bytes": "",
@@ -321,7 +321,7 @@ mod tests {
         );
 
         let mut invalid = wire;
-        invalid["table_trailing_bytes"] = serde_json::json!("01");
+        invalid["table_trailing_bytes"] = cadmpeg_core::json!("01");
         assert!(json::from_value::<super::OmRollForwardStateTable>(invalid)
             .unwrap_err()
             .to_string()
@@ -373,7 +373,7 @@ mod tests {
             #[serde(flatten)]
             table: &'a super::OmRollForwardStateTable,
         }
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:om:roll-forward-table#0",
             "section_link": "section", "source_entry": "om",
             "table_trailing_bytes": "", "table_end_offset": 8,

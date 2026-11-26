@@ -93,8 +93,8 @@ fn archive(shape: Shape) -> Vec<u8> {
         &["short", "tall", "wide"],
     ))
     .unwrap();
-    let rule =
-        serde_json::to_vec(&serde_json::json!({"when": "Width > 1", "activate": "Tall"})).unwrap();
+    let rule = serde_json::to_vec(&cadmpeg_core::json!({"when": "Width > 1", "activate": "Tall"}))
+        .unwrap();
     let empty = serde_json::to_vec(&table_document(
         "2",
         &[("P", property_target("Part Number"))],

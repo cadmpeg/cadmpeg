@@ -186,7 +186,7 @@ fn e5_edge_wire_views_keep_null_unresolved_and_allocation_fields() {
     let rows: Vec<serde_json::Value> = owned.arena_as("e5_edges").expect("typed wire view");
     assert_eq!(
         rows,
-        [serde_json::json!({
+        [cadmpeg_core::json!({
             "id":"catia:e5:edge-use#0", "byte_offset":0, "byte_len":20,
             "record_id":7, "object_references":[0,10,16,14,15],
             "allocation_terminal":{"raw_byte":34,"value":8,"encoding":"selector2"}

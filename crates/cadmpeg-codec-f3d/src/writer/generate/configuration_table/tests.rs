@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignConfiguration as Configuration, ParameterValue,
@@ -9,7 +10,6 @@ use cadmpeg_ir::features::parameters::{
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{ConfigurationId, Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::Length;
-use serde_json::json;
 
 use super::{evaluated, regenerate, row_id};
 use crate::design::configurations::{project, reconcile_active_configurations};

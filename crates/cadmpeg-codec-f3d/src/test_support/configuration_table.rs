@@ -4,10 +4,11 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::DesignParameter as NeutralParameter;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use crate::design::configurations::ConfigurationTargets;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};

@@ -781,8 +781,8 @@ mod tests {
         value.created_body_nodes = vec![541, 546];
         value.consumed_body_nodes = vec![510];
         let wire = json::to_value(&value).unwrap();
-        assert_eq!(wire["created_body_nodes"], serde_json::json!([541, 546]));
-        assert_eq!(wire["consumed_body_nodes"], serde_json::json!([510]));
+        assert_eq!(wire["created_body_nodes"], cadmpeg_core::json!([541, 546]));
+        assert_eq!(wire["consumed_body_nodes"], cadmpeg_core::json!([510]));
         assert_eq!(
             json::from_value::<DesignCombineOperation>(wire).unwrap(),
             value
@@ -791,7 +791,7 @@ mod tests {
     }
 
     fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "selector_asset_id": "00000004-1111-4111-8111-111111111111",
             "selector_asset_id_offset": 44,
             "selector_context_id": "00000005-1111-4111-8111-111111111111",
@@ -811,17 +811,17 @@ mod tests {
         });
         if version {
             wire["external_property_key"] =
-                serde_json::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-            wire["external_property_key_offset"] = serde_json::json!(327);
-            wire["external_version_urn"] = serde_json::json!("urn");
-            wire["external_version_urn_offset"] = serde_json::json!(403);
-            wire["tail_value_offsets"] = serde_json::json!([415, 427]);
+                cadmpeg_core::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            wire["external_property_key_offset"] = cadmpeg_core::json!(327);
+            wire["external_version_urn"] = cadmpeg_core::json!("urn");
+            wire["external_version_urn_offset"] = cadmpeg_core::json!(403);
+            wire["tail_value_offsets"] = cadmpeg_core::json!([415, 427]);
         }
         json::from_value(wire).unwrap()
     }
 
     fn operation(version: bool) -> DesignCombineOperation {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "form": "standard",
             "operation": "join",
             "operation_offset": 20,
@@ -883,13 +883,13 @@ mod tests {
             ..selection
         };
         let wire = json::to_value(&without).unwrap();
-        assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
+        assert_eq!(wire, cadmpeg_core::json!({ "record_index": 363 }));
         assert_eq!(
             json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             without
         );
 
-        let error = json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+        let error = json::from_value::<DesignCombineBodySelection>(cadmpeg_core::json!({
             "record_index": 363,
             "body_node": null,
         }))

@@ -161,23 +161,18 @@ pub(in crate::native) fn attach_expression_parameters(
                 continue;
             };
 
-            annotations.note(
-                id.as_str(),
-                &stream,
-                expression.source_offset,
-                Some("Number"),
-            );
+            annotations.note(&id, &stream, expression.source_offset, Some("Number"));
             annotations
-                .derived(id.as_str(), "owner")
+                .derived(&id, "owner")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "ordinal")
+                .derived(&id, "ordinal")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "value")
+                .derived(&id, "value")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "native_ref")
+                .derived(&id, "native_ref")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
@@ -197,7 +192,7 @@ pub(in crate::native) fn attach_expression_parameters(
             }
             if !dependencies.is_empty() {
                 annotations
-                    .derived(id.as_str(), "dependencies")
+                    .derived(&id, "dependencies")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
@@ -224,7 +219,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 expression.unit.property_name(),
             )?;
             annotations
-                .derived(id.as_str(), "properties")
+                .derived(&id, "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
             if let Some(declaration) = expression
                 .declaration
@@ -242,7 +237,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     declaration.object_id.to_string(),
                 )?;
                 annotations
-                    .derived(id.as_str(), "properties")
+                    .derived(&id, "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
@@ -262,7 +257,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     parameter_use.id.clone(),
                 )?;
                 annotations
-                    .derived(id.as_str(), "properties")
+                    .derived(&id, "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
             let ordinal = u32::try_from(ordinal).map_err(|_| {
@@ -397,7 +392,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 )?;
             }
             annotations
-                .derived(parameter.id.as_str(), "properties")
+                .derived(&parameter.id, "properties")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

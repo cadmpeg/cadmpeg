@@ -745,7 +745,7 @@ fn bump_first_real(value: &mut serde_json::Value) -> bool {
             let Some(real) = number.as_f64().filter(|real| *real != 0.0) else {
                 return false;
             };
-            *value = serde_json::json!(real + 1.0);
+            *value = cadmpeg_core::json!(real + 1.0);
             true
         }
         Value::Array(items) => items.iter_mut().any(bump_first_real),
@@ -835,7 +835,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
     const EDITED: f64 = 6.35;
     let mut decoded = ftc_08_with_fillet_selection_edited(|fillet| {
         edit_definition(fillet, |wire| {
-            *wire.pointer_mut(RADIUS).unwrap() = serde_json::json!(EDITED);
+            *wire.pointer_mut(RADIUS).unwrap() = cadmpeg_core::json!(EDITED);
         });
     });
     let name = {
@@ -1364,7 +1364,7 @@ fn edit_definition_at(
 }
 
 fn plus_one(value: &mut serde_json::Value) {
-    *value = serde_json::json!(value.as_f64().unwrap() + 1.0);
+    *value = cadmpeg_core::json!(value.as_f64().unwrap() + 1.0);
 }
 
 /// `Sketch4` is placed on `Plane3`, and a `Plane3` distance edit written as
@@ -1448,7 +1448,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
 fn a_variant_edit_names_the_parameter_its_record_gains() {
     let mut decoded = EditableDecodeResult::from(ftc_08().clone());
     let (cut, _) = edit_definition_at(&mut decoded, "Cut-Extrude2", "/termination", |value| {
-        *value = serde_json::json!({"kind": "blind", "length": 5.0});
+        *value = cadmpeg_core::json!({"kind": "blind", "length": 5.0});
     });
 
     let (report, output, read_back) = write(&decoded);
@@ -1565,7 +1565,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
         edit_definition(extrusion, |wire| {
             let leaf = first_depth(wire).unwrap();
             depth = leaf.as_f64().unwrap() + 1.0;
-            *leaf = serde_json::json!(depth);
+            *leaf = cadmpeg_core::json!(depth);
         });
         depth
     };

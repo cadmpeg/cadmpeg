@@ -356,7 +356,7 @@ mod tests {
             json::to_value(&chain.terminal).expect("serialize terminal");
         assert!(json::from_value::<CatiaSchemaConfigurationRowChain>(mismatched).is_err());
         let mut empty = wire;
-        empty["links"] = serde_json::json!([]);
+        empty["links"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<CatiaSchemaConfigurationRowChain>(empty).is_err());
     }
 }

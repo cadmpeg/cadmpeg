@@ -39,7 +39,7 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
     PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 
@@ -78,6 +78,6 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "value": wire}),
+        cadmpeg_core::json!({"id": record.id, "value": wire}),
     );
 }

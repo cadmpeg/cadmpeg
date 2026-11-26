@@ -36,15 +36,15 @@ fn binary_units_cgs_lengths_scale_exactly_once() {
         assert_eq!(surface["geometry"]["value"]["kind"], "plane");
         assert_eq!(
             surface["geometry"]["value"]["origin"],
-            serde_json::json!({"x":expected[0], "y":expected[1], "z":expected[2]})
+            cadmpeg_core::json!({"x":expected[0], "y":expected[1], "z":expected[2]})
         );
         assert_eq!(
             surface["geometry"]["value"]["normal"],
-            serde_json::json!({"x":0.0,"y":0.0,"z":1.0})
+            cadmpeg_core::json!({"x":0.0,"y":0.0,"z":1.0})
         );
         assert_eq!(
             surface["geometry"]["value"]["u_axis"],
-            serde_json::json!({"x":1.0,"y":0.0,"z":0.0})
+            cadmpeg_core::json!({"x":1.0,"y":0.0,"z":0.0})
         );
         let attributes = &decoded.ir().source.as_ref().expect("Source").attributes;
         assert_eq!(

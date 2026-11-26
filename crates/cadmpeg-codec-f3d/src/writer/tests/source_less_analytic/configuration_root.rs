@@ -535,8 +535,9 @@ fn an_edited_configuration_reads_back_as_the_neutral_record() {
 fn a_renamed_configuration_keeps_its_rule() {
     const RULE: &str = "FusionAssetName[Active]/DesignConfigurationRule.123.dsgcfgrule";
     let table = serde_json::to_vec(&generated_configuration_document()).unwrap();
-    let rule = serde_json::to_vec(&serde_json::json!({"when": "Width > 1", "activate": "Medium"}))
-        .unwrap();
+    let rule =
+        serde_json::to_vec(&cadmpeg_core::json!({"when": "Width > 1", "activate": "Medium"}))
+            .unwrap();
     let mut ir = source_less(f3d_with_configurations(
         &synthetic_geometry_smbh(),
         &[(ENTRY, &table), (RULE, &rule)],

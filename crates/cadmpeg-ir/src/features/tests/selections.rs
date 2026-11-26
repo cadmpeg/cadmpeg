@@ -3,8 +3,8 @@
 use crate::features::selections::{
     EdgeSelection, FaceSelection, GeneratedEdgeRef, GeneratedFaceRef, VertexSelection,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn historical_selection_admission_preserves_partial_and_reference_semantics() {

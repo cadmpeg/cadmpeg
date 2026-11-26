@@ -16,9 +16,9 @@ fn carrier_interval_round_trips_and_rejects_invalid_endpoints() {
     assert_eq!(recovered, curve);
     for range in [
         serde_json::Value::Null,
-        serde_json::json!([2.0, 2.0]),
-        serde_json::json!([5.0, 2.0]),
-        serde_json::json!([2.0, null]),
+        cadmpeg_core::json!([2.0, 2.0]),
+        cadmpeg_core::json!([5.0, 2.0]),
+        cadmpeg_core::json!([2.0, null]),
     ] {
         value["parameter_range"] = range;
         assert!(json::from_value::<crate::geometry::Curve>(value.clone()).is_err());
@@ -38,7 +38,7 @@ fn carrier_interval_survives_complete_document_serialization() {
     let value = json::to_value(&document).unwrap();
     assert_eq!(
         value["geometry"]["curves"][0]["parameter_range"],
-        serde_json::json!([2.0, 5.0])
+        cadmpeg_core::json!([2.0, 5.0])
     );
     let recovered: crate::CadIr = json::from_value(value).unwrap();
     assert_eq!(recovered.geometry.curves[0].parameter_range, interval);

@@ -31,16 +31,16 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
         ["feature_extract_face_construction_envelopes"];
     assert_eq!(records.len(), 1);
     let wire = json::to_value(&records[0]).unwrap();
-    let relation = serde_json::json!({"key":7,"left":{"object_index":0,"raw_object_index":"00"},"right":{"object_index":1,"raw_object_index":"8001"}});
+    let relation = cadmpeg_core::json!({"key":7,"left":{"object_index":0,"raw_object_index":"00"},"right":{"object_index":1,"raw_object_index":"8001"}});
     assert_eq!(
         wire["lanes"],
-        serde_json::json!([[relation.clone(), relation], []])
+        cadmpeg_core::json!([[relation.clone(), relation], []])
     );
     assert_eq!(wire["navigator_text"], "é");
     assert_eq!(wire["byte_len"], 55);
     assert_eq!(
         json::to_value(result.ir().model.features[0].evaluation.definition()).unwrap(),
-        serde_json::json!({"kind": "operation", "value": {"kind": "unresolved", "value": {"family":"extract_face"}}})
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "unresolved", "value": {"family":"extract_face"}}})
     );
     let (mut ir, report, fidelity) = result.into_parts();
     let validation =
@@ -53,7 +53,7 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
                 .is_empty()
         );
         let mut invalid = wire;
-        invalid["lanes"][0][0]["right"]["object_index"] = serde_json::json!(2);
+        invalid["lanes"][0][0]["right"]["object_index"] = cadmpeg_core::json!(2);
         ir.native
             .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(

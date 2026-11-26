@@ -838,6 +838,16 @@ pub(crate) fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
+    multi_asset_f3d(include_design_brep, "")
+}
+
+/// [`synthetic_multi_asset_f3d`] with a model BREP, whose Design asset is a
+/// board asset: its manifest stores the subtype `PCBAssetSubType`.
+pub(crate) fn synthetic_board_asset_f3d() -> Vec<u8> {
+    multi_asset_f3d(true, "PCBAssetSubType")
+}
+
+fn multi_asset_f3d(include_design_brep: bool, design_subtype: &str) -> Vec<u8> {
     const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
     const SIBLING_GUID: &str = "20000000-0000-4000-8000-000000000002";
     const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
@@ -868,8 +878,15 @@ pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
     zip.write_all(&synthetic_smbh()).unwrap();
     zip.start_file("DesignAsset[Active]/Manifest.dat", stored)
         .unwrap();
-    zip.write_all(&crate::manifest::encode_design_asset("DesignAsset", DESIGN_GUID).unwrap())
-        .unwrap();
+    zip.write_all(
+        &crate::manifest::encode_design_asset_with_subtype(
+            "DesignAsset",
+            DESIGN_GUID,
+            design_subtype,
+        )
+        .unwrap(),
+    )
+    .unwrap();
     zip.start_file(
         "DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat",
         stored,

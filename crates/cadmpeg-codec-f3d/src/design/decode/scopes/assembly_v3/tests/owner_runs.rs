@@ -206,7 +206,7 @@ fn counted_owner_runs_validate_owner_membership_order_and_native_offsets() {
         for field in ["local_ordinal", "scope_record_index"] {
             let mut changed = owners.clone();
             let mut wire = json::to_value(&changed[4]).unwrap();
-            wire[field] = serde_json::json!(9);
+            wire[field] = cadmpeg_core::json!(9);
             changed[4] = json::from_value(wire).unwrap();
             assert!(decode(&bytes, &scope, &changed, &types).is_none());
         }

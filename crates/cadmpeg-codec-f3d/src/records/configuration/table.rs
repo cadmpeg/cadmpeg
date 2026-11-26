@@ -363,7 +363,7 @@ pub(crate) fn set_cell(
         Some(data) => {
             let cell = typed_value(
                 &format!("{COMPONENT_PREFIX}rowCell-1.0.0"),
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "columnId": typed_value("String", Value::from(column)),
                     "data": cell_data(data),
                 }),
@@ -415,7 +415,7 @@ pub(crate) fn set_row_order(payload: &mut Map<String, Value>, position: usize, o
 /// A row of id `id` and name `name` with no cells and `default` false, in
 /// the form [`AdmittedTables::admit`] reads (f3d.md §1.2).
 pub(crate) fn new_row(id: &str, name: &str, guids: RowGuids) -> Value {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     let component = |name: &str, kind: &str, properties: Value| json!({"name": name, "type": format!("{COMPONENT_PREFIX}{kind}"), "properties": properties});
     json!({"asset": {
@@ -445,7 +445,7 @@ fn typed_value(kind: &str, value: Value) -> Value {
 
 /// The `data` value of a cell, the form [`cell_value`] reads.
 fn cell_data(data: &CellData) -> Value {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     let component =
         |kind: &str, members: Value| typed_value(&format!("{COMPONENT_PREFIX}{kind}"), members);
