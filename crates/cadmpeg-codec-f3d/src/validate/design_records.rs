@@ -709,7 +709,8 @@ pub(super) fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding
             .design_body_bindings
             .iter()
             .filter(|binding| {
-                design_stream_contains_entry(native_stream, binding.stream())
+                design_stream(binding.id()) == native_stream
+                    && design_stream_contains_entry(native_stream, binding.stream())
                     && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();

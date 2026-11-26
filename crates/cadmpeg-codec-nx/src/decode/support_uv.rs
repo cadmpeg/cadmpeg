@@ -3148,7 +3148,7 @@ mod tests {
             ));
         }
         ir.finalize();
-        let before = serde_json::to_value(&ir).expect("model serialization");
+        let before = cadmpeg_core::serde_erase::json::to_value(&ir).expect("model serialization");
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
@@ -3180,7 +3180,7 @@ mod tests {
             assert!(ctx.resource_refusal().is_none());
         });
         assert_eq!(
-            serde_json::to_value(&ir).expect("model serialization"),
+            cadmpeg_core::serde_erase::json::to_value(&ir).expect("model serialization"),
             before
         );
     }

@@ -21,20 +21,34 @@ fn set() -> serde_json::Value {
 #[test]
 fn chamfer_set_list_round_trips_and_refuses_empty_runs_and_unknown_keys() {
     let value = wire(1, &serde_json::json!([set()]));
-    let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&list).unwrap(), value);
-    assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([]))).is_err()
+    let list: DesignChamferSetList =
+        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&list).unwrap(),
+        value
     );
     assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(0, &serde_json::json!([set()])))
-            .is_err()
+        cadmpeg_core::serde_erase::json::from_value::<DesignChamferSetList>(wire(
+            1,
+            &serde_json::json!([])
+        ))
+        .is_err()
+    );
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignChamferSetList>(wire(
+            0,
+            &serde_json::json!([set()])
+        ))
+        .is_err()
     );
     let mut extra = set();
     extra["distance"] = serde_json::json!(1.0);
     assert!(
-        serde_json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([extra])))
-            .is_err()
+        cadmpeg_core::serde_erase::json::from_value::<DesignChamferSetList>(wire(
+            1,
+            &serde_json::json!([extra])
+        ))
+        .is_err()
     );
 }
 
@@ -46,8 +60,12 @@ fn distance_angle_reversal_round_trips_and_defaults_to_false() {
             value["distance_reversed"] = serde_json::json!(true);
         }
         let value = wire(1, &serde_json::json!([value]));
-        let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
+        let list: DesignChamferSetList =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
         assert_eq!(list.sets[0].distance_reversed, reversed);
-        assert_eq!(serde_json::to_value(&list).unwrap(), value);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&list).unwrap(),
+            value
+        );
     }
 }

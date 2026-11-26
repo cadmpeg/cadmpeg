@@ -637,8 +637,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa63178ca",
@@ -686,8 +685,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2245",
@@ -699,8 +697,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2353",
@@ -712,8 +709,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2225",
@@ -725,8 +721,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep region wrapper checksum mismatch",

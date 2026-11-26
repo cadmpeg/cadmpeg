@@ -179,7 +179,7 @@ mod tests {
         for kind in SurfaceKind::ALL {
             assert_eq!(SurfaceKind::parse(kind.as_str()), Some(kind));
             assert_eq!(
-                serde_json::to_value(kind).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(kind).unwrap(),
                 serde_json::Value::from(kind.as_str())
             );
         }

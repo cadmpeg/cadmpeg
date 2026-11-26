@@ -11,7 +11,7 @@ fn sampled(target: [f64; 3], source: [f64; 3]) -> Class25SourceRelation {
         ])
         .expect("finite fixture interval"),
         samples: Box::new(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "target": target,
                 "source": source,
             }))

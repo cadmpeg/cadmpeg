@@ -597,7 +597,7 @@ mod tests {
         assert_eq!(transform, Transform::identity());
         assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(
-            serde_json::to_string(&transform).expect("serializes"),
+            cadmpeg_core::serde_erase::json::to_string(&transform).expect("serializes"),
             "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0]]"
         );
 

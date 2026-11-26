@@ -547,8 +547,7 @@
             "value": {
               "code": "geometry.not-transferred",
               "kind": "geometry_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",

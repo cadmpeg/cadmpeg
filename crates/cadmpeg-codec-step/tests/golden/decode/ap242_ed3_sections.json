@@ -189,8 +189,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "FILE_SCHEMA identifier AP242; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
@@ -202,8 +201,7 @@
           "value": {
             "code": "geometry.document-length-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
@@ -215,8 +213,7 @@
           "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",

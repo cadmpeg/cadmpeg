@@ -25,7 +25,8 @@ fn binary_units_cgs_lengths_scale_exactly_once() {
             &[("BasicData", basic), ("VisibGeom", visible)],
         ));
         assert_valid(&decoded);
-        let value = serde_json::to_value(decoded.ir()).expect("CADIR serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(decoded.ir()).expect("CADIR serializes");
         let surface = value["geometry"]["surfaces"]
             .as_array()
             .expect("surfaces")

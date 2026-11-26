@@ -11,7 +11,7 @@ use super::super::NativeData;
 use crate::feature::composite::tests::{fixture, with_context, Fixture};
 
 fn record(ordinal: u32) -> crate::native::RseRecordRecord {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "test:record",
         "token": "dc",
         "ordinal": ordinal,

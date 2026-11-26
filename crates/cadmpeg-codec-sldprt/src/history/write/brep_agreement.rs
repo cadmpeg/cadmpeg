@@ -127,12 +127,14 @@ pub(crate) fn agreement(
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
             decoded =
-                crate::decode::decode_for_read_back(image).map_err(|failure| match failure {
-                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                    other => CodecError::malformed(format_args!(
-                        "SLDPRT retained source cannot be decoded: {other}"
-                    )),
-                })?;
+                crate::decode::decode_for_read_back_cached(image).map_err(
+                    |failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => CodecError::malformed(format_args!(
+                            "SLDPRT retained source cannot be decoded: {other}"
+                        )),
+                    },
+                )?;
             decoded.ir()
         }
     };
@@ -476,7 +478,9 @@ fn native_edits(
     let source_native = source
         .native
         .namespace("sldprt")
-        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+        .map(|namespace| {
+            SldprtNative::load(namespace, source.tolerances.linear).map_err(CodecError::from)
+        })
         .transpose()?;
     let baseline = source_native
         .iter()

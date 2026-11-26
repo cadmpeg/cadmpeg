@@ -47,7 +47,7 @@ fn boundary_fill_projects_body_region_groups() {
                 cadmpeg_ir::features::selections::BodySelection::Native(cell.id.clone())
             )]
     ));
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).unwrap();
     assert_eq!(wire["value"]["value"]["plane_tools"], serde_json::json!([]));
     assert_eq!(
         wire["value"]["value"]["cells"][0],
@@ -58,7 +58,9 @@ fn boundary_fill_projects_body_region_groups() {
         .as_object_mut()
         .unwrap()
         .remove("plane_tools");
-    assert!(serde_json::from_value::<FeatureDefinition>(missing_planes).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(missing_planes).is_err()
+    );
 }
 
 #[test]
@@ -99,14 +101,17 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let native_wire = serde_json::to_value(&fill_scope).unwrap();
+    let native_wire = cadmpeg_core::serde_erase::json::to_value(&fill_scope).unwrap();
     assert_eq!(
-        serde_json::from_value::<DesignParameterScope>(native_wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(native_wire.clone())
+            .unwrap(),
         fill_scope
     );
     let mut invalid_wire = native_wire;
     invalid_wire["boundary_fill"]["operands"]["suffix"] = serde_json::json!("00".repeat(140));
-    assert!(serde_json::from_value::<DesignParameterScope>(invalid_wire).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid_wire).is_err()
+    );
     let projected = crate::test_support::with_decode_context(|ctx| {
         crate::design::feature_project::boundary_fill::project(
             &fill_scope,
@@ -117,7 +122,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
         .unwrap()
         .unwrap()
     });
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).unwrap();
     assert_eq!(
         wire["value"]["value"]["tools"]["value"],
         "f3d:native/BulkStream.dat:construction-group#100"
@@ -138,9 +143,9 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
     );
     let mut null_record = wire.clone();
     null_record["value"]["value"]["cells"][1]["value"]["record"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<FeatureDefinition>(null_record).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(null_record).is_err());
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(wire).unwrap(),
         projected
     );
 }

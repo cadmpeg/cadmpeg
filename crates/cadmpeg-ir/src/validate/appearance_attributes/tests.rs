@@ -296,14 +296,17 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
     let scoped = |target, values| {
         let mut ir = CadIr::empty();
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(attribute(target, values));
-        ir.check_scope().map_err(|violation| violation.to_string())
+        ir.scope_violations()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
-    let violation = Err(
+    let violation = vec![
         "the document's scope excludes design but model arena `attributes` holds a reference into it"
             .to_owned(),
-    );
+    ];
     for target in [
         AttributeTarget::Feature(
             crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
@@ -320,7 +323,7 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
         ),
         violation
     );
-    assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
+    assert!(scoped(AttributeTarget::Document, vec![None]).is_empty());
 }
 
 /// The unit cube with an assembly that places a part, and the appearance.

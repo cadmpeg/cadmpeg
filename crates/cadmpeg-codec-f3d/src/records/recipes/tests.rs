@@ -19,8 +19,8 @@ fn construction_recipe_borrowed_wire_matches_owned_wire_bytes() {
     for record in [recipe(false), recipe(true)] {
         let owned = ConstructionRecipeWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }

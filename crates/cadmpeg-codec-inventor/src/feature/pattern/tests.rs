@@ -267,7 +267,7 @@ fn raw_records(operands: &Operands) -> Vec<crate::native::RseRecordRecord> {
         .filter_map(|((token, ordinal), type_id)| {
             let type_id = type_id.as_ref()?;
             Some(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id": format!("inventor:rse:record#{token}-{ordinal}"),
                     "token": token, "ordinal": ordinal, "selector": 0, "type_index": 0,
                     "type_id": crate::pmdc::type_id_string(*type_id),
@@ -610,8 +610,9 @@ fn project_fixture_with_spacings(
         );
     }
     let native = operands.native_records().expect("native operands");
-    let wire = serde_json::to_value(&native).expect("serialize operands");
-    let restored: Vec<NativeOperand> = serde_json::from_value(wire).expect("restore operands");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&native).expect("serialize operands");
+    let restored: Vec<NativeOperand> =
+        cadmpeg_core::serde_erase::json::from_value(wire).expect("restore operands");
     let raw_records = raw_records(&operands);
     for number in [81, 83, 87, 89] {
         if number == 89
@@ -630,9 +631,11 @@ fn project_fixture_with_spacings(
             .iter_mut()
             .find(|record| record.ordinal == number)
             .expect("raw operand");
-        let mut wire = serde_json::to_value(&*record).expect("serialize raw operand");
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(&*record).expect("serialize raw operand");
         wire["payload_len"] = serde_json::json!(record.payload_len() + 1);
-        *record = serde_json::from_value(wire).expect("alter raw operand length");
+        *record =
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("alter raw operand length");
         let changed = Operands::from_native(&native, &wrong_length);
         assert!(
             !matches_source(

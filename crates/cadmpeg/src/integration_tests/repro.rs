@@ -18,7 +18,11 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
     let output = directory.path().join("bundle.json");
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
     document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
-    std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+    std::fs::write(
+        &input,
+        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
     let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
     let index = validation
         .findings
@@ -27,7 +31,11 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
         .unwrap();
     let payload = serde_json::json!({"ir_version": cadmpeg_ir::document::IR_VERSION,
         "command": "check", "input_path": input, "check_report": validation});
-    std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
+    std::fs::write(
+        &report,
+        cadmpeg_core::serde_erase::json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
     let cli = crate::Cli::try_parse_from([
         "cadmpeg",
         "repro",
@@ -44,8 +52,8 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
     };
     crate::repro::run(&InputCatalog::with_builtins(), &args).unwrap();
     let bytes = std::fs::read(&output).unwrap();
-    let bundle: Bundle = serde_json::from_slice(&bytes).unwrap();
-    let parsed: CadIr = serde_json::from_slice(&bytes).unwrap();
+    let bundle: Bundle = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
+    let parsed: CadIr = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
     assert!(parsed.fragment);
     assert!(parsed.repro.is_some());
     assert!(cadmpeg_registry::repro::check(&bundle)
@@ -72,7 +80,8 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
     let result = crate::repro::check_fragment(&output, false, report.0.as_ref());
     assert_eq!(result.unwrap_err().exit_code(), 1);
     let envelope: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(fragment_report).unwrap()).unwrap();
+        cadmpeg_core::serde_erase::json::from_slice(&std::fs::read(fragment_report).unwrap())
+            .unwrap();
     assert_eq!(envelope["status"], "refused");
     assert_eq!(envelope["refusal"]["code"], "check_failed");
     assert!(crate::repro::run(&InputCatalog::with_builtins(), &args).is_err());
@@ -84,7 +93,11 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
     let input = directory.path().join("model.json");
     let report = directory.path().join("report.json");
     let document = cadmpeg_ir::examples::unit_cube().unwrap();
-    std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
+    std::fs::write(
+        &input,
+        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
     let finding = cadmpeg_ir::report::check::Finding {
         rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-finding-requiring-additional-context"),
         check: Check::GeometricConsistency,
@@ -94,7 +107,11 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
         message: "synthetic finding requiring additional context".into(),
     };
     let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
-    std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
+    std::fs::write(
+        &report,
+        cadmpeg_core::serde_erase::json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
     for strict in [false, true] {
         let output = directory.path().join(format!("bundle-{strict}.json"));
         let mut argv = vec![
@@ -118,7 +135,8 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
             crate::repro::run(&InputCatalog::with_builtins(), &args).is_err(),
             strict
         );
-        let bundle: Bundle = serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        let bundle: Bundle =
+            cadmpeg_core::serde_erase::json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
         assert!(bundle.incomplete_reason.is_some());
         assert_eq!(bundle.document.geometry.bodies.len(), 1);
     }
@@ -168,13 +186,17 @@ fn repro_bundle_holds_the_one_zero() {
         });
     }
     document.finalize();
-    let input_bytes = serde_json::to_vec(&document).unwrap();
+    let input_bytes = cadmpeg_core::serde_erase::json::to_vec(&document).unwrap();
     assert!(holds_negative_zero(
-        &serde_json::from_slice(&input_bytes).unwrap()
+        &cadmpeg_core::serde_erase::json::from_slice(&input_bytes).unwrap()
     ));
     std::fs::write(&input, input_bytes).unwrap();
     let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
-    std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
+    std::fs::write(
+        &report,
+        cadmpeg_core::serde_erase::json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
     let cli = crate::Cli::try_parse_from([
         "cadmpeg",
         "repro",
@@ -191,7 +213,7 @@ fn repro_bundle_holds_the_one_zero() {
     };
     crate::repro::run(&InputCatalog::with_builtins(), &args).unwrap();
     let bytes = std::fs::read(&output).unwrap();
-    let bundle: Bundle = serde_json::from_slice(&bytes).unwrap();
+    let bundle: Bundle = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
     assert!(bundle
         .document
         .geometry
@@ -200,6 +222,6 @@ fn repro_bundle_holds_the_one_zero() {
         .flat_map(|coedge| &coedge.pcurves)
         .any(|use_| use_.parameter_range.is_some()));
     assert!(!holds_negative_zero(
-        &serde_json::from_slice(&bytes).unwrap()
+        &cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap()
     ));
 }

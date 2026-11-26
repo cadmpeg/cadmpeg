@@ -62,7 +62,7 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
         panic!("Base Feature payload");
     };
     *slot = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "body_entity_fields": ["000000000000"],
             "body_entity_suffix_offsets": [24],
             "body_entity_suffixes": [80],
@@ -116,7 +116,7 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
         panic!("Base Feature payload");
     };
     *slot = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "body_entity_fields": ["000000000000", "000000000000"],
             "body_entity_suffix_offsets": [24, 32],
             "body_entity_suffixes": [80, 81],

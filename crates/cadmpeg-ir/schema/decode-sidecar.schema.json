@@ -276,7 +276,7 @@
       "type": "string"
     },
     "DialectLayers": {
-      "description": "A report's primary format layer and any nested or carried format layers.\n\nExtra layers are unique by `(format, instance)`. An extra layer for the\nprimary format has an instance that identifies it inside the containing\ndocument. The wire names the primary explicitly, so the collection carries\nits complete identity without an enclosing report's format.\n\nA read rejects a wire whose `extra` repeats a `(format, instance)` key, and\none whose `extra` carries the primary key. The key set on the wire is the\nkey set of the value, so no layer is silently discarded or overwritten.",
+      "description": "A report's primary format layer and any nested or carried format layers.\n\nLayers are unique by `(format, instance)`. The wire names the primary\nexplicitly, so the collection carries its complete identity without an\nenclosing report's format.\n\nA read rejects a wire whose `extra` repeats a `(format, instance)` key, and\none whose `extra` carries the primary key. The key set on the wire is the\nkey set of the value, so no layer is silently discarded or overwritten.",
       "type": "object",
       "properties": {
         "primary": {
@@ -456,7 +456,7 @@
     },
     "Identity": {
       "type": "string",
-      "pattern": "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
+      "pattern": "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
     },
     "Inexactness": {
       "description": "Exactness of an entity that is not byte-exact.",
@@ -968,7 +968,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
               "$ref": "#/$defs/Sha256Digest"
             }
           }
@@ -1004,7 +1004,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
               "$ref": "#/$defs/RetainedSourceRecord"
             }
           }

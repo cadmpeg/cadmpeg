@@ -101,13 +101,19 @@ mod tests {
         let [map] = native.consolidated_a_class25_maps.as_slice() else {
             panic!("one A-family map");
         };
-        let wire = serde_json::to_value(map).expect("serialize map");
+        let wire = cadmpeg_core::serde_erase::json::to_value(map).expect("serialize map");
         assert_eq!(wire["data"]["selector"], 0x1587);
         let mut contradictory = wire.clone();
         contradictory["data"]["selector"] = serde_json::json!(0x1586);
-        assert!(serde_json::from_value::<CatiaConsolidatedAClass25Map>(contradictory).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedAClass25Map>(
+                contradictory
+            )
+            .is_err()
+        );
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedAClass25Map>(wire).expect("load map"),
+            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedAClass25Map>(wire)
+                .expect("load map"),
             *map
         );
         assert!(native.consolidated_domain_relations.is_empty());

@@ -50,7 +50,7 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
             loops,
             extension,
         });
-        ir.model.features.push(serde_json::from_value(serde_json::json!({
+        ir.model.features.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
         let mut report = super::empty_report(true);
         append_design_losses(

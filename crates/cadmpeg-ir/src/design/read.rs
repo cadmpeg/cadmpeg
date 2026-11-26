@@ -52,8 +52,8 @@ pub fn from_str<T: DeserializeOwned>(text: &str, limits: &ResourceLimits) -> Res
     })
 }
 
-/// Runs `read` under the nesting ceilings of `limits` and returns its result
-/// with the first ceiling it ran past.
+/// Runs `read` under the state-chain ceiling of `limits` and returns its
+/// result with the refusal of a chain past it.
 pub(crate) fn with_limits<R>(
     limits: &ResourceLimits,
     read: impl FnOnce() -> R,

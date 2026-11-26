@@ -3,9 +3,11 @@
 //!
 //! A record is rewritten through its JSON, typed by the CADIR schema: a pick
 //! of a lost record is `Native` (§5.8), an expression that names one is
-//! `Source` with no tokens (§5.13), a procedural carrier on one is `Unknown`,
-//! a name that names one leaves its entry's native name alone (§5.7), and a
-//! collection whose order carries no meaning loses the member that names one.
+//! `Source` with no tokens (§5.13), a procedural definition on one is
+//! `Unknown`, a curve or surface carrier that names one follows the
+//! carrier's own rule (`CurveGeometry::release`), a name that names one
+//! leaves its entry's native name alone (§5.7), and a collection whose order
+//! carries no meaning loses the member that names one.
 
 use std::collections::BTreeSet;
 
@@ -15,6 +17,7 @@ use crate::design::expr::{ExpressionDialect, Neutral};
 use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SurfaceGeometry};
 
 /// The CADIR schema, read to type each value of a record.
 pub(crate) struct Schema(Value);
@@ -65,6 +68,8 @@ pub(super) const PICKED: &str = "Picked";
 pub(super) const EXPRESSION: &str = "Expression";
 pub(super) const PROCEDURAL_CURVE: &str = "ProceduralCurveDefinition";
 pub(super) const PROCEDURAL_SURFACE: &str = "ProceduralSurfaceDefinition";
+pub(super) const CURVE_GEOMETRY: &str = "CurveGeometry";
+pub(super) const SURFACE_GEOMETRY: &str = "SurfaceGeometry";
 pub(super) const NAME_ENTRY: &str = "NameEntry";
 pub(super) const UNORDERED_MEMBERS: &str = "UnorderedMembers";
 pub(super) const ORDERED_MEMBERS: &str = "OrderedMembers";
@@ -90,6 +95,20 @@ enum Fate {
     Lost,
 }
 
+/// `value` read as `T`, changed by `release`, and written back, or `None`
+/// where it does not read or write as `T`.
+fn released<T: serde::Serialize + serde::de::DeserializeOwned>(
+    value: &Value,
+    release: impl FnOnce(&mut T),
+) -> Option<Value> {
+    let mut geometry = cadmpeg_core::serde_erase::from_json_value::<T>(value).ok()?;
+    release(&mut geometry);
+    cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+        serde::Serialize::serialize(&geometry, adapter)
+    })
+    .ok()
+}
+
 /// Whether `value` holds a string of `gone`, as a value or as a key.
 pub(crate) fn names(value: &Value, gone: &BTreeSet<String>) -> bool {
     match value {
@@ -108,9 +127,9 @@ fn reads(expression: &Value) -> bool {
     if expression.get("kind").and_then(Value::as_str) != Some("neutral") {
         return true;
     }
-    expression
-        .get("value")
-        .is_some_and(|wire| serde_json::from_value::<Neutral<Value>>(wire.clone()).is_ok())
+    expression.get("value").is_some_and(|wire| {
+        cadmpeg_core::serde_erase::from_json_value::<Neutral<Value>>(wire).is_ok()
+    })
 }
 
 /// The rewrite of the records that name an id of `gone`.
@@ -139,9 +158,16 @@ impl<'a> Restate<'a> {
             schema,
             gone,
             past_the_bound: false,
-            dialect: ExpressionDialect::of_codec(codec, process)
-                .and_then(|dialect| serde_json::to_value(dialect).ok()),
-            native: serde_json::to_value(PickTarget::Native { within: None }).ok()?,
+            dialect: ExpressionDialect::of_codec(codec, process).and_then(|dialect| {
+                cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                    serde::Serialize::serialize(&dialect, adapter)
+                })
+                .ok()
+            }),
+            native: cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                serde::Serialize::serialize(&PickTarget::Native { within: None }, adapter)
+            })
+            .ok()?,
         })
     }
 
@@ -170,6 +196,9 @@ impl<'a> Restate<'a> {
                 return self.carrier(carrier, value);
             }
             Some(NAME_ENTRY) => return self.name_entry(value),
+            Some(carrier @ (CURVE_GEOMETRY | SURFACE_GEOMETRY)) => {
+                return self.carrier_geometry(carrier, value);
+            }
             _ => {}
         }
         if let Some(branches) = ["oneOf", "anyOf", "allOf"]
@@ -332,14 +361,17 @@ impl<'a> Restate<'a> {
     /// Restates `items`, the picks of an `Unordered` member list, in the
     /// order of their identity keys, and returns whether no two share one.
     fn sort_picks(items: &mut Vec<Value>) -> bool {
-        let Ok(picks) = serde_json::from_value::<Vec<Picked>>(Value::Array(std::mem::take(items)))
-        else {
+        let Ok(picks) = cadmpeg_core::serde_erase::from_json_value::<Vec<Picked>>(&Value::Array(
+            std::mem::take(items),
+        )) else {
             return false;
         };
         let Ok(members) = Members::<Picked, Unordered>::new(picks) else {
             return false;
         };
-        match serde_json::to_value(members) {
+        match cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+            serde::Serialize::serialize(&members, adapter)
+        }) {
             Ok(Value::Array(sorted)) => {
                 *items = sorted;
                 true
@@ -421,15 +453,51 @@ impl<'a> Restate<'a> {
             .filter(|cache| !names(cache, self.gone))
             .map(|cache| serde_json::json!({"kind": "unknown", "cache": cache}))
             .filter(|unknown| {
-                let unknown = unknown.clone();
                 if carrier == PROCEDURAL_CURVE {
-                    serde_json::from_value::<ProceduralCurveDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralCurveDefinition>(unknown)
+                        .is_ok()
                 } else {
-                    serde_json::from_value::<ProceduralSurfaceDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralSurfaceDefinition>(
+                        unknown,
+                    )
+                    .is_ok()
                 }
             });
         *value = cached.unwrap_or(bare);
         Fate::Kept
+    }
+
+    /// A curve or surface carrier that names a lost id is stated in the form
+    /// that holds only what was read, by the carrier's own rule
+    /// (`CurveGeometry::release`, `SurfaceGeometry::release`).
+    fn carrier_geometry(&self, carrier: &str, value: &mut Value) -> Fate {
+        if !names(value, self.gone) {
+            return Fate::Clean;
+        }
+        let lost = |field: &str| {
+            value
+                .get("value")
+                .and_then(|procedural| procedural.get(field))
+                .is_some_and(|named| names(named, self.gone))
+        };
+        let (construction, held) =
+            if value.get("kind").and_then(Value::as_str) == Some("procedural") {
+                (lost("construction"), lost("cache"))
+            } else {
+                (false, true)
+            };
+        let restated = if carrier == CURVE_GEOMETRY {
+            released::<CurveGeometry>(value, |geometry| geometry.release(construction, held))
+        } else {
+            released::<SurfaceGeometry>(value, |geometry| geometry.release(construction, held))
+        };
+        match restated {
+            Some(restated) => {
+                *value = restated;
+                Fate::Kept
+            }
+            None => Fate::Lost,
+        }
     }
 
     /// A name-table entry whose name names a lost id keeps its native name

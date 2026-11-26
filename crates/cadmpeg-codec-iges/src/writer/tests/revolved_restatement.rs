@@ -35,6 +35,8 @@ use cadmpeg_ir::CadIr;
 
 use crate::{IgesCodec, IgesVersion};
 
+mod loop_periods;
+
 /// The sweep of the sphere lune and the cone sector, narrower than 45°.
 const SECTOR: f64 = PI / 6.0;
 const SPHERE_RADIUS: f64 = 10.0;
@@ -800,6 +802,27 @@ fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_spa
 /// Points of the support of the one face of `read` at a 24 × 24 grid of its
 /// knot domain.
 fn support_points(read: &CadIr) -> Vec<Point3> {
+    let (support, [u_domain, v_domain]) = rational_support(read);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let at =
+        |[start, end]: [f64; 2], step: u32| (f64::from(step) / 24.0).mul_add(end - start, start);
+    let mut points = Vec::new();
+    for u in 0..=24 {
+        for v in 0..=24 {
+            points.push(
+                surface_point_solved(&ctx, support, at(u_domain, u), at(v_domain, v))
+                    .expect("a point on the support")
+                    .get(),
+            );
+        }
+    }
+    points
+}
+
+/// The rational support of the one face of `read` and its parameter domain.
+fn rational_support(read: &CadIr) -> (&SolvedSurfaceGeometry, [[f64; 2]; 2]) {
     let face = &read.geometry.faces[0];
     let surface = read
         .geometry
@@ -817,26 +840,28 @@ fn support_points(read: &CadIr) -> Vec<Point3> {
         panic!("the support reads back as {support:?}");
     };
     let domain = |knots: &[f64]| [knots[0], knots[knots.len() - 1]];
-    let [u_domain, v_domain] = [
-        domain(nurbs.u_knots().as_slice()),
-        domain(nurbs.v_knots().as_slice()),
-    ];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
-        .expect("an evaluation context");
-    let at =
-        |[start, end]: [f64; 2], step: u32| (f64::from(step) / 24.0).mul_add(end - start, start);
-    let mut points = Vec::new();
-    for u in 0..=24 {
-        for v in 0..=24 {
-            points.push(
-                surface_point_solved(&ctx, support, at(u_domain, u), at(v_domain, v))
-                    .expect("a point on the support")
-                    .get(),
+    (
+        support,
+        [
+            domain(nurbs.u_knots().as_slice()),
+            domain(nurbs.v_knots().as_slice()),
+        ],
+    )
+}
+
+/// Assert that each parameter curve end on the boundary of the one face of
+/// `read` lies in the parameter domain of its rational support.
+fn assert_boundary_in_domain(read: &CadIr) {
+    let (_, domain) = rational_support(read);
+    let (_, ends) = boundary(read);
+    for end in &ends {
+        for (value, [low, high]) in end.iter().zip(domain) {
+            assert!(
+                (low - ON_SURFACE..=high + ON_SURFACE).contains(value),
+                "the parameter curve end {end:?} lies outside the domain {domain:?}"
             );
         }
     }
-    points
 }
 
 /// The largest gap between consecutive angles of `angles` around the turn.
@@ -1089,27 +1114,34 @@ fn a_reflected_sphere_lune_moves_each_pole_use_to_the_coedge_that_arrives_at_its
     };
     for stretch in [MIRROR_STRETCH, mirror] {
         let read = read_back(sphere_lune_with_pole_uses(SECTOR), stretch);
-        let uses = ordered_uses(&read);
-        assert_eq!(uses.len(), 4, "{uses:?}");
-        for (position, [_, end]) in uses.iter().enumerate() {
-            let [next, _] = uses[(position + 1) % uses.len()];
-            assert!(
-                (next.u - end.u).abs() <= JOINED && (next.v - end.v).abs() <= JOINED,
-                "use {position} ends at {end:?} and the next starts at {next:?}: {uses:?}"
-            );
-        }
-        let (points, _) = boundary(&read);
-        for point in points.into_iter().map(|point| stretch.source(point)) {
-            let radius = point.x.hypot(point.y).hypot(point.z);
-            assert!(
-                (radius - SPHERE_RADIUS).abs() <= ON_SURFACE,
-                "{point:?} lies off the sphere"
-            );
-            assert!(
-                within_sector(point, SECTOR),
-                "{point:?} lies outside the lune"
-            );
-        }
+        assert_lune_boundary(&read, stretch);
+    }
+}
+
+/// Assert that each parameter curve use on the loop of the one face of
+/// `read` starts where the use before it ends, and that the boundary lies on
+/// the sphere lune of sweep [`SECTOR`] under `stretch`.
+fn assert_lune_boundary(read: &CadIr, stretch: Stretch) {
+    let uses = ordered_uses(read);
+    assert_eq!(uses.len(), 4, "{uses:?}");
+    for (position, [_, end]) in uses.iter().enumerate() {
+        let [next, _] = uses[(position + 1) % uses.len()];
+        assert!(
+            (next.u - end.u).abs() <= JOINED && (next.v - end.v).abs() <= JOINED,
+            "use {position} ends at {end:?} and the next starts at {next:?}: {uses:?}"
+        );
+    }
+    let (points, _) = boundary(read);
+    for point in points.into_iter().map(|point| stretch.source(point)) {
+        let radius = point.x.hypot(point.y).hypot(point.z);
+        assert!(
+            (radius - SPHERE_RADIUS).abs() <= ON_SURFACE,
+            "{point:?} lies off the sphere"
+        );
+        assert!(
+            within_sector(point, SECTOR),
+            "{point:?} lies outside the lune"
+        );
     }
 }
 
@@ -1216,5 +1248,453 @@ fn a_torus_band_across_the_tube_seam_takes_its_domain_from_the_side_its_loops_bo
             largest_gap(azimuths) <= TURN_GAP,
             "the face misses azimuths"
         );
+    }
+}
+
+/// The map that leaves each point in place.
+const UNMOVED: Stretch = Stretch {
+    scale: [1.0, 1.0, 1.0],
+    shift: [0.0, 0.0, 0.0],
+};
+
+/// [`sphere_lune_with_pole_uses`] whose pole uses each cover the middle of a
+/// parameter line that reaches one unit past each pole end, the south use
+/// against the direction of its line.
+fn sphere_lune_with_covering_pole_uses(sweep: f64) -> CadIr {
+    let mut ir = sphere_lune_with_pole_uses(sweep);
+    let half = PI / 2.0;
+    let length = sweep + 2.0;
+    let mut north = parameter_line(
+        &mut ir,
+        "north-long",
+        [sweep + 1.0, half],
+        [-1.0, 0.0],
+        length,
+    );
+    north.parameter_range = Some(DirectedParameterRange::new([1.0, 1.0 + sweep]).expect("a range"));
+    let mut south = parameter_line(
+        &mut ir,
+        "south-long",
+        [sweep + 1.0, -half],
+        [-1.0, 0.0],
+        length,
+    );
+    south.parameter_range = Some(DirectedParameterRange::new([1.0 + sweep, 1.0]).expect("a range"));
+    let LoopBoundary::Ring(ring) = &ir.geometry.loops[0].boundary else {
+        panic!("the lune loop is a ring");
+    };
+    let mut vertex_uses = ring.vertex_uses().to_vec();
+    vertex_uses[0].pcurves = vec![north];
+    vertex_uses[1].pcurves = vec![south];
+    let coedges = ring.coedges().to_vec();
+    ir.geometry.loops[0].boundary =
+        LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses).expect("a ring"));
+    ir.geometry.pcurves.retain(|pcurve| {
+        pcurve.id != id(PcurveId::mint, "pcurve", "north")
+            && pcurve.id != id(PcurveId::mint, "pcurve", "south")
+    });
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn a_pole_use_over_part_of_its_parameter_curve_writes_only_the_part_it_covers() {
+    for stretch in [UNMOVED, STRETCH, MIRROR_STRETCH] {
+        let read = read_back(sphere_lune_with_covering_pole_uses(SECTOR), stretch);
+        assert_lune_boundary(&read, stretch);
+    }
+}
+
+/// The amount by which a use reaches past the end of its parameter curve,
+/// within the tolerance on equal parameter ranges.
+const NEAR_RANGE_GAP: f64 = 1.0e-12;
+
+#[test]
+fn a_use_almost_equal_to_the_range_of_its_parameter_curve_keeps_the_curve() {
+    let mut ir = sphere_lune_with_pole_uses(SECTOR);
+    ir.geometry
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == id(CoedgeId::mint, "coedge", "end"))
+        .expect("the lune coedge")
+        .pcurves[0]
+        .parameter_range =
+        Some(DirectedParameterRange::new([0.0, PI + NEAR_RANGE_GAP]).expect("a range"));
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(ir.clone(), stretch);
+        assert_lune_boundary(&read, stretch);
+    }
+}
+
+/// Adds the loop `key` of the face `face` to `ir`: one coedge on the closed
+/// edge `edge` in `sense`, which carries `pcurve`.
+fn ring_loop(
+    ir: &mut CadIr,
+    [key, face, edge]: [&str; 3],
+    sense: Sense,
+    pcurve: PcurveUse,
+) -> LoopId {
+    let geometry = &mut ir.geometry;
+    geometry.coedges.push(Coedge {
+        id: id(CoedgeId::mint, "coedge", key),
+        owner_loop: id(LoopId::mint, "loop", key),
+        edge: id(EdgeId::mint, "edge", edge),
+        radial_next: id(CoedgeId::mint, "coedge", key),
+        sense,
+        pcurves: vec![pcurve],
+        use_curve: None,
+        native_ref: None,
+    });
+    geometry.loops.push(Loop {
+        id: id(LoopId::mint, "loop", key),
+        face: id(FaceId::mint, "face", face),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(vec![id(CoedgeId::mint, "coedge", key)], Vec::new()).expect("a ring"),
+        ),
+        native_ref: None,
+    });
+    id(LoopId::mint, "loop", key)
+}
+
+/// The height of the upper circle of the cylinder band.
+const BAND_HEIGHT: f64 = 8.0;
+
+/// The band of the cylinder about `+z` between the circles at heights 0 and
+/// [`BAND_HEIGHT`], each one closed edge in a loop of its own. The lower
+/// parameter line runs over azimuths `[0, 2π]`, the upper one over
+/// `[4π, 2π]`, one turn further.
+fn cylinder_band_across_two_periods() -> CadIr {
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            CYLINDER_RADIUS,
+        )
+        .expect("a cylinder"),
+    ));
+    for (key, height) in [("lower", 0.0), ("upper", BAND_HEIGHT)] {
+        sheet.vertex(key, Point3::new(CYLINDER_RADIUS, 0.0, height));
+        let circle = CircleCurve::try_new(
+            Point3::new(0.0, 0.0, height),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            CYLINDER_RADIUS,
+        )
+        .expect("a circle");
+        sheet.edge(
+            key,
+            SolvedCurveGeometry::Circle(circle),
+            [0.0, TAU],
+            [key, key],
+        );
+    }
+    let lower = parameter_line(&mut sheet.ir, "lower", [0.0, 0.0], [1.0, 0.0], TAU);
+    let upper = parameter_line(
+        &mut sheet.ir,
+        "upper",
+        [2.0 * TAU, BAND_HEIGHT],
+        [-1.0, 0.0],
+        TAU,
+    );
+    let loops = vec![
+        ring_loop(
+            &mut sheet.ir,
+            ["lower", "face", "lower"],
+            Sense::Forward,
+            lower,
+        ),
+        ring_loop(
+            &mut sheet.ir,
+            ["upper", "face", "upper"],
+            Sense::Reversed,
+            upper,
+        ),
+    ];
+    sheet.faced(FaceLoops::unspecified(loops))
+}
+
+#[test]
+fn a_face_whose_loops_lie_one_turn_apart_moves_them_into_one_period() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(cylinder_band_across_two_periods(), stretch);
+        assert_eq!(read.geometry.faces.len(), 1);
+        let points = support_points(&read)
+            .into_iter()
+            .map(|point| stretch.source(point))
+            .collect::<Vec<_>>();
+        for point in &points {
+            assert!(
+                (point.x.hypot(point.y) - CYLINDER_RADIUS).abs() <= ON_SURFACE,
+                "{point:?} lies off the cylinder"
+            );
+            assert!(
+                (-ON_SURFACE..=BAND_HEIGHT + ON_SURFACE).contains(&point.z),
+                "{point:?} lies outside the band"
+            );
+        }
+        for height in [0.0, BAND_HEIGHT] {
+            assert!(
+                points
+                    .iter()
+                    .any(|point| (point.z - height).abs() <= ON_SURFACE),
+                "the support misses the circle at height {height}"
+            );
+        }
+        let azimuths = points.iter().map(|point| point.y.atan2(point.x)).collect();
+        assert!(
+            largest_gap(azimuths) <= TURN_GAP,
+            "the face misses azimuths"
+        );
+    }
+}
+
+/// The tube angle of the upper parallel of the second torus band.
+const SECOND_BAND_HIGH: f64 = PI / 2.0;
+
+/// Two faces on one torus about `+z`. The first is
+/// [`torus_band_across_the_seam`]; the second is the band from its upper
+/// parallel at tube angle `-BAND_LOW` to the parallel at
+/// [`SECOND_BAND_HIGH`]. The two faces use one parameter line on their common
+/// parallel, stated with the tube angle `-BAND_LOW`.
+fn torus_bands_on_a_common_parallel() -> CadIr {
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            origin(),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MAJOR,
+            TORUS_MINOR,
+        )
+        .expect("a torus"),
+    ));
+    for (key, v) in [
+        ("lower", BAND_LOW),
+        ("common", -BAND_LOW),
+        ("upper", SECOND_BAND_HIGH),
+    ] {
+        sheet.vertex(key, torus_point(0.0, v));
+        let parallel = CircleCurve::try_new(
+            Point3::new(0.0, 0.0, TORUS_MINOR * v.sin()),
+            z_axis(),
+            Vector3::new(1.0, 0.0, 0.0),
+            TORUS_MINOR.mul_add(v.cos(), TORUS_MAJOR),
+        )
+        .expect("a parallel");
+        sheet.edge(
+            key,
+            SolvedCurveGeometry::Circle(parallel),
+            [0.0, TAU],
+            [key, key],
+        );
+    }
+    let ir = &mut sheet.ir;
+    let lower = parameter_line(ir, "lower", [0.0, BAND_LOW], [1.0, 0.0], TAU);
+    let common = parameter_line(ir, "common", [0.0, -BAND_LOW], [1.0, 0.0], TAU);
+    let upper = parameter_line(ir, "upper", [TAU, SECOND_BAND_HIGH], [-1.0, 0.0], TAU);
+    let mut backward = common.clone();
+    backward.parameter_range = Some(DirectedParameterRange::new([TAU, 0.0]).expect("a range"));
+    let first = vec![
+        ring_loop(ir, ["lower", "face", "lower"], Sense::Forward, lower),
+        ring_loop(
+            ir,
+            ["common-first", "face", "common"],
+            Sense::Reversed,
+            backward,
+        ),
+    ];
+    let second = vec![
+        ring_loop(
+            ir,
+            ["common-second", "second", "common"],
+            Sense::Forward,
+            common,
+        ),
+        ring_loop(ir, ["upper", "second", "upper"], Sense::Reversed, upper),
+    ];
+    for (coedge, next) in [
+        ("common-first", "common-second"),
+        ("common-second", "common-first"),
+    ] {
+        ir.geometry
+            .coedges
+            .iter_mut()
+            .find(|record| record.id == id(CoedgeId::mint, "coedge", coedge))
+            .expect("the common coedge")
+            .radial_next = id(CoedgeId::mint, "coedge", next);
+    }
+    let mut ir = sheet.faced(FaceLoops::unspecified(first));
+    let mut face = ir.geometry.faces[0].clone();
+    face.id = id(FaceId::mint, "face", "second");
+    face.loops = FaceLoops::unspecified(second);
+    ir.geometry.faces.push(face);
+    ir.finalize();
+    ir
+}
+
+/// The tube angle of the point of the support of each face of `read` midway
+/// in the support parameters between the two loops of the face.
+fn tube_angles_between_loops(read: &CadIr, stretch: Stretch) -> Vec<f64> {
+    let geometry = &read.geometry;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    geometry
+        .faces
+        .iter()
+        .map(|face| {
+            let surface = geometry
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+                .expect("the face support reads back");
+            let support = match &surface.geometry {
+                SurfaceGeometry::Solved(solved) => solved,
+                SurfaceGeometry::Procedural { cache, .. } => {
+                    cache.as_ref().expect("the support reads back solved")
+                }
+            };
+            let middles = face
+                .loops
+                .stated()
+                .map(|loop_id| {
+                    let loop_ = geometry
+                        .loops
+                        .iter()
+                        .find(|loop_| loop_.id == *loop_id)
+                        .expect("the face loop reads back");
+                    let coedge = geometry
+                        .coedges
+                        .iter()
+                        .find(|coedge| coedge.id == loop_.coedges()[0])
+                        .expect("the loop coedge reads back");
+                    let pcurve = geometry
+                        .pcurves
+                        .iter()
+                        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+                        .expect("the parameter curve reads back");
+                    let [start, end] = pcurve
+                        .parameter_range()
+                        .expect("a bounded parameter curve")
+                        .get();
+                    pcurve_uv(&ctx, &pcurve.geometry, 0.5 * (start + end))
+                        .expect("a parameter point")
+                        .get()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(middles.len(), 2, "{middles:?}");
+            let point = surface_point_solved(
+                &ctx,
+                support,
+                0.5 * (middles[0].u + middles[1].u),
+                0.5 * (middles[0].v + middles[1].v),
+            )
+            .expect("a point on the support")
+            .get();
+            let point = stretch.source(point);
+            let radial = point.x.hypot(point.y) - TORUS_MAJOR;
+            point.z.atan2(radial)
+        })
+        .collect()
+}
+
+#[test]
+fn faces_that_place_a_common_parameter_curve_at_different_periods_each_write_their_own() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(torus_bands_on_a_common_parallel(), stretch);
+        assert_eq!(read.geometry.faces.len(), 2);
+        let tubes = tube_angles_between_loops(&read, stretch);
+        assert!(
+            tubes.iter().any(|tube| tube.abs() > BAND_LOW),
+            "no face lies across the tube seam: {tubes:?}"
+        );
+        assert!(
+            tubes
+                .iter()
+                .any(|tube| (-BAND_LOW..SECOND_BAND_HIGH).contains(tube)),
+            "no face lies between its common and upper parallels: {tubes:?}"
+        );
+    }
+}
+
+/// The latitude of the parallel that bounds the sphere cap.
+const CAP_LATITUDE: f64 = PI / 6.0;
+
+/// The cap of the sphere about `+z` north of the parallel at latitude
+/// [`CAP_LATITUDE`]: one closed edge on that parallel, whose coedge carries
+/// its parameter line.
+fn sphere_cap() -> CadIr {
+    let r = SPHERE_RADIUS;
+    let mut sheet = Sheet::new(SolvedSurfaceGeometry::Sphere(
+        SphereSurface::try_new(origin(), z_axis(), Vector3::new(1.0, 0.0, 0.0), r)
+            .expect("a sphere"),
+    ));
+    let height = r * CAP_LATITUDE.sin();
+    let radius = r * CAP_LATITUDE.cos();
+    sheet.vertex("seam", Point3::new(radius, 0.0, height));
+    let parallel = CircleCurve::try_new(
+        Point3::new(0.0, 0.0, height),
+        z_axis(),
+        Vector3::new(1.0, 0.0, 0.0),
+        radius,
+    )
+    .expect("a parallel");
+    sheet.edge(
+        "parallel",
+        SolvedCurveGeometry::Circle(parallel),
+        [0.0, TAU],
+        ["seam", "seam"],
+    );
+    let line = parameter_line(
+        &mut sheet.ir,
+        "parallel",
+        [0.0, CAP_LATITUDE],
+        [1.0, 0.0],
+        TAU,
+    );
+    let loops = vec![ring_loop(
+        &mut sheet.ir,
+        ["parallel", "face", "parallel"],
+        Sense::Forward,
+        line,
+    )];
+    sheet.faced(FaceLoops::unspecified(loops))
+}
+
+#[test]
+fn a_sphere_cap_with_a_stated_parameter_curve_reaches_its_pole() {
+    let r = SPHERE_RADIUS;
+    let height = r * CAP_LATITUDE.sin();
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(sphere_cap(), stretch);
+        assert_eq!(read.geometry.faces.len(), 1);
+        let points = support_points(&read)
+            .into_iter()
+            .map(|point| stretch.source(point))
+            .collect::<Vec<_>>();
+        for point in &points {
+            assert!(
+                (point.x.hypot(point.y).hypot(point.z) - r).abs() <= ON_SURFACE,
+                "{point:?} lies off the sphere"
+            );
+            assert!(
+                point.z >= height - ON_SURFACE,
+                "{point:?} lies south of the cap"
+            );
+        }
+        assert!(
+            points.iter().any(|point| (point.z - r).abs() <= ON_SURFACE),
+            "the support misses the pole"
+        );
+        let (boundary_points, _) = boundary(&read);
+        for point in boundary_points
+            .into_iter()
+            .map(|point| stretch.source(point))
+        {
+            assert!(
+                (point.z - height).abs() <= ON_SURFACE,
+                "{point:?} lies off the parallel"
+            );
+        }
     }
 }

@@ -56,7 +56,7 @@ fn the_populated_process_root_fills_every_arena() {
 /// §7: the process root's keys, in the order the document states them.
 #[test]
 fn the_process_root_writes_every_arena_in_order() {
-    let text = serde_json::to_string(&Process::default()).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&Process::default()).unwrap();
     assert_eq!(
         text,
         r#"{"setups":[],"operations":[],"features":[],"groups":[],"tools":[],"presets":[],"machines":[],"programs":[],"parameters":[],"toolpaths":[],"states":[]}"#
@@ -169,15 +169,18 @@ fn reads_strictly<T: DeserializeOwned + std::fmt::Debug>(
 #[test]
 fn a_document_with_a_process_writes_and_reads() {
     let ir = CadIr::empty();
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["process"], to_value(&Process::default()));
     let mut full = CadIr::empty();
     full.process = root::processes().remove(1);
-    let text = serde_json::to_string(&full).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&full).unwrap();
     assert_eq!(CadIr::from_json(&text).unwrap(), full);
     let read: CadIr = read_desktop(&text).unwrap();
-    assert_eq!(serde_json::to_string(&read).unwrap(), text);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&read).unwrap(),
+        text
+    );
     assert_eq!(
         full.entity_count(),
         root::processes().remove(1).entity_count()
@@ -197,23 +200,20 @@ fn finalize_sorts_the_process_arenas() {
 }
 
 /// A process record under a scope that excludes the process class is
-/// refused, naming the arena by its home.
+/// kept, written, and read back, and the breach names the arena by its home.
 #[test]
-fn a_process_record_outside_the_scope_is_refused() {
+fn a_process_record_outside_the_scope_is_kept_and_named() {
     let mut ir = CadIr::empty();
     ir.process.toolpaths = root::toolpaths();
-    let violation = ScopeViolation {
-        class: ArenaClass::Process,
-        arena: ArenaName::parse("process.toolpaths"),
-    };
-    assert!(violation.arena.is_some());
-    assert_eq!(ir.set_scope(ContentScope::design()), Err(violation));
-    ir.process.toolpaths.clear();
-    ir.set_scope(ContentScope::design()).unwrap();
-    let mut value = to_value(&ir);
-    value["process"]["toolpaths"] = to_value(&root::toolpaths());
-    let error = CadIr::from_json(&value.to_string()).unwrap_err();
-    assert!(error.to_string().contains("process.toolpaths"), "{error}");
+    ir.set_scope(ContentScope::design());
+    assert_eq!(ir.scope(), ContentScope::design());
+    let breach = [ScopeViolation::Populated {
+        arena: ArenaName::parse("process.toolpaths").unwrap(),
+    }];
+    assert_eq!(ir.scope_violations(), breach);
+    let back = CadIr::from_json(&cadmpeg_core::serde_erase::json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(back.scope(), ContentScope::design());
+    assert_eq!(back.scope_violations(), breach);
 }
 
 #[test]

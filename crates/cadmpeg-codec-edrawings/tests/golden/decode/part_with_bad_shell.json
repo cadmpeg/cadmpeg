@@ -1163,8 +1163,7 @@
           "value": {
             "code": "model.shell-invalid",
             "kind": "geometry_not_transferred",
-            "namespace": "edrawings",
-            "strict_floor": "warning"
+            "namespace": "edrawings"
           }
         },
         "message": "1 shells were left out of their bodies: object 10 of single: strip index lies outside the shell",

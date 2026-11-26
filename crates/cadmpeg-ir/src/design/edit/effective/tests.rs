@@ -468,7 +468,7 @@ fn color(r: f64) -> Color {
 }
 
 fn appearance(key: u32, base: Option<Color>) -> Appearance {
-    let mut record: Appearance = serde_json::from_value(serde_json::json!({
+    let mut record: Appearance = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("test:effective:appearance#{key}"),
         "properties": {},
         "textures": [],

@@ -63,7 +63,7 @@ fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
                     assert!(matches!(features[0].evaluation.definition(),
                         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                         if kind.as_str() == "Pipe"));
-                    assert!(!serde_json::to_string(&features)
+                    assert!(!cadmpeg_core::serde_erase::json::to_string(&features)
                         .unwrap()
                         .contains("circular_region"));
                 }

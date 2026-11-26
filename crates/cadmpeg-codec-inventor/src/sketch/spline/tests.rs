@@ -86,9 +86,10 @@ fn closed_polynomial_arrays_survive_versioned_headers() {
         assert_eq!(curve.control_points()[2].get(), Point2::new(2., 2.));
         assert!(curve.periodic());
         assert!(curve.weights().is_none());
-        let wire = serde_json::to_value(&data).expect("serialize spline");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&data).expect("serialize spline");
         assert_eq!(
-            serde_json::from_value::<Box<SplineRecord>>(wire).expect("deserialize spline"),
+            cadmpeg_core::serde_erase::json::from_value::<Box<SplineRecord>>(wire)
+                .expect("deserialize spline"),
             data
         );
     }

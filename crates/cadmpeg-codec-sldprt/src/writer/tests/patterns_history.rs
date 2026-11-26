@@ -1501,7 +1501,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::LineOrCircle
     );
     assert_eq!(
-        serde_json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        cadmpeg_core::serde_erase::json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
         r#""line_or_circle""#
     );
 
@@ -1725,6 +1725,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -1750,8 +1751,13 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
     let mut lane = native.feature_input_lanes[0].clone();
     lane.names[1].value = "Depth".into();
 
-    let error =
-        crate::writer::resolved_feature_payload(&lane, &native.feature_histories, &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &lane,
+        &native.feature_histories,
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
 
     assert!(
         error

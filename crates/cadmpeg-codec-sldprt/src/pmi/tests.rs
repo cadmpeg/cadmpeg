@@ -692,8 +692,8 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
     let other = parse_payload(&reordered, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
-    let mut left = serde_json::to_value(&original[0]).unwrap();
-    let mut right = serde_json::to_value(&other[0]).unwrap();
+    let mut left = cadmpeg_core::serde_erase::json::to_value(&original[0]).unwrap();
+    let mut right = cadmpeg_core::serde_erase::json::to_value(&other[0]).unwrap();
     for value in [&mut left, &mut right] {
         for field in [
             "value_offset",
@@ -1486,7 +1486,10 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load(namespace) {
+    if let Err(error) = crate::native::SldprtNative::load(
+        namespace,
+        cadmpeg_ir::units::Tolerances::default().linear,
+    ) {
         assert!(!matches!(
             cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(_)
