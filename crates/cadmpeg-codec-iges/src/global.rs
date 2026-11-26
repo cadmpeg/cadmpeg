@@ -885,6 +885,20 @@ pub(crate) fn source_fields(bytes: &[u8]) -> Option<Vec<SourceField>> {
     )
 }
 
+/// The largest field 16 (maximum line weight gradations) the IGES 4.0 Global
+/// table admits.
+pub(crate) const MAXIMUM_V4_LINE_WEIGHT_GRADATIONS: i64 = 32_768;
+
+/// The Global section `bytes`, columns 1 to 72 of the Global cards in
+/// order, resolved as a decode resolves it. `None` when the section does not
+/// close or its delimiters are invalid.
+pub(crate) fn resolved(bytes: &[u8]) -> Option<ResolvedGlobal> {
+    let Ok(RawOutcome::Closed(raw)) = parse_bytes(bytes) else {
+        return None;
+    };
+    Some(resolve(raw).0)
+}
+
 /// Whether `bytes` is a Global date the `table` grammar admits.
 pub(crate) fn date_is_valid(bytes: &[u8], table: GlobalTable) -> bool {
     date_value_is_valid(bytes, table.accepts_four_digit_date())
@@ -1343,7 +1357,9 @@ impl Resolution {
             }
             Supplied::Absent => (Some(1), None),
             Supplied::Value(value)
-                if value > 0 && (global_table != GlobalTable::V4_0 || value <= 32_768) =>
+                if value > 0
+                    && (global_table != GlobalTable::V4_0
+                        || value <= MAXIMUM_V4_LINE_WEIGHT_GRADATIONS) =>
             {
                 (Some(value), None)
             }

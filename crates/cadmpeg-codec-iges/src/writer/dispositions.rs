@@ -266,7 +266,11 @@ impl<'a> Sources<'a> {
         let (kind, key) = id.strip_prefix("iges:model:")?.split_once('#')?;
         let pieces = key.split(':').collect::<Vec<_>>();
         match (kind, pieces.as_slice()) {
-            ("pcurve", [face, boundary, segment, index]) => {
+            ("pcurve", [face, boundary, segment, index])
+                if sequence_piece(face)
+                    .and_then(|face| self.pointers.get(&face))
+                    .is_some_and(|(entity_type, _)| matches!(entity_type, 143 | 144)) =>
+            {
                 let boundary = self.boundary(sequence_piece(face)?, boundary.parse().ok()?)?;
                 self.boundary_pcurve(boundary, segment.parse().ok()?, index.parse().ok()?)
             }
@@ -284,6 +288,7 @@ impl<'a> Sources<'a> {
                     _ => last_sequence(key),
                 }
             }
+            _ if ENDPOINT_SUFFIXES.iter().any(|suffix| key.ends_with(suffix)) => None,
             _ => last_sequence(key),
         }
     }
@@ -384,6 +389,10 @@ fn model_id(id: &str) -> Option<String> {
     }
 }
 
+/// The key suffixes of the points and vertices the decoder derives at the
+/// ends of a curve. Such a record states the end, and not the curve.
+const ENDPOINT_SUFFIXES: [&str; 4] = ["-start", "-end", ":start", ":end"];
+
 /// The sequence a key piece `D{n}` names.
 fn sequence_piece(piece: &str) -> Option<u32> {
     SourceObjectId::parse(piece).map(SourceObjectId::sequence)
@@ -391,7 +400,7 @@ fn sequence_piece(piece: &str) -> Option<u32> {
 
 /// The last Directory sequence `D{n}` in a key, which names the entity the
 /// keyed record was decoded from: `D{186}:D{514}:D{510}` names the Type 510,
-/// `bounded-plane-D{n}` the Type 108, and `D{n}-start` the curve.
+/// and `bounded-plane-D{n}` the Type 108.
 fn last_sequence(key: &str) -> Option<u32> {
     let bytes = key.as_bytes();
     let mut found = None;

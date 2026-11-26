@@ -12,7 +12,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::global::SourceField;
 use crate::test_support::test_owned::{
-    owned_test_file_with_global_and_directory_fields, OwnedTestEntity,
+    owned_test_file, owned_test_file_with_global_and_directory_fields, OwnedTestEntity,
 };
 use crate::{IgesCodec, IgesVersion};
 
@@ -27,6 +27,8 @@ const SCALAR_PROPERTY_FORMS: &[u8] =
     include_bytes!("../../../tests/golden/fixtures/scalar_property_forms.igs");
 const EXPLICIT_OPEN_SHELL: &[u8] =
     include_bytes!("../../../tests/golden/fixtures/explicit_open_shell.igs");
+const NESTED_TRANSFORMED_POINT: &[u8] =
+    include_bytes!("../../../tests/golden/fixtures/nested_transformed_point.igs");
 
 fn decode(file: &[u8]) -> CadIr {
     IgesCodec
@@ -237,7 +239,7 @@ fn a_dropped_property_drops_its_entity_and_cards() {
 }
 
 /// A Global section whose fields the writer restates, each other than its
-/// own constant.
+/// own constant, at model scale 2.5.
 const RESTATED_GLOBAL: &[u8] = b"1H,,1H;,6Hwidget,5Hw.igs,3Hsys,3H9.9,32,38,6,308,15,3Hrcv,2.5,\
 2,2HMM,4,0.5,15H20250102.030405,0.001,1000.0,3HAda,3HLab,11,3,15H20250607.080910,5HAP214;";
 
@@ -261,36 +263,146 @@ fn point_file(global: &[u8]) -> Vec<u8> {
 
 /// The Global fields of a decoded file, by field number from 1.
 fn global_fields(ir: &CadIr) -> Vec<SourceField> {
-    let bytes = crate::writer::source_global::source_global_bytes(ir).unwrap();
-    crate::global::source_fields(&bytes).unwrap()
+    crate::global::source_fields(&global_bytes(ir)).unwrap()
+}
+
+fn global_bytes(ir: &CadIr) -> Vec<u8> {
+    crate::writer::source_global::source_global_bytes(ir).unwrap()
+}
+
+/// The millimetre width of each line weight number the Global section of a
+/// decoded file states.
+fn line_widths_mm(ir: &CadIr) -> Vec<f64> {
+    let context = crate::global::resolved(&global_bytes(ir))
+        .unwrap()
+        .length_context()
+        .unwrap();
+    let widths = (1..)
+        .map_while(|number| context.line_weight_mm(number))
+        .collect::<Vec<_>>();
+    assert!(!widths.is_empty(), "the Global states a line weight scale");
+    widths
+}
+
+fn point_positions(ir: &CadIr) -> Vec<[f64; 3]> {
+    ir.geometry
+        .points
+        .iter()
+        .map(|point| {
+            let position = point.position().get();
+            [position.x, position.y, position.z]
+        })
+        .collect()
+}
+
+fn assert_close(read_back: &[f64], source: &[f64]) {
+    assert_eq!(read_back.len(), source.len(), "{read_back:?} {source:?}");
+    for (read_back, source) in read_back.iter().zip(source) {
+        assert!(
+            (read_back - source).abs() <= 1e-9 * source.abs().max(1.0),
+            "{read_back} {source}"
+        );
+    }
+}
+
+/// The Global cards of a decoded file.
+fn global_cards(ir: &CadIr) -> Vec<String> {
+    let cards = ir.native.namespace("iges").unwrap().arenas()["cards"]
+        .iter()
+        .filter(|card| card.field("section").unwrap().as_str() == Some("global"))
+        .map(|card| card.id().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!cards.is_empty());
+    cards
+}
+
+/// The loss message that drops the Global cards of `ir` for the named fields.
+fn global_drop(ir: &CadIr, fields: &str) -> String {
+    format!(
+        "that are Global cards whose fields the semantic writer cannot restate: {fields}: {}",
+        global_cards(ir).join(", ")
+    )
+}
+
+/// A file at model scale 0.5 in centimetres reads back from the write at the
+/// same millimetre point and line width. The writer states lengths at model
+/// scale 1 in millimetres, so the Global cards that state the source scale
+/// and unit are dropped.
+#[test]
+fn a_scaled_source_reads_back_at_the_same_lengths() {
+    let ir = decode(NESTED_TRANSFORMED_POINT);
+    let (bytes, messages) = write(&ir, IgesVersion::V5_3);
+    let read_back = decode(&bytes);
+    assert_eq!(point_positions(&ir), [[0.0, 80.0, 60.0]]);
+    assert_close(
+        &point_positions(&read_back).concat(),
+        &point_positions(&ir).concat(),
+    );
+    assert_close(&line_widths_mm(&read_back), &line_widths_mm(&ir));
+    let native = dispositions(&ir, IgesVersion::V5_3);
+    for card in global_cards(&ir) {
+        assert_eq!(
+            native.disposition("iges", "cards", &card),
+            NativeDisposition::Dropped
+        );
+    }
+    let reason = global_drop(&ir, "model space scale, units flag, units name");
+    assert!(
+        messages.iter().any(|message| message.contains(&reason)),
+        "{messages:#?}"
+    );
 }
 
 /// A write restates the source's Global fields that describe the model and
-/// its exchange, and declares the Global cards Regenerated.
+/// its exchange, states its own system id and preprocessor version, and
+/// reads back at the source's millimetre point and line widths. The source
+/// model scale is the one field it does not state.
 #[test]
 fn the_written_global_restates_the_source_fields() {
     let ir = decode(&point_file(RESTATED_GLOBAL));
     let (bytes, messages) = write(&ir, IgesVersion::V5_3);
+    let read_back = decode(&bytes);
     let source = global_fields(&ir);
-    let written = global_fields(&decode(&bytes));
-    for number in [3, 4, 5, 6, 12, 13, 16, 17, 18, 21, 22, 24, 25, 26] {
+    let written = global_fields(&read_back);
+    for number in [3, 4, 12, 16, 18, 21, 22, 24, 25, 26] {
         assert_eq!(
             written[number - 1],
             source[number - 1],
             "Global field {number}"
         );
     }
-    assert_eq!(
-        written[12],
-        SourceField::Real(cadmpeg_ir::scalar::FiniteReal::new(2.5).unwrap())
-    );
+    assert_eq!(written[4], SourceField::Text(b"cadmpeg".to_vec()));
+    assert_eq!(written[5], SourceField::Text(b"0.1".to_vec()));
+    assert_close(&point_positions(&read_back).concat(), &[0.4, 0.8, 1.2]);
+    assert_close(&point_positions(&ir).concat(), &[0.4, 0.8, 1.2]);
+    assert_close(&line_widths_mm(&read_back), &line_widths_mm(&ir));
     let native = dispositions(&ir, IgesVersion::V5_3);
-    for card in ir.native.namespace("iges").unwrap().arenas()["cards"]
-        .iter()
-        .filter(|card| card.field("section").unwrap().as_str() == Some("global"))
-    {
+    for card in global_cards(&ir) {
         assert_eq!(
-            native.disposition("iges", "cards", card.id()),
+            native.disposition("iges", "cards", &card),
+            NativeDisposition::Dropped
+        );
+    }
+    let reason = global_drop(&ir, "model space scale");
+    assert!(
+        messages.iter().any(|message| message.contains(&reason)),
+        "{messages:#?}"
+    );
+}
+
+/// A Global at model scale 1 in millimetres whose every field the writer
+/// restates leaves its Global cards Regenerated.
+#[test]
+fn a_restated_global_keeps_its_cards() {
+    let global = b"1H,,1H;,6Hwidget,5Hw.igs,3Hsys,3H9.9,32,38,6,308,15,3Hrcv,1.0,2,2HMM,4,0.5,\
+15H20250102.030405,0.001,1000.0,3HAda,3HLab,11,3,15H20250607.080910,5HAP214;";
+    let ir = decode(&point_file(global));
+    let (bytes, messages) = write(&ir, IgesVersion::V5_3);
+    assert_close(&line_widths_mm(&decode(&bytes)), &line_widths_mm(&ir));
+    let native = dispositions(&ir, IgesVersion::V5_3);
+    for card in global_cards(&ir) {
+        assert_eq!(
+            native.disposition("iges", "cards", &card),
             NativeDisposition::Regenerated
         );
     }
@@ -298,6 +410,46 @@ fn the_written_global_restates_the_source_fields() {
         messages
             .iter()
             .all(|message| !message.contains("Global cards")),
+        "{messages:#?}"
+    );
+}
+
+/// A source field-18 date is the date the written Global states.
+#[test]
+fn a_stated_generation_date_is_restated() {
+    let ir = decode(&point_file(RESTATED_GLOBAL));
+    let (bytes, _) = write(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        global_fields(&decode(&bytes))[17],
+        SourceField::Text(b"20250102.030405".to_vec())
+    );
+}
+
+/// A source value the output version does not admit is written as the
+/// writer's value, which the output version admits, and the Global cards are
+/// dropped for that field: a relative line width 0 of an IGES 5.0 source in
+/// an IGES 5.3 write, and 40000 line weight gradations in an IGES 4.0 write.
+#[test]
+fn a_global_value_the_output_version_rejects_is_replaced_and_named() {
+    let relative = b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,4,0.0,,0.001,1000.0,,,9,0;";
+    let ir = decode(&point_file(relative));
+    let (bytes, messages) = write(&ir, IgesVersion::V5_3);
+    line_widths_mm(&decode(&bytes));
+    let reason = global_drop(&ir, "maximum line width");
+    assert!(
+        messages.iter().any(|message| message.contains(&reason)),
+        "{messages:#?}"
+    );
+
+    let fine = b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,40000,0.5,,0.001,1000.0,,,11,0;";
+    let ir = decode(&point_file(fine));
+    assert_eq!(line_widths_mm(&ir).len(), 40000);
+    let (bytes, messages) = write(&ir, IgesVersion::V4_0);
+    line_widths_mm(&decode(&bytes));
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("cannot restate: maximum line weight gradations")),
         "{messages:#?}"
     );
 }
@@ -311,32 +463,97 @@ fn a_global_field_the_output_version_lacks_drops_the_global_cards() {
     let ir = decode(&point_file(RESTATED_GLOBAL));
     let (bytes, messages) = write(&ir, IgesVersion::V4_0);
     let written = global_fields(&decode(&bytes));
-    assert_eq!(
-        written[12],
-        SourceField::Real(cadmpeg_ir::scalar::FiniteReal::new(2.5).unwrap())
-    );
     assert_eq!(written[20], SourceField::Text(b"Ada".to_vec()));
     let native = dispositions(&ir, IgesVersion::V4_0);
-    let global = ir.native.namespace("iges").unwrap().arenas()["cards"]
-        .iter()
-        .filter(|card| card.field("section").unwrap().as_str() == Some("global"))
-        .map(|card| card.id().to_owned())
-        .collect::<Vec<_>>();
-    assert!(!global.is_empty());
-    for card in &global {
+    for card in global_cards(&ir) {
         assert_eq!(
-            native.disposition("iges", "cards", card),
+            native.disposition("iges", "cards", &card),
             NativeDisposition::Dropped
         );
     }
+    let reason = global_drop(
+        &ir,
+        "model space scale, file generation date, model modification date, application protocol",
+    );
     assert!(
-        messages.iter().any(|message| message.contains(&format!(
-            "that are Global cards whose fields the semantic writer cannot restate: file \
-             generation date, model modification date, application protocol: {}",
-            global.join(", ")
-        ))),
+        messages.iter().any(|message| message.contains(&reason)),
         "{messages:#?}"
     );
+}
+
+/// A one-face open shell whose loop edge uses carry parameter curves.
+fn shell_with_parameter_curves() -> Vec<u8> {
+    let entity = |entity_type, form, status, parameters: &str| OwnedTestEntity {
+        entity_type,
+        form,
+        label: String::new(),
+        status,
+        parameters: parameters.into(),
+    };
+    let pcurve = |[x0, y0, x1, y1]: [u8; 4]| {
+        entity(
+            126,
+            1,
+            "00010500",
+            &format!("126,1,1,1,0,1,0,0,0,1,1,1,1,{x0},{y0},0,{x1},{y1},0,0,1,0,0,1;"),
+        )
+    };
+    owned_test_file(&[
+        entity(116, 0, "00010000", "116,0,0,0;"),
+        entity(123, 0, "00010000", "123,0,0,1;"),
+        entity(190, 0, "00010000", "190,1,3;"),
+        entity(110, 0, "00010000", "110,0,0,0,1,0,0;"),
+        entity(110, 0, "00010000", "110,1,0,0,0,1,0;"),
+        entity(110, 0, "00010000", "110,0,1,0,0,0,0;"),
+        entity(502, 1, "00010000", "502,3,0,0,0,1,0,0,0,1,0;"),
+        entity(
+            504,
+            1,
+            "00010001",
+            "504,3,7,13,1,13,2,9,13,2,13,3,11,13,3,13,1;",
+        ),
+        pcurve([0, 0, 1, 0]),
+        pcurve([1, 0, 0, 1]),
+        pcurve([0, 1, 0, 0]),
+        entity(
+            508,
+            1,
+            "00010000",
+            "508,3,0,15,1,1,1,0,17,0,15,2,1,1,0,19,0,15,3,1,1,0,21;",
+        ),
+        entity(510, 1, "00010000", "510,5,1,1,23;"),
+        entity(514, 2, "00000000", "514,1,25,1;"),
+    ])
+}
+
+/// A parameter curve of a top-level shell's loop is stated again when the
+/// written face states it.
+#[test]
+fn a_parameter_curve_of_a_written_shell_loop_is_regenerated() {
+    let ir = decode(&shell_with_parameter_curves());
+    let pcurves = ir
+        .geometry
+        .pcurves
+        .iter()
+        .map(|pcurve| pcurve.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pcurves,
+        [
+            "iges:model:pcurve#D27:D23:0:0",
+            "iges:model:pcurve#D27:D23:1:0",
+            "iges:model:pcurve#D27:D23:2:0"
+        ]
+    );
+    let native = dispositions(&ir, IgesVersion::V5_3);
+    for sequence in [17, 19, 21] {
+        let id = entity(&ir, sequence);
+        assert_eq!(
+            native.disposition("iges", "entities", &id),
+            NativeDisposition::Regenerated,
+            "{id}"
+        );
+    }
 }
 
 /// On the trimmed-sheet path the writer states each face of an open shell as
