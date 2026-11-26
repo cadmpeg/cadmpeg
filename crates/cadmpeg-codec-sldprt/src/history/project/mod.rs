@@ -73,6 +73,7 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "Profiles",
     "Guides",
     "Seeds",
+    crate::records::CIRCULAR_PATTERN_SEED_SOURCES,
     "Dependency",
     "Dependencies",
     "ParentFeatures",
