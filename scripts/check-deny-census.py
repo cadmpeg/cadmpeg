@@ -119,7 +119,7 @@ Exit code 0 prints ``deny census: ok``; any failure prints one
 from __future__ import annotations
 
 import importlib.util
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 import json
 import os
 import re
@@ -2626,6 +2626,21 @@ def name_pattern(names):
     return re.compile(rf"(?<![\w$])(?:{alternatives})\b")
 
 
+# The identifiers `name_pattern` can match: a run of word characters that no
+# word character or `$` precedes.
+IDENTIFIER_TOKEN = re.compile(r"(?<![\w$])\w+")
+
+
+@SOURCE_POLICY.cached_analysis
+def identifier_offsets(path):
+    """Each identifier of one file's production code, with its sorted offsets."""
+    code, _ = SOURCE_POLICY.production_source(read_source(path))
+    offsets = {}
+    for token in IDENTIFIER_TOKEN.finditer(code):
+        offsets.setdefault(token.group(), []).append(token.start())
+    return offsets
+
+
 @SOURCE_POLICY.cached_analysis
 def use_renames(path):
     """Each ``original as alias`` a ``use`` declaration of one file states."""
@@ -4599,18 +4614,23 @@ def main():
                 for tree in macro_token_trees(path):
                     if tree.kind == "definition":
                         macro_definitions.setdefault(tree.name, []).append(tree)
-        named = name_pattern(names)
         for path in paths:
-            source = read_source(path)
-            if not named.search(source):
+            identifiers = identifier_offsets(path)
+            spellings = sorted(
+                (offset, name)
+                for name in names
+                for offset in identifiers.get(name, ())
+            )
+            if not spellings:
                 continue
-            code, _ = SOURCE_POLICY.production_source(source)
             for tree in macro_token_trees(path):
-                spelled = named.search(code, tree.start, tree.end)
-                if spelled is None or tree.kind == "definition":
+                if tree.kind == "definition":
+                    continue
+                first = bisect_left(spellings, (tree.start,))
+                if first == len(spellings) or spellings[first][0] >= tree.end:
                     continue
                 if tree.kind == "attribute" or binding_macro(tree.name, macro_definitions):
-                    return tree, spelled.group()
+                    return tree, spellings[first][1]
         return None
 
     def bound_by_expansion(candidate, source):
