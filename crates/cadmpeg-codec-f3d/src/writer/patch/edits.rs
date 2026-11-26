@@ -1693,7 +1693,10 @@ pub(super) fn validate_configuration_edits(
         if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::records::configuration::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(
+                    after.entry_name(),
+                    after.payload(),
+                )?,
             );
         }
     }
@@ -4448,7 +4451,7 @@ mod tests {
     }
 
     fn assignment(physical_token: bool) -> DesignMaterialAssignment {
-        let mut document = serde_json::json!({
+        let mut document = cadmpeg_core::json!({
             "id": "material#0",
             "asm_body_key": 42,
             "asm_body_key_offset": 200,

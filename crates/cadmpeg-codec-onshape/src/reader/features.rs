@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::Report;
@@ -135,6 +136,14 @@ pub(super) fn queries<'a>(feature: &'a Value, key: &str) -> Mapping<&'a [Value]>
     } else {
         Ok(list)
     }
+}
+
+/// A feature from a `FeatureScript` namespace rather than a built-in feature.
+pub(super) fn is_custom(feature: &Value) -> bool {
+    feature
+        .get("namespace")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
 }
 
 fn present_scope(feature: &Value, key: &str) -> Mapping<bool> {
@@ -689,6 +698,13 @@ pub(super) fn map(
     report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
+    if is_custom(feature) {
+        let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
+        return Err(format!(
+            "custom FeatureScript feature {name} is not supported yet: a namespaced \
+             feature's stored parameters do not say which operation it performs"
+        ));
+    }
     if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
         super::sweep::validate_record(feature)?;
     } else {
@@ -718,13 +734,6 @@ pub(super) fn map(
         "depthToTip",
     ] {
         enabled(feature, key)?;
-    }
-    if feature
-        .get("namespace")
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return Err("custom FeatureScript features are not supported yet".into());
     }
     for key in [
         "hasSecondDirection",
@@ -828,6 +837,11 @@ pub(super) fn map(
                     json!({"kind": "to_face", "face": face})
                 }
                 Some("UP_TO_NEXT") => {
+                    if scoped.is_some() {
+                        return Err("UP_TO_NEXT with a booleanScope selection is not proved: \
+                             no stored data shows how the scope limits the next face"
+                            .into());
+                    }
                     let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
                     let face = state.next_face(feature, &profile, model)?;
                     state.require_planes(&face)?;

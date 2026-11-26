@@ -4,10 +4,11 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
-    ExportBody, WritePath,
+    ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
+use super::dispositions::appearances::AppearanceDrops;
 use crate::loss::IgesLossCode;
 
 /// Write the resolved version. A source of an off-catalog version is replayed
@@ -55,11 +56,14 @@ fn replay_or_synthesize(
 }
 
 fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
+    let mut native = NativeDispositions::dropped("which the IGES writer does not write");
+    native.namespace("iges", NativeDisposition::Written);
     super::body(
         bytes,
         WritePath::VerbatimReplay,
         // Replay runs only while the document digest matches its decode baseline.
         ArenaCoverage::Complete,
+        native,
         carried_source_losses(input.fidelity, &WritePath::VerbatimReplay),
         "preserved source container replayed verbatim",
         super::counts_for_ir(input.ir),
@@ -74,7 +78,7 @@ fn synthesized_body(
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    let synthesis = super::degrade::synthesize_dropping(&recovered.document, version)?;
+    let (synthesis, native) = synthesis_and_dispositions(&recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -92,10 +96,30 @@ fn synthesized_body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
         ArenaCoverage::Declared(super::SYNTHESIS_COVERAGE),
+        native,
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,
     ))
+}
+
+/// The file synthesized from `document` with the losses of the body names,
+/// the colours, the opacities, the appearances, and the appearance bindings
+/// it does not state, and what it does with each native record of
+/// `document`.
+pub(super) fn synthesis_and_dispositions(
+    document: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<(super::Synthesis, NativeDispositions), CodecError> {
+    let mut synthesis = super::degrade::synthesize_dropping(document, version)?;
+    let native = super::dispositions::native_dispositions(document, &synthesis, version);
+    let appearances = AppearanceDrops::of(document, &synthesis);
+    let presentation =
+        super::dispositions::presentation::losses(document, &synthesis, &appearances);
+    synthesis
+        .losses
+        .extend(presentation.into_iter().chain(appearances.losses()));
+    Ok((synthesis, native))
 }
 
 enum SynthesisCause {

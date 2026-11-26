@@ -6,8 +6,9 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::design::container::Container;
 use crate::design::evaluation::{CurrentState, EvaluationStatus};

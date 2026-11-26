@@ -17,7 +17,7 @@ use model::{
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{native_records_omitted, value_unwritable};
+use cadmpeg_ir::codec::write::value_unwritable;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1146,13 +1146,6 @@ fn prepare_write(
     } else {
         ir.tolerances.angular.get()
     };
-    if let Some(namespace) = ir.native.namespace("rhino") {
-        losses.extend(native_records_omitted(
-            "Rhino",
-            "that the 3DM writer does not regenerate",
-            omitted_native_records(namespace),
-        ));
-    }
     let geometry = &ir.geometry;
     let (breps, splits) = brep_scopes(ir, unjoined);
     let mut held = BTreeSet::new();

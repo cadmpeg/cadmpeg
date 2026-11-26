@@ -7,6 +7,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::design::ids::{EvaluationId, ProcessStateId};
+use crate::ids::{Identity, NativeId};
 
 /// The separator between a delta record's qualifier and its id.
 const QUALIFIER_SEPARATOR: char = ' ';
@@ -35,17 +36,36 @@ pub enum AnnotationTarget<'key> {
     },
 }
 
-impl AnnotationKey {
-    /// The key of `record` in the delta of `evaluation`.
-    #[must_use]
-    pub fn in_evaluation(evaluation: &EvaluationId, record: &str) -> Self {
-        Self::qualified(evaluation.as_str(), record)
-    }
+/// The id of a record that holds a delta: an evaluation or a process state.
+pub trait Qualifier: sealed::Sealed {
+    /// The id, in its wire form.
+    fn as_qualifier(&self) -> &str;
+}
 
-    /// The key of `record` in the delta of the process state `state`.
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for crate::design::ids::EvaluationId {}
+    impl Sealed for crate::design::ids::ProcessStateId {}
+}
+
+impl Qualifier for EvaluationId {
+    fn as_qualifier(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Qualifier for ProcessStateId {
+    fn as_qualifier(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AnnotationKey {
+    /// The key of `record` in the delta of `qualifier`, an evaluation or a
+    /// process state.
     #[must_use]
-    pub fn in_process_state(state: &ProcessStateId, record: &str) -> Self {
-        Self::qualified(state.as_str(), record)
+    pub fn in_delta(qualifier: &impl Qualifier, record: &impl AsRef<Identity>) -> Self {
+        Self::qualified(qualifier.as_qualifier(), record.as_ref().as_str())
     }
 
     fn qualified(qualifier: &str, record: &str) -> Self {
@@ -62,8 +82,7 @@ impl AnnotationKey {
     }
 
     /// The id of the top-level record the annotation belongs to: the entity,
-    /// or the evaluation or process state whose delta holds the record. Keys
-    /// in increasing order give owners in nondecreasing order.
+    /// or the evaluation or process state whose delta holds the record.
     #[must_use]
     pub fn owner(&self) -> &str {
         match self.target() {
@@ -98,15 +117,52 @@ impl AnnotationKey {
     }
 }
 
+impl From<Identity> for AnnotationKey {
+    /// The key of the top-level entity `id`.
+    fn from(id: Identity) -> Self {
+        Self(id.into_string())
+    }
+}
+
+impl From<&Identity> for AnnotationKey {
+    /// The key of the top-level entity `id`.
+    fn from(id: &Identity) -> Self {
+        Self(id.as_str().to_owned())
+    }
+}
+
+impl From<&NativeId> for AnnotationKey {
+    /// The key of the native record `id`.
+    fn from(id: &NativeId) -> Self {
+        Self(id.as_str().to_owned())
+    }
+}
+
+impl From<&AnnotationKey> for AnnotationKey {
+    fn from(key: &AnnotationKey) -> Self {
+        key.clone()
+    }
+}
+
+/// Builder tests name entities by bare text that no codec mints.
+#[cfg(test)]
+impl From<&str> for AnnotationKey {
+    fn from(key: &str) -> Self {
+        Self(key.to_owned())
+    }
+}
+
+#[cfg(test)]
 impl From<String> for AnnotationKey {
     fn from(key: String) -> Self {
         Self(key)
     }
 }
 
-impl From<&str> for AnnotationKey {
-    fn from(key: &str) -> Self {
-        Self(key.to_owned())
+#[cfg(test)]
+impl From<&String> for AnnotationKey {
+    fn from(key: &String) -> Self {
+        Self(key.clone())
     }
 }
 

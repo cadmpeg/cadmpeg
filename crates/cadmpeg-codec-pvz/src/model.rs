@@ -23,6 +23,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh, TessellationTriangleGroup};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::frames::MILLIMETRES_PER_METRE;
@@ -141,8 +142,9 @@ enum Reached {
 /// Adds the occurrences each definition places, walking the definition graph
 /// from its roots (§3.11). A definition reached from a root lists its child
 /// occurrences once, in stored order; a child occurrence of a definition on
-/// the path to it closes a cycle and is left out. The walk stops after
-/// `max_occurrences` occurrences.
+/// the path to it closes a cycle and is left out. The walk adds no
+/// occurrence after `max_occurrences` occurrences; it walks on only to name
+/// the child occurrences it drops.
 pub(crate) fn occurrences(
     ctx: &DecodeContext<'_>,
     structure: &Structure,
@@ -162,9 +164,11 @@ pub(crate) fn occurrences(
     let depth_limit = usize::try_from(max_depth).ok();
     let mut admitted = u64_from_index(ir.entity_count());
     let mut emitted = 0_usize;
-    let mut cycles = 0_usize;
+    let mut cycles = Vec::new();
     let mut stopped = false;
-    let mut past_depth = 0_usize;
+    let mut stopped_at = None;
+    let mut cut = Vec::new();
+    let mut past_depth = Vec::new();
     let mut not_similar = 0_usize;
     let mut invalid = 0_usize;
     let mut owned: Vec<Vec<cadmpeg_ir::ids::OccurrenceId>> = vec![Vec::new(); definitions.len()];
@@ -209,8 +213,8 @@ pub(crate) fn occurrences(
         }
     }
     let mut reached = vec![Reached::No; definitions.len()];
-    'roots: for root in roots.iter().copied() {
-        if stopped {
+    for root in roots.iter().copied() {
+        if stopped && stopped_at.is_none() {
             break;
         }
         // Each frame is a definition, its depth, and its next child.
@@ -223,7 +227,8 @@ pub(crate) fn occurrences(
                 continue;
             };
             if next == 0 && depth_limit.is_some_and(|limit| depth >= limit) {
-                past_depth += definition.occurrences.len();
+                past_depth
+                    .extend((0..definition.occurrences.len()).map(|n| (parent_definition, n)));
                 reached[parent_definition] = Reached::Done;
                 stack.pop();
                 continue;
@@ -234,12 +239,21 @@ pub(crate) fn occurrences(
                 continue;
             };
             frame.2 += 1;
-            if emitted >= max_occurrences {
+            let counting = stopped_at.is_some();
+            if !counting && emitted >= max_occurrences {
                 stopped = true;
-                break 'roots;
+                stopped_at = Some((parent_definition, next));
+            } else if reached.get(child.definition) == Some(&Reached::OnPath) {
+                cycles.push((parent_definition, next));
+                continue;
+            } else if counting {
+                cut.push((parent_definition, next));
             }
-            if reached.get(child.definition) == Some(&Reached::OnPath) {
-                cycles += 1;
+            if stopped_at.is_some() {
+                if reached.get(child.definition) == Some(&Reached::No) {
+                    reached[child.definition] = Reached::OnPath;
+                    stack.push((child.definition, depth + 1, 0));
+                }
                 continue;
             }
             let transform = match placement(&child.placement) {
@@ -292,10 +306,19 @@ pub(crate) fn occurrences(
             definition.occurrences = occurrences;
         }
     }
-    if cycles > 0 {
+    if !cycles.is_empty() {
         losses.push(PvzLossCode::StructureOccurrenceCycle.note(format!(
-            "{cycles} child occurrences close a definition cycle and were left out"
+            "{} child occurrences close a definition cycle and were left out",
+            cycles.len()
         )));
+        let code = PvzLossCode::StructureOccurrenceCycle.kind();
+        losses.extend(cycles.iter().map(|&(definition, occurrence)| {
+            GivenUpRecord::new(
+                child_occurrence(definition, occurrence),
+                format_args!("{code}: the child occurrence closes a definition cycle"),
+            )
+            .loss()
+        }));
     }
     let mut truncation = Vec::new();
     if stopped {
@@ -303,15 +326,46 @@ pub(crate) fn occurrences(
             "decoding stopped at the limit of {max_occurrences} occurrences"
         ));
     }
-    if past_depth > 0 {
+    if !past_depth.is_empty() {
         truncation.push(format!(
-            "{past_depth} child occurrences lie past the recursion depth limit of \
-             {max_depth} definitions and were left out"
+            "{} child occurrences lie past the recursion depth limit of \
+             {max_depth} definitions and were left out",
+            past_depth.len()
         ));
     }
     if !truncation.is_empty() {
         losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
     }
+    let code = PvzLossCode::StructureOccurrenceTruncated.kind();
+    if let Some((definition, occurrence)) = stopped_at {
+        let loss = GivenUpRecord::new(
+            child_occurrence(definition, occurrence),
+            format_args!(
+                "{code}: decoding stopped at this child occurrence, at the limit of \
+                 {max_occurrences} occurrences"
+            ),
+        )
+        .dropping(
+            cut.iter()
+                .map(|&(definition, occurrence)| child_occurrence(definition, occurrence)),
+        )
+        .loss();
+        ctx.retain_bytes(
+            u64_from_index(loss.message.len()),
+            "pvz_occurrence_limit_loss",
+        )?;
+        losses.push(loss);
+    }
+    losses.extend(past_depth.iter().map(|&(definition, occurrence)| {
+        GivenUpRecord::new(
+            child_occurrence(definition, occurrence),
+            format_args!(
+                "{code}: the child occurrence lies past the recursion depth limit of \
+                 {max_depth} definitions"
+            ),
+        )
+        .loss()
+    }));
     if not_similar > 0 {
         losses.push(PvzLossCode::StructurePlacementNotSimilarity.note(format!(
             "{not_similar} placements have a basis that is not a uniformly scaled right-handed \
@@ -325,6 +379,15 @@ pub(crate) fn occurrences(
         )));
     }
     Ok(())
+}
+
+/// The id of child occurrence `occurrence` of definition `definition` in
+/// loss messages.
+fn child_occurrence(definition: usize, occurrence: usize) -> cadmpeg_ir::ids::Identity {
+    cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("pvz", "model", "child-occurrence"),
+        cadmpeg_ir::ids::IdentityKey::from(definition).dash(occurrence),
+    )
 }
 
 /// Marks the definition the file holds at its top as the root definition.
@@ -481,7 +544,7 @@ pub(crate) fn display_geometry(
                     });
                 }
             }
-            Err(reason) => rejected.push(format!("mesh {index}: {reason}")),
+            Err(reason) => rejected.push((id, format!("mesh {index}: {reason}"))),
         }
         ctx.admit_entities(
             u64_from_index(ir.entity_count()),
@@ -508,8 +571,18 @@ pub(crate) fn display_geometry(
     if !rejected.is_empty() {
         losses.push(PvzLossCode::TessellationMeshRejected.note(format!(
             "geometry member {member:?}: {}",
-            rejected.join("; ")
+            rejected
+                .iter()
+                .map(|(_, reason)| reason.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
         )));
+        let code = PvzLossCode::TessellationMeshRejected.kind();
+        losses.extend(
+            rejected.iter().map(|(id, reason)| {
+                GivenUpRecord::new(id, format_args!("{code}: {reason}")).loss()
+            }),
+        );
     }
     if colors_rejected > 0 {
         losses.push(PvzLossCode::AttributeAppearanceColorRejected.note(format!(

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::BTreeSet;
-
 use crate::annotations::{AnnotationBuilder, AnnotationKey, AnnotationTarget, StreamHandle};
 use crate::design::ids::{EvaluationId, ProcessStateId};
+use crate::ids::FaceId;
 use crate::provenance::Exactness;
 
 const EVALUATION: &str = "test:design:evaluation#1";
@@ -13,9 +12,13 @@ fn evaluation() -> EvaluationId {
     EvaluationId::mint(EVALUATION).unwrap()
 }
 
+fn face() -> FaceId {
+    FaceId::mint(FACE).unwrap()
+}
+
 #[test]
 fn a_key_with_a_space_names_a_record_of_a_delta() {
-    let key = AnnotationKey::in_evaluation(&evaluation(), FACE);
+    let key = AnnotationKey::in_delta(&evaluation(), &face());
     assert_eq!(key.as_str(), "test:design:evaluation#1 test:brep:face#2");
     assert_eq!(
         key.target(),
@@ -25,7 +28,7 @@ fn a_key_with_a_space_names_a_record_of_a_delta() {
         }
     );
     assert_eq!(key.owner(), EVALUATION);
-    let state = AnnotationKey::in_process_state(&ProcessStateId::mint(STATE).unwrap(), FACE);
+    let state = AnnotationKey::in_delta(&ProcessStateId::mint(STATE).unwrap(), &face());
     assert_eq!(
         state.target(),
         AnnotationTarget::Delta {
@@ -33,32 +36,31 @@ fn a_key_with_a_space_names_a_record_of_a_delta() {
             record: FACE
         }
     );
-    assert_eq!(
-        AnnotationKey::from(FACE).target(),
-        AnnotationTarget::Entity(FACE)
-    );
+    assert_eq!(read(FACE).target(), AnnotationTarget::Entity(FACE));
+}
+
+fn read(text: &str) -> AnnotationKey {
+    cadmpeg_core::serde_erase::json::from_value(serde_json::Value::from(text)).unwrap()
 }
 
 #[test]
-fn keys_in_increasing_order_give_nondecreasing_owners() {
-    let keys = [
-        "test:brep:face#1",
-        "test:brep:face#1 test:brep:face#9",
-        "test:brep:face#1 test:brep:face#0",
-        "test:brep:face#1!",
-        "test:brep:face#10",
-        "test:brep:face#1-",
-    ]
-    .map(AnnotationKey::from)
-    .into_iter()
-    .collect::<BTreeSet<_>>();
-    let owners = keys.iter().map(AnnotationKey::owner).collect::<Vec<_>>();
-    assert!(owners.windows(2).all(|pair| pair[0] <= pair[1]));
+fn a_malformed_key_is_read_by_its_first_space() {
+    for (text, qualifier, record) in [
+        ("a  b", "a", " b"),
+        (" b", "", "b"),
+        ("a ", "a", ""),
+        (" ", "", ""),
+    ] {
+        let key = read(text);
+        assert_eq!(key.as_str(), text);
+        assert_eq!(key.target(), AnnotationTarget::Delta { qualifier, record });
+        assert_eq!(key.owner(), qualifier);
+    }
 }
 
 #[test]
 fn a_delta_key_is_annotated_retained_by_its_qualifier_and_remapped_per_id() {
-    let key = AnnotationKey::in_evaluation(&evaluation(), FACE);
+    let key = AnnotationKey::in_delta(&evaluation(), &face());
     let stream = StreamHandle::new(crate::stream_name!("source"));
     let mut builder = AnnotationBuilder::new();
     builder.note(&key, &stream, 7, Some("face"));
@@ -98,12 +100,15 @@ fn copying_an_entity_annotates_its_delta_record_as_the_entity() {
     builder.note(FACE, &stream, 11, None);
     builder.derived(FACE, "tolerance").unwrap();
     let mut annotations = builder.build();
-    let key = AnnotationKey::in_evaluation(&evaluation(), FACE);
-    annotations.copy_entity(FACE, key.clone());
+    let key = AnnotationKey::in_delta(&evaluation(), &face());
+    annotations.copy_entity(&face(), key.clone());
     assert_eq!(annotations.provenance[&key], annotations.provenance[FACE]);
     assert_eq!(annotations.exactness()[&key], annotations.exactness()[FACE]);
 
-    annotations.copy_entity("test:brep:face#unannotated", key.clone());
+    annotations.copy_entity(
+        &FaceId::mint("test:brep:face#unannotated").unwrap(),
+        key.clone(),
+    );
     assert!(!annotations.provenance.contains_key(&key));
     assert!(!annotations.exactness().contains_key(&key));
 }

@@ -53,7 +53,7 @@ fn bspline_constructor_keeps_poles_moves_knots_and_preserves_wire() {
             .collect::<Vec<_>>(),
         points()
     );
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "u_degree": 1,
         "v_degree": 1,
         "u_knots": [0.0, 0.0, 1.0, 1.0],

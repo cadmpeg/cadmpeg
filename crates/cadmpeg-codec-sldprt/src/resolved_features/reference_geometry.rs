@@ -2,8 +2,7 @@
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::{
-    sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
-    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    sketch_plane_frames, SketchPlaneUAxisSource, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use super::scalars::FeatureObjectNames;
 use super::selections::{
@@ -541,7 +540,7 @@ pub(crate) fn enrich_history_reference_planes(
         {
             feature.properties.insert(
                 cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
-                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
+                crate::records::CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
             );
         } else {
             feature

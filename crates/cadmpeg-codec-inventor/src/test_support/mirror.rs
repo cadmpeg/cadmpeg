@@ -1145,9 +1145,9 @@ pub(crate) fn new_body_form() -> (Fixture, PmDcPatternFeature) {
     let node =
         crate::feature::tests::test_feature(200, 4, &[(0, 201), (1, 202), (2, 203), (3, 204)]);
     let mut wire = json::to_value(node).expect("synthetic node");
-    wire["save_version_major"] = serde_json::json!(19);
-    wire["outline_value"] = serde_json::json!(15);
-    wire["header"]["flags"] = serde_json::json!(0x6200);
+    wire["save_version_major"] = cadmpeg_core::json!(19);
+    wire["outline_value"] = cadmpeg_core::json!(15);
+    wire["header"]["flags"] = cadmpeg_core::json!(0x6200);
     fixture
         .generated_features
         .push(json::from_value(wire).expect("generated node"));
@@ -1203,7 +1203,7 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
                 .expect("variable");
             change_record(property, |wire| {
                 let value = wire["kind"][field].as_u64().expect("word");
-                wire["kind"][field] = serde_json::json!(value + 1);
+                wire["kind"][field] = cadmpeg_core::json!(value + 1);
             });
             cases.push((format!("variable {ordinal} {field}"), fixture, source));
         }
@@ -1239,16 +1239,16 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
                 .generated_labels
                 .push(fixture.generated_labels[0].clone()),
             4 => change_record(&mut fixture.generated_features[0], |wire| {
-                wire["header"]["flags"] = serde_json::json!(0x86200);
+                wire["header"]["flags"] = cadmpeg_core::json!(0x86200);
             }),
             5 => change_record(&mut fixture.generated_features[0], |wire| {
-                wire["save_version_major"] = serde_json::json!(20);
+                wire["save_version_major"] = cadmpeg_core::json!(20);
             }),
             6 => change_record(&mut fixture.generated_features[0], |wire| {
-                wire["properties"]["metadata"]["values"][1] = serde_json::json!(1);
+                wire["properties"]["metadata"]["values"][1] = cadmpeg_core::json!(1);
             }),
             7 => change_record(&mut fixture.label, |wire| {
-                wire["participants"]["metadata"]["values"][1] = serde_json::json!(1);
+                wire["participants"]["metadata"]["values"][1] = cadmpeg_core::json!(1);
             }),
             8 => {
                 let collection = fixture
@@ -1257,17 +1257,17 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
                     .find(|p| p.identity.record_ordinal == 104)
                     .expect("collection");
                 change_record(collection, |wire| {
-                    wire["kind"]["items"]["metadata"]["values"][1] = serde_json::json!(1);
+                    wire["kind"]["items"]["metadata"]["values"][1] = cadmpeg_core::json!(1);
                 });
             }
             9 => fixture
                 .properties
                 .retain(|property| property.identity.record_ordinal != 113),
             10 => change_record(&mut fixture.generated_features[0], |wire| {
-                wire["header"]["flags_extension"] = serde_json::json!(0);
+                wire["header"]["flags_extension"] = cadmpeg_core::json!(0);
             }),
             11 => change_record(&mut fixture.generated_features[0], |wire| {
-                wire["header"]["stamps"] = serde_json::json!([-1]);
+                wire["header"]["stamps"] = cadmpeg_core::json!([-1]);
             }),
             12..=17 => {
                 let ordinal = match change {
@@ -1282,17 +1282,17 @@ pub(crate) fn body_copy_refusal_cases() -> Vec<(String, Fixture, PmDcPatternFeat
                     .expect("property");
                 change_record(property, |wire| {
                     if change % 2 == 0 {
-                        wire["header"]["flags_extension"] = serde_json::json!(0);
+                        wire["header"]["flags_extension"] = cadmpeg_core::json!(0);
                     } else {
-                        wire["header"]["stamps"] = serde_json::json!([-1]);
+                        wire["header"]["stamps"] = cadmpeg_core::json!([-1]);
                     }
                 });
             }
             18 => change_record(&mut source, |wire| {
-                wire["header"]["flags_extension"] = serde_json::json!(0);
+                wire["header"]["flags_extension"] = cadmpeg_core::json!(0);
             }),
             _ => change_record(&mut source, |wire| {
-                wire["header"]["stamps"] = serde_json::json!([-1]);
+                wire["header"]["stamps"] = cadmpeg_core::json!([-1]);
             }),
         }
         cases.push((format!("generated form {change}"), fixture, source));

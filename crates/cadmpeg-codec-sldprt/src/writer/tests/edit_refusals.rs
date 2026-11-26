@@ -7,7 +7,7 @@ use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -344,11 +344,6 @@ fn an_edited_compound_file_part_drops_a_global_parameter() {
 /// declines it (§3.4, Paths item 4).
 #[test]
 fn an_edit_no_path_writes_leaves_the_part_as_stored() {
-    use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-        SketchConstraintId,
-    };
-
     let mut decoded = EditableDecodeResult::from(ftc_06().clone());
     let source = decoded
         .source_fidelity()
@@ -356,6 +351,29 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
         .and_then(|record| record.data())
         .unwrap()
         .to_vec();
+    let constraint = add_horizontal_relation(&mut decoded);
+
+    let (report, output, _) = write(&decoded);
+
+    assert_eq!(output, source);
+    let losses = unwritten(&report);
+    assert_eq!(losses.len(), 1, "{:?}", report.losses);
+    assert!(
+        losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
+            && losses[0].contains("sketch relation editing")
+            && losses[0].contains(&constraint),
+        "{}",
+        losses[0]
+    );
+}
+
+/// The sketch relation the history writer cannot write, added to `ftc_06`.
+fn add_horizontal_relation(decoded: &mut EditableDecodeResult) -> String {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId,
+    };
+
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded
         .ir()
@@ -389,19 +407,66 @@ fn an_edit_no_path_writes_leaves_the_part_as_stored() {
             metadata: None,
             native_ref: None,
         });
+    constraint.as_str().to_owned()
+}
 
-    let (report, output, _) = write(&decoded);
+/// A write the history writer declines is synthesized without the `sldprt`
+/// namespace. Each arena of the namespace is declared dropped, so one
+/// `export:native.records-omitted` loss per arena names its records, and no
+/// loss names an `unknowns` stub (§3.4, Rule W3).
+#[test]
+fn a_declined_history_write_charges_each_native_arena_by_id() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    add_horizontal_relation(&mut decoded);
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Explicit("sldprt:unknown"),
+        )
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
 
-    assert_eq!(output, source);
-    let losses = unwritten(&report);
-    assert_eq!(losses.len(), 1, "{:?}", report.losses);
-    assert!(
-        losses[0].contains(&format!("as stored ({})", crate::SOURCE_IMAGE_ID))
-            && losses[0].contains("sketch relation editing")
-            && losses[0].contains(constraint.as_str()),
-        "{}",
-        losses[0]
-    );
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let mut charged_arenas = 0;
+    for (arena, records) in namespace.arenas() {
+        let ids = records
+            .iter()
+            .map(cadmpeg_ir::NativeRecord::id)
+            .collect::<Vec<_>>();
+        let naming = omitted
+            .iter()
+            .filter(|message| ids.iter().any(|id| names(message, id)))
+            .collect::<Vec<_>>();
+        if arena.as_str() == "unknowns" || ids.is_empty() {
+            assert!(naming.is_empty(), "{arena}: {naming:?}");
+            continue;
+        }
+        charged_arenas += 1;
+        assert_eq!(naming.len(), 1, "{arena}: {omitted:?}");
+        let message = naming[0];
+        assert!(
+            message.contains(&format!("of `sldprt` arena `{arena}`"))
+                && message.contains("because the patch of the document")
+                && ids.iter().all(|id| names(message, id)),
+            "{message}"
+        );
+    }
+    assert!(charged_arenas > 0, "{omitted:?}");
+}
+
+/// Whether `message` names `id` as a whole token (§3.2).
+fn names(message: &str, id: &str) -> bool {
+    message
+        .split(|character: char| character.is_whitespace() || matches!(character, ',' | ';'))
+        .any(|token| token == id)
 }
 
 /// A compound-file part with no decode baseline is written into a native
@@ -680,7 +745,7 @@ fn bump_first_real(value: &mut serde_json::Value) -> bool {
             let Some(real) = number.as_f64().filter(|real| *real != 0.0) else {
                 return false;
             };
-            *value = serde_json::json!(real + 1.0);
+            *value = cadmpeg_core::json!(real + 1.0);
             true
         }
         Value::Array(items) => items.iter_mut().any(bump_first_real),
@@ -770,7 +835,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
     const EDITED: f64 = 6.35;
     let mut decoded = ftc_08_with_fillet_selection_edited(|fillet| {
         edit_definition(fillet, |wire| {
-            *wire.pointer_mut(RADIUS).unwrap() = serde_json::json!(EDITED);
+            *wire.pointer_mut(RADIUS).unwrap() = cadmpeg_core::json!(EDITED);
         });
     });
     let name = {
@@ -1299,7 +1364,7 @@ fn edit_definition_at(
 }
 
 fn plus_one(value: &mut serde_json::Value) {
-    *value = serde_json::json!(value.as_f64().unwrap() + 1.0);
+    *value = cadmpeg_core::json!(value.as_f64().unwrap() + 1.0);
 }
 
 /// `Sketch4` is placed on `Plane3`, and a `Plane3` distance edit written as
@@ -1383,7 +1448,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
 fn a_variant_edit_names_the_parameter_its_record_gains() {
     let mut decoded = EditableDecodeResult::from(ftc_08().clone());
     let (cut, _) = edit_definition_at(&mut decoded, "Cut-Extrude2", "/termination", |value| {
-        *value = serde_json::json!({"kind": "blind", "length": 5.0});
+        *value = cadmpeg_core::json!({"kind": "blind", "length": 5.0});
     });
 
     let (report, output, read_back) = write(&decoded);
@@ -1500,7 +1565,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
         edit_definition(extrusion, |wire| {
             let leaf = first_depth(wire).unwrap();
             depth = leaf.as_f64().unwrap() + 1.0;
-            *leaf = serde_json::json!(depth);
+            *leaf = cadmpeg_core::json!(depth);
         });
         depth
     };

@@ -125,11 +125,11 @@ mod tests {
             json::from_value(wire.clone()).expect("valid bounded chamfer fixture");
         assert_eq!(loaded, rows[0]);
         let mut invalid = wire.clone();
-        invalid["references"][0]["value"] = serde_json::json!(0x02_0134);
+        invalid["references"][0]["value"] = cadmpeg_core::json!(0x02_0134);
         assert!(json::from_value::<CatiaObjectChamfer>(invalid).is_err());
         let mut invalid = wire;
         invalid["parameters"]["definition"]["angle"] =
-            serde_json::json!(std::f64::consts::FRAC_PI_2);
+            cadmpeg_core::json!(std::f64::consts::FRAC_PI_2);
         assert!(json::from_value::<CatiaObjectChamfer>(invalid).is_err());
         let at = bytes.len() - 22;
         bytes[at + 2] = 3;

@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn row_identity_round_trips_and_rejects_noncanonical_strings() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "link", "row": "nx:segment-index:row#2", "slot": "type_code",
             "stream_ordinal": 0, "stream_kind": "partition", "wrapper_byte_len": 8,
             "source_offset": 0
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn segment_stream_link_retained_limit_refuses_before_clone_or_row_format() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:segment-stream:link#1", "row": "nx:segment-index:row#2",
             "slot": "type_code", "stream_ordinal": 0, "stream_kind": "partition",
             "wrapper_byte_len": 8, "source_offset": 0

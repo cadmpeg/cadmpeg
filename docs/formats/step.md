@@ -1133,14 +1133,37 @@ An open literal or comment provides no continuation boundary.
 CADIR decision: the first statement of a repeated instance name, in file
 order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
-and not stated: its exact source is retained, and it is charged one
-`step/parse.record-omitted` loss that names the instance name and gives the
-copy's byte span. Where the first statement is unreadable, it is given up as
-its own part with the records that need it (CADIR §3.3), and no later
-statement of the name stands in its place: each later readable statement is
-charged as above. A later unreadable statement is given up as its own part,
-and the first statement stands. The repetition gives up neither the file nor
-the DATA section.
+and not stated. It is charged one `step/parse.record-omitted` loss that names
+the instance name and gives the copy's byte span. A copy that states the same
+entity names and parameters as a first statement that stands drops nothing,
+and its exact source is retained. Each other copy is given up as a
+`data_record` part over its exact source (CADIR §3.3).
+Where the first statement is unreadable, it is given up as its own part, and
+the records that need it drop with it. No later statement of the name stands
+in its place: each later readable statement is given up as its own part. A
+later unreadable statement is given up as its own part, and the first
+statement stands. The repetition gives up neither the file nor the DATA
+section.
+
+CADIR decision: a DATA statement with a reference that names no instance and
+no REFERENCE binding is given up as a `data_record` part over its exact
+source. An ANCHOR or DATA item whose expansion exceeds its bound is given up
+as an `anchor_record` or `data_record` part. An item that exceeds its bound
+only because it names an omitted anchor drops with the part of that anchor.
+An anchor or record that needs a given-up statement drops with that part, and
+its exact source is retained. A record that names a given-up statement only as an entry
+of an unordered aggregate loses that entry. A DATA instance that the reader
+cannot decode is given up as a `data_record` part over its statement. The
+part keeps the digest only where the document keeps the exact source of the
+instance as an opaque record. A record that the reader drops only because it
+needs a given-up or dropped instance drops with that instance.
+When the reader gives up a topology root, each shell of the root, each shell
+that the shell orients, and each face of the base shell drop with the root.
+The give-up names each shell by its instance (`#N`) and each face by its face
+id (`step:data:face#N`). A carrier that keeps the face instance as its source
+object stays in the document. When the reader gives up an
+`EDGE_BASED_WIREFRAME_MODEL` or a `SHELL_BASED_WIREFRAME_MODEL` because none
+of its members commits, each member drops with the model.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all

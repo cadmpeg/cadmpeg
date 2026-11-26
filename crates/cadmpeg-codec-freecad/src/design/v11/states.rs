@@ -675,7 +675,7 @@ fn content(
         })
         .collect::<Vec<_>>();
     constructions.sort_unstable();
-    serde_json::json!([compared(&mapped(value, map)), constructions]).to_string()
+    cadmpeg_core::json!([compared(&mapped(value, map)), constructions]).to_string()
 }
 
 /// `value` with every string that `map` maps replaced by its image.
@@ -1035,7 +1035,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         for id in base_rows(arena).into_iter().flatten().map(|(id, _)| id) {
             if !state.contains_key(id) {
                 removed.push(
-                    cadmpeg_core::serde_erase::from_json_value::<RecordRef>(&serde_json::json!({
+                    cadmpeg_core::serde_erase::from_json_value::<RecordRef>(&cadmpeg_core::json!({
                         "kind": kind,
                         "value": id,
                     }))

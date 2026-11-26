@@ -113,7 +113,7 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     assert_eq!(suffix.terminal_reference, 49);
 
     let error = load_tampered_object_record(&native, |record| {
-        record["repeated_reference_suffix"]["terminal_reference"] = serde_json::json!(50);
+        record["repeated_reference_suffix"]["terminal_reference"] = cadmpeg_core::json!(50);
     });
     assert!(error.contains("repeated_reference_suffix"), "{error}");
 }
@@ -153,7 +153,7 @@ fn native_namespace_rejects_an_object_record_subtype_disagreeing_with_its_payloa
     );
 
     let error = load_tampered_object_record(&native, |record| {
-        record["subtype"] = serde_json::json!("Empty");
+        record["subtype"] = cadmpeg_core::json!("Empty");
     });
     assert!(error.contains("subtype"), "{error}");
 }
@@ -451,7 +451,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("store reference-signature cohort");
     let mut cohorts: Vec<serde_json::Value> =
         namespace.arena_as("reference_signature_cohorts").unwrap();
-    cohorts[0]["second_reference"] = serde_json::json!(6);
+    cohorts[0]["second_reference"] = cadmpeg_core::json!(6);
     namespace
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),

@@ -402,7 +402,18 @@
       ],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "pvz": {
+        "unknowns": [
+          {
+            "id": "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4",
+            "links": [
+              "pvz:model:definition#2"
+            ]
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -553,6 +564,25 @@
         },
         "message": "1 of 2 geometry members carry the 19-byte preamble block whose fields are an open item (PVZ-11); the block was not transferred",
         "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: exact stream does not end with its stream terminator; dropped=[]",
+        "provenance": {
+          "format": "pvz",
+          "offset": 414,
+          "stream": "pvz:plate.ol",
+          "tag": "ol-stream"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -573,7 +603,21 @@
     "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "73014c5788d27a328f05e06d6a2f38265a2abcd086f13c10ff3d7ccbbb857abb",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4": {
+        "bytes": {
+          "data": "H4sIAAAAAAAA/wEMAPP/AgAAAQQAAAAEAAAAHtW9iwwAAAA=",
+          "kind": "inline"
+        },
+        "offset": 414,
+        "stream": "pvz:plate.ol",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

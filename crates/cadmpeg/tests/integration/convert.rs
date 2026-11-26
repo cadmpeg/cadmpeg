@@ -1405,7 +1405,7 @@ fn a_to_that_names_only_the_format_still_inherits() {
 fn a_cadir_read_keeps_the_text_of_a_given_up_record_in_the_written_sidecar() {
     let dir = tempdir().unwrap();
     let mut value = json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
-    value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
+    value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
     let text =
         cadmpeg_ir::hash::finite_json::to_canonical_json_string(&value["geometry"]["points"][0])
             .unwrap();

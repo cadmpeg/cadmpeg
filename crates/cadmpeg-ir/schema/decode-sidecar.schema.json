@@ -117,7 +117,7 @@
       ]
     },
     "Annotations": {
-      "description": "Document-wide provenance and exactness tables keyed by annotation key.\n\nThe key of a top-level entity is its globally unique entity id. The key\nof a record inside the delta of an evaluation or a process state is the\nid of that evaluation or process state, one space, and the record's id.\nValidation reports a key whose qualifier names no evaluation or process\nstate, or whose record that delta does not hold, as it reports a key that\nnames no entity.\n\nAn entity absent from `exactness` is byte-exact.",
+      "description": "Document-wide provenance and exactness tables keyed by annotation key.\n\nThe key of a top-level entity is its globally unique entity id. The key\nof a record inside the delta of an evaluation or a process state is the\nid of that evaluation or process state, one space, and the record's id.\nValidation reports a key whose qualifier names no evaluation or process\nstate with a delta, or whose record that delta does not hold, as it\nreports a key that names no entity.\n\nAn entity absent from `exactness` is byte-exact.",
       "type": "object",
       "properties": {
         "provenance": {
