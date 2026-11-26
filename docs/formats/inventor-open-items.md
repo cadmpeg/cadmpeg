@@ -402,6 +402,22 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Controlled positive and negative taper settings, with profile and result cross-sections, for profile-plane and from-plane origins and each extent form.
 
+### DR-1072. Extrusion To Next terminator
+
+**Question.** Does a slot-24 terminator that is not in the feature's slot-26 result collection select the body the feature acts on, or another body, and which slot holds the terminator of a second side of extent 4?
+
+**Known.** Slot 24 of an extrusion of extent 4 holds a body-selection list with one reference to a surface-body record, and slot 24 is null for extents 1 and 5. A wrapper outside the result collection is held by no collection of any feature. Only the wrapper of the current body links to a kernel body, so the wrapper of an earlier history state resolves to no body. The decoder states `ToFirst` when slot 24 is null or its reference is in the result collection, and `Unresolved` for any other terminator and for a second side of extent 4, so the CADIR v11 design layer keeps the feature native and a loss names it.
+
+**Need.** The decoder states a first-face end only on the body the feature acts on, and states another body as a target. It needs a rule that joins an earlier-state wrapper to the body it replaced.
+
+### DR-1071. Hole extent 4
+
+**Question.** Does a hole of extent 4 end on the first face along the bore axis, or does it leave the next material region?
+
+**Known.** An extrusion of extent 4 ends on the first face along its travel. A hole stores the same extent code in slot 9. The hole decoder states `ThroughNext`, which the CADIR v11 design layer does not accept, so a hole of extent 4 stays native there and a loss names the feature. The hole record has no terminator slot that the decoder reads.
+
+**Need.** A hole of extent 4 needs one end rule before the decoder states `ToFirst` for it.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

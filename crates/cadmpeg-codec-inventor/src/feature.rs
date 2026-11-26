@@ -3977,6 +3977,9 @@ struct ExtrusionSideSlots {
     length: usize,
     taper: usize,
     point: Option<usize>,
+    /// The body-selection slot that holds a To Next terminator. The second
+    /// side has none that a stored file settles.
+    terminator: Option<usize>,
 }
 
 impl ExtrusionSideSlots {
@@ -3984,12 +3987,60 @@ impl ExtrusionSideSlots {
         length: 4,
         taper: 5,
         point: Some(25),
+        terminator: Some(24),
     };
     const SECOND: Self = Self {
         length: 27,
         taper: 28,
         point: None,
+        terminator: None,
     };
+}
+
+/// A To Next side ends on the first face along the travel only where its
+/// terminator slot is null or selects the bodies the feature acts on. A
+/// terminator on another body, a selection that does not read, and a side
+/// with no terminator slot keep the termination unresolved.
+fn to_next_termination(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    slots: ExtrusionSideSlots,
+) -> Option<LinearTermination> {
+    let Some(slot) = slots.terminator else {
+        return Some(LinearTermination::Unresolved {});
+    };
+    if source.properties.references().get(slot)?.index() == 0 {
+        return Some(LinearTermination::ToFirst {});
+    }
+    let terminator = references(
+        source,
+        slot,
+        PmDcFeatureReferenceFamily::BodySelection,
+        index,
+    );
+    let result = references(
+        source,
+        26,
+        PmDcFeatureReferenceFamily::ObjectCollection,
+        index,
+    );
+    let own = match (terminator, result) {
+        (Some(terminator), Some(result)) => {
+            !terminator.references().is_empty()
+                && terminator.references().iter().all(|body| {
+                    result
+                        .references()
+                        .iter()
+                        .any(|member| member.index() == body.index())
+                })
+        }
+        _ => false,
+    };
+    Some(if own {
+        LinearTermination::ToFirst {}
+    } else {
+        LinearTermination::Unresolved {}
+    })
 }
 
 fn extrusion_side(
@@ -4014,7 +4065,7 @@ fn extrusion_side(
                 .ok()?,
             ),
         },
-        EXTENT_TO_NEXT => LinearTermination::ToFirst {},
+        EXTENT_TO_NEXT => to_next_termination(source, index, slots)?,
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
         EXTENT_TO if side_has_point(source, slots) => {
             extrusion::work_point_plane(source, label, index, direction)?

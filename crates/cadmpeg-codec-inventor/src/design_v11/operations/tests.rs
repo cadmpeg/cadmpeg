@@ -778,6 +778,26 @@ fn cleanup_and_boolean_tolerance_survive_projection() {
 }
 
 #[test]
+fn unresolved_termination_stays_native() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
+            draft: None,
+        },
+    };
+    let mut ir = part(operation);
+    assert_eq!(project_part(&mut ir).len(), 1);
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
+}
+
+#[test]
 fn first_face_termination_projects_as_the_next_limit() {
     let mut operation = extrude();
     let LegacyOperation::Extrude { extent, .. } = &mut operation else {
