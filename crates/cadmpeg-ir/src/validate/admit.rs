@@ -56,9 +56,10 @@ impl Admission {
     }
 }
 
-/// The rules of ids and references, native links, topology graphs, and edge
-/// ends on model-class records, with `$extra` after them.
-macro_rules! history_body_rules {
+/// The rules of ids and references, native links, topology, carriers,
+/// parameter domains, and geometric consistency on model-class records,
+/// with `$extra` after them.
+macro_rules! draft_core_rules {
     ($($extra:literal),* $(,)?) => {
         &[
             crate::rule_name!("annotations_native.helix-axis-native-ref-does-not"),
@@ -68,13 +69,25 @@ macro_rules! history_body_rules {
             crate::rule_name!("annotations_native.native-ref-does-not-resolve"),
             crate::rule_name!("annotations_native.operand-native-ref-does-not-resolve"),
             crate::rule_name!("annotations_native.pmi-native-ref-does-not-resolve"),
+            crate::rule_name!("carriers_parameterization.coedge-pcurve-range-outside-carrier-domain"),
+            crate::rule_name!("carriers_parameterization.coedge-use-curve-names-no-curve"),
+            crate::rule_name!("carriers_parameterization.coedge-use-curve-range-outside-carrier"),
+            crate::rule_name!("carriers_parameterization.edge-parameter-range-outside-canonical-carrier"),
+            crate::rule_name!("carriers_parameterization.edge-parameter-range-outside-local-domain"),
+            crate::rule_name!("carriers_parameterization.orphan-carrier"),
             crate::rule_name!("drawings.drawing-views-base-view-name-record"),
             crate::rule_name!("drawings.invalid-drawing-reference-order-numeric-state"),
+            crate::rule_name!("eval.model-carrier-evaluations-reached-local-work"),
             crate::rule_name!("evaluation_cycles.malformed-curve-surface-reference-cycle"),
+            crate::rule_name!("geometry_consistency.charted-tolerant-intersection-does-not-evaluate"),
+            crate::rule_name!("geometry_consistency.charted-tolerant-intersection-misses-endpoint-witnesses"),
             crate::rule_name!("geometry_consistency.coedge-use-curve-endpoints-miss-traversal"),
             crate::rule_name!("geometry_consistency.edge-curve-endpoints-miss-edge-vertex"),
             crate::rule_name!("geometry_consistency.edge-no-vertex-lies-open-carrier"),
             crate::rule_name!("geometry_consistency.edge-runs-against-curve-start-vertex"),
+            crate::rule_name!("geometry_consistency.pcurve-mapped-through-face-surface-misses"),
+            crate::rule_name!("geometry_consistency.procedural-support-side-misses-endpoint-distance"),
+            crate::rule_name!("geometry_consistency.surface-offset-solved-curve-misses-base"),
             crate::rule_name!("history_bodies.history-body-names-neither-producing-nor"),
             crate::rule_name!("history_bodies.history-body-names-no-feature"),
             crate::rule_name!("history_bodies.history-body-record-repeats-identity-another"),
@@ -153,6 +166,8 @@ macro_rules! history_body_rules {
             crate::rule_name!("topology.bend-attached-plate-must-precede-bend"),
             crate::rule_name!("topology.binder-target-feature-does-not-precede"),
             crate::rule_name!("topology.cage-must-belong-exactly-one"),
+            crate::rule_name!("topology.catmull-clark-cage-edges-state-different"),
+            crate::rule_name!("topology.catmull-clark-face-side-holds-more"),
             crate::rule_name!("topology.child-parent-lists"),
             crate::rule_name!("topology.component-transfer-placement-contains-non-finite"),
             crate::rule_name!("topology.composite-curve-graph-contains-cycle"),
@@ -196,6 +211,8 @@ macro_rules! history_body_rules {
             crate::rule_name!("topology.does-not-precede-consuming-feature"),
             crate::rule_name!("topology.draft-pull-plane-frame-normal-not"),
             crate::rule_name!("topology.draft-pull-states-both-datum-plane"),
+            crate::rule_name!("topology.edge-no-vertex-must-carrier-curve"),
+            crate::rule_name!("topology.face-lists-loop-more-once"),
             crate::rule_name!("topology.feature-omits-dependency"),
             crate::rule_name!("topology.feature-reference-does-not-name-datum"),
             crate::rule_name!("topology.fixed-construction-cannot-carry-resolved-values"),
@@ -209,7 +226,9 @@ macro_rules! history_body_rules {
             crate::rule_name!("topology.generated-profile-curve-invalid"),
             crate::rule_name!("topology.generated-vertex-invalid"),
             crate::rule_name!("topology.historical-selection-uses-another-feature-input"),
+            crate::rule_name!("topology.lists-parent-another-record"),
             crate::rule_name!("topology.literal-false-flip-redundant"),
+            crate::rule_name!("topology.not-listed"),
             crate::rule_name!("topology.offset-plane-omits-reference-feature-dependencies"),
             crate::rule_name!("topology.owner-does-not-precede-profile-consumer"),
             crate::rule_name!("topology.parameter-dependency-does-not-precede-consumer"),
@@ -223,12 +242,14 @@ macro_rules! history_body_rules {
             crate::rule_name!("topology.reference-plane-does-not-precede-offset"),
             crate::rule_name!("topology.references-missing"),
             crate::rule_name!("topology.refold-unfold-must-precede-refold-occur"),
+            crate::rule_name!("topology.region-mark-names-shell-twice-one"),
             crate::rule_name!("topology.revolution-angular-travel-must-not-exceed"),
             crate::rule_name!("topology.scale-transform-invalid"),
             crate::rule_name!("topology.seed-feature-does-not-precede-pattern"),
             crate::rule_name!("topology.selection-rule-incompatible-seed-count"),
             crate::rule_name!("topology.sheet-metal-edge-flange-height-invalid"),
             crate::rule_name!("topology.shell-faces-disconnected-through-shared-edges"),
+            crate::rule_name!("topology.shell-lists-member-more-once"),
             crate::rule_name!("topology.single-explicit-selection-term-must-use"),
             crate::rule_name!("topology.sketch-block-does-not-precede-instance"),
             crate::rule_name!("topology.sketch-block-instance-omits-block-feature"),
@@ -255,37 +276,6 @@ macro_rules! history_body_rules {
             crate::rule_name!("topology.zaxis-constraint-must-act-whole-construction"),
             $(crate::rule_name!($extra)),*
         ]
-    };
-}
-
-/// [`history_body_rules`] with the rules of child lists, closed edges,
-/// carriers, parameter domains, pcurve and procedural consistency, and
-/// subdivision schemes, with `$extra` after them.
-macro_rules! draft_core_rules {
-    ($($extra:literal),* $(,)?) => {
-        history_body_rules!(
-            "carriers_parameterization.coedge-pcurve-range-outside-carrier-domain",
-            "carriers_parameterization.coedge-use-curve-names-no-curve",
-            "carriers_parameterization.coedge-use-curve-range-outside-carrier",
-            "carriers_parameterization.edge-parameter-range-outside-canonical-carrier",
-            "carriers_parameterization.edge-parameter-range-outside-local-domain",
-            "carriers_parameterization.orphan-carrier",
-            "eval.model-carrier-evaluations-reached-local-work",
-            "geometry_consistency.charted-tolerant-intersection-does-not-evaluate",
-            "geometry_consistency.charted-tolerant-intersection-misses-endpoint-witnesses",
-            "geometry_consistency.pcurve-mapped-through-face-surface-misses",
-            "geometry_consistency.procedural-support-side-misses-endpoint-distance",
-            "geometry_consistency.surface-offset-solved-curve-misses-base",
-            "topology.catmull-clark-cage-edges-state-different",
-            "topology.catmull-clark-face-side-holds-more",
-            "topology.edge-no-vertex-must-carrier-curve",
-            "topology.face-lists-loop-more-once",
-            "topology.lists-parent-another-record",
-            "topology.not-listed",
-            "topology.region-mark-names-shell-twice-one",
-            "topology.shell-lists-member-more-once",
-            $($extra),*
-        )
     };
 }
 
@@ -316,12 +306,135 @@ pub const RHINO_INSTANCE: &Admission = DRAFT_CORE;
 /// [`admit_with_additional_native_identities`].
 pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
 
-/// History-body admission: a nest is given up for its ids, references,
-/// graphs, and edge ends. The other topology rules report on the nest and
-/// give up no body.
+/// History-body admission: the rules whose Error findings give up a history
+/// body. They are its links to its features and to the identities of other
+/// records, and the nest rules of identities, references, typed references,
+/// coedge pairing, shell connectivity, wire topology, edge ends, and topology
+/// tolerances. The other topology rules report on a nest and give up no body.
+/// `scripts/test_admission_routes.py` holds this list to those checks.
 pub const HISTORY_BODY_ADMISSION: &Admission = &Admission::new(HISTORY_BODY_RULES, false);
 
-const HISTORY_BODY_RULES: &[RuleName] = history_body_rules!();
+const HISTORY_BODY_RULES: &[RuleName] = &[
+    crate::rule_name!("geometry_consistency.coedge-use-curve-endpoints-miss-traversal"),
+    crate::rule_name!("geometry_consistency.edge-curve-endpoints-miss-edge-vertex"),
+    crate::rule_name!("geometry_consistency.edge-no-vertex-lies-open-carrier"),
+    crate::rule_name!("geometry_consistency.edge-runs-against-curve-start-vertex"),
+    crate::rule_name!("history_bodies.history-body-names-neither-producing-nor"),
+    crate::rule_name!("history_bodies.history-body-names-no-feature"),
+    crate::rule_name!("history_bodies.history-body-record-repeats-identity-another"),
+    crate::rule_name!("history_bodies.history-body-record-repeats-top-level"),
+    crate::rule_name!("identity_order.entity-id-does-not-match-format"),
+    crate::rule_name!("identity_order.entity-id-not-globally-unique"),
+    crate::rule_name!("referential_integrity.entity-schema-cannot-state-typed-references"),
+    crate::rule_name!("referential_integrity.unresolved-typed-reference"),
+    crate::rule_name!("topology.active-configuration-suppression-disagrees-current-feature"),
+    crate::rule_name!("topology.attached-plate-profile-not-planar"),
+    crate::rule_name!("topology.attached-plate-requires-exactly-one-bend"),
+    crate::rule_name!("topology.axisrotate-must-bind-axis-component"),
+    crate::rule_name!("topology.bend-attached-plate-must-precede-bend"),
+    crate::rule_name!("topology.binder-target-feature-does-not-precede"),
+    crate::rule_name!("topology.cage-must-belong-exactly-one"),
+    crate::rule_name!("topology.child-parent-lists"),
+    crate::rule_name!("topology.component-transfer-placement-contains-non-finite"),
+    crate::rule_name!("topology.composite-curve-graph-contains-cycle"),
+    crate::rule_name!("topology.configuration-definition-feature-does-not-precede"),
+    crate::rule_name!("topology.configuration-feature-dependency-does-not-precede"),
+    crate::rule_name!("topology.configuration-feature-state-omits-referenced-feature"),
+    crate::rule_name!("topology.configuration-parameter-value-invalid"),
+    crate::rule_name!("topology.configuration-state-closure-uses-suppressed-dependency"),
+    crate::rule_name!("topology.construction-arc-endpoint-outside-radius-plane"),
+    crate::rule_name!("topology.construction-frame-must-orthonormal-right-handed"),
+    crate::rule_name!("topology.construction-no-input-step-resolved-value"),
+    crate::rule_name!("topology.construction-plane-axes-must-perpendicular"),
+    crate::rule_name!("topology.construction-relation-does-not-admit-reversed"),
+    crate::rule_name!("topology.construction-relation-incompatible-operand-count"),
+    crate::rule_name!("topology.construction-relation-incompatible-scalar-value"),
+    crate::rule_name!("topology.construction-solution-must-positive"),
+    crate::rule_name!("topology.construction-subject-not-part-result-kind"),
+    crate::rule_name!("topology.content-child-does-not-follow-parent"),
+    crate::rule_name!("topology.content-parameter-belongs-another-feature"),
+    crate::rule_name!("topology.coordinates-requires-frame-reference"),
+    crate::rule_name!("topology.corner-bend-must-precede-corner-occur"),
+    crate::rule_name!("topology.datum-axis"),
+    crate::rule_name!("topology.datum-axis-datum-part-incompatible-selected"),
+    crate::rule_name!("topology.datum-axis-datum-point-part-remains"),
+    crate::rule_name!("topology.datum-axis-datum-selection-must-target"),
+    crate::rule_name!("topology.datum-axis-dimension-binds-parameter-incompatible"),
+    crate::rule_name!("topology.datum-axis-dimension-must-bind-parameter"),
+    crate::rule_name!("topology.datum-axis-dimension-target-must-name"),
+    crate::rule_name!("topology.datum-axis-feature-input-must-precede"),
+    crate::rule_name!("topology.datum-axis-parameter-owner-must-precede"),
+    crate::rule_name!("topology.datum-axis-region-boundary-must-belong"),
+    crate::rule_name!("topology.datum-axis-target-no-declared-arena"),
+    crate::rule_name!("topology.datum-plane-feature-reference-does-not"),
+    crate::rule_name!("topology.datum-plane-reference-cycle-contains"),
+    crate::rule_name!("topology.datum-point-omits-plane-feature-dependencies"),
+    crate::rule_name!("topology.datum-point-plane-does-not-precede"),
+    crate::rule_name!("topology.datum-point-plane-reference-does-not"),
+    crate::rule_name!("topology.datum-point-sketch-point-selection-invalid"),
+    crate::rule_name!("topology.dependency-feature-does-not-precede-consumer"),
+    crate::rule_name!("topology.derived-geometry-omits-source-feature-dependencies"),
+    crate::rule_name!("topology.does-not-precede-consuming-feature"),
+    crate::rule_name!("topology.draft-pull-plane-frame-normal-not"),
+    crate::rule_name!("topology.draft-pull-states-both-datum-plane"),
+    crate::rule_name!("topology.feature-omits-dependency"),
+    crate::rule_name!("topology.feature-reference-does-not-name-datum"),
+    crate::rule_name!("topology.fixed-construction-cannot-carry-resolved-values"),
+    crate::rule_name!("topology.fold-requires-four-picked-edges"),
+    crate::rule_name!("topology.fold-requires-whole-plane-frame"),
+    crate::rule_name!("topology.free-vertex-also-referenced-edge"),
+    crate::rule_name!("topology.free-vertex-must-belong-exactly-one"),
+    crate::rule_name!("topology.generated-body-selection-invalid"),
+    crate::rule_name!("topology.generated-edge-selection-invalid"),
+    crate::rule_name!("topology.generated-face-selection-invalid"),
+    crate::rule_name!("topology.generated-profile-curve-invalid"),
+    crate::rule_name!("topology.generated-vertex-invalid"),
+    crate::rule_name!("topology.historical-selection-uses-another-feature-input"),
+    crate::rule_name!("topology.literal-false-flip-redundant"),
+    crate::rule_name!("topology.offset-plane-omits-reference-feature-dependencies"),
+    crate::rule_name!("topology.owner-does-not-precede-profile-consumer"),
+    crate::rule_name!("topology.parameter-dependency-does-not-precede-consumer"),
+    crate::rule_name!("topology.pattern-omits-seed-feature-dependencies"),
+    crate::rule_name!("topology.plane-equation-normal-cannot-zero"),
+    crate::rule_name!("topology.point-operand-cannot-supply-construction-direction"),
+    crate::rule_name!("topology.profile-feature-not-preceding-dependency"),
+    crate::rule_name!("topology.radial-ring-crosses-edges"),
+    crate::rule_name!("topology.radial-ring-does-not-close"),
+    crate::rule_name!("topology.radius-limit-require-curve-construction"),
+    crate::rule_name!("topology.reference-plane-does-not-precede-offset"),
+    crate::rule_name!("topology.references-missing"),
+    crate::rule_name!("topology.refold-unfold-must-precede-refold-occur"),
+    crate::rule_name!("topology.revolution-angular-travel-must-not-exceed"),
+    crate::rule_name!("topology.scale-transform-invalid"),
+    crate::rule_name!("topology.seed-feature-does-not-precede-pattern"),
+    crate::rule_name!("topology.selection-rule-incompatible-seed-count"),
+    crate::rule_name!("topology.sheet-metal-edge-flange-height-invalid"),
+    crate::rule_name!("topology.shell-faces-disconnected-through-shared-edges"),
+    crate::rule_name!("topology.single-explicit-selection-term-must-use"),
+    crate::rule_name!("topology.sketch-block-does-not-precede-instance"),
+    crate::rule_name!("topology.sketch-block-instance-omits-block-feature"),
+    crate::rule_name!("topology.sketch-block-target-not-block-definition"),
+    crate::rule_name!("topology.sketch-entity-belongs-different-sketch"),
+    crate::rule_name!("topology.sketch-multiple-owning-features"),
+    crate::rule_name!("topology.sketch-owner-does-not-precede-datum"),
+    crate::rule_name!("topology.sketch-owner-does-not-precede-path"),
+    crate::rule_name!("topology.sketch-path-curves-empty-repeated-owned"),
+    crate::rule_name!("topology.sketch-profile-entities-empty-repeated-missing"),
+    crate::rule_name!("topology.sketch-profile-indices-empty-repeated-out"),
+    crate::rule_name!("topology.sketch-regions-empty-repeated-invalid-out"),
+    crate::rule_name!("topology.source-feature-does-not-precede-derived"),
+    crate::rule_name!("topology.spatial-sketch-path-curves-empty-repeated"),
+    crate::rule_name!("topology.spatial-sketch-profile-indices-empty-repeated"),
+    crate::rule_name!("topology.split-face-direction-input-run-inconsistent"),
+    crate::rule_name!("topology.text-dimensions-cannot-negate-parameter"),
+    crate::rule_name!("topology.two-member-radial-ring-equal-coedge"),
+    crate::rule_name!("topology.two-sided-draft-no-neutral-plane"),
+    crate::rule_name!("topology.whole-coincident-frame-requires-frame-result"),
+    crate::rule_name!("topology.wire-body-contains-faces"),
+    crate::rule_name!("topology.wire-edge-also-referenced-coedge"),
+    crate::rule_name!("topology.wire-edge-must-belong-exactly-one"),
+    crate::rule_name!("topology.zaxis-constraint-must-act-whole-construction"),
+];
 
 /// Drop the findings whose rule `allowed` does not list.
 fn filter_rules(mut report: ValidationReport, allowed: &Admission) -> ValidationReport {
@@ -676,10 +789,10 @@ mod tests {
             &RHINO_DRAFT.rules()[..DRAFT_CORE.rules().len()],
             DRAFT_CORE.rules()
         );
-        assert_eq!(
-            &DRAFT_CORE.rules()[..HISTORY_BODY_ADMISSION.rules().len()],
-            HISTORY_BODY_ADMISSION.rules()
-        );
+        assert!(HISTORY_BODY_ADMISSION
+            .rules()
+            .iter()
+            .all(|rule| DRAFT_CORE.rules().contains(rule)));
         assert!(RHINO_DRAFT.annotations() && !DRAFT_CORE.annotations());
         let mut names: Vec<&str> = RHINO_DRAFT.rules().iter().map(RuleName::as_str).collect();
         names.sort_unstable();
