@@ -131,77 +131,82 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Specification reference check
-        # Open-items documents cite the specification by section and paragraph
-        # start. Catches a reference that names no paragraph or several.
-        run: python3 scripts/check-doc-anchors.py
-
-      - name: Open-item IDs
-        # An ID repeated in one open-items document. A PR run checks the PR
-        # merged into its base at the time of the run. Two PRs that take one ID
-        # can both pass and merge; the main run then fails here.
-        run: python3 scripts/preflight_open_items.py
-
-      - name: Python tooling tests
-        run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
-
-      - name: Source policy
-        if: needs.changes.outputs.prose_only != 'true'
+      - name: Policy checks
+        # The checks are independent single-process scans, so they run at
+        # once on the runner's cores; each one's output follows in its own
+        # group. A `#` line documents the check below it.
+        env:
+          PROSE_ONLY: ${{ needs.changes.outputs.prose_only }}
         run: |
           set -euo pipefail
+          logs="$(mktemp -d)"
+          count=0
+          launch() {
+            while IFS= read -r check; do
+              case "$check" in ''|'#'*) continue ;; esac
+              count=$((count + 1))
+              printf '%s\n' "$check" > "$logs/$count.command"
+              ( if bash -c "$check" > "$logs/$count.log" 2>&1; then echo 0; else echo $?; fi \
+                  > "$logs/$count.status" ) &
+            done
+          }
+          launch <<'CHECKS'
+          # Open-items documents cite the specification by section and paragraph
+          # start. Catches a reference that names no paragraph or several.
+          python3 scripts/check-doc-anchors.py
+          # An ID repeated in one open-items document. A PR run checks the PR
+          # merged into its base at the time of the run. Two PRs that take one
+          # ID can both pass and merge; the main run then fails here.
+          python3 scripts/preflight_open_items.py
+          python3 -m unittest discover -q -s scripts -p 'test_*.py'
+          # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may
+          # only rise when fixtures are added; they must never silently fall.
+          python3 scripts/check-golden-coverage-floors.py
+          # Crate-root pub items must match docs/codec-facade.toml.
+          python3 scripts/check-codec-facade.py
+          # Every validation finding states its rule (rule!/rule_name!), and
+          # every rule an admission route lists is stated by a finding.
+          python3 scripts/name-validation-rules.py --check
+          # Schema, id grammar, witness form, and the IGES admission lattice in
+          # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the
+          # commit that adds them.
+          python3 scripts/check-dialects.py
+          # crates/cadmpeg-registry/docs/dialect-support.toml against the
+          # identity registry, the fixture tree, the golden snapshots that pin
+          # each fixture's emitted dialect id, and the encoders' write-target
+          # catalogs. Fixture gating lives here: a row with no fixture cannot
+          # claim a read score.
+          python3 scripts/check-dialect-support.py
+          # Every score table in docs/format-support.md, the root README, each
+          # codec crate README, and each codec lib.rs doc header is rendered
+          # from the two registries. --check re-renders and compares byte for
+          # byte, so a registry edit without a re-render fails here.
+          python3 scripts/render-format-support.py --check
+          CHECKS
+          if [ "$PROSE_ONLY" = true ]; then
+            launch <<'CHECKS'
+          python3 scripts/check-source-policy.py --authoring-paths-only
+          CHECKS
+          else
+            launch <<'CHECKS'
           python3 scripts/check-source-policy.py
           python3 scripts/check-resource-caps.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
-
-      - name: Source policy for documentation
-        if: needs.changes.outputs.prose_only == 'true'
-        run: python3 scripts/check-source-policy.py --authoring-paths-only
-
-      - name: Golden coverage floors
-        # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
-        # rise when fixtures are added; they must never silently fall.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-golden-coverage-floors.py
-
-      - name: Codec facade
-        # Crate-root pub items must match docs/codec-facade.toml.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-codec-facade.py
-
-      - name: Validation rule names
-        # Every validation finding states its rule (rule!/rule_name!), and
-        # every rule an admission route lists is stated by a finding.
-        run: |
-          set -euo pipefail
-          python3 scripts/name-validation-rules.py --check
-
-      - name: Dialect identity registry
-        # Schema, id grammar, witness form, and the IGES admission lattice in
-        # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-dialects.py
-
-      - name: Dialect capability registry
-        # crates/cadmpeg-registry/docs/dialect-support.toml against the identity registry, the fixture
-        # tree, the golden snapshots that pin each fixture's emitted dialect
-        # id, and the encoders' write-target catalogs. Fixture gating lives
-        # here: a row with no fixture cannot claim a read score.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-dialect-support.py
-
-      - name: Rendered capability tables
-        # Every score table in docs/format-support.md, the root README, each
-        # codec crate README, and each codec lib.rs doc header is rendered from
-        # the two registries. --check re-renders and compares byte for byte, so
-        # a registry edit without a re-render fails here.
-        run: |
-          set -euo pipefail
-          python3 scripts/render-format-support.py --check
+          CHECKS
+          fi
+          wait
+          failed=0
+          for index in $(seq "$count"); do
+            echo "::group::$(cat "$logs/$index.command")"
+            cat "$logs/$index.log"
+            echo "::endgroup::"
+            if [ "$(cat "$logs/$index.status")" != 0 ]; then
+              echo "::error::$(cat "$logs/$index.command") failed"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   # The stable gate is three jobs rather than one long one. Clippy compiles the
   # workspace through `clippy-driver`, whose artifacts are separate from the
