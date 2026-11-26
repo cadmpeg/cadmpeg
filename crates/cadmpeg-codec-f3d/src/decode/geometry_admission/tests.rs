@@ -1,115 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::admit;
-use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::legacy_cache::LegacyCache;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
 fn exact_curve() -> CadIr {
     let mut ir = CadIr::empty();
-    for (slot, x) in [(0, -100.0), (1, 0.0), (2, 100.0)] {
-        let point = PointId::mint(format!("test:brep:point#{slot}")).unwrap();
-        ir.geometry.points.push(Point::new(
-            point.clone(),
-            FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap(),
-            None,
-        ));
-        ir.geometry.vertices.push(Vertex {
-            id: VertexId::mint(format!("test:brep:vertex#{slot}")).unwrap(),
-            point,
-            tolerance: None,
-            native_ref: None,
-        });
-    }
-    for (slot, start, end) in [
-        (0, Point3::new(-100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
-        (1, Point3::new(0.0, 0.0, 0.0), Point3::new(100.0, 0.0, 0.0)),
-    ] {
-        let curve = CurveId::mint(format!("test:brep:curve#{slot}")).unwrap();
-        let construction =
-            ProceduralCurveId::mint(format!("test:brep:construction#{slot}")).unwrap();
-        let poles = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0].map(|t| {
-            Point3::new(
-                start.x + t * (end.x - start.x),
-                start.y + t * (end.y - start.y),
-                0.0,
+    let curve = CurveId::mint("test:brep:curve#0").unwrap();
+    let poles = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0].map(|t| Point3::new(100.0 * t, 0.0, 0.0));
+    ir.geometry.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                3,
+                vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                poles.to_vec(),
+                None,
+                false,
             )
-        });
-        ir.geometry.curves.push(Curve {
-            id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    3,
-                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                    poles.to_vec(),
-                    None,
-                    false,
-                )
-                .unwrap(),
-            )),
-            parameter_range: None,
-            source_object: None,
-            native_ref: None,
-        });
-        ir.geometry
-            .add_procedural_curves(vec![(
-                curve.clone(),
-                ProceduralCurve::new(
-                    construction,
-                    ProceduralCurveDefinition::Exact {
-                        cache: Some(LegacyCache::try_new(0.0).unwrap()),
-                    },
-                ),
-            )])
-            .unwrap()
-            .unwrap();
-        ir.geometry.edges.push(Edge {
-            id: EdgeId::mint(format!("test:brep:edge#{slot}")).unwrap(),
-            carrier: EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
-                ir.geometry.vertices[slot].id.clone(),
-                ir.geometry.vertices[slot + 1].id.clone(),
-            )),
-            tolerance: None,
-            native_ref: None,
-        });
-    }
-    let body = cadmpeg_ir::ids::BodyId::mint("test:brep:body#0").unwrap();
-    let region = cadmpeg_ir::ids::RegionId::mint("test:brep:region#0").unwrap();
-    let shell = cadmpeg_ir::ids::ShellId::mint("test:brep:shell#0").unwrap();
-    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
-        id: body.clone(),
-        kind: cadmpeg_ir::topology::BodyKind::Wire,
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
+            .unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
         native_ref: None,
-        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
-        region.clone(),
-        body,
-        vec![shell.clone()],
-    ));
     ir.geometry
-        .shells
-        .push(cadmpeg_ir::topology::Shell::with_members(
-            shell,
-            region,
-            ir.geometry
-                .edges
-                .iter()
-                .map(|edge| edge.id.clone())
-                .collect(),
-            Vec::new(),
-        ));
+        .add_procedural_curves(vec![(
+            curve,
+            ProceduralCurve::new(
+                ProceduralCurveId::mint("test:brep:construction#0").unwrap(),
+                ProceduralCurveDefinition::Exact {
+                    cache: Some(LegacyCache::try_new(0.0).unwrap()),
+                },
+            ),
+        )])
+        .unwrap()
+        .unwrap();
     ir
 }
 
