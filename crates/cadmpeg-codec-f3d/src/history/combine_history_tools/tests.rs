@@ -199,11 +199,11 @@ fn a_tool_that_is_not_proven_leaves_every_tool_native_and_reports_the_reason() {
     ];
     for (bindings, mut features) in cases {
         let (losses, _) = bind(
-        &mut features,
-        &scopes(),
-        &bindings,
-        (&[], &std::collections::HashMap::new()),
-    );
+            &mut features,
+            &scopes(),
+            &bindings,
+            (&[], &std::collections::HashMap::new()),
+        );
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -539,10 +539,7 @@ fn a_live_tool_of_another_history_selects_its_model_body() {
 fn a_live_tool_that_a_later_transition_changes_stays_native() {
     let (features, losses) = bind_component_tool(&tool_history(&[&[]]));
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert!(
-        losses[0].message.contains("later transition"),
-        "{losses:?}"
-    );
+    assert!(losses[0].message.contains("later transition"), "{losses:?}");
     assert!(matches!(
         tools_of(&features[1]),
         BodySelection::NativeSet(_)
