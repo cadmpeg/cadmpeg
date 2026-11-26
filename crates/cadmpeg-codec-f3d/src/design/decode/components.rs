@@ -600,7 +600,7 @@ pub(crate) fn superseded_occurrences_loss(
     count: usize,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (count != 0).then(|| crate::loss::F3dLossCode::LocalOccurrenceEnvelopeSuperseded.note(format!(
-        "{count} local component-occurrence frame(s) were not decoded because their offset and entity were not selected by the primary record index or, for typed references, the occurrence-placement type row."
+        "{count} local component-occurrence frame(s) were not decoded because their offset and entity were not selected by the primary record index or, for typed references and frames without an attribute run, the occurrence-placement type row."
     )))
 }
 
