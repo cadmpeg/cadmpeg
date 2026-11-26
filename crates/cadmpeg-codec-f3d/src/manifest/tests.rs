@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use super::{
     encode_asset_header, encode_design_asset, encode_top_level, generated_design_asset,
     parse_asset_header, parse_top_level, push_ascii, push_u32, push_utf16, resolve_design_folder,
-    AssetKind, DESIGN_ASSET_TYPE, GENERATED_DESIGN_ASSET_BASE, GENERATED_DOCUMENT_ASSET_GUID,
-    GENERATED_DOCUMENT_GUID, TOP_LEVEL_MANIFEST_VERSION,
+    AssetKind, DesignAssetFolder, DESIGN_ASSET_TYPE, GENERATED_DESIGN_ASSET_BASE,
+    GENERATED_DOCUMENT_ASSET_GUID, GENERATED_DOCUMENT_GUID, TOP_LEVEL_MANIFEST_VERSION,
 };
 use cadmpeg_core::CodecError;
 
@@ -155,6 +155,56 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
     .unwrap();
     assert_eq!(folder.folder, "Design Base[Active]");
     assert_eq!(folder.asset_guid, DESIGN_GUID);
+}
+
+/// Resolve the Design folder of a document whose listed bases are Fusion
+/// assets with the given subtypes; an empty subtype is the plain Design asset.
+fn resolve_fusion_assets(assets: &[(&str, &str, &str)]) -> Result<DesignAssetFolder, CodecError> {
+    let bases = assets.iter().map(|(base, _, _)| *base).collect::<Vec<_>>();
+    let manifest = parse_top_level(&encode_top_level(OTHER_GUID, &bases).unwrap()).unwrap();
+    let mut entries = BTreeMap::new();
+    for (base, guid, subtype) in assets {
+        let bytes = if subtype.is_empty() {
+            encode_design_asset(base, guid).unwrap()
+        } else {
+            encode_fusion_subtype_asset(base, guid, subtype).unwrap()
+        };
+        entries.insert(format!("{base}/Manifest.dat"), bytes);
+    }
+    resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
+        entries.get(name).map(Vec::as_slice)
+    })
+}
+
+#[test]
+fn a_board_subtype_asset_is_the_design_folder_when_no_asset_has_an_empty_subtype() {
+    let folder = resolve_fusion_assets(&[
+        ("Simulation", OTHER_GUID, "SimulationModelAssetSubtype"),
+        ("Board", DESIGN_GUID, "PCBAssetSubType"),
+    ])
+    .unwrap();
+    assert_eq!(folder.folder, "Board");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
+
+    // The empty-subtype asset stays the Design folder beside a board asset.
+    let folder = resolve_fusion_assets(&[
+        ("Board", OTHER_GUID, "PCBAssetSubType"),
+        ("Design Base", DESIGN_GUID, ""),
+    ])
+    .unwrap();
+    assert_eq!(folder.folder, "Design Base");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
+
+    assert!(resolve_fusion_assets(&[
+        ("Board", DESIGN_GUID, "PCBAssetSubType"),
+        ("Second Board", OTHER_GUID, "PCBAssetSubType"),
+    ])
+    .is_err());
+    assert!(resolve_fusion_assets(&[
+        ("Simulation", OTHER_GUID, "SimulationModelAssetSubtype"),
+        ("Flat", DESIGN_GUID, "FlatPatternAssetSubType"),
+    ])
+    .is_err());
 }
 
 #[test]

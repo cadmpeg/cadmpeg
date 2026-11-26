@@ -554,6 +554,10 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<AssetTail<'a>, Cod
     Ok(tail)
 }
 
+/// Fusion subtype of the root Design asset of a document that lists no
+/// Fusion asset with an empty subtype.
+const BOARD_DESIGN_SUBTYPE: &str = "PCBAssetSubType";
+
 /// Resolve the unique Design archive folder through the top-level folder run
 /// and each listed folder's asset-manifest header.
 pub(crate) fn resolve_design_folder<'a, 'n>(
@@ -566,6 +570,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
         names.push(name);
     }
     let mut design_folders = Vec::new();
+    let mut board_folders = Vec::new();
 
     for base in &manifest.asset_folder_bases {
         let active = format!("{base}[Active]");
@@ -617,17 +622,22 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 ),
             ));
         }
-        if matches!(
-            header.kind,
+        let folders = match header.kind {
             AssetKind::Design {
-                fusion_subtype: None
-            }
-        ) {
-            design_folders.push(DesignAssetFolder {
-                folder: folder.to_string(),
-                asset_guid: header.primary_guid.to_string(),
-            });
-        }
+                fusion_subtype: None,
+            } => &mut design_folders,
+            AssetKind::Design {
+                fusion_subtype: Some(BOARD_DESIGN_SUBTYPE),
+            } => &mut board_folders,
+            _ => continue,
+        };
+        folders.push(DesignAssetFolder {
+            folder: folder.to_string(),
+            asset_guid: header.primary_guid.to_string(),
+        });
+    }
+    if design_folders.is_empty() {
+        design_folders = board_folders;
     }
 
     match design_folders.len() {
