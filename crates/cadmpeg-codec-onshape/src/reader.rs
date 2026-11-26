@@ -475,18 +475,14 @@ fn studio_root<'v>(manifest: &'v Value, elements: &'v [Value]) -> Result<Option<
     {
         return Ok(None);
     }
-    let selected =
-        match manifest.get("root_element") {
-            None if elements.len() > 1 => return Ok(None),
-            None => None,
-            Some(value) => Some(value.as_str().filter(|root| !root.is_empty()).ok_or_else(
-                || {
-                    Error::Decode(
-                        "Onshape bundle root element has no identity; fetch a new bundle".into(),
-                    )
-                },
-            )?),
-        };
+    let selected = match manifest.get("root_element") {
+        None if elements.len() > 1 => return Ok(None),
+        None => None,
+        Some(value) => match value.as_str().filter(|root| !root.is_empty()) {
+            Some(root) => Some(root),
+            None => return Ok(None),
+        },
+    };
     let mut ids = std::collections::BTreeSet::new();
     for element in elements {
         if !ids.insert(text(element, "id").map_err(Error::Decode)?) {
@@ -495,12 +491,12 @@ fn studio_root<'v>(manifest: &'v Value, elements: &'v [Value]) -> Result<Option<
             ));
         }
     }
-    let element = elements
+    let Some(element) = elements
         .iter()
         .find(|e| selected.is_none_or(|root| e.get("id").and_then(Value::as_str) == Some(root)))
-        .ok_or_else(|| {
-            Error::Decode("Onshape bundle has no root Part Studio; fetch a new bundle".into())
-        })?;
+    else {
+        return Ok(None);
+    };
     text(element, "id").map(Some).map_err(Error::Decode)
 }
 

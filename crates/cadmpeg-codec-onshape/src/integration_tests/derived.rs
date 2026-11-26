@@ -524,6 +524,28 @@ fn renamed_host(id: &str) -> Vec<u8> {
 }
 
 #[test]
+fn unmatched_root_element_leaves_the_studio_to_the_assembly_selection() {
+    for root in [
+        json!("missing"),
+        json!(""),
+        json!({"id": "studio"}),
+        json!(7),
+    ] {
+        let bytes = changed(&fixture("derived"), |path, value| {
+            if path == "manifest.json" {
+                value["root_element"] = root.clone();
+            }
+        });
+        let (model, report) = read(&bytes).unwrap();
+        assert!(
+            !model.ir.geometry.bodies.is_empty(),
+            "{root}: {:?}",
+            report.losses()
+        );
+    }
+}
+
+#[test]
 fn derived_bundle_owns_members_of_a_host_studio_whose_id_ends_in_partstudios() {
     let renamed = renamed_host("hostpartstudios");
     // Each studio has its own pin, so a member checked against the wrong pin is omitted.
