@@ -66,13 +66,20 @@ fn a_quarantined_record_stub_is_written_as_an_omitted_native_record() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
 
-    let omitted = cadmpeg_ir::codec::write::native_records_omitted("IGES", "", [""])
-        .unwrap()
-        .code;
-    assert!(report
+    assert!(
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss.message.contains("of `iges` arena `cards`")
+                && loss.message.contains("cards of no typed entity")
+        ),
+        "{:?}",
+        report.losses
+    );
+    // The decode charged the part, so no write loss names its stub.
+    assert!(!report
         .losses
         .iter()
-        .any(|loss| loss.code == omitted && loss.message.contains(&stub)));
+        .any(|loss| loss.message.contains(&stub)));
     assert!(!written.is_empty());
 
     let round_trip = IgesCodec

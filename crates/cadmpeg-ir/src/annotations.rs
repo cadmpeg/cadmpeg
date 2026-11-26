@@ -131,7 +131,7 @@ impl From<AnnotationFieldError> for CodecError {
 /// Non-empty serde field path keying an exactness override.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct FieldName(String);
+pub struct FieldName(std::borrow::Cow<'static, str>);
 
 #[cfg(feature = "schema")]
 impl JsonSchema for FieldName {
@@ -151,6 +151,17 @@ impl JsonSchema for FieldName {
 pub struct EmptyFieldName;
 
 impl FieldName {
+    /// The field path `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics where `name` is empty; in a constant, the crate does not build.
+    #[must_use]
+    pub const fn from_static(name: &'static str) -> Self {
+        assert!(!name.is_empty(), "an exactness field name cannot be empty");
+        Self(std::borrow::Cow::Borrowed(name))
+    }
+
     /// Returns the field path.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -165,13 +176,13 @@ impl TryFrom<String> for FieldName {
         if name.is_empty() {
             return Err(EmptyFieldName);
         }
-        Ok(Self(name))
+        Ok(Self(std::borrow::Cow::Owned(name)))
     }
 }
 
 impl From<FieldName> for String {
     fn from(name: FieldName) -> Self {
-        name.0
+        name.0.into_owned()
     }
 }
 
@@ -480,6 +491,13 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         self.field_exactness(id, field, Exactness::Derived)
     }
 
+    /// Mark the field `field` of `id` derived.
+    pub fn derived_field(&mut self, id: impl Display, field: FieldName) -> &mut Self {
+        self.state
+            .set_field_exactness(id.to_string(), field, Exactness::Derived);
+        self
+    }
+
     /// Set field exactness.
     pub fn field_exactness<'f>(
         &mut self,
@@ -684,7 +702,7 @@ impl AnnotationState {
                 "an exactness field name cannot be empty",
             ));
         }
-        let field = FieldName(field.into_owned());
+        let field = FieldName(std::borrow::Cow::Owned(field.into_owned()));
         self.set_field_exactness(id, field, exactness);
         Ok(self)
     }

@@ -7,12 +7,23 @@ use crate::test_support::smbh_blocks_test::{
     generated_curve_block, generated_pcurve_block, generated_rational_pcurve_block,
     generated_surface_block,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_geometry_smbh_with_points,
+};
 use crate::test_support::smbh_surfaces_test::append_generated_float_array;
 use crate::test_support::tokens_test::{
     push_native_enum, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
     t_u16_string, t_vec,
 };
+
+/// Vertex points with edge 10 running from the start to the end of
+/// [`generated_curve_block`].
+const GENERATED_CURVE_ENDS: [[f64; 3]; 3] = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+
+/// Vertex points with edge 10 running from the start to the end of the
+/// solved curve the analytic offset record caches.
+const ANALYTIC_OFFSET_CACHE_ENDS: [[f64; 3]; 3] =
+    [[0.25, 0.5, 0.75], [1.5, 0.0, 1.0], [0.0, 1.0, 0.0]];
 
 pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
@@ -52,7 +63,7 @@ pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(GENERATED_CURVE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
@@ -126,7 +137,7 @@ pub(crate) fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(GENERATED_CURVE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
@@ -336,7 +347,7 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(GENERATED_CURVE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
@@ -380,7 +391,7 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(GENERATED_CURVE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
@@ -470,7 +481,7 @@ pub(crate) fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str
 }
 
 pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(GENERATED_CURVE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
@@ -631,7 +642,7 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
 }
 
 pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh_with_points(ANALYTIC_OFFSET_CACHE_ENDS);
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(

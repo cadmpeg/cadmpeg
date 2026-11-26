@@ -2827,8 +2827,6 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
-    consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
-    consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -2889,13 +2887,6 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
             "{} source-owned spherical pcurve identity collision(s) were withheld",
             source_jet_pcurves.unresolved_identity_collisions,
-        )));
-    }
-    if consolidated_curve_bindings.widened_vertices != 0 {
-        report.losses.push(CatiaLossCode::GeometryVertexToleranceWidened.note(format!(
-            "Widened {} vertex tolerances for binary32 coordinate storage; maximum widening {:.17} mm",
-            consolidated_curve_bindings.widened_vertices,
-            consolidated_curve_bindings.max_vertex_widening,
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
@@ -7153,7 +7144,7 @@ fn standard_native_graph_endpoint_pairs(
     let identity_points = unique_native_identity_points(
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
-        &graph.vertex_tolerances,
+        &graph.vertex_residuals,
         points,
     );
     let mut pairs = Vec::new();

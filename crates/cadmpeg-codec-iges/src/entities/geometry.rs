@@ -1307,11 +1307,8 @@ pub(super) fn admit<T>(
     }
 }
 
-/// The Directory sequence a source-object association names.
-///
-/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
-/// sequence back out of that text: every consumer holds the sequence itself,
-/// through [`SourceSequences`] or through the entry it is projecting.
+/// The Directory sequence a source-object association names, spelled
+/// `D{sequence}` in the object-id text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SourceObjectId(u32);
 
@@ -1321,9 +1318,19 @@ impl SourceObjectId {
         Self(sequence)
     }
 
+    /// The id an object-id text `D{sequence}` names.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        text.strip_prefix('D')?.parse().ok().map(Self)
+    }
+
     /// The object-id text every source association carries.
     pub(crate) fn text(self) -> String {
         format!("D{}", self.0)
+    }
+
+    /// The Directory sequence of the entry.
+    pub(crate) const fn sequence(self) -> u32 {
+        self.0
     }
 }
 
@@ -1403,7 +1410,7 @@ impl SourceSequences {
 pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = format!("D{}", entry.sequence);
+    let object_id = SourceObjectId::new(entry.sequence).text();
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support

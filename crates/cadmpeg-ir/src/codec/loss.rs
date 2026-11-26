@@ -4,9 +4,10 @@
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
 //! holds, for a class a decoder states the source holds beyond the delivered
-//! depth, for the records its normalizer gave up, and for an id a decoder
-//! emitted twice with different content, so every codec reports them under
-//! one namespace.
+//! depth, for the records its normalizer gave up, for an id a decoder
+//! emitted twice with different content, and for the vertex tolerances it
+//! widened or could not measure, so every codec reports them under one
+//! namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -36,6 +37,12 @@ pub(crate) enum DecodeLossCode {
     /// The wrapper names the record in that give-up's `record.unreadable`
     /// and removes the note.
     RecordDroppedWith,
+    /// The wrapper stated the tolerance of vertices the source stores
+    /// farther from a compared position than the coincidence allowance.
+    VertexToleranceWidened,
+    /// The wrapper's vertex tolerance pass met a resource ceiling of its own
+    /// session and widened no vertex tolerance.
+    VertexToleranceUnmeasured,
 }
 
 impl DecodeLossCode {
@@ -46,6 +53,8 @@ impl DecodeLossCode {
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
             Self::RecordDroppedWith => "record.dropped-with",
+            Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::VertexToleranceUnmeasured => "geometry.vertex-tolerance-unmeasured",
         }
     }
 
@@ -55,6 +64,8 @@ impl DecodeLossCode {
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete => Severity::Warning,
             Self::RecordDroppedWith => Severity::Info,
+            Self::VertexToleranceWidened => Severity::Info,
+            Self::VertexToleranceUnmeasured => Severity::Warning,
         }
     }
 
@@ -67,9 +78,11 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete | Self::RecordDroppedWith => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::IdRepeated
+            | Self::NormalizeIncomplete
+            | Self::RecordDroppedWith
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
@@ -79,7 +92,9 @@ impl DecodeLossCode {
             Self::IdRepeated => Some(Severity::Error),
             Self::DepthNotDelivered { .. }
             | Self::NormalizeIncomplete
-            | Self::RecordDroppedWith => None,
+            | Self::RecordDroppedWith
+            | Self::VertexToleranceWidened
+            | Self::VertexToleranceUnmeasured => None,
         }
     }
 
