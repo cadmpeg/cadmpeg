@@ -512,7 +512,7 @@ macro_rules! model_write_value {
             Vec::new()
         } else {
             let owners =
-                procedural::standard_owners($model.surfaces.iter().filter_map(|carrier| {
+                crate::hash::procedural_owners($model.surfaces.iter().filter_map(|carrier| {
                     carrier
                         .geometry
                         .procedural_construction()
@@ -522,7 +522,7 @@ macro_rules! model_write_value {
                 .procedural_surfaces
                 .iter()
                 .map(|procedural| ProceduralSurfaceWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -532,17 +532,18 @@ macro_rules! model_write_value {
         if $model.procedural_curves.is_empty() {
             Vec::new()
         } else {
-            let owners = procedural::standard_owners($model.curves.iter().filter_map(|carrier| {
-                carrier
-                    .geometry
-                    .procedural_construction()
-                    .map(|construction| (construction.as_str(), &carrier.id))
-            }));
+            let owners =
+                crate::hash::procedural_owners($model.curves.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &carrier.id))
+                }));
             $model
                 .procedural_curves
                 .iter()
                 .map(|procedural| ProceduralCurveWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -1662,6 +1663,26 @@ macro_rules! declare_arena_name {
                 written
             }
 
+            /// Each record of an arena the CADIR wire carries whose canonical
+            /// JSON, written alone, is refused, with the refusal.
+            pub(crate) fn unwritable(self) -> Vec<(crate::give_up::Seed, crate::hash::finite_json::CanonicalJsonError)> {
+                let mut unwritable = Vec::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    for record in &self.$home.$field {
+                        if let Some(refusal) = crate::hash::canonical_refusal(record) {
+                            unwritable.push((
+                                crate::give_up::Seed {
+                                    arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                                    id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                                },
+                                refusal,
+                            ));
+                        }
+                    }
+                })*
+                unwritable
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
@@ -1833,7 +1854,6 @@ macro_rules! declare_model_wire {
             where
                 S: Serializer,
             {
-                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
                 if !self.is_finalized() {
                     let mut sorted = self.clone();
                     sorted.finalize();
@@ -1897,11 +1917,8 @@ macro_rules! declare_model_wire {
 
         impl Model {
             /// Borrow every arena the wire carries in canonical identity order.
-            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
-                if let Err(error) = feature_parents::validate(&[self]) {
-                    return Err(CodecError::malformed(format_args!("{error}")));
-                }
-                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel { $($field: sorted_model_value!(self, $field),)* }
             }
         }
     };
@@ -2045,16 +2062,14 @@ pub struct GeometrySnapshot<'a> {
 }
 
 impl Topology {
-    /// Admit `model`'s feature parents and indexed owners for a borrowed
-    /// geometry serialization view that embeds `model`'s tessellations.
+    /// Index owners for a borrowed geometry serialization view that embeds
+    /// `model`'s tessellations.
+    #[must_use]
     pub fn geometry_snapshot<'a>(
         &'a self,
         model: &'a Model,
         kind: &'a str,
-    ) -> Result<GeometrySnapshot<'a>, CodecError> {
-        if let Err(error) = feature_parents::validate(&[model]) {
-            return Err(CodecError::malformed(format_args!("{error}")));
-        }
+    ) -> GeometrySnapshot<'a> {
         let curves = if self.procedural_curves.is_empty() {
             Vec::new()
         } else {
@@ -2084,13 +2099,13 @@ impl Topology {
                 .map(|procedural| (owners.get(procedural.id.as_str()), procedural))
                 .collect()
         };
-        Ok(GeometrySnapshot {
+        GeometrySnapshot {
             geometry: self,
             tessellations: &model.tessellations,
             kind,
             curves: ProceduralCurveRows(curves),
             surfaces: ProceduralSurfaceRows(surfaces),
-        })
+        }
     }
 }
 

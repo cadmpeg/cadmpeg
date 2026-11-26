@@ -3,9 +3,11 @@
 //!
 //! A record is rewritten through its JSON, typed by the CADIR schema: a pick
 //! of a lost record is `Native` (§5.8), an expression that names one is
-//! `Source` with no tokens (§5.13), a procedural carrier on one is `Unknown`,
-//! a name that names one leaves its entry's native name alone (§5.7), and a
-//! collection whose order carries no meaning loses the member that names one.
+//! `Source` with no tokens (§5.13), a procedural definition on one is
+//! `Unknown`, a curve or surface carrier that names one follows the
+//! carrier's own rule (`CurveGeometry::release`), a name that names one
+//! leaves its entry's native name alone (§5.7), and a collection whose order
+//! carries no meaning loses the member that names one.
 
 use std::collections::BTreeSet;
 
@@ -15,6 +17,7 @@ use crate::design::expr::{ExpressionDialect, Neutral};
 use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SurfaceGeometry};
 
 /// The CADIR schema, read to type each value of a record.
 pub(crate) struct Schema(Value);
@@ -65,6 +68,8 @@ pub(super) const PICKED: &str = "Picked";
 pub(super) const EXPRESSION: &str = "Expression";
 pub(super) const PROCEDURAL_CURVE: &str = "ProceduralCurveDefinition";
 pub(super) const PROCEDURAL_SURFACE: &str = "ProceduralSurfaceDefinition";
+pub(super) const CURVE_GEOMETRY: &str = "CurveGeometry";
+pub(super) const SURFACE_GEOMETRY: &str = "SurfaceGeometry";
 pub(super) const NAME_ENTRY: &str = "NameEntry";
 pub(super) const UNORDERED_MEMBERS: &str = "UnorderedMembers";
 pub(super) const ORDERED_MEMBERS: &str = "OrderedMembers";
@@ -88,6 +93,20 @@ enum Fate {
     Kept,
     /// The value names a lost id and has no form without it.
     Lost,
+}
+
+/// `value` read as `T`, changed by `release`, and written back, or `None`
+/// where it does not read or write as `T`.
+fn released<T: serde::Serialize + serde::de::DeserializeOwned>(
+    value: &Value,
+    release: impl FnOnce(&mut T),
+) -> Option<Value> {
+    let mut geometry = cadmpeg_core::serde_erase::from_json_value::<T>(value).ok()?;
+    release(&mut geometry);
+    cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+        serde::Serialize::serialize(&geometry, adapter)
+    })
+    .ok()
 }
 
 /// Whether `value` holds a string of `gone`, as a value or as a key.
@@ -177,6 +196,9 @@ impl<'a> Restate<'a> {
                 return self.carrier(carrier, value);
             }
             Some(NAME_ENTRY) => return self.name_entry(value),
+            Some(carrier @ (CURVE_GEOMETRY | SURFACE_GEOMETRY)) => {
+                return self.carrier_geometry(carrier, value);
+            }
             _ => {}
         }
         if let Some(branches) = ["oneOf", "anyOf", "allOf"]
@@ -443,6 +465,39 @@ impl<'a> Restate<'a> {
             });
         *value = cached.unwrap_or(bare);
         Fate::Kept
+    }
+
+    /// A curve or surface carrier that names a lost id is stated in the form
+    /// that holds only what was read, by the carrier's own rule
+    /// (`CurveGeometry::release`, `SurfaceGeometry::release`).
+    fn carrier_geometry(&self, carrier: &str, value: &mut Value) -> Fate {
+        if !names(value, self.gone) {
+            return Fate::Clean;
+        }
+        let lost = |field: &str| {
+            value
+                .get("value")
+                .and_then(|procedural| procedural.get(field))
+                .is_some_and(|named| names(named, self.gone))
+        };
+        let (construction, held) =
+            if value.get("kind").and_then(Value::as_str) == Some("procedural") {
+                (lost("construction"), lost("cache"))
+            } else {
+                (false, true)
+            };
+        let restated = if carrier == CURVE_GEOMETRY {
+            released::<CurveGeometry>(value, |geometry| geometry.release(construction, held))
+        } else {
+            released::<SurfaceGeometry>(value, |geometry| geometry.release(construction, held))
+        };
+        match restated {
+            Some(restated) => {
+                *value = restated;
+                Fate::Kept
+            }
+            None => Fate::Lost,
+        }
     }
 
     /// A name-table entry whose name names a lost id keeps its native name
