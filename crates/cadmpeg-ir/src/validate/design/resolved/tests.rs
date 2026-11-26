@@ -211,4 +211,5 @@ fn a_base_delta_reaches_each_state_above_it_in_any_arena_order() {
     assert_eq!(with_owner_entry(&ir), expected);
 }
 
+mod cost;
 mod unproduced;
