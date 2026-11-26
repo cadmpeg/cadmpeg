@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_test_support::EditableDecodeResult;
@@ -182,13 +182,12 @@ fn run(
         return Ok(Outcome::Invalid);
     }
     let mut output = Vec::new();
-    let report = session
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .map_err(|error| format!("{label}: refused: {error}"))?;
+    let (report, read_back) = crate::test_support::plan_in_session(
+        session,
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+    )
+    .and_then(|(plan, read_back)| Ok((plan.write_to(&mut output)?, read_back)))
+    .map_err(|error| format!("{label}: refused: {error}"))?;
     let unwritten = report
         .losses
         .iter()
@@ -201,8 +200,11 @@ fn run(
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = crate::decode::decode_for_read_back(&output)
-        .map_err(|error| format!("{label}: output does not decode: {error}"))?;
+    let written = match read_back {
+        Some(written) => written,
+        None => crate::decode::decode_for_read_back(&output)
+            .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+    };
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {
         return Err(format!("{label}: the feature does not read back once"));

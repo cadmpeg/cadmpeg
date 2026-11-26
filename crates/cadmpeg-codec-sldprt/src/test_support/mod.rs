@@ -12,6 +12,64 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
+/// One write in a session, which keeps the written part as the write read
+/// it back.
+struct SessionWrite<'s, 'f> {
+    session: &'s crate::SldprtWriteSession<'f>,
+    read_back: std::cell::Cell<Option<cadmpeg_ir::codec::DecodeResult>>,
+}
+
+impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
+    const FORMAT: cadmpeg_ir::codec::FormatId =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::FORMAT;
+    const REQUEST: cadmpeg_core::decode::DecodeDepth =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REQUEST;
+    type Target = cadmpeg_ir::codec::write::target::Catalog;
+    const TARGET: cadmpeg_ir::codec::write::target::Catalog =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::TARGET;
+
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+    ) -> Result<cadmpeg_ir::codec::write::ExportBody, CodecError> {
+        let (body, read_back) = crate::writer::target::plan(input, &target, self.session)?;
+        self.read_back.set(read_back);
+        Ok(body)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        crate::writer::saved::restore(input, target, notes, losses)
+    }
+}
+
+/// Plans the write of `input` in `session` as `SldprtCodec` plans an
+/// inherited write, and returns the plan and the written part as the write
+/// read it back, when it did.
+pub(crate) fn plan_in_session(
+    session: &crate::SldprtWriteSession<'_>,
+    input: EncodeInput<'_>,
+) -> Result<
+    (
+        cadmpeg_ir::codec::write::ExportPlan,
+        Option<cadmpeg_ir::codec::DecodeResult>,
+    ),
+    EncodeError,
+> {
+    let write = SessionWrite {
+        session,
+        read_back: std::cell::Cell::new(None),
+    };
+    let plan = write.plan(input, TargetRequest::Inherit)?;
+    Ok((plan, write.read_back.into_inner()))
+}
+
 /// Plans an inherited write through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,

@@ -75,6 +75,9 @@ pub(crate) struct ReadBack {
     /// The definition each claimed feature must read back with, in wire
     /// form: its source definition with each edit as the claims judge it.
     definitions: HashMap<FeatureId, Value>,
+    /// The written part as the full decoder read it back; `None` when the
+    /// pass was judged without decoding it.
+    pub(crate) decoded: Option<cadmpeg_ir::codec::DecodeResult>,
 }
 
 /// The relative difference up to which two real numbers read back the same:
@@ -385,7 +388,7 @@ impl<'a> Judge<'a> {
                 .map(|id| id.as_str().to_owned()),
             )
             .collect::<Vec<_>>();
-        self.judge(
+        let mut read_back = self.judge(
             claims,
             &output.written,
             (
@@ -401,7 +404,9 @@ impl<'a> Judge<'a> {
                     .get_or_init(|| baseline_of(round_trip, &source.decoded, stated))
                     .clone()
             },
-        )
+        );
+        read_back.decoded = Some(decoded);
+        read_back
     }
 
     /// Judges `written`, the written part decoded, against the document the

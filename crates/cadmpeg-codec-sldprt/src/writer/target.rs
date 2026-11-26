@@ -52,7 +52,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     session: &SldprtWriteSession<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<(ExportBody, Option<cadmpeg_ir::codec::DecodeResult>), CodecError> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -65,7 +65,11 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes) = write(input, resolved, digests, session)?;
+    let (mut written, bytes) = write(input, resolved, digests, session)?;
+    let read_back = match &mut written {
+        Written::Semantic { read_back, .. } => read_back.take().map(|decoded| *decoded),
+        Written::Replayed | Written::Stored { .. } => None,
+    };
     let mut body = finish(input, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
@@ -74,7 +78,7 @@ pub(crate) fn plan(
              hold, so an edit of a neutral record those lanes state is not written",
         ));
     }
-    Ok(body)
+    Ok((body, read_back))
 }
 
 /// Write the file in the first path of §3.4 that writes it: replay, patch,

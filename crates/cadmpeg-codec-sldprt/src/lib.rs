@@ -354,7 +354,7 @@ impl SldprtCodec {
             result?;
             (image != Some(bytes.as_slice())).then_some(bytes)
         };
-        let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
+        let ((bytes, output), mut read_back) = history::write::read_back::write_until_read_back(
             ir,
             digests,
             &mut |withheld| {
@@ -424,6 +424,7 @@ impl SldprtCodec {
             unwritten_edits,
             unwritten,
             losses,
+            read_back: read_back.decoded.take().map(Box::new),
         })
     }
 }
@@ -524,6 +525,8 @@ enum Written {
         unwritten: writer::UnwrittenAttributes,
         /// The write's other losses.
         losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The written part as the write read it back, when it did.
+        read_back: Option<Box<cadmpeg_ir::codec::DecodeResult>>,
     },
 }
 
@@ -627,31 +630,7 @@ impl EncoderBackend for SldprtCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target, &SldprtWriteSession::new(input.fidelity))
-    }
-
-    fn restore(
-        &self,
-        input: EncodeInput<'_>,
-        target: &ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes, losses)
-    }
-}
-
-impl EncoderBackend for SldprtWriteSession<'_> {
-    const FORMAT: FormatId = <SldprtCodec as EncoderBackend>::FORMAT;
-    const REQUEST: DecodeDepth = <SldprtCodec as EncoderBackend>::REQUEST;
-    type Target = Catalog;
-    const TARGET: Catalog = <SldprtCodec as EncoderBackend>::TARGET;
-
-    fn plan_resolved(
-        &self,
-        input: EncodeInput<'_>,
-        target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target, self)
+            .map(|(body, _)| body)
     }
 
     fn restore(
