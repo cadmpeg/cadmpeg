@@ -3,11 +3,9 @@
 //! analytic face written outside a B-rep.
 
 use std::f64::consts::{FRAC_1_SQRT_2, TAU};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
@@ -19,6 +17,7 @@ use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::solids::{CYLINDER_HEIGHT, CYLINDER_RADIUS};
 
+use crate::test_support::decoded_with;
 use crate::test_support::test_closed_cylinder::solid_cylinder;
 use crate::{IgesCodec, IgesVersion};
 
@@ -33,33 +32,6 @@ fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
     (losses, bytes)
-}
-
-/// The document that the written file `bytes` reads back as, which the
-/// reader reads with no loss.
-fn decoded(bytes: Vec<u8>) -> CadIr {
-    decoded_with(bytes, &[])
-}
-
-/// The document that the written file `bytes` reads back as, which the
-/// reader reads with a loss of each code in `expected` and with no other
-/// loss.
-fn decoded_with(bytes: Vec<u8>, expected: &[&str]) -> CadIr {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let losses = &decoded.report().losses;
-    let mut codes = losses
-        .iter()
-        .map(|loss| loss.code.to_string())
-        .collect::<Vec<_>>();
-    codes.sort();
-    codes.dedup();
-    assert_eq!(
-        codes, expected,
-        "the written file reads back with {losses:#?}"
-    );
-    decoded.ir().clone()
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
@@ -160,7 +132,7 @@ fn an_open_shell_before_5_3_writes_each_face_as_its_own_trimmed_surface() {
         let unjoined = charged(&losses, "iges/writer.open-shell-unjoined");
         assert_eq!(unjoined.len(), 1, "{losses:#?}");
         assert!(unjoined[0].contains(&body), "{unjoined:?}");
-        let read = decoded(bytes);
+        let read = decoded_with(&bytes, &[]);
         assert_eq!(read.geometry.faces.len(), 2);
         assert_eq!(read.geometry.bodies.len(), 2);
     }
@@ -174,7 +146,7 @@ fn an_open_shell_at_5_3_keeps_its_joined_edges() {
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 2);
     assert_eq!(read.geometry.bodies.len(), 1);
 }
@@ -273,7 +245,7 @@ fn an_analytic_face_outside_a_brep_writes_an_exact_rational_support() {
             .any(|card| card.as_bytes().get(72) == Some(&b'D') && card[..8].trim() == "128"),
         "the side support is written as a Type 128"
     );
-    assert_on_side(&curved_boundary_points(&decoded(bytes)), 1.0);
+    assert_on_side(&curved_boundary_points(&decoded_with(&bytes, &[])), 1.0);
 }
 
 #[test]
@@ -283,7 +255,7 @@ fn a_cylinder_face_without_parameter_curves_writes_computed_ones() {
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 2);
     let points = curved_boundary_points(&read);
     assert_on_side(&points, 1.0);
@@ -314,7 +286,7 @@ fn a_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_support() {
         charged(&losses, "iges/writer.body-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert!(read
         .geometry
         .bodies
@@ -340,7 +312,7 @@ fn a_solid_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_suppor
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = &decoded(bytes);
+    let read = &decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 3, "{losses:#?}");
     assert!(read
         .geometry
@@ -415,7 +387,7 @@ fn a_seamless_cylinder_band_under_a_non_uniform_scale_writes_its_full_turn_face(
     ] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
     }
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 3);
     let points = curved_boundary_points(&read);
     assert_on_side(&points, 2.0);
@@ -442,7 +414,7 @@ fn a_cylinder_face_with_a_slanted_parameter_curve_keeps_its_model_space_boundary
     assert_eq!(omitted.len(), 4, "{losses:#?}");
     // A boundary with no parameter curves on a curved support keeps its
     // written traversal on read.
-    let read = decoded_with(bytes, &["iges/topology.boundary-winding-unresolved"]);
+    let read = decoded_with(&bytes, &["iges/topology.boundary-winding-unresolved"]);
     assert_eq!(read.geometry.faces.len(), 2);
     let side = read
         .geometry

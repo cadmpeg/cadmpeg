@@ -4,14 +4,16 @@
 
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
+use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface, TorusSurface};
 use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::test_support::with_service_context;
+
 use super::{
     closed_parameter_area, strip_windings, support_oriented_area, support_parameter_periods,
-    support_turn_lengths, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn,
+    support_turn, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn,
     BOUNDARY_AREA_DEGENERATE_FRACTION, PARAMETER_RING_CLOSURE_FRACTION,
 };
 
@@ -190,41 +192,117 @@ fn turn(axis: usize, forward: bool, level: f64) -> Turn {
     }
 }
 
-#[test]
-fn each_nurbs_axis_turns_over_its_knot_domain() {
-    let cylinder = SolvedSurfaceGeometry::Cylinder(
-        CylinderSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            2.0,
+/// Bound on the distance between the two end rows of a NURBS support at
+/// which [`support_turn`] reads it closed.
+const SUPPORT_RESOLUTION: f64 = 1.0e-6;
+
+/// The degree-1 ring of three points about `+z` swept along `+z` over one
+/// unit, closed over its `u` knot domain `[0, 3]` and open in `v`.
+fn closed_ring_patch() -> SolvedSurfaceGeometry {
+    let ring = [[1.0, 0.0], [-0.5, 1.0], [-0.5, -1.0], [1.0, 0.0]];
+    SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                ring.iter()
+                    .map(|[x, y]| vec![Point3::new(*x, *y, 0.0), Point3::new(*x, *y, 1.0)])
+                    .collect(),
+                None,
+            ),
+            false,
         )
-        .expect("cylinder"),
+        .expect("closed ring patch"),
+    )
+}
+
+#[test]
+fn a_support_turns_only_around_its_one_closed_axis() {
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let cylinder = SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(origin, axis, reference, 2.0).expect("cylinder"),
     );
-    assert_eq!(support_turn_lengths(&cylinder), [Some(TAU), None]);
-    assert_eq!(
-        support_turn_lengths(&bilinear_patch(false, false)),
-        [Some(3.0), Some(1.0)]
+    let torus = SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(origin, axis, reference, 5.0, 1.0).expect("torus"),
     );
+    with_service_context(b"", |ctx| {
+        let turn = |support: &SolvedSurfaceGeometry| {
+            support_turn(support, SUPPORT_RESOLUTION, ctx).expect("the closure evaluates")
+        };
+        assert_eq!(turn(&cylinder), Some((0, TAU)));
+        assert_eq!(turn(&torus), None);
+        assert_eq!(turn(&bilinear_patch(true, false)), Some((0, 3.0)));
+        assert_eq!(turn(&bilinear_patch(false, false)), None);
+        assert_eq!(turn(&closed_ring_patch()), Some((0, 3.0)));
+    });
 }
 
 #[test]
 fn an_image_whose_ends_lie_one_turn_apart_turns_once() {
-    let lengths = [Some(TAU), None];
-    let forward = turn_of(&turning_line(0, 2.0, 1.0), lengths, lengths).expect("a turn");
+    let forward = turn_of(&turning_line(0, 2.0, 1.0), 0, TAU).expect("a turn");
     assert_eq!((forward.axis, forward.forward), (0, true));
     assert!((forward.level - 2.0).abs() <= f64::EPSILON);
-    let backward = turn_of(&turning_line(0, 2.0, -1.0), lengths, lengths).expect("a turn");
+    let backward = turn_of(&turning_line(0, 2.0, -1.0), 0, TAU).expect("a turn");
     assert_eq!((backward.axis, backward.forward), (0, false));
     for turns in [2.0, 0.5] {
-        assert!(turn_of(&turning_line(0, 2.0, turns), lengths, lengths).is_none());
+        assert!(turn_of(&turning_line(0, 2.0, turns), 0, TAU).is_none());
     }
     let mut rising = turning_line(0, 2.0, 1.0);
     rising.last_mut().expect("an end")[1] += 1.0;
-    assert!(turn_of(&rising, lengths, lengths).is_none());
-    let tube = [None, Some(TAU)];
-    let meridian = turn_of(&turning_line(1, 2.0, 1.0), tube, tube).expect("a turn");
+    assert!(turn_of(&rising, 0, TAU).is_none());
+    let meridian = turn_of(&turning_line(1, 2.0, 1.0), 1, TAU).expect("a turn");
     assert_eq!((meridian.axis, meridian.forward), (1, true));
+}
+
+/// The points at eight equal steps of each side of the counterclockwise
+/// rectangle over `u` in `[-0.2, 0.2]` and `v` in `[1, 2]`, stated in
+/// `[0, 2π]` from `(2π, 2)` along its upper side and split at the seam.
+fn seam_split_hole_from_its_upper_edge() -> Vec<[f64; 2]> {
+    let side = |from: [f64; 2], to: [f64; 2]| {
+        (0..=8).map(move |step| {
+            let t = f64::from(step) / 8.0;
+            [
+                from[0] + t * (to[0] - from[0]),
+                from[1] + t * (to[1] - from[1]),
+            ]
+        })
+    };
+    side([TAU, 2.0], [TAU - 0.2, 2.0])
+        .chain(side([TAU - 0.2, 2.0], [TAU - 0.2, 1.0]))
+        .chain(side([TAU - 0.2, 1.0], [TAU, 1.0]))
+        .chain(side([0.0, 1.0], [0.2, 1.0]))
+        .chain(side([0.2, 1.0], [0.2, 2.0]))
+        .chain(side([0.2, 2.0], [0.0, 2.0]))
+        .collect()
+}
+
+#[test]
+fn a_boundary_split_at_the_seam_does_not_turn() {
+    assert!(turn_of(&seam_split_hole_from_its_upper_edge(), 0, TAU).is_none());
+}
+
+/// Bound on the difference between a computed turn level and its expected
+/// value.
+const LEVEL_AGREEMENT: f64 = 1.0e-12;
+
+/// The level of a ring at `v = 0` with a notch up to `v = 1` over
+/// `u` in `[1, 1.1]` is its mean `v` along its length, however densely the
+/// notch is sampled.
+#[test]
+fn the_level_of_a_turn_is_its_mean_along_its_length() {
+    let mut ring = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+    ring.extend((1..=100).map(|step| [1.0 + 0.1 * f64::from(step) / 100.0, 1.0]));
+    ring.push([1.1, 0.0]);
+    ring.extend((1..=8).map(|step| [1.1 + (TAU - 1.1) * f64::from(step) / 8.0, 0.0]));
+    let turn = turn_of(&ring, 0, TAU).expect("a turn");
+    let expected = (0.1 * 1.0 + 2.0 * 0.5) / (TAU + 2.0);
+    assert!(
+        (turn.level - expected).abs() <= LEVEL_AGREEMENT,
+        "{}",
+        turn.level
+    );
 }
 
 /// A strip between two boundaries that turn along `u` lies to the left of
@@ -262,6 +340,5 @@ fn turning_boundaries_that_bound_no_one_strip_have_no_winding() {
         false
     )
     .is_empty());
-    assert!(strip_windings(&[lower, (1, turn(1, true, 1.0))], false).is_empty());
     assert!(strip_windings(&[lower, (1, turn(0, false, 0.0))], false).is_empty());
 }

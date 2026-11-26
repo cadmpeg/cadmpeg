@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, SurfaceParameterAxis};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Vector3;
@@ -27,6 +27,11 @@ const PARAMETER_RING_CLOSURE_FRACTION: f64 = 1.0e-2;
 /// square of its extent encloses no area at the sampling resolution and has
 /// no winding.
 const BOUNDARY_AREA_DEGENERATE_FRACTION: f64 = 1.0e-9;
+
+/// A step between consecutive samples of an image that is longer than this
+/// fraction of a turn on the turning axis is a jump across the seam. A
+/// sampled parameter curve that runs once around steps far below it.
+const TURN_JUMP_FRACTION: f64 = 0.5;
 
 /// The traversal of a Type 144 boundary against the neutral loop direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,59 +87,104 @@ pub(super) fn polygon_signed_area_twice(points: &[[f64; 2]]) -> f64 {
 /// parameterization: the azimuth of a cylinder, cone, sphere, or torus, the
 /// minor azimuth of a torus, and the knot domain of a periodic NURBS axis.
 fn support_parameter_periods(support: &SolvedSurfaceGeometry) -> [Option<f64>; 2] {
-    support_axis_lengths(support, |nurbs| [nurbs.u_periodic(), nurbs.v_periodic()])
+    match support_basis(support) {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_axis_lengths(nurbs, [nurbs.u_periodic(), nurbs.v_periodic()])
+        }
+        basis => analytic_periods(basis),
+    }
 }
 
-/// The parameter length of one turn around each axis of `support` that can
-/// close: the period of a periodic axis, and the knot domain of each NURBS
-/// axis. The ends of a NURBS boundary image one knot domain apart on an axis
-/// meet in model space only where the support closes on that axis.
-fn support_turn_lengths(support: &SolvedSurfaceGeometry) -> [Option<f64>; 2] {
-    support_axis_lengths(support, |_| [true, true])
-}
-
-/// The period of each axis of an analytic `support`, and the knot domain of
-/// each NURBS axis that `nurbs_axes` selects.
-fn support_axis_lengths(
+/// The one axis on which `support` closes, with the parameter length of one
+/// turn around it, or none where the support closes on no axis or on both.
+/// A periodic axis closes over its period. A NURBS axis closes over its knot
+/// domain where it is periodic or its two end isocurves agree within
+/// `resolution`.
+fn support_turn(
     support: &SolvedSurfaceGeometry,
-    nurbs_axes: fn(&NurbsSurface) -> [bool; 2],
-) -> [Option<f64>; 2] {
+    resolution: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(usize, f64)>, CodecError> {
+    let lengths = match support_basis(support) {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            let domains = nurbs_axis_domains(nurbs);
+            let mut closed = [nurbs.u_periodic(), nurbs.v_periodic()];
+            for (axis, fixed_axis) in [SurfaceParameterAxis::U, SurfaceParameterAxis::V]
+                .into_iter()
+                .enumerate()
+            {
+                if let (false, Some(fixed), Some(varying)) =
+                    (closed[axis], domains[axis], domains[1 - axis])
+                {
+                    closed[axis] = super::super::surfaces::surface_boundary_is_closed(
+                        ctx, nurbs, fixed_axis, fixed, varying, resolution,
+                    )? == Some(true);
+                }
+            }
+            nurbs_axis_lengths(nurbs, closed)
+        }
+        basis => analytic_periods(basis),
+    };
+    Ok(match lengths {
+        [Some(length), None] => Some((0, length)),
+        [None, Some(length)] => Some((1, length)),
+        _ => None,
+    })
+}
+
+/// `support` without its placements.
+fn support_basis(support: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry {
+    match support {
+        SolvedSurfaceGeometry::Transformed(placed) => support_basis(placed.basis()),
+        basis => basis,
+    }
+}
+
+/// The period of each periodic axis of an analytic `support`.
+fn analytic_periods(support: &SolvedSurfaceGeometry) -> [Option<f64>; 2] {
     const TAU: f64 = std::f64::consts::TAU;
     match support {
         SolvedSurfaceGeometry::Cylinder(_)
         | SolvedSurfaceGeometry::Cone(_)
         | SolvedSurfaceGeometry::Sphere(_) => [Some(TAU), None],
         SolvedSurfaceGeometry::Torus(_) => [Some(TAU), Some(TAU)],
-        SolvedSurfaceGeometry::Nurbs(nurbs) => {
-            let [u, v] = nurbs_axes(nurbs);
-            let length = |selected: bool, degree: u32, knots: &[f64], count: usize| {
-                selected
-                    .then(|| cadmpeg_ir::eval::nurbs_pcurve_parameter_domain(degree, knots, count))
-                    .flatten()
-                    .map(|domain| domain.upper() - domain.lower())
-            };
-            [
-                length(
-                    u,
-                    nurbs.u_degree(),
-                    nurbs.u_knots().as_slice(),
-                    nurbs.u_count(),
-                ),
-                length(
-                    v,
-                    nurbs.v_degree(),
-                    nurbs.v_knots().as_slice(),
-                    nurbs.v_count(),
-                ),
-            ]
-        }
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            support_axis_lengths(placed.basis(), nurbs_axes)
-        }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
     }
+}
+
+/// The knot domain of each axis of `nurbs`.
+fn nurbs_axis_domains(nurbs: &NurbsSurface) -> [Option<[f64; 2]>; 2] {
+    let domain = |degree: u32, knots: &[f64], count: usize| {
+        cadmpeg_ir::eval::nurbs_pcurve_parameter_domain(degree, knots, count)
+            .map(|domain| [domain.lower(), domain.upper()])
+    };
+    [
+        domain(
+            nurbs.u_degree(),
+            nurbs.u_knots().as_slice(),
+            nurbs.u_count(),
+        ),
+        domain(
+            nurbs.v_degree(),
+            nurbs.v_knots().as_slice(),
+            nurbs.v_count(),
+        ),
+    ]
+}
+
+/// The length of the knot domain of each axis of `nurbs` that `selected`
+/// names.
+fn nurbs_axis_lengths(nurbs: &NurbsSurface, selected: [bool; 2]) -> [Option<f64>; 2] {
+    let domains = nurbs_axis_domains(nurbs);
+    [0, 1].map(|axis| {
+        domains[axis]
+            .filter(|_| selected[axis])
+            .map(|[lower, upper]| upper - lower)
+    })
 }
 
 /// The signed area of a closed parameter-space sample polygon, or `None`
@@ -198,27 +248,27 @@ fn parameter_image(
     Ok(Some(points))
 }
 
-/// A boundary whose parameter-space image turns once around one axis of its
-/// support and closes on the other axis.
+/// A boundary whose parameter-space image turns once around the one closed
+/// axis of its support and closes on the other axis.
 #[derive(Debug, Clone, Copy)]
 struct Turn {
     axis: usize,
     /// Whether the image advances along `axis`.
     forward: bool,
-    /// The mean coordinate of the image on the other axis.
+    /// The mean coordinate of the image on the other axis, weighted by arc
+    /// length along the image.
     level: f64,
 }
 
-/// The turn of an image whose ends lie one turn length of `lengths` apart on
-/// one axis within [`PARAMETER_RING_CLOSURE_FRACTION`] of that length, and
-/// meet on the other axis under the closure rule of [`closed_parameter_area`]
-/// for `periods`.
-fn turn_of(
-    points: &[[f64; 2]],
-    lengths: [Option<f64>; 2],
-    periods: [Option<f64>; 2],
-) -> Option<Turn> {
+/// The turn of an image around `axis`, whose turn is `length` long. The
+/// ends of the image lie one turn apart on `axis` within
+/// [`PARAMETER_RING_CLOSURE_FRACTION`] of the turn, and meet on the other
+/// axis within that fraction of the image extent. No step between
+/// consecutive samples is longer on `axis` than [`TURN_JUMP_FRACTION`] of
+/// the turn.
+fn turn_of(points: &[[f64; 2]], axis: usize, length: f64) -> Option<Turn> {
     let (first, last) = (*points.first()?, *points.last()?);
+    let other = 1 - axis;
     let mut low = first;
     let mut high = first;
     for point in points {
@@ -228,25 +278,29 @@ fn turn_of(
         }
     }
     let extent = (high[0] - low[0]).hypot(high[1] - low[1]);
-    (0..2).find_map(|axis| {
-        let period = lengths[axis]?;
-        let other = 1 - axis;
-        let gap = last[axis] - first[axis];
-        let turns = (gap / period).round();
-        let other_gap = (last[other] - first[other]).abs();
-        let turned = turns.abs() == 1.0
-            && (gap - turns * period).abs() <= PARAMETER_RING_CLOSURE_FRACTION * period
-            && other_gap <= PARAMETER_RING_CLOSURE_FRACTION * periods[other].unwrap_or(extent);
-        turned.then(|| {
-            let (sum, count) = points.iter().fold((0.0, 0.0), |(sum, count), point| {
-                (sum + point[other], count + 1.0)
-            });
-            Turn {
-                axis,
-                forward: turns > 0.0,
-                level: sum / count,
-            }
-        })
+    let gap = last[axis] - first[axis];
+    let turns = (gap / length).round();
+    let turned = turns.abs() == 1.0
+        && (gap - turns * length).abs() <= PARAMETER_RING_CLOSURE_FRACTION * length
+        && (last[other] - first[other]).abs() <= PARAMETER_RING_CLOSURE_FRACTION * extent
+        && points
+            .windows(2)
+            .all(|pair| (pair[1][axis] - pair[0][axis]).abs() <= TURN_JUMP_FRACTION * length);
+    if !turned {
+        return None;
+    }
+    let (moment, arc) = points.windows(2).fold((0.0, 0.0), |(moment, arc), pair| {
+        let step = (pair[1][0] - pair[0][0]).hypot(pair[1][1] - pair[0][1]);
+        (
+            step.mul_add(pair[0][other].midpoint(pair[1][other]), moment),
+            arc + step,
+        )
+    });
+    let level = moment / arc;
+    level.is_finite().then_some(Turn {
+        axis,
+        forward: turns > 0.0,
+        level,
     })
 }
 
@@ -324,17 +378,22 @@ fn support_oriented_area(twice_area: f64, support: &SolvedSurfaceGeometry) -> f6
 /// Type 144 and Type 142 state no traversal direction, and the face keeps the
 /// support normal, so each boundary must keep the face on its left about that
 /// normal: the outer boundary runs counterclockwise and every inner boundary
-/// clockwise. Two boundaries that turn once around the same axis bound the
-/// strip between their levels on the other axis.
+/// clockwise. On a support that closes on exactly one axis within
+/// `resolution`, exactly two boundaries that turn once around that axis
+/// bound the strip between their levels on the other axis.
 pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
     boundaries: impl IntoIterator<Item = (&'a [BoundaryItem<'b>], bool)>,
     index: &ModelIndex<'_>,
     support: &SurfaceGeometry,
+    resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BoundaryWinding>, CodecError> {
     let solved = support.solved();
     let periods = solved.map_or([None, None], support_parameter_periods);
-    let lengths = solved.map_or([None, None], support_turn_lengths);
+    let turning_axis = match solved {
+        Some(solved) => support_turn(solved, resolution, ctx)?,
+        None => None,
+    };
     let mut windings = Vec::new();
     let mut turns = Vec::new();
     for (items, outer) in boundaries {
@@ -356,11 +415,8 @@ pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
             )?,
             (None, _) => None,
         };
-        if area.is_none() {
-            if let Some(turn) = image
-                .as_deref()
-                .and_then(|points| turn_of(points, lengths, periods))
-            {
+        if let (None, Some(points), Some((axis, length))) = (area, image.as_deref(), turning_axis) {
+            if let Some(turn) = turn_of(points, axis, length) {
                 turns.push((windings.len(), turn));
             }
         }
@@ -373,7 +429,7 @@ pub(super) fn trimmed_boundary_windings<'a, 'b: 'a>(
     Ok(windings)
 }
 
-/// The winding of each of two boundaries that turn around the same axis at
+/// The winding of each of two boundaries that turn around one axis at
 /// different levels, at their positions in `turns`, which keeps the strip
 /// between them on the left of each about the support normal. The left of an
 /// advance along `u` lies toward greater `v`, and the left of an advance along
@@ -383,9 +439,6 @@ fn strip_windings(turns: &[(usize, Turn)], normal_reversed: bool) -> Vec<(usize,
     let [(first, a), (second, b)] = turns else {
         return Vec::new();
     };
-    if a.axis != b.axis {
-        return Vec::new();
-    }
     let [lower, upper] = match a.level.partial_cmp(&b.level) {
         Some(std::cmp::Ordering::Less) => [(*first, *a), (*second, *b)],
         Some(std::cmp::Ordering::Greater) => [(*second, *b), (*first, *a)],

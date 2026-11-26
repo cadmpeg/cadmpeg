@@ -3,11 +3,8 @@
 //! and topology that bodies under different transforms share, and a copied
 //! record that has no placed image.
 
-use std::io::Cursor;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::{add_document_root, unit_cube};
@@ -24,6 +21,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::covered_uses::cube_with_pcurves;
+use crate::test_support::decoded_with;
 use crate::writer::placement::separated_bodies;
 use crate::{IgesCodec, IgesVersion};
 
@@ -51,15 +49,7 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let read_losses = &decoded.report().losses;
-    assert!(
-        read_losses.is_empty(),
-        "the written file reads back with {read_losses:#?}"
-    );
-    (losses, decoded.ir().clone())
+    (losses, decoded_with(&bytes, &[]))
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {

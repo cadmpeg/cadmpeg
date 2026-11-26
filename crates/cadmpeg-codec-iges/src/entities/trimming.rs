@@ -2829,6 +2829,7 @@ pub(super) fn project(
                 }),
                 &carrier_index,
                 &support_geometry,
+                global.minimum_resolution_mm(),
                 ctx,
             )?
         } else {

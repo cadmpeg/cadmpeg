@@ -1323,27 +1323,35 @@ fn a_ring_whose_curves_meet_at_the_end_of_the_turn_is_written_with_its_curves_jo
         [[TAU, TAU], [0.0, 1.0]],
         [[0.0, TAU], [BAND_HEIGHT, BAND_HEIGHT]],
     ];
-    for ring in [STEP, STEP_FROM_ITS_UPPER_ARC] {
-        for classified in [false, true] {
-            for stretch in [STRETCH, MIRROR_STRETCH] {
-                let (losses, read) = written_under(ring_band(&ring, None, classified), stretch);
-                for code in [
-                    "iges/writer.face-omitted",
-                    "iges/writer.loop-classification-omitted",
-                ] {
-                    assert!(charged(&losses, code).is_empty(), "{losses:#?}");
-                }
-                assert_eq!(read.geometry.faces.len(), 1);
-                let face = &read.geometry.faces[0];
-                assert_eq!(
-                    face.loops
-                        .stated()
-                        .any(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Outer),
-                    classified
-                );
-                assert_boundary_in_domain(&read);
-                assert_on_cylinder_regions(&read, stretch, &regions);
+    // The seam hole starts the turn at the azimuth -0.1, inside the arc at
+    // height 1, so that arc is cut there and the axial line at `2π` moves
+    // a turn down.
+    for (ring, hole, classified) in [STEP, STEP_FROM_ITS_UPPER_ARC]
+        .into_iter()
+        .flat_map(|ring| [(ring, None), (ring, Some(SEAM_HOLE))])
+        .flat_map(|(ring, hole)| [(ring, hole, false), (ring, hole, true)])
+    {
+        let regions = hole.map_or(regions.to_vec(), |hole| {
+            regions.iter().copied().chain([hole]).collect()
+        });
+        for stretch in [STRETCH, MIRROR_STRETCH] {
+            let (losses, read) = written_under(ring_band(&ring, hole, classified), stretch);
+            for code in [
+                "iges/writer.face-omitted",
+                "iges/writer.loop-classification-omitted",
+            ] {
+                assert!(charged(&losses, code).is_empty(), "{losses:#?}");
             }
+            assert_eq!(read.geometry.faces.len(), 1);
+            let face = &read.geometry.faces[0];
+            assert_eq!(
+                face.loops
+                    .stated()
+                    .any(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Outer),
+                classified
+            );
+            assert_boundary_in_domain(&read);
+            assert_on_cylinder_regions(&read, stretch, &regions);
         }
     }
 }
@@ -1387,12 +1395,14 @@ fn a_classified_band_whose_ring_passes_the_end_of_the_turn_more_than_once_is_wri
             .stated()
             .all(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Unspecified));
     }
-    for stretch in [STRETCH, MIRROR_STRETCH] {
-        let (losses, read) = written_under(ring_band(&NOTCH, None, true), stretch);
-        assert!(
-            charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
-            "{losses:#?}"
-        );
-        assert_eq!(read.geometry.faces.len(), 1);
+    for (hole, classified) in [(None, true), (Some(SEAM_HOLE), false)] {
+        for stretch in [STRETCH, MIRROR_STRETCH] {
+            let (losses, read) = written_under(ring_band(&NOTCH, hole, classified), stretch);
+            assert!(
+                charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
+                "{losses:#?}"
+            );
+            assert_eq!(read.geometry.faces.len(), 1);
+        }
     }
 }

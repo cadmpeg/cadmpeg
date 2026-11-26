@@ -4,11 +4,9 @@
 //! a pole or apex, and writes the support as the exact rational Type 128.
 
 use std::f64::consts::{PI, TAU};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::decode::{curve_point_solved, pcurve_uv, surface_point_solved};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
@@ -33,6 +31,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
+use crate::test_support::decoded_with;
 use crate::{IgesCodec, IgesVersion};
 
 mod boundary_start;
@@ -422,33 +421,7 @@ fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
     }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    decoded_whole(bytes)
-}
-
-/// The document that the written file `bytes` reads back as, which the
-/// reader reads with no loss.
-fn decoded_whole(bytes: Vec<u8>) -> CadIr {
-    decoded_with(bytes, &[])
-}
-
-/// The decoded document of the written `bytes`, which reads back with a loss
-/// of each code in `expected` and with no other loss.
-fn decoded_with(bytes: Vec<u8>, expected: &[&str]) -> CadIr {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let losses = &decoded.report().losses;
-    let mut codes = losses
-        .iter()
-        .map(|loss| loss.code.to_string())
-        .collect::<Vec<_>>();
-    codes.sort();
-    codes.dedup();
-    assert_eq!(
-        codes, expected,
-        "the written file reads back with {losses:#?}"
-    );
-    decoded.ir().clone()
+    decoded_with(&bytes, &[])
 }
 
 /// The support points at sixteen equal steps of each parameter curve on the
@@ -741,7 +714,7 @@ fn written_under_with(
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    (losses, decoded_with(bytes, expected))
+    (losses, decoded_with(&bytes, expected))
 }
 
 /// Points at 32 equal steps of each edge curve of `read` over its range.

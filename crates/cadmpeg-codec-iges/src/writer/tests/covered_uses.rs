@@ -3,11 +3,9 @@
 //! on a B-rep face: the writer writes the covered part of each curve.
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::unit_cube;
@@ -24,6 +22,7 @@ use cadmpeg_ir::topology::{BodyKind, PcurveUse, Sense};
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
+use crate::test_support::decoded_with;
 use crate::{IgesCodec, IgesVersion};
 
 /// Bound on the distance between a read-back point and its expected place.
@@ -281,15 +280,7 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let read_losses = &decoded.report().losses;
-    assert!(
-        read_losses.is_empty(),
-        "the written file reads back with {read_losses:#?}"
-    );
-    (losses, decoded.ir().clone())
+    (losses, decoded_with(&bytes, &[]))
 }
 
 /// A parameter curve use of a coedge, lifted onto the support of its face
