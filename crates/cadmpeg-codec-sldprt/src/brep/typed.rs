@@ -701,12 +701,13 @@ pub(in crate::brep) struct Hierarchy {
 }
 
 pub(super) fn topology_owner_attrs_for_streams<'a>(
-    streams: impl IntoIterator<Item = (&'a Facts, &'a [u8], bool)>,
+    streams: impl IntoIterator<Item = (&'a Facts, &'a super::topology::ScopedBody<'a>)>,
 ) -> HashSet<u32> {
     let mut selected = HashMap::<u32, (bool, u8)>::new();
-    for (facts, bytes, deltas) in streams {
+    for (facts, stream) in streams {
+        let deltas = stream.prefixed;
         let mut classes = facts.topology_class_masks();
-        for point in super::topology::point_class_attrs(bytes, deltas) {
+        for point in super::topology::point_class_attrs(stream) {
             *classes.entry(point).or_insert(0) |= 16;
         }
         for (attr, mask) in classes {
@@ -1027,13 +1028,14 @@ fn resolve_framing<T>(
     });
 }
 
+#[cfg(test)]
 pub(super) fn scan(bytes: &[u8]) -> Facts {
-    scan_with_payload_exclusions(bytes, false)
+    scan_with_payload_exclusions(&super::topology::ScopedBody::new(bytes, false))
 }
 
-pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Facts {
-    let scopes = super::topology::topology_scopes(bytes, prefixed);
-    let payload_ranges = &scopes.excluded_starts;
+pub(super) fn scan_with_payload_exclusions(stream: &super::topology::ScopedBody<'_>) -> Facts {
+    let bytes = stream.body;
+    let payload_ranges = &stream.scopes.excluded_starts;
     let mut payload_index = 0;
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
@@ -1175,6 +1177,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
             }
         }
     }
+    let scopes = &stream.scopes;
     let outside_payload = |start: usize, end: usize| {
         let index = scopes.payloads.partition_point(|range| range.end <= start);
         let start_index = scopes
@@ -1235,6 +1238,7 @@ mod tests {
         read_refs, region_chain, scan, BodyNode, FaceNode, Facts, RegionKind, RegionNode,
         ShellNode, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
+    use crate::brep::topology::ScopedBody;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
@@ -1649,7 +1653,7 @@ mod tests {
         bytes.extend(500u16.to_be_bytes());
         bytes.extend(&payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(!facts.topology_owner_attrs().contains(&3));
             assert!(!facts.bodies.iter().any(|node| node.attr == 3));
         }
@@ -1676,14 +1680,19 @@ mod tests {
         schema_pointer(&mut bytes, &[b'a'; 40], 82);
         bytes.push(b'Z');
         let payload = bytes.len();
-        assert!(
-            super::super::topology::point_class_attrs(&bytes[fake_point..], false).contains(&3)
-        );
+        assert!(super::super::topology::point_class_attrs(&ScopedBody::new(
+            &bytes[fake_point..],
+            false
+        ))
+        .contains(&3));
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 1, 0, 1, 0, 0, 0, 0, 0, 1]);
         let scopes = super::super::topology::topology_scopes(&bytes, false);
         assert!(scopes.payloads.is_empty());
-        assert!(!super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            !super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false))
+                .contains(&3)
+        );
         let facts = scan(&bytes);
         assert!(facts
             .bodies
@@ -1691,7 +1700,9 @@ mod tests {
             .any(|node| node.offset == payload && node.attr == 3));
         assert!(facts.topology_owner_attrs().contains(&3));
         bytes.extend(crate::test_support::parasolid::world_point(3, [0.0; 3]));
-        assert!(super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false)).contains(&3)
+        );
     }
 
     #[test]
@@ -2192,7 +2203,7 @@ mod tests {
         bytes.extend(710u16.to_be_bytes());
         bytes.extend(payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(facts.bodies.is_empty());
             assert!(!facts.topology_owner_attrs().contains(&900));
         }
@@ -2209,12 +2220,14 @@ mod tests {
             u16::try_from(owner).unwrap(),
             [0.0; 3],
         );
-        assert!(super::super::topology::point_class_attrs(&point, true).contains(&owner));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&point, true))
+                .contains(&owner)
+        );
         for reverse in [false, true] {
-            let mut streams = vec![
-                (&partition, &[][..], false),
-                (&delta, point.as_slice(), true),
-            ];
+            let partition_stream = ScopedBody::new(&[], false);
+            let delta_stream = ScopedBody::new(point.as_slice(), true);
+            let mut streams = vec![(&partition, &partition_stream), (&delta, &delta_stream)];
             if reverse {
                 streams.reverse();
             }
@@ -2232,8 +2245,8 @@ mod tests {
         shell.attr = owner;
         partition.shells.push(shell);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
@@ -2256,8 +2269,8 @@ mod tests {
         delta.bodies.push(source.bodies[0].clone());
         let empty = Facts::default();
         assert!(super::topology_owner_attrs_for_streams([
-            (&empty, &[][..], false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let mut partition = Facts::default();
@@ -2265,15 +2278,15 @@ mod tests {
         face.attr = owner;
         partition.faces.push(face);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let point =
             crate::test_support::parasolid::world_point(u16::try_from(owner).unwrap(), [0.0; 3]);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&empty, point.as_slice(), false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(point.as_slice(), false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
