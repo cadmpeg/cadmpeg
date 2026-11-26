@@ -482,6 +482,7 @@ pub(super) fn push_foreign_feature(
             edge_geometry: Vec::new(),
             face_owners: Vec::new(),
             face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             native_ref: None,
         });
     let ordinal = u64::try_from(ir.model.features.len()).unwrap();
