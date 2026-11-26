@@ -1902,5 +1902,6 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
 }
 
 mod feature_overrides;
+mod state_delta;
 mod unproduced;
 mod wire_form;

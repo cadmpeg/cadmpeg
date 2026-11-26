@@ -90,6 +90,36 @@ pub(super) fn remove(topology: &mut Topology, drop: &BTreeSet<String>) {
     topology_arenas!(retain);
 }
 
+impl StateDelta {
+    /// The delta that takes `base` to `state`, both whole record sets in one
+    /// id space (§2.2): each record of `state` that `base` lacks or holds
+    /// with other content, and a reference to each record of `base` that
+    /// `state` lacks. The maps stay empty.
+    #[must_use]
+    pub fn between(base: &Topology, state: &Topology) -> Self {
+        let mut delta = Self::default();
+        macro_rules! diff {
+            ($($field:ident $arm:ident),*) => {$(
+                let held: BTreeMap<&str, _> = base.$field.iter()
+                    .map(|record| (record.record_identity(), record))
+                    .collect();
+                let kept: BTreeSet<&str> = state.$field.iter()
+                    .map(ArenaRecord::record_identity)
+                    .collect();
+                delta.records.$field = state.$field.iter()
+                    .filter(|record| held.get(record.record_identity()) != Some(record))
+                    .cloned()
+                    .collect();
+                delta.removed.extend(base.$field.iter()
+                    .filter(|record| !kept.contains(record.record_identity()))
+                    .map(|record| RecordRef::$arm(record.id.clone())));
+            )*};
+        }
+        topology_arenas!(diff);
+        delta
+    }
+}
+
 /// Inserts each record of `records`, or replaces the record of the same id.
 pub(crate) fn upsert(topology: &mut Topology, records: Topology) {
     macro_rules! merge {
