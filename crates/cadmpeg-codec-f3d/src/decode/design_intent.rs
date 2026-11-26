@@ -1619,6 +1619,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
+    crate::history::input_topologies::retain_selected_face_geometry(
+        inputs.ctx,
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
     model.configurations = crate::design::decode::record::recover(
         crate::design::configurations::project_configurations(
             &design.design_configurations,

@@ -52,6 +52,7 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
         edges: std::iter::once(id.clone()).collect(),
         vertices: DistinctMembers::default(),
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
         edge_geometry: vec![sample.clone()],
         native_ref: None,
     };

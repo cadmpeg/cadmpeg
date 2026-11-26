@@ -609,6 +609,10 @@ impl AsmHistoricalTransition {
                     &old_topology.edge_samples,
                     &new.edge_samples,
                 )?,
+                face_samples: AsmHistoricalRowDelta::between(
+                    &old_topology.face_samples,
+                    &new.face_samples,
+                )?,
             },
         })
     }
@@ -776,6 +780,9 @@ impl AsmHistoricalTransition {
         self.rows
             .edge_samples
             .apply_inner(&mut topology.edge_samples, trusted_sorted)?;
+        self.rows
+            .face_samples
+            .apply_inner(&mut topology.face_samples, trusted_sorted)?;
         let tags = &self.rows.persistent_subentity_tags;
         if !tags.is_empty() {
             if tags.set.iter().any(|group| {
@@ -1051,6 +1058,7 @@ impl AsmHistoricalRowsDelta {
         self.vertex_points = AsmHistoricalRowDelta::default();
         self.point_positions = AsmHistoricalRowDelta::default();
         self.edge_samples = AsmHistoricalRowDelta::default();
+        self.face_samples = AsmHistoricalRowDelta::default();
     }
 }
 
@@ -1164,6 +1172,7 @@ fn reserve_topology_prefix(
     reserve_rows!(coedge_pcurves);
     reserve_rows!(point_positions);
     reserve_rows!(edge_samples);
+    reserve_rows!(face_samples);
 }
 
 impl AsmHistory {
