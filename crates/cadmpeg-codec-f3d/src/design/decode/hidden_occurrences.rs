@@ -164,8 +164,9 @@ fn occurrence_path(body: &[u8], occurrences: &BTreeSet<u32>) -> Option<Vec<u32>>
 /// Mark each occurrence that a hidden-occurrence record names. An occurrence
 /// is hidden when it instantiates the record's target carrier, a local
 /// occurrence carrier or the placement carrier of an external reference, and,
-/// for each admitted ancestor the record names, one of its containing occurrences
-/// instantiates that ancestor carrier.
+/// for each ancestor the record names, one of its containing occurrences
+/// instantiates that ancestor carrier. A record with an ancestor that has no
+/// admitted occurrence applies to nothing.
 /// `parents` names the occurrence each nested occurrence sits in.
 /// Return the number of paths that retain unbound carriers.
 pub(crate) fn apply_hidden_occurrences(
@@ -236,7 +237,6 @@ pub(crate) fn apply_hidden_occurrences(
             .chain(roots.get(&occurrence.id).into_iter().flatten().copied())
             .collect::<Vec<_>>()
     };
-    let admitted: BTreeSet<(&str, u32)> = occurrences.iter().flat_map(carrier_of).collect();
     let parents: HashMap<cadmpeg_ir::ids::OccurrenceId, usize> = occurrences
         .iter()
         .enumerate()
@@ -269,16 +269,9 @@ pub(crate) fn apply_hidden_occurrences(
                 && entry
                     .ancestors
                     .iter()
-                    .filter(|ancestor| admitted.contains(&(entry.stream.as_str(), **ancestor)))
                     .all(|ancestor| ancestors.contains(&(entry.stream.as_str(), *ancestor)))
             {
-                if entry
-                    .ancestors
-                    .iter()
-                    .all(|ancestor| admitted.contains(&(entry.stream.as_str(), *ancestor)))
-                {
-                    bound.insert(index);
-                }
+                bound.insert(index);
                 named = true;
             }
         }
