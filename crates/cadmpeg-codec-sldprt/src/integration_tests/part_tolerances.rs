@@ -4,7 +4,11 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::CadIr;
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::{
@@ -74,4 +78,63 @@ fn a_negative_stored_resolution_is_not_a_tolerance() {
         "{linear}"
     );
     assert!((angular - MODELLER_ANGULAR_RADIANS).abs() <= COMPARISON_SLACK);
+}
+
+/// The losses of a write of `ir` without a source, and the linear tolerance
+/// of the written part read back.
+fn written_linear_tolerance(ir: &CadIr) -> (Vec<LossNote>, f64) {
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .expect("part plans");
+    let losses = plan.report().losses.clone();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("part writes");
+    let read_back = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written part decodes");
+    (losses, read_back.ir().tolerances.linear.get())
+}
+
+/// Whether `losses` charge the linear tolerance as a value the write cannot hold.
+fn charges_linear_tolerance(losses: &[LossNote]) -> bool {
+    losses.iter().any(|loss| {
+        loss.code.local_code() == "value.unwritable" && loss.message.contains("tolerances.linear")
+    })
+}
+
+#[test]
+fn a_written_part_keeps_the_resolution_its_bodies_store() {
+    let mut body = owned_triangle_with_resolution(0, 700, 0.0, 1.0e-7);
+    body.extend(owned_triangle_with_resolution(200, 701, 2.0, 1.0e-8));
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic part decodes");
+    let mut ir = decoded.into_parts().0;
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert!((ir.tolerances.linear.get() - 1.0e-4).abs() <= COMPARISON_SLACK);
+    // The writer refuses a body or face name without a material.
+    for body in &mut ir.geometry.bodies {
+        body.name = None;
+    }
+    for face in &mut ir.geometry.faces {
+        face.name = None;
+    }
+    let (losses, linear) = written_linear_tolerance(&ir);
+    assert!((linear - 1.0e-4).abs() <= COMPARISON_SLACK, "{linear}");
+    assert!(!charges_linear_tolerance(&losses), "{losses:?}");
+}
+
+#[test]
+fn a_linear_tolerance_no_body_holds_writes_the_modeller_default() {
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.tolerances.linear = PositiveLength::new(100.0).expect("positive length");
+    let (losses, linear) = written_linear_tolerance(&ir);
+    assert!(charges_linear_tolerance(&losses), "{losses:?}");
+    assert!(
+        (linear - MODELLER_DEFAULT_LINEAR_MM).abs() <= COMPARISON_SLACK,
+        "{linear}"
+    );
 }

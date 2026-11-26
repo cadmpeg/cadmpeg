@@ -51,7 +51,10 @@ use crate::SourceRecord;
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+/// The modeller default `res_linear` (metres), written where a BODY cannot
+/// hold the document's linear tolerance.
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
+const MILLIMETRES_PER_METRE: f64 = cadmpeg_ir::scalar::Magnification::MILLIMETERS_PER_METER.get();
 
 pub(crate) const SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_swobjects_local_sha256";
 pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
@@ -418,6 +421,14 @@ pub(crate) fn write_semantic_with_records_cached(
         })?;
         losses.extend(encoded.losses);
         let written = encoded.reduced.as_ref().unwrap_or(ir);
+        if !written.geometry.bodies.is_empty() && body_linear_resolution(written).is_none() {
+            losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+                "SLDPRT",
+                "writes the modeller default `res_linear`, 1e-8 m, in each BODY, which holds \
+                 a linear resolution from 1e-15 m to 1e-2 m",
+                ["tolerances.linear"],
+            ));
+        }
         losses.extend(reduce::cache_tolerances_omitted(written));
         losses.extend(reduce::unchained_face_loops(written));
         encodable = encoded.reduced;
@@ -4329,6 +4340,13 @@ fn write_body_hierarchy(
     Ok(())
 }
 
+/// The `res_linear` (metres) each written BODY stores: the document's linear
+/// tolerance, when a BODY holds it.
+fn body_linear_resolution(ir: &CadIr) -> Option<f64> {
+    let metres = ir.tolerances.linear.get() / MILLIMETRES_PER_METRE;
+    crate::brep::typed::holds_linear_resolution(metres).then_some(metres)
+}
+
 /// Write the typed XT ownership graph used by the decoder for body membership.
 ///
 /// The compact topology records use the same transmit attributes as the
@@ -4362,6 +4380,7 @@ fn write_typed_body_hierarchy(
             face_shells.insert(face.id.clone(), *shell_attr);
         }
     }
+    let linear_resolution = body_linear_resolution(ir).unwrap_or(TYPED_BODY_LINEAR_RESOLUTION);
 
     for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
@@ -4391,7 +4410,7 @@ fn write_typed_body_hierarchy(
             pointer(out, value)?;
         }
         bef64(out, 1000.0);
-        bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
+        bef64(out, linear_resolution);
         for value in [1_u32, 1, 1] {
             pointer(out, value)?;
         }
