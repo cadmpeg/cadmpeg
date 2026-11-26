@@ -206,8 +206,14 @@ fn stored_history_widening_cost() {
                 times.push(started.elapsed().as_secs_f64() * 1e3);
                 assert!(!losses.is_empty());
             }
+            let ir = history(bodies, evaluations);
+            let started = Instant::now();
+            let index = crate::index::ModelIndex::build(&ir);
+            crate::index::identities::IdentitySet::contains(&index, "");
+            let index = started.elapsed().as_secs_f64() * 1e3;
             eprintln!(
-                "bodies {bodies:>3} evaluations {evaluations:>3}: region {:>9.1} ms, whole {:>9.1} ms",
+                "bodies {bodies:>3} evaluations {evaluations:>3}: region {:>9.1} ms, whole {:>9.1} \
+                 ms, of which the model index {index:>7.1} ms",
                 times[0], times[1]
             );
         }

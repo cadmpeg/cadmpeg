@@ -610,6 +610,7 @@ pub(crate) fn visit_resolved_states(
     visit_states(
         ctx,
         &design,
+        &ModelIndex::build(ir),
         |state| setup_of_state(&records, state).and_then(|setup| records.scope_of_setup(setup)),
         visit,
     )
