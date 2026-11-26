@@ -26,7 +26,7 @@ use crate::report::{
 };
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::decode::{
-    Companions, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimit,
+    Companions, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, LimitScope, ResourceLimit,
     ResourceLimits,
 };
 use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
@@ -549,11 +549,16 @@ pub enum EncodeError {
 
 impl EncodeError {
     /// A planning failure. Planning writes into memory and touches no
-    /// destination, so an I/O failure it meets is no [`Self::Io`].
+    /// destination, so an I/O failure it meets is no [`Self::Io`]. A write
+    /// gives up no part, so each of its resource refusals has
+    /// [`LimitScope::Session`] (§2.5).
     fn from_backend(error: CodecError) -> Self {
         match error {
             CodecError::UnsupportedTarget(refusal) => Self::UnsupportedTarget(refusal),
-            CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+            CodecError::ResourceLimit(limit) => Self::ResourceLimit(ResourceLimit {
+                scope: LimitScope::Session,
+                ..limit
+            }),
             error => Self::Backend(error),
         }
     }

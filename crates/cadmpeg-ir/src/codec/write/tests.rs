@@ -1466,6 +1466,50 @@ fn a_writer_plans_under_the_callers_session_ceilings() {
     assert_eq!(encoder.0.get(), Some(limits));
 }
 
+/// A writer that enters one nesting level.
+struct NestingEncoder;
+
+impl EncoderBackend for NestingEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        let _level = ctx.enter_nested("test nesting")?;
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+        ))
+    }
+}
+
+/// The depth ceiling bounds one part of a decode, but a write gives up no
+/// part: its refusal has session scope (§2.5).
+#[test]
+fn a_write_refusal_has_session_scope() {
+    let ir = CadIr::empty();
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_recursion_depth = 0;
+    let Err(EncodeError::ResourceLimit(limit)) =
+        NestingEncoder.plan(EncodeInput::new(&ir, None).with_limits(limits))
+    else {
+        panic!("the depth ceiling refuses the write");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    assert_eq!(limit.scope, cadmpeg_core::decode::LimitScope::Session);
+}
+
 /// A writer with a patch path: it patches where `patch` holds and
 /// otherwise synthesizes, stating `cause` where it is given one.
 struct ReusingEncoder {
