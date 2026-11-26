@@ -171,6 +171,13 @@ jobs:
           set -euo pipefail
           python3 scripts/check-codec-facade.py
 
+      - name: Validation rule names
+        # Every validation finding states its rule (rule!/rule_name!), and
+        # every rule an admission route lists is stated by a finding.
+        run: |
+          set -euo pipefail
+          python3 scripts/name-validation-rules.py --check
+
       - name: Dialect identity registry
         # Schema, id grammar, witness form, and the IGES admission lattice in
         # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
@@ -223,9 +230,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -236,6 +240,9 @@ jobs:
           shared-key: clippy
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Format check
         run: cargo fmt --all --check
@@ -269,19 +276,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
-      - name: Limit broad test builds
-        # A one-codec build peaks near 10 GB at four jobs. Broader builds
-        # swap at three or four jobs on the 16 GB runner, so they keep two.
-        shell: bash
-        run: |
-          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
-          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-          fi
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -295,6 +289,19 @@ jobs:
           shared-key: stable
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Limit broad test builds
+        # A one-codec build peaks near 10 GB at four jobs. Broader builds
+        # swap at three or four jobs on the 16 GB runner, so they keep two.
+        shell: bash
+        run: |
+          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
+          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
+            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+          fi
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.90.5
@@ -361,9 +368,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -375,15 +379,19 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
         # No other build compiles the JsonSchema derives. This gate runs the
         # schema tests, which compare the committed crates/cadmpeg-ir/schema
-        # files with the derives, and checks the core/assembly feature
-        # combinations.
+        # files with the derives (their text, in declared property order, under
+        # `schema-order`), and checks the core/assembly feature combinations.
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
+          cargo test -q -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
@@ -425,15 +433,15 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: fuzz
           workspaces: crates/cadmpeg-fuzz -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Fuzz targets compile
         run: python3 scripts/ci_fuzz.py
@@ -476,9 +484,6 @@ jobs:
         with:
           toolchain: "1.88"
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -488,6 +493,9 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Check
         run: python3 scripts/ci_cargo.py check
@@ -505,9 +513,9 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
-    # macos-latest is sometimes a 5-core runner and sometimes a 3-core one.
-    # On 5 cores the full test build took 18 minutes and the tests 6. On 3
-    # cores the build was still compiling at 60 minutes, and Windows took 57.
+    # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
+    # 3-core runner the test build takes about 50 minutes when it stays in
+    # memory, and the tests about 20; on the 5-core runner, 13 and 9.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -523,9 +531,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -535,14 +540,51 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The cache holds the dependencies. A main run whose tests fail
+          # still saves them.
+          cache-on-failure: true
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-nextest
 
+      # Each step's timeout ends it before the job's, so the job fails rather
+      # than being cancelled, and the report and cache steps run.
+      - name: Build tests
+        timeout-minutes: 75
+        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
+
       - name: Unit and integration tests
+        timeout-minutes: 40
         run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+
+      # A step timeout stops only the step's shell: cargo, rustc and the test
+      # binaries keep running. Name them, then stop them before the cache step.
+      - name: Report swap and unfinished work
+        if: ${{ always() && runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          sysctl vm.swapusage
+          ps -axo etime=,rss=,args= | awk '
+            $3 ~ /(^|\/)rustc$/ {
+              name = "?"
+              for (i = 4; i < NF; i++) if ($i == "--crate-name") name = $(i + 1)
+              kind = / --test( |$)/ ? "tests" : "lib"
+              printf "still compiling %s (%s) after %s, %d MiB\n", name, kind, $1, $2 / 1024
+            }
+            $3 ~ /\/target\/debug\/deps\// {
+              args = $0
+              sub(/^ *[^ ]+ +[^ ]+ +/, "", args)
+              printf "still running %s after %s, %d MiB\n", substr(args, 1, 300), $1, $2 / 1024
+            }'
+          pkill -x cargo-nextest || true
+          pkill -x cargo || true
+          pkill -x rustc || true
+          pkill -f '/target/debug/deps/' || true
 
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:

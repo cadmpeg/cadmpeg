@@ -417,17 +417,12 @@ fn native_patch_requires_point_provenance_annotation() {
         .provenance
         .remove(&point_id);
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("requires provenance annotation") && message.contains(&point_id)
-    ));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        error.contains("requires provenance annotation") && error.contains(&point_id),
+        "{error}"
+    );
 }
 
 #[test]
@@ -868,19 +863,10 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .expect("the source image record was removed first");
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(
-            &error,
-            cadmpeg_core::CodecError::Malformed(message)
-                if message.contains("states body offset")
-                    && message.contains("past its")
-        ),
+        error.contains("states body offset") && error.contains("past its"),
         "the write must state the baseline decode's cause, not report no patch: {error}"
     );
 }

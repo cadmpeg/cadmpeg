@@ -1170,6 +1170,33 @@ fn admission_preserves_a_valid_nest_and_its_producer() {
     );
 }
 
+/// A finding outside the topology checks does not drop a usable nest: its
+/// records out of identity order are an `ArenaOrder` Error of the document,
+/// and the nest is admitted.
+#[test]
+fn admission_ignores_findings_outside_the_topology_checks() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut candidate = cube_candidate();
+    candidate.topology.faces.reverse();
+    let mut document = CadIr::empty();
+    document.model.features.push(feature("base"));
+    document.model.history_bodies.push(candidate.clone());
+    let report = cadmpeg_ir::validate_neutral(&document, Vec::new()).expect("validation runs");
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::ArenaOrder
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+        }),
+        "{:?}",
+        report.findings
+    );
+    let expected = candidate.clone();
+    assert_eq!(
+        admit(&ctx, candidate, &feature("base")).expect("admission"),
+        Some(expected)
+    );
+}
+
 #[test]
 fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();

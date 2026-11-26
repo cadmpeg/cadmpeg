@@ -142,7 +142,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
+                    derived_fields.extend(["geometry.value.normal", "geometry.value.u_axis"]);
                 }
                 "cone"
                     if matches!(
@@ -152,7 +152,7 @@ pub(super) fn emit_annotation_records(
                         ))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "sphere"
                     if matches!(
@@ -160,7 +160,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "torus"
                     if matches!(
@@ -168,7 +168,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "straight"
                     if matches!(
@@ -176,14 +176,16 @@ pub(super) fn emit_annotation_records(
                         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
                     ) =>
                 {
-                    derived_fields.push("geometry.direction");
+                    derived_fields.push("geometry.value.direction");
                 }
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
-                        derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                        derived_fields
+                            .extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                     }
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
-                        derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
+                        derived_fields
+                            .extend(["geometry.value.axis", "geometry.value.major_direction"]);
                     }
                     _ => {}
                 },

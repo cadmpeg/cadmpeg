@@ -43,20 +43,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -71,7 +64,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -80,14 +72,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -182,8 +167,7 @@
           "value": {
             "code": "geometry.document-length-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
@@ -195,8 +179,7 @@
           "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",

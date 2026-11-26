@@ -343,7 +343,10 @@ fn fixed_distance_and_through_all_project_on_opposite_sides() {
         second.termination,
         LinearTermination::ThroughAll {}
     ));
-    let wire = serde_json::to_string(&DesignExtrudeExtent::TwoSidedDistanceThroughAll).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_string(
+        &DesignExtrudeExtent::TwoSidedDistanceThroughAll,
+    )
+    .unwrap();
     assert_eq!(wire, "\"two_sided_distance_through_all\"");
     assert_eq!(
         serde_json::from_str::<DesignExtrudeExtent>(&wire).unwrap(),

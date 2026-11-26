@@ -364,7 +364,6 @@ fn every_printed_expression_reads_back() {
                 assert!(holds_a_call_with_no_argument(&node), "{node:?}: {error}");
                 refused += 1;
             }
-            Err(error) => panic!("{node:?}: {error}"),
         }
     }
     assert!(
@@ -385,7 +384,7 @@ fn a_call_with_no_argument_is_refused_by_the_printer() {
         expr::print(&call),
         Err(expr::ExprError::Malformed(error)) if error.contains("no argument")
     ));
-    assert!(serde_json::to_string(&Neutral(call)).is_err());
+    assert!(cadmpeg_core::serde_erase::json::to_string(&Neutral(call)).is_err());
     assert!(read("sign()").is_err());
 }
 

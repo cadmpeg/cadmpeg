@@ -17,7 +17,8 @@ pub fn field<T: DeserializeOwned>(value: &impl Serialize, key: &str) -> T {
         || panic!("tested value has no field {key}"),
         serde_json::Value::take,
     );
-    serde_json::from_value(field).unwrap_or_else(|error| panic!("field {key}: {error}"))
+    cadmpeg_core::serde_erase::json::from_value(field)
+        .unwrap_or_else(|error| panic!("field {key}: {error}"))
 }
 
 /// Read a field whose wire contract omits the default value.
@@ -31,7 +32,8 @@ pub fn field_or_default<T: DeserializeOwned + Default>(value: &impl Serialize, k
     wire.pointer_mut(&format!("/{key}"))
         .map(serde_json::Value::take)
         .map_or_else(T::default, |field| {
-            serde_json::from_value(field).unwrap_or_else(|error| panic!("field {key}: {error}"))
+            cadmpeg_core::serde_erase::json::from_value(field)
+                .unwrap_or_else(|error| panic!("field {key}: {error}"))
         })
 }
 
@@ -50,7 +52,7 @@ pub fn coverage_count(report: &impl Serialize, key: &str) -> usize {
 ///
 /// Panics if serialization or decoding the expected type fails.
 pub fn value<T: DeserializeOwned>(value: &impl Serialize) -> T {
-    serde_json::from_value(
+    cadmpeg_core::serde_erase::json::from_value(
         cadmpeg_ir::hash::finite_json::to_json_value(value).expect("serialize tested value"),
     )
     .expect("decode tested wire value")
@@ -63,4 +65,27 @@ pub fn value<T: DeserializeOwned>(value: &impl Serialize) -> T {
 /// Panics if the report cannot be serialized or coverage has the wrong type.
 pub fn coverage(report: &impl Serialize) -> std::collections::BTreeMap<String, usize> {
     field_or_default(report, "coverage")
+}
+
+/// The JSON form of `ir` with the arenas the CADIR wire omits restated under
+/// `model`, as the document holds them in memory.
+///
+/// # Panics
+///
+/// Panics if serialization fails.
+pub fn in_memory_json(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(ir).expect("serialize tested document");
+    let serde_json::Value::Object(omitted) = ir
+        .model
+        .omitted_arenas_value()
+        .expect("serialize the omitted arenas")
+    else {
+        panic!("the omitted arenas serialize as an object");
+    };
+    value["model"]
+        .as_object_mut()
+        .expect("the document states its model")
+        .extend(omitted);
+    value
 }

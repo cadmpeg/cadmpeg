@@ -30,7 +30,7 @@ pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
 
     // The stored text is the record's only retained charge, so a ceiling one
     // byte below its length refuses the record.
-    let text = serde_json::to_string(&stored.arenas()[arena_name][0]).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(&stored.arenas()[arena_name][0]).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(text.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -53,7 +53,7 @@ pub(crate) trait TestEncode {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError>;
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>;
 }
 
 impl TestEncode for F3dCodec {
@@ -61,7 +61,8 @@ impl TestEncode for F3dCodec {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError> {
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>
+    {
         self.plan(
             cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
             TargetRequest::Inherit,
@@ -128,13 +129,17 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     record: T,
     alternatives: &[&str],
 ) {
-    let wire = serde_json::to_value(record).unwrap();
-    let restored: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+    let wire = cadmpeg_core::serde_erase::json::to_value(record).unwrap();
+    let restored: T = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(restored).unwrap(),
+        wire
+    );
     for id in alternatives {
         let mut invalid = wire.clone();
         invalid["id"] = serde_json::json!(id);
-        let error = serde_json::from_value::<T>(invalid).expect_err("invalid id");
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<T>(invalid).expect_err("invalid id");
         assert!(error.to_string().contains("id"), "{error}");
     }
 }

@@ -17,9 +17,33 @@
     "angular": 1e-10
   },
   "geometry": {
-    "bodies": [],
-    "regions": [],
-    "shells": [],
+    "bodies": [
+      {
+        "id": "synthetic:v2:body#directed",
+        "kind": "sheet"
+      }
+    ],
+    "regions": [
+      {
+        "id": "synthetic:v2:region#directed",
+        "body": "synthetic:v2:body#directed",
+        "shells": [
+          "synthetic:v2:shell#directed"
+        ]
+      }
+    ],
+    "shells": [
+      {
+        "id": "synthetic:v2:shell#directed",
+        "region": "synthetic:v2:region#directed",
+        "members": [
+          {
+            "kind": "subd",
+            "id": "synthetic:v2:subd#directed"
+          }
+        ]
+      }
+    ],
     "faces": [],
     "loops": [],
     "coedges": [],
@@ -231,21 +255,8 @@
   },
   "model": {
     "assets": [],
-    "features": [],
-    "feature_input_topologies": [],
-    "feature_result_topologies": [],
-    "configurations": [],
-    "parameters": [],
-    "sketches": [],
-    "sketch_entities": [],
-    "sketch_constraints": [],
-    "spatial_sketches": [],
-    "spatial_sketch_entities": [],
-    "spatial_sketch_constraints": [],
-    "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
-    "assembly_joints": [],
     "drawings": [],
     "semantic_annotations": [],
     "presentation_documents": [],
@@ -264,8 +275,7 @@
     "physics_scenes": [],
     "solver_settings": [],
     "declared_measures": [],
-    "point_clouds": [],
-    "history_bodies": []
+    "point_clouds": []
   },
   "design": {
     "scopes": [],

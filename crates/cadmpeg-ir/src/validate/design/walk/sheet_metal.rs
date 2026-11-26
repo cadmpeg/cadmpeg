@@ -4,28 +4,15 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::sheet_metal::{
-    AngleRange, BendAllowance, BendEquations, BendSet, BendSpec, BendTable, BendTableLookup,
-    ConnectBetween, Convert, ConvertBend, ConvertFrom, ConvertRip, Flange, FlangeHeight,
-    FlangeWidth, Hem, HemForm, KFactorRow, KFactorTable, OutsideGrid, Relief, Rip, RipPath,
-    RipWidth, SheetMetal, SheetMetalKind, SheetMetalRule, StampForm, StampOutline, VertexBend,
+    AngleRange, BendAllowance, BendEquations, BendQuantity, BendSet, BendSpec, BendTable,
+    BendTableLookup, ConnectBetween, Convert, ConvertBend, ConvertFrom, ConvertRip, Flange,
+    FlangeHeight, FlangeWidth, Hem, HemForm, KFactorRow, KFactorTable, OutsideGrid, Relief, Rip,
+    RipPath, RipWidth, SheetMetal, SheetMetalKind, SheetMetalRule, StampForm, StampOutline,
+    VertexBend,
 };
 
 use super::{Collect, Walk};
-
-impl Walk for AngleRange {
-    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self {
-            from: _,
-            from_inclusive: _,
-            to: _,
-            to_inclusive: _,
-            value,
-        } = self;
-        into.push_expression(super::ExpressionPlace::BendAllowance, value);
-        value.walk(into)?;
-        Ok(())
-    }
-}
+use crate::design::units::Quantity;
 
 impl Walk for BendAllowance {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
@@ -41,11 +28,28 @@ impl Walk for BendAllowance {
 impl Walk for BendEquations {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
-            yields: _,
+            yields,
             angle: _,
             ranges,
         } = self;
-        ranges.walk(into)?;
+        let quantity = match yields {
+            BendQuantity::Compensation { .. }
+            | BendQuantity::Deduction { .. }
+            | BendQuantity::Allowance => Some(Quantity::LENGTH),
+            BendQuantity::KFactor => Some(Quantity::REAL),
+            BendQuantity::Native(_) => None,
+        };
+        for range in ranges {
+            let AngleRange {
+                from: _,
+                from_inclusive: _,
+                to: _,
+                to_inclusive: _,
+                value,
+            } = range;
+            into.push_expression(super::ExpressionPlace::BendAllowance(quantity), value);
+            value.walk(into)?;
+        }
         Ok(())
     }
 }

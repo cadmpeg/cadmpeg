@@ -115,7 +115,10 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
             )?;
         }
         let properties = view.req_u32_le()?;
-        require(properties == 6, "unsupported reference property count")?;
+        require(
+            matches!(properties, 5 | 6),
+            "unsupported reference property count",
+        )?;
         let mut values = BTreeMap::new();
         for _ in 0..properties {
             let key = text(&mut view)?;
@@ -145,10 +148,16 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
             crate::bytes::is_guid_hyphenated(asset),
             "invalid linked asset GUID",
         )?;
-        require(
-            field("linkClassification")? == "OriginalDesign",
-            "unsupported reference classification",
-        )?;
+        match values.get("linkClassification") {
+            Some(classification) => require(
+                properties == 6 && classification == "OriginalDesign",
+                "unsupported reference classification",
+            )?,
+            None => require(
+                properties == 5,
+                "reference extension lacks linkClassification",
+            )?,
+        }
         let _display_name = field("toDocDisplayName")?;
         let document = ExternalDocument {
             document_id: NonBlankString::new(lineage.clone()),

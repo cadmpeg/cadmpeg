@@ -2677,11 +2677,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .derived(&pcurve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(&pcurve_id, "parameter_range")
+            .derived(&pcurve_id, "metadata.form.parameter_range")
             .map_err(cadmpeg_core::CodecError::from)?;
         if metadata.fit_tolerance().is_some() {
             annotations
-                .derived(&pcurve_id, "fit_tolerance")
+                .derived(&pcurve_id, "metadata.form.fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
@@ -3148,7 +3148,7 @@ mod tests {
             ));
         }
         ir.finalize();
-        let before = serde_json::to_value(&ir).expect("model serialization");
+        let before = cadmpeg_core::serde_erase::json::to_value(&ir).expect("model serialization");
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
@@ -3180,7 +3180,7 @@ mod tests {
             assert!(ctx.resource_refusal().is_none());
         });
         assert_eq!(
-            serde_json::to_value(&ir).expect("model serialization"),
+            cadmpeg_core::serde_erase::json::to_value(&ir).expect("model serialization"),
             before
         );
     }

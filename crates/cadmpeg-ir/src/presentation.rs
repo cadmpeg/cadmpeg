@@ -461,25 +461,27 @@ mod tests {
     fn a_named_optional_key_states_a_value_or_is_left_out() {
         use super::ViewPresentation;
 
-        let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
-            "id": "freecad:presentation:view#1",
-            "order": 0,
-            "properties": {},
-            "line_width": null
-        }))
-        .expect_err("null is not a spelling of an absent line width");
+        let refusal =
+            cadmpeg_core::serde_erase::json::from_value::<ViewPresentation>(serde_json::json!({
+                "id": "freecad:presentation:view#1",
+                "order": 0,
+                "properties": {},
+                "line_width": null
+            }))
+            .expect_err("null is not a spelling of an absent line width");
         let text = refusal.to_string();
         assert!(
             text.contains("line_width")
                 && text.contains("this key states a value or is left out; it does not state null"),
             "{text}"
         );
-        let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
-            "id": "freecad:presentation:view#1",
-            "order": 0,
-            "properties": {}
-        }))
-        .expect("an absent optional key reads as none");
+        let absent =
+            cadmpeg_core::serde_erase::json::from_value::<ViewPresentation>(serde_json::json!({
+                "id": "freecad:presentation:view#1",
+                "order": 0,
+                "properties": {}
+            }))
+            .expect("an absent optional key reads as none");
         assert!(absent.line_width.is_none());
     }
 
@@ -504,7 +506,7 @@ mod tests {
         ];
         let mut states = Vec::new();
         for (order, kind) in kinds.into_iter().enumerate() {
-            let json = serde_json::to_string(&kind).unwrap();
+            let json = cadmpeg_core::serde_erase::json::to_string(&kind).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationStateKind>(&json).unwrap(),
                 kind
@@ -515,7 +517,7 @@ mod tests {
                 attributes: BTreeMap::new(),
                 assets: Vec::new(),
             };
-            let json = serde_json::to_string(&state).unwrap();
+            let json = cadmpeg_core::serde_erase::json::to_string(&state).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationState>(&json).unwrap(),
                 state
@@ -526,7 +528,7 @@ mod tests {
             PresentationId::mint("synthetic:test:presentation#presentation").unwrap(),
         );
         document.set_states(states).expect("distinct orders");
-        let json = serde_json::to_string(&document).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(&document).unwrap();
         assert_eq!(
             serde_json::from_str::<PresentationDocument>(&json).unwrap(),
             document
@@ -560,6 +562,7 @@ mod tests {
             native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -581,6 +584,7 @@ mod tests {
             native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -675,17 +679,83 @@ mod tests {
     }
 
     #[test]
+    fn layer_parents_form_no_cycle() {
+        let on_cycle = |ir: &CadIr| {
+            let mut layers: Vec<String> = validate_neutral(ir, Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .into_iter()
+                .filter(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.message
+                            == "presentation layer is its own ancestor through `parent`"
+                })
+                .filter_map(|finding| finding.entity)
+                .collect();
+            layers.sort_unstable();
+            layers
+        };
+        let mut ir = CadIr::empty();
+        ir.model.presentation_layers = vec![
+            layer("a", Some("c"), None),
+            layer("b", Some("a"), None),
+            layer("c", Some("b"), None),
+            layer("d", Some("a"), None),
+        ];
+        assert_eq!(
+            on_cycle(&ir),
+            [
+                "test:presentation:layer#a",
+                "test:presentation:layer#b",
+                "test:presentation:layer#c",
+            ]
+        );
+        ir.model.presentation_layers[0].parent = None;
+        assert!(on_cycle(&ir).is_empty());
+        ir.model.presentation_layers[3].parent =
+            Some(LayerId::mint("test:presentation:layer#d".to_owned()).unwrap());
+        assert_eq!(on_cycle(&ir), ["test:presentation:layer#d"]);
+    }
+
+    #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
         let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
         let value: PresentationItem =
-            serde_json::from_value(wire.clone()).expect("nonempty source_id");
-        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
-        let error = serde_json::from_value::<PresentationItem>(
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(value).expect("serialize"),
+            wire
+        );
+        let error = cadmpeg_core::serde_erase::json::from_value::<PresentationItem>(
             serde_json::json!({"kind": "source", "source_id": ""}),
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+    }
+
+    #[test]
+    fn documents_and_view_orders_may_repeat_across_sources() {
+        let mut ir = CadIr::empty();
+        for key in ["assembly", "part"] {
+            ir.model
+                .presentation_documents
+                .push(PresentationDocument::new(
+                    PresentationId::mint(format!("test:presentation:document#{key}"))
+                        .expect("valid identity"),
+                ));
+            ir.model.view_presentations.push(
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                    "id": format!("test:presentation:view#{key}"),
+                    "order": 1,
+                    "properties": {}
+                }))
+                .expect("valid wire"),
+            );
+        }
+        crate::examples::add_document_root(&mut ir);
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        assert!(report.is_ok(), "{:?}", report.findings);
     }
 
     #[test]
@@ -706,17 +776,18 @@ mod tests {
             .set_states(states.clone())
             .expect("distinct orders");
         assert_eq!(document.states(), states);
-        let wire = serde_json::to_value(&document).expect("serialize");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&document).expect("serialize");
         assert_eq!(
-            serde_json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
+            cadmpeg_core::serde_erase::json::from_value::<PresentationDocument>(wire.clone())
+                .expect("valid wire"),
             document
         );
         assert!(document.set_states(vec![state(2), state(2)]).is_err());
         assert_eq!(document.states(), states);
         let mut repeated = wire;
-        repeated["states"] =
-            serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
-        let read = serde_json::from_value::<PresentationDocument>(repeated)
+        repeated["states"] = cadmpeg_core::serde_erase::json::to_value(vec![state(2), state(2)])
+            .expect("serialize states");
+        let read = cadmpeg_core::serde_erase::json::from_value::<PresentationDocument>(repeated)
             .expect("reading admits a repeated state order (§2.8)");
         assert_eq!(read.states(), [state(2), state(2)]);
         document.set_states(Vec::new()).expect("empty states");

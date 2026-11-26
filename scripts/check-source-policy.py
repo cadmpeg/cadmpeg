@@ -73,7 +73,9 @@ FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
-LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
+LOSS_NOTE_RETURN = re.compile(
+    r"->\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?)?" + LOSS_NOTE_PATH + r"\s*\{"
+)
 LOSS_NOTE_STRUCT = re.compile(r"\bstruct\s+(?:r#)?(?P<name>LossNote)\s*\{")
 LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+" + LOSS_NOTE_PATH + r"\s*\{")
 LOSS_NOTE_TRAIT_IMPL = re.compile(r"\bfor\s+" + LOSS_NOTE_PATH + r"\s*\{")

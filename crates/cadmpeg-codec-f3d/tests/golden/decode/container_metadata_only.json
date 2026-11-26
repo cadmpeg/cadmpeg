@@ -73,18 +73,6 @@
     },
     "model": {
       "assets": [],
-      "features": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -96,12 +84,10 @@
           "bodies": [],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -120,8 +106,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],
@@ -295,8 +280,7 @@
           "value": {
             "namespace": "f3d",
             "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "strict_floor": "warning"
+            "kind": "geometry_not_transferred"
           }
         },
         "severity": "blocking",
@@ -308,8 +292,7 @@
           "value": {
             "namespace": "f3d",
             "code": "topology.not-transferred",
-            "kind": "topology_not_transferred",
-            "strict_floor": "warning"
+            "kind": "topology_not_transferred"
           }
         },
         "severity": "blocking",

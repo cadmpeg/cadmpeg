@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{archive, id, part_bodies, part_studio_bodies, topology, Model};
+use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
@@ -119,28 +119,28 @@ fn two_part_studio(x: f64) -> Model {
         &mut report,
     )
     .unwrap();
-    let mut wire = serde_json::to_value(&model.ir).unwrap();
-    let body = wire["geometry"]["bodies"][0]["id"].clone();
+    let mut ir = model.ir.clone();
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
     // As in a Part Studio's export, the part's name is on its product, not its body.
-    wire["geometry"]["bodies"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("name");
-    wire["model"]["product_definitions"] = json!([
-        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
-        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
-    ]);
+    ir.geometry.bodies[0].name = None;
+    ir.model.product_definitions = cadmpeg_core::serde_erase::json::from_value(json!([
+        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
+        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
+    ]))
+    .unwrap();
     let placed = |key: u32, definition: &str, x: f64| {
         json!({"id": format!("synthetic:test:occurrence#{key}"),
             "prototype": format!("synthetic:test:component#{definition}"),
             "overrides": [],
             "transform": [[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]})
     };
-    wire["model"]["occurrences"] = json!([placed(0, "first", 0.0), placed(1, "second", x)]);
-    Model {
-        ir: cadmpeg_ir::CadIr::from_json(&wire.to_string()).unwrap(),
-        ..model
-    }
+    ir.model.occurrences = cadmpeg_core::serde_erase::json::from_value(json!([
+        placed(0, "first", 0.0),
+        placed(1, "second", x)
+    ]))
+    .unwrap();
+    ir.finalize();
+    Model { ir, ..model }
 }
 
 #[test]
@@ -156,6 +156,117 @@ fn part_studio_parts_are_one_design_but_moved_parts_stay_placed() {
     part_studio_bodies(&mut moved);
     assert_eq!(moved.ir.model.occurrences.len(), 2);
     assert!(!moved.ir.model.occurrences.is_empty());
+}
+
+#[test]
+fn a_part_label_names_the_part_body_over_its_solid_name() {
+    let mut model = two_part_studio(0.0);
+    model.ir.geometry.bodies[0].name = Some("Body1".to_owned());
+    part_studio_bodies(&mut model);
+    assert_eq!(model.ir.geometry.bodies[0].name.as_deref(), Some("Part 1"));
+}
+
+/// The two-product studio with both placements owned by one root file product.
+fn rooted_two_part_studio() -> Model {
+    let model = two_part_studio(0.0);
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&model.ir).unwrap();
+    wire["model"]["product_definitions"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id":"synthetic:test:component#whole", "storage":{"kind":"file", "document":{}},
+            "bodies":[], "bom_properties":{},
+            "occurrences":["synthetic:test:occurrence#0", "synthetic:test:occurrence#1"],
+            "instance_bodies":[], "representations":[]
+        }));
+    Model {
+        ir: cadmpeg_ir::CadIr::from_json(&wire.to_string()).unwrap(),
+        ..model
+    }
+}
+
+#[test]
+fn part_studio_flattening_flattens_a_rooted_studio_in_the_unmodified_state() {
+    let mut model = rooted_two_part_studio();
+    part_studio_bodies(&mut model);
+    assert!(model.ir.model.occurrences.is_empty());
+    assert!(model.ir.model.product_definitions[2].occurrences.is_empty());
+}
+
+#[test]
+fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
+    for state in [
+        "override",
+        "suppressed",
+        "unstated-placement",
+        "hidden",
+        "representation",
+        "nested",
+        "shared",
+        "external",
+    ] {
+        let mut model = rooted_two_part_studio();
+        let child = model.ir.model.occurrences[0].id.clone();
+        match state {
+            "override" => {
+                model.ir.model.occurrences[0].overrides = cadmpeg_core::serde_erase::json::from_value(json!([
+                    {"path":[{"occurrence":{"kind":"occurrence","value":child}}], "visible":false}
+                ]))
+                .unwrap();
+            }
+            "suppressed" => model.ir.model.occurrences[0].suppressed = Some(true),
+            "unstated-placement" => model.ir.model.occurrences[0].transform = None,
+            "hidden" => model.ir.model.occurrences[0].visible = Some(false),
+            "representation" => {
+                model.ir.model.occurrences[0].representation =
+                    cadmpeg_core::serde_erase::json::from_value(json!("stored-view")).unwrap();
+            }
+            "nested" => {
+                model.ir.model.product_definitions[2].occurrences.remove(0);
+                model.ir.model.product_definitions[1]
+                    .occurrences
+                    .push(child);
+            }
+            "shared" => {
+                model.ir.model.occurrences[1].prototype =
+                    model.ir.model.occurrences[0].prototype.clone();
+            }
+            "external" => {
+                let child = model.ir.model.occurrences[0].prototype.as_str().to_owned();
+                let definition = model
+                    .ir
+                    .model
+                    .product_definitions
+                    .iter_mut()
+                    .find(|d| d.id.as_str() == child)
+                    .unwrap();
+                definition.storage = cadmpeg_ir::products::Storage::External(
+                    cadmpeg_ir::products::ExternalDocument::default(),
+                );
+            }
+            _ => panic!("unknown synthetic insertion state"),
+        }
+        let before = model.ir.clone();
+        part_studio_bodies(&mut model);
+        assert_eq!(model.ir, before, "{state}");
+    }
+}
+
+#[test]
+fn thin_scope_requires_direct_body_ownership_without_child_insertions() {
+    let mut model = two_part_studio(0.0);
+    model.ir.model.product_definitions.truncate(1);
+    model.ir.model.occurrences.clear();
+    let definition = model.ir.model.product_definitions[0].id.clone();
+    assert_eq!(super::thin::owner(&model.ir).unwrap(), definition);
+
+    model.ir.model.product_definitions[0]
+        .occurrences
+        .push(cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#child").unwrap());
+    assert!(super::thin::owner(&model.ir).is_err());
+    model.ir.model.product_definitions[0].occurrences.clear();
+    model.ir.model.product_definitions[0].bodies.clear();
+    assert!(super::thin::owner(&model.ir).is_err());
 }
 
 #[test]
@@ -222,4 +333,27 @@ fn omitted_feature_has_no_placement_or_suppression_annotation() {
             .exactness()
             .contains_key(&key));
     }
+}
+
+#[test]
+fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
+    let mut feature = json!({"featureType":"sweep", "parameters":[
+        {"parameterId":"bodyType","value":"SOLID"},
+        {"parameterId":"operationType","value":"NEW"},
+        {"parameterId":"profiles","queries":[]},
+        {"parameterId":"path","queries":[]}
+    ]});
+    let support = super::mapping_loss_code(&feature, false, true, "unsupported control");
+    assert!(OnshapeLossCode::SweepNotSupported.matches(&support.note("support")));
+    for (budget, valid_suppression, reason) in [
+        (true, true, "region budget exhausted"),
+        (false, false, "malformed suppression"),
+        (false, true, super::sweep::PATH_BUDGET_EXHAUSTED),
+    ] {
+        let code = super::mapping_loss_code(&feature, budget, valid_suppression, reason);
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&code.note("history")));
+    }
+    feature["parameters"] = json!(null);
+    let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
+    assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
 }

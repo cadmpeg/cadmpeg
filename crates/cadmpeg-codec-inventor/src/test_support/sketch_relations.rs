@@ -125,14 +125,15 @@ pub(crate) fn entity_operand_cases() -> Vec<(PmDcSketchConstraint, Vec<u32>)> {
     cases
         .into_iter()
         .map(|(record_type, kind, operands)| {
-            let mut wire = serde_json::to_value(super::sketch_curves::spline_midpoint())
-                .expect("relation wire");
+            let mut wire =
+                cadmpeg_core::serde_erase::json::to_value(super::sketch_curves::spline_midpoint())
+                    .expect("relation wire");
             wire["header"]["content"]["context"] = serde_json::json!(PmDcReference::from_packed(0));
             wire["header"]["group"] = serde_json::json!(PmDcReference::from_packed(0));
             wire["type_id"] = serde_json::json!(record_type);
             wire["kind"] = kind;
             (
-                serde_json::from_value(wire).expect("synthetic relation"),
+                cadmpeg_core::serde_erase::json::from_value(wire).expect("synthetic relation"),
                 operands,
             )
         })

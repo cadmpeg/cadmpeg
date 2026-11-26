@@ -51,7 +51,7 @@ const MATERIAL: Uuid = Uuid::from_canonical([
 const PHYSICALLY_BASED_MATERIAL_USERDATA: Uuid = Uuid::from_canonical([
     0x56, 0x94, 0xe1, 0xac, 0x40, 0xe6, 0x44, 0xf4, 0x9c, 0xa9, 0x3b, 0x6d, 0x0e, 0x8c, 0x44, 0x40,
 ]);
-const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
+pub(crate) const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
     0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3, 0xe4, 0xe3,
 ]);
 const RDK_CLASS: Uuid = Uuid::from_canonical([
@@ -4521,6 +4521,15 @@ fn retain_unbound_presentation_record(
     push_opaque_record(opaque_records, table_typecode, record);
 }
 
+/// The key of a layer's native record: its UUID where no other layer holds
+/// it, else its archive index and source offset.
+pub(crate) fn layer_record_key(layer: &settings::LayerRecord, unique_id: bool) -> String {
+    match layer.id.filter(|_| unique_id) {
+        Some(id) => format!("{id}"),
+        None => format!("index-{}-offset-{}", layer.index, layer.source.range.start),
+    }
+}
+
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -5091,17 +5100,15 @@ pub(crate) fn install(
         per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
 
         layers.push(LayerPresentationRecord {
-            id: if let Some(id) = layer
-                .id
-                .filter(|id| layer_id_counts.get(id).copied() == Some(1))
-            {
-                format!("rhino:presentation:layer#{id}")
-            } else {
-                format!(
-                    "rhino:presentation:layer#index-{}-offset-{}",
-                    layer.index, layer.source.range.start
+            id: format!(
+                "rhino:presentation:layer#{}",
+                layer_record_key(
+                    layer,
+                    layer
+                        .id
+                        .is_some_and(|id| layer_id_counts.get(&id).copied() == Some(1)),
                 )
-            },
+            ),
             source_offset: cadmpeg_core::decode::u64_from_index(layer.source.range.start),
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| format!("{id}")),

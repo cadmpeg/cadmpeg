@@ -785,15 +785,16 @@ mod tests {
             (true, false, false),
             (true, true, true),
         ] {
-            let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
-                "id":"native", "parent":"history", "ordinal":0,
-                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
-                "properties":{"EndCondition":"Blind", "Operation":"Join"}
-            }))
-            .expect("synthetic feature record");
+            let record: crate::records::Feature =
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                    "id":"native", "parent":"history", "ordinal":0,
+                    "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                    "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                    "properties":{"EndCondition":"Blind", "Operation":"Join"}
+                }))
+                .expect("synthetic feature record");
             let history: crate::records::FeatureHistory =
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id":"history", "features":[record.clone()]
                 }))
                 .expect("synthetic history");
@@ -855,30 +856,32 @@ mod tests {
     /// and the record gains no `Depth`.
     #[test]
     fn a_depth_edit_is_written_to_the_records_one_length_parameter() {
-        let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
-            "id":"native", "parent":"history", "ordinal":0,
-            "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-            "input_class":"moExtrusion_c", "parameters":{"Plate thickness":"10mm"},
-            "properties":{"EndCondition":"Blind", "Operation":"Join"}
-        }))
-        .expect("synthetic feature record");
-        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
-            "id":"history", "features":[record.clone()]
-        }))
-        .expect("synthetic history");
+        let record: crate::records::Feature =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Plate thickness":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join"}
+            }))
+            .expect("synthetic feature record");
+        let history: crate::records::FeatureHistory =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id":"history", "features":[record.clone()]
+            }))
+            .expect("synthetic history");
         let mut feature = crate::history::project::project_features(&[history])
             .expect("feature projection")
             .into_iter()
             .next()
             .expect("extrusion");
-        let mut wire =
-            serde_json::to_value(feature.evaluation.definition()).expect("definition wire form");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition())
+            .expect("definition wire form");
         let length = first_length(&mut wire).expect("the record's length is the depth");
         assert_eq!(length.as_f64(), Some(10.0));
         *length = serde_json::json!(11.0);
-        feature
-            .evaluation
-            .set_definition(serde_json::from_value(wire).expect("edited definition"));
+        feature.evaluation.set_definition(
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("edited definition"),
+        );
         let encoded = NeutralFeatureEncoder {
             contradicted_travel: false,
             feature: &feature,
@@ -912,7 +915,7 @@ mod tests {
             if reverse {
                 properties["Reverse"] = "true".into();
             }
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id":"native", "parent":"history", "ordinal":0,
                 "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
                 "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
@@ -922,7 +925,7 @@ mod tests {
         };
         let project = |record: &crate::records::Feature| {
             let history: crate::records::FeatureHistory =
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "id":"history", "features":[record.clone()]
                 }))
                 .expect("synthetic history");

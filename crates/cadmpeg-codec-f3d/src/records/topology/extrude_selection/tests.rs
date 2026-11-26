@@ -19,7 +19,7 @@ fn selection_member() -> super::DesignExtrudeSelectionMember {
         "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 110,
         "next_record_index": 11, "next_byte_offset": 190
     });
-    serde_json::from_value(wire).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
 }
 
 #[test]
@@ -27,8 +27,8 @@ fn extrude_selection_group_borrowed_wire_matches_owned_wire_bytes() {
     let group = selection_group();
     let owned = super::DesignExtrudeSelectionGroupWire::from(group.clone());
     assert_eq!(
-        serde_json::to_vec(&group).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
+        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
     );
 }
 
@@ -59,8 +59,8 @@ fn extrude_selection_member_borrowed_wire_matches_owned_wire_bytes() {
         member.operand_identity_ids = identities;
         let owned = super::DesignExtrudeSelectionMemberDraft::from(member.clone());
         assert_eq!(
-            serde_json::to_vec(&member).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&member).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -90,7 +90,10 @@ fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
     let wire = r#"{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","member_count_offset":32,"members":[10,11],"member_offsets":[37,48],"opaque_index":1,"opaque_index_offset":58,"opaque_scalar":0.0,"opaque_scalar_offset":62,"variant":false,"paired_class_tag":"259","paired_byte_offset":111}"#;
     let group: super::DesignExtrudeSelectionGroup =
         serde_json::from_str(wire).expect("selection group");
-    assert_eq!(serde_json::to_string(&group).expect("selection wire"), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&group).expect("selection wire"),
+        wire
+    );
     for offsets in ["[]", "[37]", "[37,48,59]"] {
         let invalid = wire.replace(
             "\"member_offsets\":[37,48]",
@@ -111,8 +114,12 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         "members": [10, 11], "member_offsets": [37, 48], "opaque_index": 1,
         "opaque_index_offset": 58, "opaque_scalar": -1.0, "opaque_scalar_offset": 62,
         "variant": false, "paired_class_tag": "259", "paired_byte_offset": 111});
-    let group: super::DesignExtrudeSelectionGroup = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+    let group: super::DesignExtrudeSelectionGroup =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&group).unwrap(),
+        wire
+    );
     for (field, value) in [
         ("members", serde_json::json!([10, 10])),
         ("member_offsets", serde_json::json!([37, 49])),
@@ -126,7 +133,10 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<super::DesignExtrudeSelectionGroup>(invalid).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<super::DesignExtrudeSelectionGroup>(
+                invalid
+            )
+            .is_err(),
             "{field}"
         );
     }
@@ -158,7 +168,7 @@ fn typed_selection_group_offsets_use_the_wide_reference_stride() {
     let group = super::DesignExtrudeSelectionGroup::try_from(wire.clone()).expect("typed group");
     assert!(group.typed_references);
     assert_eq!(group.variant, None);
-    let round_trip = serde_json::to_value(&group).unwrap();
+    let round_trip = cadmpeg_core::serde_erase::json::to_value(&group).unwrap();
     assert_eq!(round_trip["typed_references"], true);
     assert!(round_trip.get("variant").is_none());
 
@@ -182,7 +192,7 @@ fn plain_selection_group_without_variant_ends_one_byte_earlier() {
     assert!(!group.typed_references);
     assert_eq!(group.variant, None);
     assert_eq!(group.paired_byte_offset(), 110);
-    assert!(serde_json::to_value(&group)
+    assert!(cadmpeg_core::serde_erase::json::to_value(&group)
         .unwrap()
         .get("variant")
         .is_none());

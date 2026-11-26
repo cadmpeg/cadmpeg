@@ -3,8 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
 use cadmpeg_ir::ids::{BodyId, OccurrenceId};
 use cadmpeg_ir::products::{AssemblyJoint, JointOperands, OperandContainer};
@@ -32,30 +33,22 @@ pub(crate) fn grounded(joints: &[AssemblyJoint]) -> BTreeSet<OccurrenceId> {
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    body: &mut DecodeBody,
 ) -> Result<(), CodecError> {
-    let design = ctx.depth() >= cadmpeg_core::decode::DecodeDepth::Design;
-    let scope = if design {
-        scope(ir, &ir.model.assembly_joints)?
-    } else {
-        None
-    };
-    if !ir.model.assembly_joints.is_empty() {
-        losses.push(crate::loss::InventorLossCode::AssemblyGroundingJointDropped.note(
-            if design {
-                format!(
-                    "{} grounding joints are stated as grounded occurrences; their joint ids and native records are dropped.",
-                    ir.model.assembly_joints.len()
-                )
-            } else {
-                format!(
-                    "{} grounding joints are design records outside the geometry depth.",
-                    ir.model.assembly_joints.len()
-                )
-            },
-        ));
-        ir.model.assembly_joints.clear();
+    if ir.model.assembly_joints.is_empty() {
+        return Ok(());
     }
+    if ctx.depth() < DecodeDepth::Design {
+        body.source_holds(ArenaClass::Design);
+        ir.model.assembly_joints.clear();
+        return Ok(());
+    }
+    let scope = scope(ir, &ir.model.assembly_joints)?;
+    body.losses.push(crate::loss::InventorLossCode::AssemblyGroundingJointDropped.note(format!(
+        "{} grounding joints are stated as grounded occurrences; their joint ids and native records are dropped.",
+        ir.model.assembly_joints.len()
+    )));
+    ir.model.assembly_joints.clear();
     if let Some(scope) = scope {
         ctx.charge_entities(1, "project Inventor assembly design scope")?;
         ir.design.scopes.push(scope);
@@ -127,6 +120,7 @@ mod tests {
     use cadmpeg_ir::ids::ProductDefinitionId;
     use cadmpeg_ir::products::{JointConnector, JointOperand};
     use cadmpeg_ir::products::{JointId, Storage};
+    use cadmpeg_ir::report::decode::DecodeTransfer;
     use cadmpeg_ir::transform::Transform;
 
     fn document() -> (CadIr, OccurrenceId) {
@@ -145,14 +139,26 @@ mod tests {
         (ir, id)
     }
 
+    fn decode_body(depth: DecodeDepth) -> DecodeBody {
+        DecodeBody::new(DecodeTransfer::at(depth, true))
+    }
+
     #[test]
     fn grounding_moves_to_the_owning_scope_occurrence() {
         let (mut ir, id) = document();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
+        let mut body = decode_body(DecodeDepth::Full);
+        project(&ctx, &mut ir, &mut body).expect("projection");
         assert!(ir.model.assembly_joints.is_empty());
+        assert_eq!(
+            body.losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::InventorLossCode::AssemblyGroundingJointDropped.kind()]
+        );
         assert_eq!(ir.design.scopes.len(), 1);
         assert_eq!(
             ir.design.scopes[0].definition,
@@ -188,7 +194,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
+        project(&ctx, &mut ir, &mut decode_body(DecodeDepth::Full)).expect("projection");
         assert_eq!(
             ir.design.scopes[0].unproduced,
             BTreeSet::from([body("embedded"), body("root")])
@@ -213,7 +219,7 @@ mod tests {
             ));
         ir.model.product_definitions.push(embedded);
         ir.geometry.bodies.push(
-            serde_json::from_value(
+            cadmpeg_core::serde_erase::json::from_value(
                 serde_json::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
             )
             .expect("body"),
@@ -222,7 +228,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
+        project(&ctx, &mut ir, &mut decode_body(DecodeDepth::Full)).expect("projection");
         let design_errors = |ir: &CadIr| {
             cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
                 .expect("validation")
@@ -238,7 +244,12 @@ mod tests {
         assert_eq!(design_errors(&ir), Vec::<String>::new());
         assert!(crate::validate::assembly_scope_findings(&ir, &joints).is_empty());
         ir.design.scopes[0].unproduced.remove(&body("embedded"));
-        assert_eq!(design_errors(&ir), Vec::<String>::new());
+        let errors = design_errors(&ir);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("belongs to no current state or unproduced set of that scope"),
+            "{errors:?}"
+        );
         assert_eq!(
             crate::validate::assembly_scope_findings(&ir, &joints).len(),
             1
@@ -246,25 +257,34 @@ mod tests {
     }
 
     #[test]
-    fn geometry_depth_omits_grounding_design_records() {
-        let (mut ir, _) = document();
+    fn a_geometry_decode_charges_the_undelivered_design_for_grounding_joints() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes_at(
-            &[],
-            &arena,
-            &policy,
-            cadmpeg_core::decode::DecodeDepth::Geometry,
-        )
-        .expect("context");
-        let mut losses = Vec::new();
-        project(&ctx, &mut ir, &mut losses).expect("projection");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes_at(&[], &arena, &policy, DecodeDepth::Geometry)
+                .expect("context");
+        let (mut ir, _) = document();
+        let mut body = decode_body(DecodeDepth::Geometry);
+        project(&ctx, &mut ir, &mut body).expect("projection");
         assert!(ir.model.assembly_joints.is_empty());
         assert!(ir.design.scopes.is_empty());
-        assert_eq!(losses.len(), 1);
+        assert_eq!(body.losses.len(), 1, "{:#?}", body.losses);
         assert_eq!(
-            losses[0].code,
-            crate::loss::InventorLossCode::AssemblyGroundingJointDropped.kind()
+            body.losses[0].code.to_string(),
+            "decode/depth.not-delivered"
         );
+        assert!(
+            body.losses[0]
+                .message
+                .contains("the source holds design records that a geometry-depth decode"),
+            "{}",
+            body.losses[0].message
+        );
+
+        let (mut ir, _) = document();
+        ir.model.assembly_joints.clear();
+        let mut body = decode_body(DecodeDepth::Geometry);
+        project(&ctx, &mut ir, &mut body).expect("projection");
+        assert!(body.losses.is_empty(), "{:#?}", body.losses);
     }
 }

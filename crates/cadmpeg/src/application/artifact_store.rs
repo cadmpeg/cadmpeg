@@ -317,10 +317,14 @@ pub(super) fn write_plan_atomic(
 /// A decoded origin causes a second atomic rename after the CADIR write.
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
+/// The annotations of the records of the arenas the CADIR wire omits stay
+/// out of the sidecar, since the written document holds none of those
+/// records.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
+    ir: &cadmpeg_ir::CadIr,
 ) -> Result<SidecarPersistOutcome> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
@@ -332,12 +336,15 @@ pub(super) fn persist_decode_sidecar(
         LoadOrigin::Decoded {
             report, fidelity, ..
         }
-        | LoadOrigin::Restored { report, fidelity } => {
-            let sidecar = DecodeSidecar::bind_sha256(
-                cadir_sha256.clone(),
-                report.clone(),
-                fidelity.as_ref().clone(),
-            );
+        | LoadOrigin::Restored { report, fidelity }
+        | LoadOrigin::Read { report, fidelity } => {
+            let mut fidelity = fidelity.as_ref().clone();
+            let omitted = ir.model.omitted_record_ids();
+            fidelity
+                .annotations
+                .retain_entities(|id| !omitted.contains(id));
+            let sidecar =
+                DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;
@@ -530,7 +537,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = serde_json::from_value(serde_json::json!({
+        let report: DecodeReport = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},

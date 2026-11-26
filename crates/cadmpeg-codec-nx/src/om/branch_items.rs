@@ -89,7 +89,7 @@ mod tests {
         }
         for len in [0, 255] {
             assert!(BranchItems::new(vec![0; len]).is_err());
-            let json = serde_json::to_string(&vec![0; len]).unwrap();
+            let json = cadmpeg_core::serde_erase::json::to_string(&vec![0; len]).unwrap();
             assert!(serde_json::from_str::<BranchItems<u8>>(&json).is_err());
         }
     }

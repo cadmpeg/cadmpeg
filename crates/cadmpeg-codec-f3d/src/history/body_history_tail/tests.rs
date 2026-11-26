@@ -120,10 +120,10 @@ fn feature(scope: &DesignParameterScope, slot: i64) -> Feature {
 }
 
 fn definition() -> ProductDefinition {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "test:model:component#panel", "kind": "part", "bodies": [body(1)],
         "bom_properties": {}, "storage": {"kind": "embedded"},
-        "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+        "occurrences": [], "instance_bodies": [], "representations": []
     }))
     .unwrap()
 }

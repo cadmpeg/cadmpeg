@@ -22,12 +22,13 @@ unreachable_pub = "deny"
 
 [features]
 default = [
-  "alibre", "solidedge", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
+  "alibre", "solidedge", "ironcad", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
   "rhino", "iges", "sat", "pvz", "edrawings", "usd", "step",
 ]
 alibre = ["dep:cadmpeg-codec-alibre"]
 f3d = ["dep:cadmpeg-codec-f3d"]
 solidedge = ["dep:cadmpeg-codec-solidedge"]
+ironcad = ["dep:cadmpeg-codec-ironcad"]
 inventor = ["dep:cadmpeg-codec-inventor"]
 freecad = ["dep:cadmpeg-codec-freecad"]
 sldprt = ["dep:cadmpeg-codec-sldprt"]
@@ -50,6 +51,7 @@ cadmpeg-container = { path = "../cadmpeg-container" }
 cadmpeg-codec-alibre = { path = "../cadmpeg-codec-alibre", optional = true }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", optional = true }
 cadmpeg-codec-solidedge = { path = "../cadmpeg-codec-solidedge", optional = true }
+cadmpeg-codec-ironcad = { path = "../cadmpeg-codec-ironcad", optional = true }
 cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", optional = true }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad", optional = true }
@@ -63,7 +65,7 @@ cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat", optional = true }
 cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz", optional = true }
 cadmpeg-codec-edrawings = { path = "../cadmpeg-codec-edrawings", optional = true }
 cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd", optional = true }
-cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step", optional = true }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
@@ -887,3 +889,11 @@ test = false
 doc = false
 bench = false
 required-features = ["alibre"]
+
+[[bin]]
+name = "ironcad_codec"
+path = "fuzz_targets/ironcad_codec.rs"
+test = false
+doc = false
+bench = false
+required-features = ["ironcad"]

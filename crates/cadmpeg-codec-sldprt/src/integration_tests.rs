@@ -8,6 +8,7 @@ mod mesh_bodies;
 mod native_skeleton;
 mod profile_data;
 mod root_definition;
+mod saved_cadir;
 mod scalar_relation_values;
 mod sweep_path_section;
 mod swift_nominal;
@@ -217,11 +218,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
         [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
-        tessellation_exactness.fields()["body"],
-        cadmpeg_ir::Exactness::Derived
-    );
-    assert_eq!(
-        tessellation_exactness.fields()["faces"],
+        tessellation_exactness.fields()["of"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_valid(&display);
@@ -335,7 +332,7 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
             result.ir(),
@@ -402,55 +399,135 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
 }
 
-/// A source dialect outside the one-row catalog refuses under `Inherit` once
-/// there is nothing to preserve. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the part is, and the
-/// refusal names both the source's dialect and the escape.
+/// A document read back from CADIR JSON holds no feature history. Unedited,
+/// it replays its retained part; edited, it writes what the decoded part
+/// with the same edit writes, its history restored from the retained part
+/// rather than read as every feature removed.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
+fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
+    let source = versioned_part();
+    let result = decode(source.clone());
+    assert!(!result.ir().model.features.is_empty());
+    let mut read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(read.model.features.is_empty());
+    assert!(!read.model.omitted_arenas_held());
+
+    let unedited = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect("an unedited read replays");
+    assert!(matches!(
+        unedited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    let mut written = Vec::new();
+    unedited.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
+
+    let written = |ir: &cadmpeg_ir::CadIr| {
+        let mut bytes = Vec::new();
+        SldprtCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(result.source_fidelity())),
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|_| bytes)
+            .map_err(|error| error.to_string())
+    };
+    read.geometry.bodies[0].name = Some("edited".into());
+    let mut held = result.ir().clone();
+    held.geometry.bodies[0].name = Some("edited".into());
+    assert_eq!(written(&read), written(&held));
+}
+
+/// A source dialect outside the one-row catalog is written as the catalog row
+/// under `Inherit` once there is nothing to preserve (§3.4, Refusals). The
+/// report names the row the emitted envelope states, and
+/// `sldprt/target.source-dialect-displaced` names both dialects.
+#[test]
+fn inherit_writes_an_off_catalog_source_dialect_with_nothing_retained_as_the_row() {
     let result = decode(versioned_part());
-    let error = plan(
+    let plan = plan(
         &result,
         false,
         cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .expect_err("a versioned row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
+    .expect("a versioned source is written as the catalog row");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .cloned()
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
     };
-    assert_eq!(refusal.format(), "sldprt");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("sldprt:sw-version-12000-plus")
+        loss.code,
+        cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("sldprt"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
+        )
     );
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "sldprt:unknown"),
-        "{:?}",
-        refusal.available()
+        loss.message.contains("sldprt:sw-version-12000-plus")
+            && loss.message.contains("sldprt:unknown"),
+        "{}",
+        loss.message
     );
-    let reason = serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["reason"]
-        .as_str()
-        .map(str::to_owned)
-        .expect("delivery refusal carries its reason");
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
+}
+
+/// A part read from CADIR JSON with no retained source holds native records
+/// whose history arenas it does not carry, so the patch of its source dialect
+/// refuses. The part is then synthesized at the catalog row (§3.4, Paths),
+/// and `sldprt/target.source-dialect-displaced` names both dialects.
+#[test]
+fn inherit_synthesizes_an_off_catalog_cadir_read_part_at_the_catalog_row() {
+    let result = decode(versioned_part());
+    let read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(!read.model.omitted_arenas_held());
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, None),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect("the part is synthesized at the catalog row");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .cloned()
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("sldprt"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
+        )
+    );
     assert!(
-        reason.contains("sldprt:unknown"),
-        "the refusal must name the declared synthesis alternative: {reason}"
+        loss.message.contains("sldprt:sw-version-12000-plus")
+            && loss.message.contains("sldprt:unknown"),
+        "{}",
+        loss.message
     );
-    assert!(
-        reason.contains("that envelope is sldprt:unknown"),
-        "{reason}"
-    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
 }
 
 /// Cross-dialect synthesis does not consume the retained Native envelope: it

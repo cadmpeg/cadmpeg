@@ -5,6 +5,7 @@
 pub(crate) mod generate;
 pub(crate) mod patch;
 pub(crate) mod primitives;
+pub(crate) mod saved;
 pub(crate) mod target;
 
 #[cfg(test)]

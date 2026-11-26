@@ -122,14 +122,14 @@ fn exact_curve(offset: f64) -> CadIr {
 }
 
 fn geometry_is_valid(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> bool {
-    cadmpeg_ir::validate::admit::admit(
-        ctx,
-        ir,
-        &[cadmpeg_ir::report::check::Check::GeometricConsistency],
-        Vec::new(),
-    )
-    .unwrap()
-    .is_ok()
+    !cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+                && finding.severity >= cadmpeg_ir::report::Severity::Error
+        })
 }
 
 #[test]
@@ -216,14 +216,14 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.0);
         ir.geometry.surfaces.push(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": "test:brep:surface#1",
                 "geometry": {"kind": "solved", "value": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
                     "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}}
             }))
             .unwrap(),
         );
-        let definition = serde_json::from_value(serde_json::json!({
+        let definition = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "kind":"spring", "direction":0,
             "layout":{"kind":"cache_first",
                 "context":{"sides":[{"surface":"test:brep:surface#1",

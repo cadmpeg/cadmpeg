@@ -17,9 +17,33 @@
     "angular": 1e-10
   },
   "geometry": {
-    "bodies": [],
-    "regions": [],
-    "shells": [],
+    "bodies": [
+      {
+        "id": "synthetic:v2:body#directed",
+        "kind": "sheet"
+      }
+    ],
+    "regions": [
+      {
+        "id": "synthetic:v2:region#directed",
+        "body": "synthetic:v2:body#directed",
+        "shells": [
+          "synthetic:v2:shell#directed"
+        ]
+      }
+    ],
+    "shells": [
+      {
+        "id": "synthetic:v2:shell#directed",
+        "region": "synthetic:v2:region#directed",
+        "members": [
+          {
+            "kind": "subd",
+            "id": "synthetic:v2:subd#directed"
+          }
+        ]
+      }
+    ],
     "faces": [],
     "loops": [],
     "coedges": [],
@@ -136,26 +160,4 @@
               "tag": "crease",
               "sector_coefficients": [
                 0.125,
-                0.875
-              ]
-            },
-            {
-              "vertices": [
-                1,
-                2
-              ],
-              "sharpness": [
-                0.0,
-                0.5
-              ],
-              "tag": "smooth_x",
-              "sector_coefficients": [
-                0.25,
-                0.75
-              ]
-            },
-            {
-              "vertices": [
-                2,
-                0
-            
+                

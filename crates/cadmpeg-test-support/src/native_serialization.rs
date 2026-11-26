@@ -33,13 +33,13 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
         .expect("serialize the native records");
     assert_eq!(visits.get(), 1);
     assert_eq!(
-        serde_json::to_value(&stored[0]).expect("stored record"),
+        cadmpeg_core::serde_erase::json::to_value(&stored[0]).expect("stored record"),
         expected
     );
 
     // The stored text is the record's only retained charge, so a ceiling one
     // byte below its length refuses the record.
-    let text = serde_json::to_string(&stored[0]).expect("stored text");
+    let text = cadmpeg_core::serde_erase::json::to_string(&stored[0]).expect("stored text");
     visits.set(0);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(text.len()).expect("record text length") - 1;

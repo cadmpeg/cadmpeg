@@ -254,44 +254,6 @@
     },
     "model": {
       "assets": [],
-      "features": [
-        {
-          "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat10:RemoveBody1:1400",
-          "ordinal": 0,
-          "name": "RemoveBody 1",
-          "suppressed": false,
-          "dependencies": [],
-          "source_properties": {},
-          "source_tag": "RemoveBody",
-          "source_content": [],
-          "outputs": [],
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "delete_body",
-              "value": {
-                "bodies": {
-                  "kind": "native",
-                  "value": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-construction-operand-group#3194"
-                },
-                "mode": "delete_selected"
-              }
-            }
-          },
-          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
-        }
-      ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -305,12 +267,10 @@
           ],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -368,8 +328,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],
@@ -1765,8 +1724,8 @@
       "exactness": {
         "f3d:brep:entity#6": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }

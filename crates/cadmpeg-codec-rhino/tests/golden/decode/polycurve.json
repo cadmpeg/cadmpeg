@@ -29,11 +29,26 @@
           "geometry": {
             "kind": "solved",
             "value": {
-              "kind": "unknown",
-              "record": "rhino:object:record#000000"
+              "kind": "composite",
+              "segments": [
+                {
+                  "curve": "rhino:object:curve#record-000000-offset-177.root.component-0",
+                  "same_sense": true,
+                  "transition": "discontinuous"
+                },
+                {
+                  "curve": "rhino:object:curve#record-000000-offset-177.root.component-1",
+                  "same_sense": true,
+                  "transition": "discontinuous"
+                }
+              ]
             }
           },
           "id": "rhino:object:curve#record-000000-offset-177",
+          "parameter_range": [
+            0.0,
+            5.0
+          ],
           "source_object": {
             "format": "rhino",
             "instance_path": [],
@@ -81,10 +96,21 @@
           "geometry": {
             "kind": "solved",
             "value": {
-              "kind": "unknown"
+              "kind": "composite",
+              "segments": [
+                {
+                  "curve": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
+                  "same_sense": true,
+                  "transition": "discontinuous"
+                }
+              ]
             }
           },
           "id": "rhino:object:curve#record-000000-offset-177.root.component-1",
+          "parameter_range": [
+            2.0,
+            5.0
+          ],
           "source_object": {
             "format": "rhino",
             "instance_path": [],
@@ -98,10 +124,10 @@
               "degree": 1,
               "kind": "nurbs",
               "knots": [
-                10.0,
-                10.0,
-                20.0,
-                20.0
+                2.0,
+                2.0,
+                5.0,
+                5.0
               ],
               "periodic": false,
               "poles": {
@@ -134,47 +160,7 @@
       "loops": [],
       "pcurves": [],
       "points": [],
-      "procedural_curves": [
-        {
-          "curve": "rhino:object:curve#record-000000-offset-177",
-          "definition": {
-            "components": [
-              {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-0",
-                "parameter": 0.0
-              },
-              {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-1",
-                "parameter": 2.0
-              }
-            ],
-            "kind": "compound",
-            "parameters": [
-              0.0,
-              2.0,
-              5.0
-            ]
-          },
-          "id": "rhino:object:procedural-curve#record-000000-offset-177"
-        },
-        {
-          "curve": "rhino:object:curve#record-000000-offset-177.root.component-1",
-          "definition": {
-            "components": [
-              {
-                "component": "rhino:object:curve#record-000000-offset-177.root.component-1.component-0",
-                "parameter": 10.0
-              }
-            ],
-            "kind": "compound",
-            "parameters": [
-              10.0,
-              20.0
-            ]
-          },
-          "id": "rhino:object:procedural-curve#record-000000-offset-177.root.component-1"
-        }
-      ],
+      "procedural_curves": [],
       "procedural_surfaces": [],
       "regions": [],
       "shells": [],
@@ -187,20 +173,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -215,7 +194,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -224,14 +202,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -384,8 +355,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",

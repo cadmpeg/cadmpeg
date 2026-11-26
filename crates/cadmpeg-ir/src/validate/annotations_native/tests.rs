@@ -76,7 +76,10 @@ fn native_topology_link_must_resolve() {
             cadmpeg_core::nonblank_literal!("sketch_curve_links"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
-                serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
+                cadmpeg_core::serde_erase::json::from_value(
+                    serde_json::json!({"links": ["missing"]}),
+                )
+                .unwrap(),
             )
             .expect("valid native identity")],
         );
@@ -180,7 +183,7 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
         serde_json::json!([{}]),
         serde_json::json!([[]]),
     ] {
-        let mut wire = serde_json::to_value(unit_cube().unwrap()).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(unit_cube().unwrap()).unwrap();
         wire["native"] = serde_json::json!({"test": {"unknowns": [{
             "id": "test:source:unknown#malformed", "links": links
         }]}});
@@ -211,7 +214,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
         serde_json::json!([{"object": "source-object", "subelements": ["Face1"]}]),
         serde_json::json!(["source-specific value", {"row": 7}]),
     ] {
-        let mut wire = serde_json::to_value(unit_cube().unwrap()).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(unit_cube().unwrap()).unwrap();
         wire["native"] = serde_json::json!({"test": {"properties": [{
             "id": "test:native:property#links", "links": links
         }]}});
@@ -225,7 +228,10 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
                 .all(|finding| finding.check != Check::NativeLinks),
             "{findings:?}"
         );
-        assert_eq!(serde_json::to_value(&ir).unwrap()["native"], wire["native"]);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&ir).unwrap()["native"],
+            wire["native"]
+        );
     }
 }
 
@@ -368,4 +374,41 @@ fn annotations_on_many_model_points_resolve_without_findings() {
     )
     .unwrap();
     assert!(findings.is_empty());
+}
+
+#[test]
+fn a_native_record_links_no_neutral_record_while_a_stub_may() {
+    let cube = unit_cube().unwrap();
+    let face = cube.geometry.faces[0].id.as_str().to_owned();
+    let native_links = |links: serde_json::Value| {
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&cube).unwrap();
+        wire["native"] = serde_json::json!({"test": {
+            "properties": [
+                {"id": "test:native:property#a", "links": links},
+                {"id": "test:native:property#b", "links": []}
+            ],
+            "unknowns": [{"id": "test:source:unknown#stub", "links": [face]}]
+        }});
+        let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
+        validate_neutral(&ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.check == Check::NativeLinks)
+            .collect::<Vec<_>>()
+    };
+
+    let findings = native_links(serde_json::json!(["test:native:property#b"]));
+    assert!(findings.is_empty(), "{findings:?}");
+
+    let findings = native_links(serde_json::json!([face]));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].entity.as_deref(),
+        Some("test:native:property#a")
+    );
+    assert!(
+        findings[0].message.contains("names a neutral record"),
+        "{findings:?}"
+    );
 }

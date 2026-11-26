@@ -317,7 +317,7 @@ fn malformed_rest_lanes_keep_limits() {
     let end = bytes.len();
     let valid = super::joint_limits(&bytes, 0, end, 10).unwrap();
     assert!(!valid.rest_malformed);
-    assert!(serde_json::to_value(&valid)
+    assert!(cadmpeg_core::serde_erase::json::to_value(&valid)
         .unwrap()
         .get("rest_malformed")
         .is_none());
@@ -340,12 +340,12 @@ fn malformed_rest_lanes_keep_limits() {
         assert_eq!(lanes.values_offset, valid.values_offset);
         assert!(lanes.rest.is_none());
         assert!(lanes.rest_malformed);
-        let stored = serde_json::to_value(&lanes).unwrap();
+        let stored = cadmpeg_core::serde_erase::json::to_value(&lanes).unwrap();
         assert_eq!(stored["rest_malformed"], true);
         assert_eq!(
-            serde_json::from_value::<crate::records::feature::joint_motion::DesignJointLimitLanes>(
-                stored
-            )
+            cadmpeg_core::serde_erase::json::from_value::<
+                crate::records::feature::joint_motion::DesignJointLimitLanes,
+            >(stored)
             .unwrap(),
             lanes
         );
@@ -404,7 +404,7 @@ fn malformed_rest_lanes_keep_limits() {
                 &[motion],
             );
             assert_eq!(projection.joints.len(), 1);
-            let joint = serde_json::to_value(&projection.joints[0]).unwrap();
+            let joint = cadmpeg_core::serde_erase::json::to_value(&projection.joints[0]).unwrap();
             let limits = &joint["operands"]["value"]["kind"][limits_key];
             assert_eq!(limits["minimum"], -1.5 * scale);
             assert_eq!(limits["maximum"], 1.5 * scale);

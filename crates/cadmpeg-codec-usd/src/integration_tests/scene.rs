@@ -2,6 +2,7 @@
 //! Scene options, and the stage forms that the `OpenUSD` validators check.
 
 use cadmpeg_ir::codec::write::{SceneOptions, UpAxis};
+use cadmpeg_ir::scalar::PositiveReal;
 
 use crate::test_support::{decode, encode, encode_with};
 
@@ -393,7 +394,7 @@ fn a_y_up_centimetre_stage_turns_and_scales_the_model() {
     };
     let centimetres = SceneOptions {
         up_axis: Some(UpAxis::Y),
-        meters_per_unit: Some(0.01),
+        meters_per_unit: PositiveReal::new(0.01),
         ..metres
     };
     let (z_up, _) = encode_with(&ir, metres);
@@ -456,7 +457,7 @@ fn a_turned_stage_turns_its_gravity_and_scales_its_magnitude() {
         arm.ir(),
         SceneOptions {
             up_axis: Some(UpAxis::Y),
-            meters_per_unit: Some(0.01),
+            meters_per_unit: PositiveReal::new(0.01),
             ..SceneOptions::DEFAULT
         },
     );
@@ -486,7 +487,7 @@ fn a_turned_stage_turns_the_velocities_of_a_root_prim() {
     let header = "#usda 1.0\n(\n    metersPerUnit = 0.01\n    upAxis = \"Z\"\n)\n";
     let y_up = SceneOptions {
         up_axis: Some(UpAxis::Y),
-        meters_per_unit: Some(0.01),
+        meters_per_unit: PositiveReal::new(0.01),
         ..SceneOptions::DEFAULT
     };
     let root = decode(&format!("{header}{}", body("A")));
@@ -517,23 +518,4 @@ fn a_turned_stage_turns_the_velocities_of_a_root_prim() {
         text.contains("vector3f physics:angularVelocity = (0, 0, 90)"),
         "{text}"
     );
-}
-
-#[test]
-fn metres_per_unit_is_a_finite_positive_number() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    let r#box = decode(&fixture("brep_array_box.usda"));
-    for metres in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        let result = crate::UsdCodec.plan(
-            EncodeInput::new(r#box.ir(), None).with_scene(SceneOptions {
-                meters_per_unit: Some(metres),
-                ..SceneOptions::DEFAULT
-            }),
-            TargetRequest::Explicit("usda-1.0"),
-        );
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::InvalidInput(_))),
-            "{metres}"
-        );
-    }
 }

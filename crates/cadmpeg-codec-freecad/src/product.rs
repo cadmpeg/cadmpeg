@@ -232,6 +232,14 @@ pub(crate) fn transfer_neutral(
                 .map(|object| object.id().as_str()),
         )
         .collect::<HashSet<_>>();
+    // A datum is reference geometry, a feature and not a component (§6.2):
+    // a container that lists it does not place it, and its `Shape` is its
+    // display shape, which no definition owns.
+    let datum_objects = objects
+        .iter()
+        .filter(|object| crate::design::is_datum_object(&object.type_name))
+        .map(|object| object.id().as_str())
+        .collect::<HashSet<_>>();
     let mut component_objects = Vec::new();
     // Components placed by a container of their own; the rest are reached
     // only as a link's prototype and are placed by those links.
@@ -250,6 +258,7 @@ pub(crate) fn transfer_neutral(
         for member in record.members().iter().filter(|member| {
             !occurrence_objects.contains(member.as_str())
                 && !constraint_objects.contains(member.as_str())
+                && !datum_objects.contains(member.as_str())
         }) {
             component_objects.push(member.as_str());
             placed_objects.insert(member.as_str());
@@ -329,10 +338,12 @@ pub(crate) fn transfer_neutral(
             .get(payload.property.as_str())
             .filter(|property| property.name == "Shape")
         {
-            body_owners.push((
-                crate::native::model_id("body", &payload.id, ""),
-                property.owner.as_str(),
-            ));
+            if !datum_objects.contains(property.owner.as_str()) {
+                body_owners.push((
+                    crate::native::model_id("body", &payload.id, ""),
+                    property.owner.as_str(),
+                ));
+            }
         }
     }
     let mut bodies_by_owner = HashMap::<&str, Vec<&Body>>::new();
@@ -727,15 +738,6 @@ pub(crate) fn transfer_neutral(
     })
 }
 
-/// Whether `body` is an object's `Shape`, which a definition owns, and not
-/// another payload such as a `PartDesign` feature's `AddSubShape`.
-pub(crate) fn is_shape_body(body: &cadmpeg_ir::ids::BodyId) -> bool {
-    body.as_str()
-        .split_once('#')
-        .and_then(|(_, key)| key.split(':').nth(1))
-        == Some("Shape")
-}
-
 /// The root definition: the document, which places the objects no container
 /// holds.
 pub(crate) fn document_definition_id() -> Result<ProductDefinitionId, CodecError> {
@@ -752,7 +754,8 @@ fn external_definition(
     externals: &mut BTreeMap<String, ProductDefinition>,
     document: ExternalDocument,
 ) -> Result<ProductDefinitionId, CodecError> {
-    let key = serde_json::to_string(&document).map_err(CodecError::malformed)?;
+    let key =
+        cadmpeg_core::serde_erase::json::to_string(&document).map_err(CodecError::malformed)?;
     if let Some(definition) = externals.get(&key) {
         return Ok(definition.id.clone());
     }

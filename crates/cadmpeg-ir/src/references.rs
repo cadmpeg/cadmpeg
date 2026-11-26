@@ -118,6 +118,18 @@ impl ReferenceSelection {
         }
     }
 
+    /// Whether the target resolves, and an `Unresolved` target carries the
+    /// source's name for it (part 10).
+    pub(crate) fn resolves(
+        &self,
+        records: &crate::document::design_records::DesignRecords<'_>,
+        targets: &ReferenceRecords<'_>,
+        contains: impl Fn(&str) -> bool,
+    ) -> bool {
+        self.target.resolves(records, targets, contains)
+            && (!matches!(self.target, ReferenceTarget::Unresolved) || self.native.is_some())
+    }
+
     /// The source's text name for the referenced object, where it states
     /// one.
     #[must_use]

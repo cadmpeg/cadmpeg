@@ -8,7 +8,7 @@ use crate::features::FeatureOperation;
 fn separation_wire_keeps_independent_controls_and_selected_category() {
     use super::{MeshSeparation, MeshSeparationGroups};
     assert_eq!(
-        serde_json::to_value(MeshSeparation::default()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(MeshSeparation::default()).unwrap(),
         serde_json::json!({})
     );
     for separation in [
@@ -19,11 +19,17 @@ fn separation_wire_keeps_independent_controls_and_selected_category() {
         serde_json::json!({"groups":{"kind":"selected", "members":["beta", "alpha"]}, "multiple_bodies":false}),
     ] {
         let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#separate"}}, "modification":{"kind":"separate", "separation":separation}}});
-        let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let decoded: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
+            wire
+        );
     }
-    let selected: MeshSeparation =
-        serde_json::from_value(serde_json::json!({"groups":{"kind":"selected"}})).unwrap();
+    let selected: MeshSeparation = cadmpeg_core::serde_erase::json::from_value(
+        serde_json::json!({"groups":{"kind":"selected"}}),
+    )
+    .unwrap();
     assert_eq!(
         selected.groups,
         Some(MeshSeparationGroups::Selected { members: None })
@@ -43,7 +49,7 @@ fn separation_wire_keeps_independent_controls_and_selected_category() {
         serde_json::json!({"groups":{"kind":"selected", "extra":1}}),
         serde_json::json!({"keep_body":1}),
     ] {
-        assert!(serde_json::from_value::<MeshSeparation>(invalid).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<MeshSeparation>(invalid).is_err());
     }
 }
 
@@ -54,7 +60,8 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
     let renamed = "f3d:child/Design/BulkStream.dat:design-parameter-scope#57";
     let replacements = std::collections::BTreeMap::from([(scope.to_owned(), renamed.to_owned())]);
     let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#separate"}}, "modification":{"kind":"separate", "separation":{"groups":{"kind":"selected", "members":[scope, format!("{scope}/alpha"), "beta"]}, "keep_body":false}}}});
-    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    let operation: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
         let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")))
@@ -64,7 +71,10 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
         expected["value"]["source"]["value"]["feature"] =
             "test:child/model:feature#separate".into();
         expected["value"]["modification"]["separation"]["groups"]["members"][0] = renamed.into();
-        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(rewritten).unwrap(),
+            expected
+        );
         map.finish()
     })
     .unwrap();
@@ -74,7 +84,8 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
 #[test]
 fn separation_schema_matches_optional_nonnull_settings() {
     use super::{MeshSeparation, MeshSeparationGroups};
-    let schema = serde_json::to_value(schemars::schema_for!(MeshSeparation)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(MeshSeparation)).unwrap();
     assert_eq!(schema["additionalProperties"], false);
     for name in ["method", "groups", "multiple_bodies", "keep_body"] {
         assert!(!schema["required"]
@@ -83,7 +94,9 @@ fn separation_schema_matches_optional_nonnull_settings() {
         assert!(!schema["properties"][name].to_string().contains("\"null\""));
     }
     assert_eq!(schema["properties"]["keep_body"]["type"], "boolean");
-    let groups = serde_json::to_value(schemars::schema_for!(MeshSeparationGroups)).unwrap();
+    let groups =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(MeshSeparationGroups))
+            .unwrap();
     assert!(!groups.to_string().contains("\"null\""));
 }
 
@@ -97,13 +110,17 @@ fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
         serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"tessellations","value":["test:mesh:tessellation#first"]}}}),
         serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"native","value":{"native":"native-mesh", "members":["second","first"]}}}}),
     ] {
-        let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+        let operation: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&operation).unwrap(),
+            wire
+        );
         crate::test_support::with_service_decode_context(|ctx| {
             let mut map =
                 IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
             let rewritten = operation.rewrite_identities(ctx, &mut map)?;
-            let rewritten = serde_json::to_value(rewritten).unwrap();
+            let rewritten = cadmpeg_core::serde_erase::json::to_value(rewritten).unwrap();
             let source = &wire["value"]["source"];
             if let Some(feature) = source["value"].get("feature") {
                 assert_eq!(
@@ -128,7 +145,7 @@ fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
         serde_json::json!({"minimum_area_fraction":1.1}),
         serde_json::json!({"angle_threshold":null}),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":settings}})).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":settings}})).is_err());
     }
 }
 
@@ -138,7 +155,8 @@ fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
         "test:mesh:tessellation#first",
         "test:mesh:tessellation#second"
     ]});
-    let selection: MeshSelection = serde_json::from_value(wire.clone()).unwrap();
+    let selection: MeshSelection =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     let MeshSelection::Tessellations(values) = &selection else {
         panic!("resolved tessellations");
     };
@@ -152,20 +170,27 @@ fn resolved_mesh_selection_preserves_the_tessellation_array_wire_form() {
             "test:mesh:tessellation#second"
         ]
     );
-    assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(selection).unwrap(),
+        wire
+    );
 }
 
 #[test]
 fn native_mesh_selection_preserves_source_order() {
     let wire =
         serde_json::json!({"kind":"native","value":{"native":"mesh:source", "members":["7", "3"]}});
-    let selection: MeshSelection = serde_json::from_value(wire.clone()).unwrap();
+    let selection: MeshSelection =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     let MeshSelection::Native { native, members } = &selection else {
         panic!("native sources");
     };
     assert_eq!(native.as_str(), "mesh:source");
     assert_eq!(members.as_ref().unwrap().as_slice(), ["7", "3"]);
-    assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(selection).unwrap(),
+        wire
+    );
 }
 
 #[test]
@@ -186,7 +211,7 @@ fn mesh_selections_reject_empty_repeated_blank_and_mixed_members() {
         serde_json::json!({"kind":"unresolved","value":{"feature":" "}}),
         serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#import", "native":"mesh:source"}}),
     ] {
-        assert!(serde_json::from_value::<MeshSelection>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<MeshSelection>(wire).is_err());
     }
 }
 
@@ -195,17 +220,17 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
     let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
-    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:child@Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
         let mut map = IdentityMap::new(|source: &str| {
             let source = source.strip_prefix("f3d:").unwrap();
-            Ok(format!("f3d:xref/child/{source}"))
+            Ok(format!("f3d:child@{source}"))
         })
         .with_text_replacements(&text);
-        let resolved: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "tessellations", "value": [
+        let resolved: MeshSelection = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "tessellations", "value": [
             "f3d:mesh:tessellation#first",
             "f3d:mesh:tessellation#second"
         ]}))
@@ -224,24 +249,24 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         );
         let resolved = resolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
-            serde_json::to_value(resolved).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(resolved).unwrap(),
             serde_json::json!({"kind": "tessellations", "value": [
-                "f3d:xref/child/mesh:tessellation#first",
-                "f3d:xref/child/mesh:tessellation#second"
+                "f3d:child@mesh:tessellation#first",
+                "f3d:child@mesh:tessellation#second"
             ]})
         );
-        let native: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "native", "value": {
+        let native: MeshSelection = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "native", "value": {
             "native":source_scope, "members":["7", "3"]
         }}))
         .unwrap();
         let native = native.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
-            serde_json::to_value(native).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(native).unwrap(),
             serde_json::json!({"kind": "native", "value": {
                 "native":target_scope, "members":["7", "3"]
             }})
         );
-        let unresolved: MeshSelection = serde_json::from_value(serde_json::json!({"kind": "unresolved", "value": {
+        let unresolved: MeshSelection = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "unresolved", "value": {
             "feature":"f3d:model:feature#import"
         }}))
         .unwrap();
@@ -253,8 +278,8 @@ fn mesh_sources_rewrite_resolved_identities_and_declared_native_scopes() {
         assert_eq!(visited, ["f3d:model:feature#import"]);
         let unresolved = unresolved.rewrite_identities(ctx, &mut map)?;
         assert_eq!(
-            serde_json::to_value(unresolved).unwrap(),
-            serde_json::json!({"kind": "unresolved", "value": {"feature":"f3d:xref/child/model:feature#import"}})
+            cadmpeg_core::serde_erase::json::to_value(unresolved).unwrap(),
+            serde_json::json!({"kind": "unresolved", "value": {"feature":"f3d:child@model:feature#import"}})
         );
         map.finish()
     })
@@ -326,9 +351,13 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
             MeshModification::Smooth { smoothness: None },
         ),
     ] {
-        let decoded: MeshModification = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: MeshModification =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, expected);
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
+            wire
+        );
     }
     for invalid in [
         serde_json::json!({"kind":"smooth","smoothness":1.5}),
@@ -337,7 +366,7 @@ fn mesh_modifications_keep_their_tagged_wire_forms() {
         serde_json::json!({"kind":"reverse_normals"}),
         serde_json::json!({"kind":"reduce","target":{"kind":"face_count","value":0}}),
     ] {
-        assert!(serde_json::from_value::<MeshModification>(invalid).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<MeshModification>(invalid).is_err());
     }
 }
 
@@ -351,13 +380,13 @@ fn mesh_reduction_bounds_and_repair_methods_reject_unknown_keys() {
         serde_json::json!({"kind":"face_count","value":null}),
         serde_json::json!({"kind":"face_count","value":6.5}),
     ] {
-        assert!(serde_json::from_value::<MeshReduceTarget>(target).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<MeshReduceTarget>(target).is_err());
     }
     for method in [
         serde_json::json!({"kind":"close_holes","extra":true}),
         serde_json::json!({"kind":"stitch_and_remove","extra":true}),
     ] {
-        assert!(serde_json::from_value::<MeshRepair>(method).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<MeshRepair>(method).is_err());
     }
 }
 
@@ -377,12 +406,16 @@ fn mesh_operations_keep_their_feature_wire_forms() {
             "source":{"kind":"unresolved","value":{"feature":"test:model:feature#section"}}
         }}),
     ] {
-        let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+        let operation: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert!(matches!(
             operation,
             FeatureOperation::MeshModify { .. } | FeatureOperation::MeshSection { .. }
         ));
-        assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(operation).unwrap(),
+            wire
+        );
     }
 }
 
@@ -400,7 +433,7 @@ fn section_plane_rejects_explicit_null_and_nonperpendicular_axes() {
             "source":{"kind":"unresolved","value":{"feature":"test:model:feature#section"}},
             "plane":plane
         }});
-        assert!(serde_json::from_value::<FeatureOperation>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(wire).is_err());
     }
 }
 
@@ -417,7 +450,8 @@ fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
         },
         "sketch":"test:model:feature#sketch"
     }});
-    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    let operation: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:", "test:child/")));
         let mut identities = Vec::new();
@@ -433,7 +467,10 @@ fn section_identity_rewrite_keeps_its_plane_and_linked_sketch() {
         let mut expected = wire.clone();
         expected["value"]["source"]["value"]["feature"] = "test:child/model:feature#section".into();
         expected["value"]["sketch"] = "test:child/model:feature#sketch".into();
-        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(rewritten).unwrap(),
+            expected
+        );
         map.finish()
     })
     .unwrap();
@@ -448,23 +485,31 @@ fn conversion_wire_preserves_ordered_source_contexts() {
             {"kind":"unresolved","value":{"feature":"test:model:feature#convert"}}
         ]
     }});
-    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    let operation: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     let FeatureOperation::MeshConvert(conversion) = &operation else {
         panic!("mesh conversion");
     };
     assert_eq!(conversion.sources.len(), 3);
     assert_eq!(conversion.sources[0], conversion.sources[1]);
-    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(operation).unwrap(),
+        wire
+    );
     for method in ["faceted", "prismatic"] {
         let mut known = wire.clone();
         known["value"]["method"] = method.into();
-        let operation: FeatureOperation = serde_json::from_value(known.clone()).unwrap();
-        assert_eq!(serde_json::to_value(operation).unwrap(), known);
+        let operation: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(known.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(operation).unwrap(),
+            known
+        );
     }
     for method in [serde_json::Value::Null, serde_json::json!("unruled")] {
         let mut invalid = wire.clone();
         invalid["value"]["method"] = method;
-        assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(invalid).is_err());
     }
     for sources in [
         serde_json::Value::Null,
@@ -472,12 +517,14 @@ fn conversion_wire_preserves_ordered_source_contexts() {
         serde_json::json!([{"kind":"native","value":{"native":"mesh:scope","members":[]}}]),
         serde_json::json!([{"kind":"unresolved","value":{"feature":" "}}]),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(
-            serde_json::json!({"kind": "mesh_convert", "value": {
-                "sources":sources
-            }})
-        )
-        .is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(
+                serde_json::json!({"kind": "mesh_convert", "value": {
+                    "sources":sources
+                }})
+            )
+            .is_err()
+        );
     }
 }
 
@@ -486,7 +533,7 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
     let source_scope = "f3d:Design/BulkStream.dat:design-parameter-scope#7";
-    let target_scope = "f3d:xref/child/Design/BulkStream.dat:design-parameter-scope#7";
+    let target_scope = "f3d:child@Design/BulkStream.dat:design-parameter-scope#7";
     let replacements =
         std::collections::BTreeMap::from([(source_scope.to_owned(), target_scope.to_owned())]);
     let wire = serde_json::json!({"kind": "mesh_convert", "value": {
@@ -496,14 +543,12 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
             {"kind":"unresolved","value":{"feature":"f3d:model:feature#convert"}}
         ]
     }});
-    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    let operation: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     crate::test_support::with_service_decode_context(|ctx| {
         let text = TextReplacements::build(replacements.iter())?;
         let mut map = IdentityMap::new(|id: &str| {
-            Ok(format!(
-                "f3d:xref/child/{}",
-                id.strip_prefix("f3d:").unwrap()
-            ))
+            Ok(format!("f3d:child@{}", id.strip_prefix("f3d:").unwrap()))
         })
         .with_text_replacements(&text);
         let mut visited = Vec::new();
@@ -519,9 +564,12 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
         let mut expected = wire.clone();
         let sources = &mut expected["value"]["sources"];
         sources[0]["value"]["native"] = target_scope.into();
-        sources[1]["value"][0] = "f3d:xref/child/mesh:tessellation#source".into();
-        sources[2]["value"]["feature"] = "f3d:xref/child/model:feature#convert".into();
-        assert_eq!(serde_json::to_value(rewritten).unwrap(), expected);
+        sources[1]["value"][0] = "f3d:child@mesh:tessellation#source".into();
+        sources[2]["value"]["feature"] = "f3d:child@model:feature#convert".into();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(rewritten).unwrap(),
+            expected
+        );
         map.finish()
     })
     .unwrap();
@@ -542,7 +590,8 @@ fn conversion_schema_exposes_sources_on_the_tagged_operation() {
             _ => None,
         }
     }
-    let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
     let conversion = find_conversion(&schema).unwrap();
     let conversion = match conversion.get("$ref").and_then(serde_json::Value::as_str) {
         Some(reference) => schema
@@ -575,13 +624,17 @@ fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
             serde_json::json!({"kind":"native","value":{"native":"scope","members":["9","7"]}}),
         ] {
             let wire = serde_json::json!({"kind": "mesh_modify", "value": {"source":source,"modification":{"kind":"plane_cut","cut":cut}}});
-            let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+            let operation: FeatureOperation =
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(&operation).unwrap(),
+                wire
+            );
             crate::test_support::with_service_decode_context(|ctx| {
                 let mut identities =
                     IdentityMap::new(|source: &str| Ok(source.replace("test:", "test:child/")));
                 let cloned = operation.rewrite_identities(ctx, &mut identities)?;
-                let cloned = serde_json::to_value(cloned).unwrap();
+                let cloned = cadmpeg_core::serde_erase::json::to_value(cloned).unwrap();
                 assert_eq!(cloned["value"]["modification"], wire["value"]["modification"]);
                 assert_eq!(
                     cloned["value"]["source"],
@@ -599,7 +652,7 @@ fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
         }
     }
     assert_eq!(
-        serde_json::to_value(super::MeshPlaneCut::default()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(super::MeshPlaneCut::default()).unwrap(),
         serde_json::json!({})
     );
 }
@@ -609,7 +662,8 @@ fn plane_cut_rejects_null_unknown_keys_and_invalid_checked_geometry() {
     for key in ["origin", "normal", "mode", "fill", "retained_side"] {
         let mut wire = serde_json::json!({});
         wire[key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<super::MeshPlaneCut>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<super::MeshPlaneCut>(wire).unwrap_err();
         assert!(error.to_string().contains(key));
     }
     for wire in [
@@ -620,14 +674,16 @@ fn plane_cut_rejects_null_unknown_keys_and_invalid_checked_geometry() {
         serde_json::json!({"retained_side":"other"}),
         serde_json::json!({"u_axis":{"x":1,"y":0,"z":0}}),
     ] {
-        assert!(serde_json::from_value::<super::MeshPlaneCut>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<super::MeshPlaneCut>(wire).is_err());
     }
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn plane_cut_schema_matches_omitted_optional_values_and_control_vocabulary() {
-    let schema = serde_json::to_value(schemars::schema_for!(super::MeshPlaneCut)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(super::MeshPlaneCut))
+            .unwrap();
     for key in ["origin", "normal", "mode", "fill", "retained_side"] {
         assert!(schema["properties"][key].is_object());
         assert!(!schema["properties"][key].to_string().contains("null"));

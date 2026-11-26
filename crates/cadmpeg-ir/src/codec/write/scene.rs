@@ -17,8 +17,9 @@ pub struct SceneOptions {
     /// The up axis of the scene. The encoder turns the model so that its
     /// up direction is this axis. `None` keeps the up axis of the source.
     pub up_axis: Option<UpAxis>,
-    /// Metres per scene unit. `None` selects the default of the format.
-    pub meters_per_unit: Option<f64>,
+    /// Metres per scene unit, finite and positive. `None` selects the
+    /// default of the format.
+    pub meters_per_unit: Option<crate::scalar::PositiveReal>,
     /// Whether exact B-rep geometry is written beside the meshes.
     pub exact_brep: bool,
     /// Whether each material gets a `MaterialX` shader beside its
