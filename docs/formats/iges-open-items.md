@@ -151,7 +151,7 @@ from a conformant file.
 
 **Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
 
-**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas the writer skips, including quarantined records without writable fields (`writer.rs:5373`).
+**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas the writer skips (`writer.rs:5837`). A record that failed typing is a given-up part. The writer reports the `unknowns` stub of that part with `native.records-omitted`.
 
 **Need.** A complete arena inventory must establish the regenerated set and the omitted set.
 

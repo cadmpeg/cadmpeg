@@ -25,11 +25,16 @@ schema.
 ## Disposition totals
 
 The audit recorded six grouped namespace dispositions: **retain 6, migrate 0,
-remove 0**. No arena is marked for removal. A later removal requires a new
-audit and an `IR_VERSION` bump.
+remove 0**. No namespace is marked for removal. A later removal of an arena
+requires a new audit and an `IR_VERSION` bump.
 
 The `iges` row was added after the audit concluded and applies the same
 criteria. The recorded audit total stays six.
+
+CADIR v11 removes the `iges` arenas `quarantined_directory_records` and
+`quarantined_parameter_records`. Given-up part stubs (CADIR §3.3) carry those
+records. The version change of v11 covers the removal. The `iges` namespace
+stays retained, so the totals are unchanged.
 
 The absence of a writer or of `validate_native` was treated as evidence about
 consumers, not as a cull rule. The decision is preservation of the current
