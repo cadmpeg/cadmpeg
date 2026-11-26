@@ -4,6 +4,7 @@
 
 use super::bundle::{changed, kinds, read, timeline};
 use crate::test_support::fixture;
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
 
@@ -498,7 +499,7 @@ fn renamed_host(id: &str) -> Vec<u8> {
             None => name,
         };
         if name == "manifest.json" {
-            let mut value: Value = serde_json::from_slice(&data).unwrap();
+            let mut value: Value = json::from_slice(&data).unwrap();
             value["elements"][0]["id"] = json!(id);
             value["root_element"] = json!(id);
             data = serde_json::to_vec(&value).unwrap();
