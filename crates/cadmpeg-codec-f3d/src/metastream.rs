@@ -306,6 +306,18 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
 
         let full_at = *at;
         let full: Result<(), ParseFailure> = (|| {
+            if View::u32_le_at(bytes, *at) == Some(0) {
+                let empty_urn_at = *at;
+                *at = require(at.checked_add(4), "version-context version URN", *at)?;
+                if take_version_guid(bytes, at, "version-context asset revision GUID", false)
+                    .is_ok()
+                {
+                    require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+                    *at = require(at.checked_add(4), "version-context revision", *at)?;
+                    return Ok(());
+                }
+                *at = empty_urn_at;
+            }
             take_version_urn(bytes, at)?;
             take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
@@ -648,6 +660,52 @@ mod tests {
         invalid_presence.extend_from_slice(&65u32.to_le_bytes());
         assert!(parse(&invalid_presence, "invalid-version-context").is_err());
         assert!(parse(&bytes[..bytes.len() - 1], "truncated-version-context").is_err());
+    }
+
+    fn empty_urn_contexts(revision_guids: [&str; 2]) -> Vec<u8> {
+        let mut bytes = stream_prefix();
+        bytes.extend_from_slice(&15u64.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for (token, revision_guid) in [0x1122_3344_5566_7788u64, 0x8877_6655_4433_2211]
+            .into_iter()
+            .zip(revision_guids)
+        {
+            bytes.extend_from_slice(&token.to_le_bytes());
+            lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+            lp_utf16(&mut bytes, revision_guid);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn parses_a_full_version_context_with_an_empty_version_urn() {
+        let mut bytes = empty_urn_contexts([
+            "00000000-0000-0000-0000-000000000000",
+            "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        ]);
+        parse(&bytes, "empty-urn-contexts").expect("contexts close the stream");
+
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_ascii(&mut bytes, "Synthetic");
+        bytes.extend_from_slice(&29u32.to_le_bytes());
+        parse(&bytes, "empty-urn-contexts-properties").expect("properties close the stream");
+    }
+
+    #[test]
+    fn an_empty_version_urn_requires_its_asset_revision_guid_and_revision() {
+        let bytes = empty_urn_contexts([
+            "00000000-0000-0000-0000-000000000000",
+            "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        ]);
+        assert!(parse(&bytes[..bytes.len() - 4], "empty-urn-without-revision").is_err());
+
+        let mut unhyphenated = bytes.clone();
+        let last_guid_at = bytes.len() - 4 - 72;
+        unhyphenated[last_guid_at + 16] = b'0';
+        assert!(parse(&unhyphenated, "empty-urn-invalid-guid").is_err());
     }
 
     #[test]
