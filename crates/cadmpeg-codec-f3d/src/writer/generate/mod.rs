@@ -14,6 +14,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
     configuration_targets, decoded_configurations, f3d_native, validate_assembly_projection,
+    SourceConfigurations,
 };
 mod attributes;
 pub(in crate::writer) mod configuration_root;
@@ -53,12 +54,15 @@ pub(super) struct Generated {
 /// Write a source-less F3D archive of everything in `target` the generator
 /// can encode, in the form `missing_states` names for the features whose
 /// states it cannot write (cadir-v11.md §3.4), and report the rest as losses
-/// (see [`reduce`]).
+/// (see [`reduce`]). `source` is the retained image of the source `target`
+/// was decoded from, where the write has one.
 pub(super) fn write_new(
     target: &CadIr,
     missing_states: MissingStateForm,
+    source: Option<&[u8]>,
     writer: &mut dyn Write,
 ) -> Result<Generated, CodecError> {
+    let source = SourceConfigurations::new(source);
     // The history-true form writes the state at its timeline marker, which
     // an evaluation can hold in place of the current state.
     let staged = match missing_states {
@@ -86,6 +90,7 @@ pub(super) fn write_new(
             reduction.writes_neutral_design(),
             missing_states,
             reduction.fallback(),
+            &source,
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -132,6 +137,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             false,
             MissingStateForm::GeometryTrue,
             &design::Fallback::default(),
+            &SourceConfigurations::new(None),
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -153,7 +159,8 @@ fn encode_brep(
 /// records are written, and `write_neutral` whether its design scope is, in
 /// the form `missing_states` names; `fallback` names the parts of the design
 /// scope's form dropped after a
-/// failure. A failure names the stage that failed. Returns the arena coverage
+/// failure; `source` is the source of the write. A failure names the stage
+/// that failed. Returns the arena coverage
 /// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
@@ -161,6 +168,7 @@ fn attempt<W: Write + Seek>(
     write_neutral: bool,
     missing_states: MissingStateForm,
     fallback: &design::Fallback,
+    source: &SourceConfigurations<'_>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -331,7 +339,9 @@ fn attempt<W: Write + Seek>(
     let mut root = None;
     let mut table_losses = Vec::new();
     if write_design {
-        let decoded = decoded_configurations(target, &native).map_err(Failure::design)?;
+        let targets = configuration_targets(target, &native);
+        let decoded = decoded_configurations(&native.design_configurations, &targets)
+            .map_err(Failure::design)?;
         let neutral = if target.model.omitted_arenas_held() {
             target.model.configurations.as_slice()
         } else {
@@ -341,7 +351,8 @@ fn attempt<W: Write + Seek>(
             &native.design_configurations,
             &decoded,
             neutral,
-            &configuration_targets(target, &native),
+            &targets,
+            source,
         )
         .map_err(Failure::design)?;
         table_losses = losses;

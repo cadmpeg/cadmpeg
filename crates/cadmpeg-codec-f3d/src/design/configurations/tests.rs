@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    attach_roots, inferred_configuration_suppression_count, project_configurations,
+    attach_roots, inferred_configuration_suppression_count, project,
     reconcile_active_configurations, root_document, unresolved_configuration_member_count,
     unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
     unresolved_configuration_suppressed_feature_count,
@@ -88,7 +88,9 @@ fn configuration_rows_project_in_row_order_with_the_active_row() {
     let mut native = table(&document());
     native.set_active_row(active("1", "tall")).unwrap();
     let natives = Natives::complete();
-    let projected = project_configurations(&[native], &natives.targets()).unwrap();
+    let projected = project(&[native], &natives.targets())
+        .unwrap()
+        .configurations;
     let mut rows = projected
         .iter()
         .map(|configuration| {
@@ -122,7 +124,9 @@ fn configuration_rows_project_in_row_order_with_the_active_row() {
     for table_id in ["2", ""] {
         let mut native = table(&document());
         native.set_active_row(active(table_id, "tall")).unwrap();
-        let projected = project_configurations(&[native], &natives.targets()).unwrap();
+        let projected = project(&[native], &natives.targets())
+            .unwrap()
+            .configurations;
         assert!(projected.iter().all(|configuration| !configuration.active));
     }
 }
@@ -130,7 +134,9 @@ fn configuration_rows_project_in_row_order_with_the_active_row() {
 #[test]
 fn configuration_cells_bind_targets_by_record_index() {
     let natives = Natives::complete();
-    let projected = project_configurations(&[table(&document())], &natives.targets()).unwrap();
+    let projected = project(&[table(&document())], &natives.targets())
+        .unwrap()
+        .configurations;
     let tall = projected
         .iter()
         .find(|configuration| configuration.name.as_deref() == Some("Tall"))
@@ -191,7 +197,9 @@ fn configuration_cells_without_a_neutral_target_stay_properties() {
     ));
     cases.push(("other streams", natives));
     for (name, natives) in cases {
-        let projected = project_configurations(&[table(&document())], &natives.targets()).unwrap();
+        let projected = project(&[table(&document())], &natives.targets())
+            .unwrap()
+            .configurations;
         let tall = projected
             .iter()
             .find(|configuration| configuration.name.as_deref() == Some("Tall"))
@@ -229,14 +237,18 @@ fn configuration_owner_records_resolve_only_one_parameter() {
     natives
         .owners
         .push(owner("f3d:Other/BulkStream.dat", 330, 329));
-    let projected = project_configurations(&[table(&document())], &natives.targets()).unwrap();
+    let projected = project(&[table(&document())], &natives.targets())
+        .unwrap()
+        .configurations;
     assert!(projected
         .iter()
         .all(|configuration| configuration.properties.contains_key("parameter:D")));
 
     let mut natives = Natives::complete();
     natives.owners.push(owner(STREAM, 330, 329));
-    let projected = project_configurations(&[table(&document())], &natives.targets()).unwrap();
+    let projected = project(&[table(&document())], &natives.targets())
+        .unwrap()
+        .configurations;
     assert!(projected
         .iter()
         .all(|configuration| !configuration.properties.contains_key("parameter:D")));
@@ -248,8 +260,9 @@ fn configuration_tables_with_rows_supply_one_list() {
     let empty = table_document("2", &columns(), &[], &[]);
     let mut second = table(&empty);
     second.set_active_row(active("2", "tall")).unwrap();
-    let projected =
-        project_configurations(&[table(&document()), second], &natives.targets()).unwrap();
+    let projected = project(&[table(&document()), second], &natives.targets())
+        .unwrap()
+        .configurations;
     assert_eq!(projected.len(), 2);
 
     let other = DesignConfiguration::try_new(
@@ -258,7 +271,7 @@ fn configuration_tables_with_rows_supply_one_list() {
         document().as_object().unwrap().clone(),
     )
     .unwrap();
-    let error = project_configurations(&[table(&document()), other], &natives.targets())
+    let error = project(&[table(&document()), other], &natives.targets())
         .expect_err("two populated tables");
     assert!(error
         .to_string()
@@ -273,7 +286,7 @@ fn configuration_rules_bind_only_one_named_row() {
         &json!({"when": "width > 20 mm", "activate": "Tall"}),
     );
     let native = [table(&document()), bound];
-    let projected = project_configurations(&native, &natives.targets()).unwrap();
+    let projected = project(&native, &natives.targets()).unwrap().configurations;
     let tall = projected
         .iter()
         .find(|configuration| configuration.name.as_deref() == Some("Tall"))
@@ -301,7 +314,7 @@ fn configuration_rules_bind_only_one_named_row() {
         ),
         rule("partial.dsgcfgrule", &json!({"when": "w > 1", "x": 7})),
     ];
-    let projected = project_configurations(&native, &natives.targets()).unwrap();
+    let projected = project(&native, &natives.targets()).unwrap().configurations;
     assert_eq!(unresolved_configuration_rule_count(&native, &projected), 2);
     assert_eq!(unresolved_configuration_member_count(&native), 1);
 }

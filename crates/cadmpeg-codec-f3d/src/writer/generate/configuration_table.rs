@@ -11,14 +11,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
 use cadmpeg_ir::features::parameters::{DesignConfiguration as Configuration, ParameterValue};
-use cadmpeg_ir::features::{FeatureId, ParameterId};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
 use serde_json::{Map, Value};
 
 use super::presentation::deterministic_guid;
-use crate::design::configurations::{project, ConfigurationTargets, Projection};
+use crate::design::configurations::{
+    project, reconcile_active_configurations, table_at, ConfigurationTargets, Projection,
+};
 use crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE;
 use crate::ids::neutral_configuration_id;
 use crate::records::configuration::table::{
@@ -26,7 +28,9 @@ use crate::records::configuration::table::{
     ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue, RowGuids,
 };
 use crate::records::configuration::DesignConfiguration;
-use crate::writer::primitives::{columned_features, Cells, INFERRED};
+use crate::writer::primitives::{
+    unheld, Cells, Difference, SourceConfigurations, StoredStates, INFERRED,
+};
 
 /// The configuration documents the write holds, and what they read back as.
 pub(super) struct Written<'a> {
@@ -43,17 +47,18 @@ pub(super) struct Written<'a> {
 /// Write `documents` with the rows, cells, row order and rule targets of
 /// `configurations`, where they differ from `decoded`, the configurations
 /// that `documents` project. Return the written documents and the losses of
-/// what they read back as otherwise than `configurations`.
+/// what they read back as otherwise than `configurations`; `source` is the
+/// source of the write.
 pub(super) fn regenerate<'a>(
     documents: &'a [DesignConfiguration],
     decoded: &Projection,
     configurations: &[Configuration],
     targets: &ConfigurationTargets<'_>,
+    source: &SourceConfigurations<'_>,
 ) -> Result<(Written<'a>, Vec<LossNote>), CodecError> {
     let mut payloads = vec![None; documents.len()];
     let mut losses = Vec::new();
     let host = host(documents, decoded.table);
-    let columned = columned_features(host.map(|(_, table)| table), targets);
     let expected = match host {
         Some((index, table)) => Rows {
             entry: documents[index].entry_name(),
@@ -61,7 +66,8 @@ pub(super) fn regenerate<'a>(
             payload: &mut payloads[index],
             table,
             targets,
-            columned: &columned,
+            stored: &StoredStates::of(documents, Some((index, table.position)), targets),
+            baseline: source,
         }
         .write(&decoded.configurations, configurations),
         None => {
@@ -86,19 +92,9 @@ pub(super) fn regenerate<'a>(
         Err(error) if crate::design::decode::record::is_fatal(&error) => return Err(error),
         Err(_) => Projection::default(),
     };
-    let active = decoded
-        .configurations
-        .iter()
-        .chain(configurations)
-        .filter(|configuration| configuration.active)
-        .map(|configuration| configuration.id.to_string())
-        .collect();
-    losses.extend(compare(
-        &expected,
-        &projection.configurations,
-        &active,
-        &columned,
-    ));
+    let read = read_back(&projection, &expected, targets)?;
+    let stored = StoredStates::of(&documents, projection.table, targets);
+    losses.extend(compare(&expected, &read, &stored, source));
     let generated = expected
         .iter()
         .filter(|(written, configuration)| configuration.id.as_str() != written.as_str())
@@ -114,6 +110,30 @@ pub(super) fn regenerate<'a>(
     ))
 }
 
+/// The configurations that the decoder states for the written documents,
+/// `projection`: each row active where its configuration in `expected` is,
+/// since the root record names the active configuration, and the active
+/// configuration reconciled with the features. A reconciliation that fails
+/// leaves the rows as they are.
+fn read_back(
+    projection: &Projection,
+    expected: &BTreeMap<String, &Configuration>,
+    targets: &ConfigurationTargets<'_>,
+) -> Result<Vec<Configuration>, CodecError> {
+    let mut read = projection.configurations.clone();
+    for configuration in &mut read {
+        if let Some(expected) = expected.get(configuration.id.as_str()) {
+            configuration.active = expected.active;
+        }
+    }
+    let mut reconciled = read.clone();
+    match reconcile_active_configurations(&mut targets.neutral_features.to_vec(), &mut reconciled) {
+        Ok(()) => Ok(reconciled),
+        Err(error) if crate::design::decode::record::is_fatal(&error) => Err(error),
+        Err(_) => Ok(read),
+    }
+}
+
 /// The table that holds the rows of the configurations: the table whose rows
 /// the decoder projects, else the one table of `documents` when it holds no
 /// row.
@@ -121,19 +141,15 @@ fn host(
     documents: &[DesignConfiguration],
     projected: Option<(usize, usize)>,
 ) -> Option<(usize, &ConfigurationTable)> {
+    if projected.is_some() {
+        return table_at(documents, projected);
+    }
     let mut tables = documents
         .iter()
         .enumerate()
         .flat_map(|(index, document)| document.tables().iter().map(move |table| (index, table)));
-    match projected {
-        Some((document, position)) => {
-            tables.find(|(index, table)| (*index, table.position) == (document, position))
-        }
-        None => {
-            let first = tables.next()?;
-            (tables.next().is_none() && first.1.rows.is_empty()).then_some(first)
-        }
-    }
+    let first = tables.next()?;
+    (tables.next().is_none() && first.1.rows.is_empty()).then_some(first)
 }
 
 /// The payload of a document the write changes, from a copy of `source`.
@@ -146,22 +162,26 @@ fn edit<'p>(
 
 /// The rows of `table`, the table at `table.position` of the document
 /// `entry`, which `source` states and `payload` writes.
-struct Rows<'s, 'p> {
+struct Rows<'s, 'p, 'b> {
     entry: &'s str,
     source: &'s Map<String, Value>,
     payload: &'p mut Option<Map<String, Value>>,
     table: &'s ConfigurationTable,
     targets: &'s ConfigurationTargets<'s>,
-    /// The features that a column of `table` suppresses.
-    columned: &'s BTreeSet<FeatureId>,
+    /// The feature states that each row of `table` stores in a cell.
+    stored: &'s StoredStates,
+    /// The source of the write.
+    baseline: &'s SourceConfigurations<'b>,
 }
 
-impl Rows<'_, '_> {
+impl Rows<'_, '_, '_> {
     /// Write a row of each of `configurations`: the row of its id, else a
     /// new row. Regenerate the cells of each row whose configuration states
-    /// cells other than `decoded`; remove the other rows; write the rows in
-    /// the order of the configurations' ordinals. Return the configuration of
-    /// each written row, keyed by the configuration id it reads back as.
+    /// cells other than `decoded`, or a part no cell stores that neither
+    /// `decoded` nor the source states ([`unheld`]); remove the other rows;
+    /// write the rows in the order of the configurations' ordinals. Return
+    /// the configuration of each written row, keyed by the configuration id
+    /// it reads back as.
     fn write<'c>(
         mut self,
         decoded: &[Configuration],
@@ -186,11 +206,12 @@ impl Rows<'_, '_> {
         for configuration in configurations {
             let row_id = match stored.get(configuration.id.as_str()) {
                 Some(row) => {
+                    let stored = self.stored.row(configuration.id.as_str());
                     let unchanged = decoded
                         .get(configuration.id.as_str())
                         .is_some_and(|decoded| {
-                            Cells::of(decoded, self.columned)
-                                == Cells::of(configuration, self.columned)
+                            Cells::of(decoded, stored) == Cells::of(configuration, stored)
+                                && unheld(configuration, decoded, stored, self.baseline).is_empty()
                         });
                     if !unchanged {
                         self.cells(&row.id, Some(row), configuration);
@@ -559,15 +580,15 @@ fn differing<'k, K: Ord, V: PartialEq>(
 
 /// The losses of the configurations that the written rows, `read`, state
 /// otherwise than `expected`, the configuration of each row keyed by the
-/// configuration id it reads back as. Of a configuration that is `active` in
-/// the record or in the decode, the state of a feature that no column names
-/// and an [`INFERRED`] property are the decoder's reconciliation of the
-/// active configuration with the features, which a row does not store.
+/// configuration id it reads back as. `stored` names the feature states
+/// that each written row stores in a cell; a part that no cell stores is
+/// charged where `source` does not state it as `expected` does
+/// ([`unheld`]).
 fn compare(
     expected: &BTreeMap<String, &Configuration>,
     read: &[Configuration],
-    active: &BTreeSet<String>,
-    columned: &BTreeSet<FeatureId>,
+    stored: &StoredStates,
+    source: &SourceConfigurations<'_>,
 ) -> Vec<LossNote> {
     let read = read
         .iter()
@@ -593,32 +614,55 @@ fn compare(
         if back.name != configuration.name {
             names.push(id.to_owned());
         }
-        let reconciled = active.contains(id);
         let mut fields = Vec::new();
         if back.material != configuration.material {
-            fields.push("material".to_owned());
+            fields.push(Difference::of(
+                "material".to_owned(),
+                configuration.material.as_ref(),
+                back.material.as_ref(),
+            ));
         }
         if back.bodies != configuration.bodies {
-            fields.push("bodies".to_owned());
+            fields.push(Difference::of(
+                "bodies".to_owned(),
+                configuration.bodies.as_ref(),
+                back.bodies.as_ref(),
+            ));
         }
         fields.extend(
             differing(&configuration.properties, &back.properties)
-                .filter(|key| !(reconciled && key.as_str().starts_with(INFERRED)))
-                .map(|key| format!("properties.{key}")),
+                .filter(|key| !key.as_str().starts_with(INFERRED))
+                .map(|key| {
+                    Difference::of(
+                        format!("properties.{key}"),
+                        configuration.properties.get(key),
+                        back.properties.get(key),
+                    )
+                }),
         );
         fields.extend(
             differing(
                 &configuration.parameter_overrides,
                 &back.parameter_overrides,
             )
-            .map(|parameter| format!("parameter_overrides.{parameter}")),
+            .map(|parameter| {
+                Difference::of(
+                    format!("parameter_overrides.{parameter}"),
+                    configuration.parameter_overrides.get(parameter),
+                    back.parameter_overrides.get(parameter),
+                )
+            }),
         );
         for parameter in differing(&configuration.parameter_values, &back.parameter_values) {
             let expression = configuration.parameter_overrides.get(parameter);
             if expression.is_some() && expression == back.parameter_overrides.get(parameter) {
                 values.push(format!("{id}: {parameter}"));
             } else {
-                fields.push(format!("parameter_values.{parameter}"));
+                fields.push(Difference::of(
+                    format!("parameter_values.{parameter}"),
+                    configuration.parameter_values.get(parameter),
+                    back.parameter_values.get(parameter),
+                ));
             }
         }
         let states = |configuration: &'_ Configuration| {
@@ -628,14 +672,23 @@ fn compare(
                 .map(|(feature, state)| (feature.clone(), state.evaluation.clone()))
                 .collect::<BTreeMap<_, _>>()
         };
+        let row = stored.row(written);
         let (stated, held) = (states(configuration), states(back));
         fields.extend(
             differing(&stated, &held)
-                .filter(|feature| !reconciled || columned.contains(*feature))
-                .map(|feature| format!("feature_states.{feature}")),
+                .filter(|feature| row.contains(*feature))
+                .map(|feature| {
+                    Difference::of(
+                        format!("feature_states.{feature}"),
+                        stated.get(feature),
+                        held.get(feature),
+                    )
+                }),
         );
+        fields.extend(unheld(configuration, back, row, source));
         if !fields.is_empty() {
-            dropped.push(format!("{id}: {}", fields.join(", ")));
+            let fields = fields.iter().map(ToString::to_string).collect::<Vec<_>>();
+            dropped.push(format!("{id}: {}", fields.join("; ")));
         }
     }
     let removed = read
@@ -646,7 +699,7 @@ fn compare(
     losses.extend(edit_dropped(
         EntityKind::Configuration,
         "F3D",
-        "writes these configurations without these fields: their configuration table holds no cell or row for them, or its cell reads back otherwise",
+        "writes these configurations, whose written rows read back as configurations that differ in these fields: the configuration table holds no cell or row for the field, or its cell reads back otherwise",
         dropped,
     ));
     losses.extend(edit_dropped(

@@ -2209,8 +2209,13 @@ mod tests {
     fn invalid_wire_membership_is_dropped_and_the_rest_written() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
-        write_new(&target, MissingStateForm::GeometryTrue, &mut valid_output)
-            .expect("unmodified free wire writes");
+        write_new(
+            &target,
+            MissingStateForm::GeometryTrue,
+            None,
+            &mut valid_output,
+        )
+        .expect("unmodified free wire writes");
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
@@ -2245,7 +2250,7 @@ mod tests {
             (endpoint, "is both free and an edge endpoint"),
         ] {
             let mut output = Vec::new();
-            let generated = write_new(&target, MissingStateForm::GeometryTrue, &mut output)
+            let generated = write_new(&target, MissingStateForm::GeometryTrue, None, &mut output)
                 .expect("invalid wire ownership still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output), &DecodeOptions::default())

@@ -243,7 +243,7 @@ pub(crate) fn project(
     ir: &cadmpeg_ir::CadIr,
 ) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let native = crate::test_support::native_test::f3d_native(ir);
-    crate::design::configurations::project_configurations(
+    crate::design::configurations::project(
         &native.design_configurations,
         &crate::design::configurations::ConfigurationTargets {
             parameters: &native.design_parameters,
@@ -254,6 +254,7 @@ pub(crate) fn project(
         },
     )
     .expect("configuration projection")
+    .configurations
 }
 
 /// Attach the active row `row_id` of table `1` to the first native

@@ -4,16 +4,14 @@ use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
-use std::collections::BTreeSet;
-
-use super::same_configurations;
-use crate::design::configurations::project_configurations;
+use super::{same_configurations, SourceConfigurations, StoredStates};
+use crate::design::configurations::project;
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::test_support::configuration_table::{bool_cell, object_target, table_document, Natives};
 
-/// The configurations of a table whose one column names the feature of
-/// scope 314, with a suppressed row and a computed row.
-fn configurations() -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
+/// A table whose one column names the feature of scope 314, with a
+/// suppressed row and a computed row.
+fn document() -> DesignConfiguration {
     let document = table_document(
         "1",
         &[("F", object_target("314", "DcFeature"))],
@@ -23,18 +21,25 @@ fn configurations() -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration
         ],
         &["off", "on"],
     );
-    let document = DesignConfiguration::try_new(
+    DesignConfiguration::try_new(
         "FusionAssetName[Active]/DesignConfigurationTable.f.dsgcfg".into(),
         DesignConfigurationKind::Table,
         document.as_object().unwrap().clone(),
     )
-    .unwrap();
-    project_configurations(&[document], &Natives::complete().targets()).unwrap()
+    .unwrap()
 }
 
-/// The feature that the column of [`configurations`] suppresses.
-fn columned() -> BTreeSet<FeatureId> {
-    BTreeSet::from([Natives::complete().neutral_features[0].id.clone()])
+/// The configurations of [`document`].
+fn configurations() -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
+    project(&[document()], &Natives::complete().targets())
+        .unwrap()
+        .configurations
+}
+
+/// The feature states that the rows of [`document`] store: each row stores
+/// the state of the feature of scope 314.
+fn stored() -> StoredStates {
+    StoredStates::of(&[document()], Some((0, 0)), &Natives::complete().targets())
 }
 
 #[test]
@@ -52,7 +57,12 @@ fn a_feature_edit_leaves_the_configurations_the_same() {
         state.dependencies = DistinctMembers::default();
     }
     assert_ne!(edited, decoded);
-    assert!(same_configurations(&edited, &decoded, &columned()));
+    assert!(same_configurations(
+        &edited,
+        &decoded,
+        &stored(),
+        &SourceConfigurations::new(None)
+    ));
 }
 
 #[test]
@@ -66,14 +76,24 @@ fn a_configuration_edit_makes_the_configurations_differ() {
         },
         ConfigurationEvaluation::Active { .. } => ConfigurationEvaluation::Suppressed {},
     };
-    assert!(!same_configurations(&edited, &decoded, &columned()));
+    assert!(!same_configurations(
+        &edited,
+        &decoded,
+        &stored(),
+        &SourceConfigurations::new(None)
+    ));
     let mut reordered = decoded.clone();
     reordered[0].ordinal = 7;
-    assert!(!same_configurations(&reordered, &decoded, &columned()));
+    assert!(!same_configurations(
+        &reordered,
+        &decoded,
+        &stored(),
+        &SourceConfigurations::new(None)
+    ));
 }
 
 #[test]
-fn a_state_the_decoder_derives_in_the_active_configuration_is_not_compared() {
+fn a_part_no_cell_holds_is_an_edit_where_the_source_states_it_otherwise() {
     let mut decoded = configurations();
     decoded[0].active = true;
     let mut edited = decoded.clone();
@@ -86,8 +106,10 @@ fn a_state_the_decoder_derives_in_the_active_configuration_is_not_compared() {
         cadmpeg_core::text::NonBlankString::new(format!("suppression_inferred:{other}")).unwrap(),
         "true".to_owned(),
     );
-    assert!(same_configurations(&edited, &decoded, &columned()));
-    let mut inactive = decoded.clone();
-    inactive[1].feature_states.insert(other, state);
-    assert!(!same_configurations(&inactive, &decoded, &columned()));
+    let same = |source: &SourceConfigurations<'_>| {
+        same_configurations(&edited, &decoded, &stored(), source)
+    };
+    assert!(same(&SourceConfigurations::decoded(&edited)));
+    assert!(!same(&SourceConfigurations::decoded(&decoded)));
+    assert!(!same(&SourceConfigurations::new(None)));
 }

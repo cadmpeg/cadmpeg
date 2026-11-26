@@ -16,7 +16,7 @@ use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::primitives::{decoded_configurations, f3d_native};
+use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
@@ -74,7 +74,13 @@ pub(crate) fn restore(
 /// ones the decoder states for the configuration tables `ir` was read with.
 fn reproject(ir: &mut CadIr) -> Result<(), CodecError> {
     ir.model.configurations = match f3d_native(ir)? {
-        Some(native) => decoded_configurations(ir, &native)?.configurations,
+        Some(native) => {
+            decoded_configurations(
+                &native.design_configurations,
+                &configuration_targets(ir, &native),
+            )?
+            .configurations
+        }
         None => Vec::new(),
     };
     Ok(())

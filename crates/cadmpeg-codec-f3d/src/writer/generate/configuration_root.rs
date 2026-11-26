@@ -120,15 +120,9 @@ pub(super) fn plan(
         .filter(|configuration| configuration.active)
         .map(|configuration| configuration.id.to_string())
         .collect::<BTreeSet<_>>();
-    let rows = written
-        .projection
-        .table
-        .and_then(|(index, position)| {
-            let table = documents[index]
-                .tables()
-                .iter()
-                .find(|table| table.position == position)?;
-            Some(table.rows.iter().map(move |row| {
+    let rows = crate::design::configurations::table_at(documents, written.projection.table)
+        .map(|(index, table)| {
+            table.rows.iter().map(move |row| {
                 let id =
                     crate::ids::neutral_configuration_id(documents[index].entry_name(), &row.id)
                         .to_string();
@@ -138,7 +132,7 @@ pub(super) fn plan(
                     table,
                     row: &row.id,
                 }
-            }))
+            })
         })
         .into_iter()
         .flatten()

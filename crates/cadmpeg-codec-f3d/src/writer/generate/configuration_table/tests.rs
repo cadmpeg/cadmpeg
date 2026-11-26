@@ -7,7 +7,7 @@ use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignConfiguration as Configuration, ParameterValue,
 };
 use cadmpeg_ir::features::selections::DistinctMembers;
-use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{ConfigurationId, Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::Length;
 use serde_json::json;
 
@@ -22,6 +22,7 @@ use crate::test_support::configuration_table::{
     bool_cell, expression_cell, neutral_feature, object_target, property_target, scope,
     string_cell, table_document, Natives,
 };
+use crate::writer::primitives::{projects, SourceConfigurations};
 
 const ENTRY: &str =
     "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.w.dsgcfg";
@@ -116,8 +117,14 @@ fn regenerated(
     let decoded = project(documents, &natives.targets()).unwrap();
     let mut configurations = decoded.configurations.clone();
     edit(&mut configurations);
-    let (written, losses) =
-        regenerate(documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = regenerate(
+        documents,
+        &decoded,
+        &configurations,
+        &natives.targets(),
+        &SourceConfigurations::decoded(&decoded.configurations),
+    )
+    .unwrap();
     Outcome {
         unchanged: matches!(written.documents, Cow::Borrowed(_)),
         documents: written.documents.into_owned(),
@@ -253,7 +260,10 @@ fn an_edit_the_table_holds_no_cell_for_is_charged_dropped() {
     assert_eq!(outcome.losses.len(), 1, "{:#?}", outcome.losses);
     let (code, message) = &outcome.losses[0];
     assert_eq!(code, "export/edit.dropped");
-    assert!(message.contains(&format!("{}: material, properties.note", id("tall"))));
+    assert!(message.contains(&format!(
+        "{}: material stated \"Steel\", reads back absent; properties.note stated \"unstored\", reads back absent",
+        id("tall")
+    )));
     let read = outcome
         .read
         .iter()
@@ -311,8 +321,14 @@ fn an_added_configuration_whose_id_names_no_row_is_written_under_a_generated_row
     added.ordinal = 2;
     added.properties.clear();
     configurations.push(added);
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = regenerate(
+        &documents,
+        &decoded,
+        &configurations,
+        &natives.targets(),
+        &SourceConfigurations::new(None),
+    )
+    .unwrap();
     let (row, configuration) = written.generated.iter().next().unwrap();
     assert_eq!(configuration, "test:configuration:variant#added");
     assert_eq!(losses.len(), 1, "{losses:#?}");
@@ -360,6 +376,7 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
         &crate::design::configurations::Projection::default(),
         &decoded.configurations,
         &natives.targets(),
+        &SourceConfigurations::new(None),
     )
     .unwrap();
     assert!(matches!(written.documents, Cow::Borrowed(_)));
@@ -395,8 +412,14 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
         .unwrap();
     assert!(tall.feature_states.contains_key(&suppressed.id));
     let mut configurations = decoded.configurations.clone();
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (written, losses) = regenerate(
+        &documents,
+        &decoded,
+        &configurations,
+        &natives.targets(),
+        &SourceConfigurations::new(None),
+    )
+    .unwrap();
     assert!(matches!(written.documents, Cow::Borrowed(_)));
     assert!(losses.is_empty(), "{losses:#?}");
 
@@ -406,13 +429,26 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
             NonBlankString::new("property:Part Number").unwrap(),
             "T-2".to_owned(),
         );
-    let (_, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
+    let (_, losses) = regenerate(
+        &documents,
+        &decoded,
+        &configurations,
+        &natives.targets(),
+        &SourceConfigurations::new(None),
+    )
+    .unwrap();
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
-#[test]
-fn a_state_inferred_before_a_feature_edit_or_an_active_change_is_not_charged() {
+/// The table documents of [`documents`] with row `tall` active, the
+/// natives with a suppressed feature that no column names, and the
+/// configurations the decoder states for them.
+fn reconciled_source() -> (
+    Natives,
+    Vec<DesignConfiguration>,
+    Feature,
+    Vec<Configuration>,
+) {
     let mut natives = natives();
     let mut suppressed = neutral_feature(&scope(2), "f3d:test:feature#a");
     suppressed.suppressed = Some(true);
@@ -425,33 +461,275 @@ fn a_state_inferred_before_a_feature_edit_or_an_active_change_is_not_charged() {
             row_id: "tall".into(),
         })
         .unwrap();
-    let reconciled = |natives: &Natives| {
-        let mut decoded = project(&documents, &natives.targets()).unwrap();
-        reconcile_active_configurations(
-            &mut natives.neutral_features.clone(),
-            &mut decoded.configurations,
-        )
-        .unwrap();
-        decoded
-    };
-    let mut configurations = reconciled(&natives).configurations;
+    let configurations = reconciled(&natives, &documents).configurations;
+    (natives, documents, suppressed, configurations)
+}
+
+fn reconciled(
+    natives: &Natives,
+    documents: &[DesignConfiguration],
+) -> crate::design::configurations::Projection {
+    let mut decoded = project(documents, &natives.targets()).unwrap();
+    reconcile_active_configurations(
+        &mut natives.neutral_features.clone(),
+        &mut decoded.configurations,
+    )
+    .unwrap();
+    decoded
+}
+
+#[test]
+fn a_state_the_source_states_is_not_charged_after_a_feature_edit_or_an_active_change() {
+    let (mut natives, documents, suppressed, mut configurations) = reconciled_source();
+    let source = configurations.clone();
     assert!(configuration(&mut configurations, "tall")
         .feature_states
         .contains_key(&suppressed.id));
 
     natives.neutral_features.last_mut().unwrap().suppressed = Some(false);
-    let decoded = reconciled(&natives);
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
-    assert!(matches!(written.documents, Cow::Borrowed(_)));
+    let decoded = reconciled(&natives, &documents);
+    let written = |configurations: &[Configuration], source: &SourceConfigurations<'_>| {
+        regenerate(
+            &documents,
+            &decoded,
+            configurations,
+            &natives.targets(),
+            source,
+        )
+        .unwrap()
+    };
+    let (outcome, losses) = written(&configurations, &SourceConfigurations::decoded(&source));
+    assert!(matches!(outcome.documents, Cow::Borrowed(_)));
     assert!(losses.is_empty(), "{losses:#?}");
+
+    let (_, losses) = written(&configurations, &SourceConfigurations::new(None));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
+    assert!(losses[0].message.contains(&format!(
+        "{}: feature_states.{}",
+        id("tall"),
+        suppressed.id
+    )));
 
     configuration(&mut configurations, "tall").active = false;
     configuration(&mut configurations, "c1").active = true;
-    let (written, losses) =
-        regenerate(&documents, &decoded, &configurations, &natives.targets()).unwrap();
-    assert!(matches!(written.documents, Cow::Borrowed(_)));
+    let (outcome, losses) = written(&configurations, &SourceConfigurations::decoded(&source));
+    assert!(matches!(outcome.documents, Cow::Borrowed(_)));
     assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn a_state_the_table_cannot_hold_that_differs_from_the_source_is_charged() {
+    let (natives, documents, suppressed, source) = reconciled_source();
+    let decoded = reconciled(&natives, &documents);
+    let charged = |configurations: &[Configuration]| {
+        let (_, losses) = regenerate(
+            &documents,
+            &decoded,
+            configurations,
+            &natives.targets(),
+            &SourceConfigurations::decoded(&source),
+        )
+        .unwrap();
+        assert_eq!(losses.len(), 1, "{losses:#?}");
+        assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
+        losses[0].message.clone()
+    };
+
+    let mut removed = source.clone();
+    configuration(&mut removed, "tall")
+        .feature_states
+        .remove(&suppressed.id);
+    assert!(charged(&removed).contains(&format!(
+        "{}: feature_states.{}",
+        id("tall"),
+        suppressed.id
+    )));
+
+    let other = neutral_feature(&scope(3), "f3d:test:feature#b");
+    let mut added = source.clone();
+    configuration(&mut added, "c1")
+        .feature_states
+        .insert(other.id.clone(), suppressed.configuration_state());
+    assert!(charged(&added).contains(&format!("{}: feature_states.{}", id("c1"), other.id)));
+}
+
+#[test]
+fn a_state_added_to_the_configuration_active_in_the_source_is_charged() {
+    let (natives, documents, suppressed, source) = reconciled_source();
+    let other = neutral_feature(&scope(3), "f3d:test:feature#b");
+    let mut configurations = source.clone();
+    configuration(&mut configurations, "tall").active = false;
+    configuration(&mut configurations, "c1").active = true;
+    configuration(&mut configurations, "tall")
+        .feature_states
+        .insert(other.id.clone(), suppressed.configuration_state());
+    let decoded = reconciled(&natives, &documents);
+    let (_, losses) = regenerate(
+        &documents,
+        &decoded,
+        &configurations,
+        &natives.targets(),
+        &SourceConfigurations::decoded(&source),
+    )
+    .unwrap();
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
+    assert!(losses[0].message.contains(&format!(
+        "{}: feature_states.{} stated {{\"kind\":\"suppressed\"}}, reads back absent",
+        id("tall"),
+        other.id
+    )));
+}
+
+/// One table shape of [`table_shapes`].
+#[derive(Debug, Clone, Copy)]
+struct Shape {
+    /// Whether the feature that column `F` names, and the feature that no
+    /// column names, is suppressed.
+    suppressed: [bool; 2],
+    /// The active row.
+    active: Option<&'static str>,
+    /// Whether a rule document activates `Tall`, and whether a second table
+    /// document holds a table with no rows.
+    documents: [bool; 2],
+    /// Whether the source states row `wide` active.
+    moved: bool,
+}
+
+/// Every combination of the table shapes that the tests synthesize: rows
+/// `short` (a cell for each column), `tall` (a property cell only) and
+/// `wide` (no cell); a feature column and a feature no column names, each
+/// suppressed or not; no active row, an active row with a feature cell and
+/// one without; a rule document or none; a second table document with no
+/// rows or none; and the active row moved since the source.
+fn table_shapes() -> Vec<Shape> {
+    let mut shapes = Vec::new();
+    for bits in 0..32_u8 {
+        for active in [None, Some("tall"), Some("short")] {
+            shapes.push(Shape {
+                suppressed: [bits & 1 != 0, bits & 2 != 0],
+                active,
+                documents: [bits & 4 != 0, bits & 8 != 0],
+                moved: bits & 16 != 0,
+            });
+        }
+    }
+    shapes
+}
+
+/// The natives and the table documents of `shape`, with row `active`
+/// active.
+fn shaped(shape: Shape, active: Option<&str>) -> (Natives, Vec<DesignConfiguration>) {
+    let mut natives = natives();
+    let [columned, unnamed_suppressed] = shape.suppressed;
+    natives.neutral_features[0].suppressed = Some(columned);
+    let mut unnamed = neutral_feature(&scope(2), "f3d:test:feature#a");
+    unnamed.suppressed = Some(unnamed_suppressed);
+    natives.neutral_features.push(unnamed);
+    let table = table_document(
+        "1",
+        &[
+            ("P", property_target("Part Number")),
+            ("H", object_target("202", "UserParameterValue")),
+            ("D", object_target("330", "ParameterDoubleValue")),
+            ("F", object_target("314", "DcFeature")),
+            ("U", object_target("999", "DcFeature")),
+        ],
+        &[
+            (
+                "short",
+                "Short",
+                vec![
+                    ("P", string_cell("S-1")),
+                    ("H", expression_cell("25 mm", 2.5)),
+                    ("D", expression_cell("10.00 mm", 1.0)),
+                    ("F", bool_cell(false)),
+                    ("U", bool_cell(false)),
+                ],
+            ),
+            ("tall", "Tall", vec![("P", string_cell("T-1"))]),
+            ("wide", "Wide", Vec::new()),
+        ],
+        &["short", "tall", "wide"],
+    );
+    let mut documents = vec![DesignConfiguration::try_new(
+        ENTRY.into(),
+        DesignConfigurationKind::Table,
+        table.as_object().unwrap().clone(),
+    )
+    .unwrap()];
+    if let Some(row) = active {
+        documents[0]
+            .set_active_row(DesignConfigurationActiveRow {
+                record_index: 349,
+                table_id: "1".into(),
+                row_id: row.into(),
+            })
+            .unwrap();
+    }
+    let [rule, second_table] = shape.documents;
+    if rule {
+        documents.push(
+            DesignConfiguration::try_new(
+                RULE.into(),
+                DesignConfigurationKind::Rule,
+                json!({"when": "Width > 1", "activate": "Tall"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap(),
+        );
+    }
+    if second_table {
+        documents.push(
+            DesignConfiguration::try_new(
+                "FusionAssetName[Active]/DesignConfigurationTable.v.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                table_document("2", &[("P", property_target("Part Number"))], &[], &[])
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap(),
+        );
+    }
+    (natives, documents)
+}
+
+#[test]
+fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
+    for shape in table_shapes() {
+        let (natives, documents) = shaped(shape, shape.active);
+        let decoded = reconciled(&natives, &documents);
+        let source = if shape.moved {
+            reconciled(&natives, &shaped(shape, Some("wide")).1).configurations
+        } else {
+            decoded.configurations.clone()
+        };
+        let neutral = &decoded.configurations;
+        for source in [
+            SourceConfigurations::decoded(&source),
+            SourceConfigurations::new(None),
+        ] {
+            let (written, losses) =
+                regenerate(&documents, &decoded, neutral, &natives.targets(), &source).unwrap();
+            assert!(losses.is_empty(), "{shape:?}: {losses:#?}");
+            assert_eq!(written.documents.len(), documents.len());
+            for (written, stated) in written.documents.iter().zip(&documents) {
+                assert_eq!(
+                    serde_json::to_vec(written.payload()).unwrap(),
+                    serde_json::to_vec(stated.payload()).unwrap(),
+                    "{shape:?}"
+                );
+            }
+            assert!(
+                projects(neutral, &documents, &natives.targets(), &source).unwrap(),
+                "{shape:?}"
+            );
+        }
+    }
 }
 
 #[test]

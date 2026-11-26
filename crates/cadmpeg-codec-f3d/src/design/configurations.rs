@@ -261,17 +261,25 @@ pub(crate) struct Projection {
     pub(crate) configurations: Vec<cadmpeg_ir::features::parameters::DesignConfiguration>,
 }
 
-/// Project the rows of the one populated table into the neutral configuration
-/// arena. Rule documents remain native because a rule is a selector, not a
-/// model variant.
-pub(crate) fn project_configurations(
-    native: &[DesignConfiguration],
-    targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
-    project(native, targets).map(|projection| projection.configurations)
+/// The table at `table`, the position of a document of `documents` and of
+/// the table in the document's `tables` array, with the position of its
+/// document.
+pub(crate) fn table_at(
+    documents: &[DesignConfiguration],
+    table: Option<(usize, usize)>,
+) -> Option<(usize, &ConfigurationTable)> {
+    let (document, position) = table?;
+    let table = documents
+        .get(document)?
+        .tables()
+        .iter()
+        .find(|candidate| candidate.position == position)?;
+    Some((document, table))
 }
 
-/// [`project_configurations`], with the table whose rows it projects.
+/// Project the rows of the one populated table into the neutral configuration
+/// arena, and name the table. Rule documents remain native because a rule is
+/// a selector, not a model variant.
 pub(crate) fn project(
     native: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,

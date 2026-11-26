@@ -154,7 +154,11 @@ fn synthesized_body(
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let generated = super::generate::write_new(input.ir, input.missing_states, &mut bytes)?;
+    let source = input
+        .fidelity
+        .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
+        .and_then(|record| record.data());
+    let generated = super::generate::write_new(input.ir, input.missing_states, source, &mut bytes)?;
     let geometry_true = generated.geometry_true;
     let (consumption, loss) = cause.into_fidelity();
     let mut losses: Vec<_> = loss.into_iter().collect();

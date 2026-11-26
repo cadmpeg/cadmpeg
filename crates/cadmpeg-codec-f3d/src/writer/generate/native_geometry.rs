@@ -6224,6 +6224,7 @@ mod pcurve_chart_tests {
             let generated = crate::writer::generate::write_new(
                 &target,
                 cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+                None,
                 &mut output,
             )
             .expect("a spring whose construction cannot be written still writes");

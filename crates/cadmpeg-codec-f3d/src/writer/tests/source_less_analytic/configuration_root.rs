@@ -627,3 +627,83 @@ fn a_document_read_from_cadir_writes_the_root_record_its_tables_state() {
         ("1", "large")
     );
 }
+
+/// A design with features and a table document whose one column is a
+/// property, so that no column names a feature.
+fn designed() -> Vec<u8> {
+    use crate::test_support::configuration_table::{property_target, string_cell};
+    use std::io::Write;
+    let document = table_document(
+        "1",
+        &[("P", property_target("Part Number"))],
+        &[
+            ("a", "A", vec![("P", string_cell("A-1"))]),
+            ("b", "B", vec![("P", string_cell("B-1"))]),
+        ],
+        &["a", "b"],
+    );
+    let source =
+        include_bytes!("../../../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(source)).unwrap();
+    zip.start_file(
+        ENTRY,
+        crate::zip_write::file_options(zip::CompressionMethod::Stored),
+    )
+    .unwrap();
+    zip.write_all(&serde_json::to_vec(&document).unwrap())
+        .unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+/// Make row `a` of `ir` active and its configuration state a feature that
+/// is not suppressed as suppressed. Returns the configuration and the
+/// feature.
+fn contradicted(ir: &mut cadmpeg_ir::CadIr) -> (String, String) {
+    set_active_row(ir, "a");
+    let mut feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.suppressed != Some(true))
+        .expect("a feature that is not suppressed")
+        .clone();
+    feature.suppressed = Some(true);
+    let id = crate::ids::neutral_configuration_id(ENTRY, "a");
+    let configuration = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.id == id)
+        .unwrap();
+    assert!(configuration.active);
+    configuration
+        .feature_states
+        .insert(feature.id.clone(), feature.configuration_state());
+    (configuration.id.to_string(), feature.id.to_string())
+}
+
+#[test]
+fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(designed()), &DecodeOptions::default())
+            .expect("design decode"),
+    );
+    assert!(!decoded.ir().model.configurations.is_empty());
+    let mut ir = decoded.ir().clone();
+    let (configuration, _) = contradicted(&mut ir);
+    let report = crate::test_support::assert_written_with_loss(
+        &ir,
+        Some(decoded.source_fidelity()),
+        "f3d/writer.patch-declined",
+        "neutral F3D configurations must equal the projection of native configuration tables",
+    );
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() != "f3d/writer.patch-declined"
+                && loss.message.contains(&configuration)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
