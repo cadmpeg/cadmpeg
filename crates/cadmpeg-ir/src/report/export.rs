@@ -30,7 +30,7 @@ pub struct ExportReport {
 
 /// What an export report describes: the canonical CADIR document, or one
 /// native dialect.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ExportIdentity {
@@ -45,9 +45,11 @@ enum ExportIdentity {
 
 #[cfg(all(test, feature = "schema"))]
 mod schema_tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn the_native_export_payload_schema_requires_its_target() {
-        let schema = serde_json::to_value(schemars::schema_for!(super::ExportIdentity))
+        let schema = json::to_value(schemars::schema_for!(super::ExportIdentity))
             .expect("export identity schema serializes");
         let native = schema["oneOf"]
             .as_array()
@@ -77,7 +79,7 @@ mod schema_tests {
 /// resolution it can never produce have no spelling.
 ///
 /// The variants are ordered by how much of the output the encoder authored.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -115,7 +117,7 @@ impl fmt::Display for WritePath {
 ///
 /// A replay copies retained source bytes, so it either consumed the fidelity it
 /// was given or was given none.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]
@@ -139,7 +141,7 @@ impl From<ReplayFidelity> for FidelityResolution {
 ///
 /// Synthesis authors every output byte from neutral IR, so it never replays
 /// source content.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]
@@ -166,7 +168,7 @@ impl From<SynthesisFidelity> for FidelityResolution {
 }
 
 /// How an encoder resolved optional source fidelity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]

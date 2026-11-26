@@ -8,6 +8,7 @@ use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 
 use crate::families::b2::records::B2Circle;
+use crate::layout::sphere_pcurve_coordinate_selector as sphere_selector;
 use crate::wire::bytes::compact_int;
 
 use super::super::rolling_ball_patch::fit_edge_with_error;
@@ -50,24 +51,17 @@ pub(super) fn owned_circle(bytes: &[u8]) -> Option<(PcurveGeometry, [f64; 2])> {
     compact_int(bytes, &mut at)?;
     let mut view = View::over_retained(bytes.get(at..)?);
     let center = [view.f64_le()?, view.f64_le()?];
-    let unmarked = view;
-    let marked = match view.u8()? {
-        0x05 if view.u8()? == 0x05 => true,
-        0x0d => true,
-        _ => false,
-    };
-    let decode = |mut view: View<'_>| {
-        let radius = PositiveReal::new(view.f64_le()?)?.get();
-        let range = IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?;
-        if view.u8()? != 1 || !view.f64_le()?.is_finite() || !view.is_empty() {
-            return None;
-        }
-        fit_circle(center, radius, range.endpoints())
-    };
-    marked
-        .then(|| decode(view))
-        .flatten()
-        .or_else(|| decode(unmarked))
+    match view.u8()? {
+        0x05 if view.u8()? == 0x05 => {}
+        0x0d => {}
+        _ => return None,
+    }
+    let radius = PositiveReal::new(view.f64_le()?)?.get();
+    let range = IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?;
+    if view.u8()? != 1 || !view.f64_le()?.is_finite() || !view.is_empty() {
+        return None;
+    }
+    fit_circle(center, radius, range.endpoints())
 }
 
 fn fit_circle([u, v]: [f64; 2], r: f64, range: [f64; 2]) -> Option<(PcurveGeometry, [f64; 2])> {
@@ -126,7 +120,7 @@ pub(super) fn sphere_circle(bytes: &[u8], radius: f64) -> Option<SphereCircle> {
     let u = IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?;
     let v = IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?;
     let mut prefix = view;
-    let reflected = prefix.take(3)? == [0x41, 0x11, 0x82];
+    let reflected = prefix.take(sphere_selector::TAG_VALUE.len())? == sphere_selector::TAG_VALUE;
     let mut circle = if reflected {
         sphere_coordinate(&mut view, [1.0, 0.0, 0.0])?;
         let mut first = view;
@@ -155,7 +149,7 @@ pub(super) fn sphere_circle(bytes: &[u8], radius: f64) -> Option<SphereCircle> {
 }
 
 fn sphere_coordinate(view: &mut View<'_>, coefficients: [f64; 3]) -> Option<()> {
-    if view.take(3)? != [0x41, 0x11, 0x82] {
+    if view.take(sphere_selector::TAG_VALUE.len())? != sphere_selector::TAG_VALUE {
         return None;
     }
     for coefficient in coefficients {
@@ -261,8 +255,8 @@ pub(super) fn spline(bytes: &[u8]) -> Option<(PcurveGeometry, [f64; 2])> {
     } else {
         0
     };
-    if kind == 0x7e {
-        inline(&mut view)?;
+    if kind == 0x7e && inline(&mut view)? != 1 {
+        return None;
     }
     let stop = leading.checked_add(spans)?;
     if stop.checked_add(trailing)? != last
@@ -352,6 +346,13 @@ mod tests {
                 [0.0, 1.0],
             ),
             (
+                &b"\x3e"[..],
+                &b"\x08\x01"[..],
+                &[0.0_f64, 1.0, 3.0][..],
+                &b"\x05"[..],
+                [0.0, 1.0],
+            ),
+            (
                 &b"\x7e"[..],
                 &b"\x08\x09"[..],
                 &[-3.0, -1.0, 0.0, 1.0][..],
@@ -386,6 +387,28 @@ mod tests {
     }
 
     #[test]
+    fn extended_single_span_requires_its_terminal_control() {
+        let mut bytes = vec![5, 0x7e];
+        bytes.extend(1.0_f64.to_le_bytes());
+        bytes.extend([21, 9, 0x0c]);
+        for knot in [0.0_f64, 1.0] {
+            bytes.extend(knot.to_le_bytes());
+        }
+        for index in 0..6 {
+            bytes.extend(f64::from(index).to_le_bytes());
+            bytes.extend(0.0_f64.to_le_bytes());
+        }
+        bytes.extend([1, 5]);
+        assert!(spline(&bytes).is_some());
+        for control in [1, 9, 0xfd] {
+            *bytes.last_mut().expect("terminal control") = control;
+            assert!(spline(&bytes).is_none());
+        }
+        bytes.pop();
+        assert!(spline(&bytes).is_none());
+    }
+
+    #[test]
     fn owned_circle_keeps_its_chart_across_compact_operand_widths() {
         let operands: &[&[u8]] = &[
             &[5],
@@ -394,7 +417,7 @@ mod tests {
             &[12, 0, 0, 1],
             &[16, 0, 0, 0, 1],
         ];
-        let markers: &[&[u8]] = &[&[], &[0x0d], &[0x05, 0x05]];
+        let markers: &[&[u8]] = &[&[0x0d], &[0x05, 0x05]];
         for operand in operands {
             for marker in markers {
                 let mut bytes = operand.to_vec();
@@ -422,6 +445,30 @@ mod tests {
                 bytes.push(0);
                 assert!(owned_circle(&bytes).is_none());
             }
+        }
+    }
+
+    #[test]
+    fn owned_circle_requires_a_complete_marked_layout() {
+        let mut prefix = vec![5];
+        for value in [3.0_f64, -2.0] {
+            prefix.extend(value.to_le_bytes());
+        }
+        let mut tail = Vec::new();
+        for value in [2.0_f64, 0.5, 2.5] {
+            tail.extend(value.to_le_bytes());
+        }
+        tail.push(1);
+        tail.extend(0.0_f64.to_le_bytes());
+        let mut unmarked = prefix.clone();
+        unmarked.extend_from_slice(&tail);
+        assert!(owned_circle(&unmarked).is_none());
+        for marker in [&[0x0d][..], &[0x05, 0x05][..]] {
+            let mut corrupt = prefix.clone();
+            let mut truncated_tail = tail.clone();
+            truncated_tail[..marker.len()].copy_from_slice(marker);
+            corrupt.extend(truncated_tail);
+            assert!(owned_circle(&corrupt).is_none());
         }
     }
 

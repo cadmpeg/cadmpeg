@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureInputTopology,
-    FeatureOperation,
-};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#42";
 const GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#43";
@@ -67,7 +67,7 @@ fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandG
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "261",
@@ -151,19 +151,22 @@ fn bind_groups_with_scope_and_losses(
         native_ref: Some(SCOPE_ID.into()),
     };
     let mut input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id,
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     }];
     let losses = bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: &[scope],
             groups,
             operands: &[],

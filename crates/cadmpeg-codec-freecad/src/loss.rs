@@ -73,8 +73,13 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// A revolution has no complete admitted angular construction.
     FeatureRevolutionNotTransferred,
+    /// A removal feature starts from an empty body.
+    FeatureRemovalWithoutBase,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
+    /// A design parameter stores an empty expression; its stored value stands
+    /// as its definition.
+    ParameterExpressionEmpty,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -95,6 +100,9 @@ pub(crate) enum FreecadLossCode {
     AppearanceTopologyColorCountMismatch,
     /// A primitive style size could not enter the neutral appearance.
     AppearancePrimitiveSizeNotTransferred,
+    /// The appearance or mesh of a shape held outside the current geometry
+    /// remains in its GUI or shape payload record.
+    AppearanceStateNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
@@ -113,6 +121,10 @@ pub(crate) enum FreecadLossCode {
     TopologyLocationIdentityBounded,
     /// Non-boundary edge geometry transfers with its face incidence retained natively.
     TopologyNonBoundaryIncidenceRetained,
+    /// A face with no boundary wire on a plane, cylinder, or cone is stated partial.
+    TopologyFaceBoundaryUnstated,
+    /// A shape listed twice at one location restates its topology records, and the later ones are not stated.
+    TopologyRecordRepeated,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
     /// Persistence version metadata used a lowercase alias.
@@ -151,7 +163,9 @@ impl FreecadLossCode {
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
+        Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
+        Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
@@ -162,6 +176,7 @@ impl FreecadLossCode {
         Self::SketchProfileMatchingBounded,
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
+        Self::AppearanceStateNotTransferred,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
@@ -171,6 +186,8 @@ impl FreecadLossCode {
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
         Self::TopologyNonBoundaryIncidenceRetained,
+        Self::TopologyFaceBoundaryUnstated,
+        Self::TopologyRecordRepeated,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
@@ -210,6 +227,8 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::ParameterExpressionEmpty => "parameter.expression-empty",
+            Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
@@ -221,6 +240,7 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
+            Self::AppearanceStateNotTransferred => "appearance.state-not-transferred",
             Self::AppearancePrimitiveSizeNotTransferred => {
                 "appearance.primitive-size-not-transferred"
             }
@@ -235,6 +255,8 @@ impl FreecadLossCode {
             Self::TopologyNonBoundaryIncidenceRetained => {
                 "topology.non-boundary-incidence-retained"
             }
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
+            Self::TopologyRecordRepeated => "topology.record-repeated",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
@@ -251,6 +273,7 @@ impl FreecadLossCode {
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
@@ -278,11 +301,13 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
+            | Self::ParameterExpressionEmpty
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
             | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
+            | Self::AppearanceStateNotTransferred
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
@@ -290,6 +315,8 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::TopologyNonBoundaryIncidenceRetained
+            | Self::TopologyFaceBoundaryUnstated
+            | Self::TopologyRecordRepeated
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
@@ -323,6 +350,7 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
@@ -332,15 +360,19 @@ impl FreecadLossCode {
             | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
+            | Self::ParameterExpressionEmpty
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded
-            | Self::TopologyNonBoundaryIncidenceRetained => LossTaxonomy::RecordNotTyped,
+            | Self::TopologyNonBoundaryIncidenceRetained
+            | Self::TopologyRecordRepeated => LossTaxonomy::RecordNotTyped,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::AppearanceTopologyColorCountMismatch
-            | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            | Self::AppearancePrimitiveSizeNotTransferred
+            | Self::AppearanceStateNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -354,19 +386,13 @@ impl FreecadLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     fn kind(self) -> LossKind {
-        let strict_floor = match self {
-            Self::SourceGuiSchemaUnverified => None,
-            other => other.shared_taxonomy().strict_floor(),
-        };
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(strict_floor)
-            .into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `fcstd/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -410,7 +436,9 @@ mod tests {
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
+                "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
+                "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",
@@ -421,6 +449,7 @@ mod tests {
                 "sketch.profile-matching-bounded",
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
+                "appearance.state-not-transferred",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
@@ -430,6 +459,8 @@ mod tests {
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
                 "topology.non-boundary-incidence-retained",
+                "topology.face-boundary-unstated",
+                "topology.record-repeated",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
@@ -467,18 +498,9 @@ mod tests {
     }
 
     #[test]
-    fn gui_schema_recovery_does_not_trigger_document_dialect_strictness() {
-        assert_eq!(
-            FreecadLossCode::SourceGuiSchemaUnverified
-                .kind()
-                .strict_floor(),
-            None
-        );
-        assert_eq!(
-            FreecadLossCode::SourceDialectUnverified
-                .kind()
-                .strict_floor(),
-            Some(cadmpeg_ir::report::Severity::Warning)
-        );
+    fn no_code_pins_a_strict_floor() {
+        for code in FreecadLossCode::ALL {
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+        }
     }
 }

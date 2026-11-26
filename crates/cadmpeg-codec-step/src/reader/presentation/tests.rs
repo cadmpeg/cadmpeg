@@ -898,12 +898,25 @@ fn styled_item_invisibility_is_binding_scoped() {
         })
         .collect::<Vec<_>>();
     assert_eq!(bindings.len(), 2);
+    assert!(bindings
+        .iter()
+        .all(|binding| binding.source_entity_id.as_deref() == Some("#5")));
+    let rgb = |binding: &&cadmpeg_ir::appearance::AppearanceBinding| {
+        result
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .find(|appearance| appearance.id == binding.appearance)
+            .and_then(|appearance| appearance.base_color)
+            .map(|color| [color.r(), color.g(), color.b()])
+    };
     assert!(bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref() == Some("#13") && binding.visible == Some(false)
+        rgb(binding) == Some([0.0, 0.0, 1.0]) && binding.visible == Some(false)
     }));
-    assert!(bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref() == Some("#9") && binding.visible.is_none()
-    }));
+    assert!(bindings
+        .iter()
+        .any(|binding| { rgb(binding) == Some([1.0, 0.0, 0.0]) && binding.visible.is_none() }));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DecodeWarning.kind()
             && loss
@@ -958,7 +971,7 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
+        .any(|binding| binding.source_entity_id.as_deref() == Some("#5")));
 }
 
 /// ISO 10303-46 admits `SURFACE_STYLE_TRANSPARENT` in a surface side style
@@ -1047,7 +1060,7 @@ fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| binding.source_entity_id.as_deref() == Some("#7"))
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#1"))
         .expect("point styled item appearance binding");
     assert_eq!(binding.visible, Some(false));
     assert!(!result.report().losses.iter().any(|loss| {
@@ -1076,7 +1089,7 @@ fn invisibility_on_a_base_styled_item_hides_overriding_bindings() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| binding.source_entity_id.as_deref() == Some("#8"))
+        .find(|binding| binding.source_entity_id.as_deref() == Some("#3"))
         .expect("overriding styled item appearance binding");
     assert_eq!(binding.visible, Some(false));
     assert!(!result.report().losses.iter().any(|loss| {
@@ -1389,9 +1402,11 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
+        parent: None,
         description: None,
         visible: None,
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();
@@ -1624,6 +1639,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1632,10 +1648,12 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -1674,6 +1692,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#vertex"
@@ -1682,10 +1701,12 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         target: AppearanceTarget::Vertex(vertex).into(),
         appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let text = export(&ir);
@@ -1718,9 +1739,11 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
+        parent: None,
         description: Some("standalone points".to_string()),
         visible: None,
         items: vec![PresentationItem::Point { point }.into()],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();
@@ -1800,6 +1823,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
+        parent: None,
         description: None,
         visible: None,
         items: vec![
@@ -1810,6 +1834,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             PresentationItem::Occurrence { occurrence: child }.into(),
             PresentationItem::Pmi { annotation }.into(),
         ],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();
@@ -1882,6 +1907,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1890,10 +1916,12 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let s = export(&ir);

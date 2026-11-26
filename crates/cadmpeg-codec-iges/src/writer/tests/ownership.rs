@@ -6,12 +6,10 @@ use cadmpeg_ir::codec::{
     write::{target::TargetRequest, EncodeInput, Encoder},
     DecodeOptions,
 };
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    surface_payloads::ExactSurfacePayload,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::{CadIr, Codec, SourceGeometryRole, SourceObjectAssociation};
@@ -89,7 +87,9 @@ fn exact_surface_export_keeps_its_active_rectangle() {
     let ProceduralSurfaceDefinition::Exact(payload) = definition.definition() else {
         panic!("exact domain")
     };
-    let cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } = payload.spline() else {
+    let cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy { ranges, .. } =
+        payload.spline()
+    else {
         panic!("legacy exact domain")
     };
     assert_eq!(
@@ -100,13 +100,9 @@ fn exact_surface_export_keeps_its_active_rectangle() {
 
 fn support_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Step,
+        format: cadmpeg_ir::codec_id!("step"),
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("support"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -120,7 +116,7 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     ir.geometry.surfaces.push(support);
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
@@ -158,27 +154,30 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
 }
 
 #[test]
-fn support_only_surface_export_refuses_an_empty_transfer() {
+fn support_only_surface_export_writes_the_empty_file() {
     let mut ir = rectangle();
     ir.geometry.surfaces[0].source_object = Some(support_association());
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(synthesis.counts.is_empty());
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]
-fn support_only_point_export_refuses_an_empty_transfer() {
+fn support_only_point_export_writes_the_empty_file() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]
@@ -242,7 +241,7 @@ fn support_curve_without_topology_is_withheld_with_loss() {
 }
 
 #[test]
-fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
+fn dependent_iges_curve_is_withheld_and_the_empty_file_is_written() {
     let mut file = crate::test_support::test_curves_and_surfaces::line_file(0);
     let directory = file
         .chunks_exact_mut(81)
@@ -254,10 +253,12 @@ fn dependent_iges_curve_cannot_round_trip_as_an_independent_edge() {
         .unwrap();
     assert_eq!(decoded.ir().geometry.curves.len(), 1);
     assert!(decoded.ir().geometry.edges.is_empty());
-    assert!(matches!(
-        super::super::synthesize(decoded.ir(), IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let synthesis = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    assert!(!synthesis.counts.contains_key("110_line"));
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty"));
 }
 
 #[test]
@@ -276,7 +277,7 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
         .unwrap()
         .geometry_role = Some(SourceGeometryRole::Support);
     let plan = IgesCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap();
     assert!(plan.report().losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportEdgeNotRepresented.kind()
@@ -413,7 +414,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .geometry
                 .shells
                 .iter_mut()
-                .find(|shell| shell.id == region.shells[0])
+                .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
                 .unwrap();
             let mut vertices = shell.free_vertices().cloned().collect::<Vec<_>>();
             vertices.push(vertex.id);

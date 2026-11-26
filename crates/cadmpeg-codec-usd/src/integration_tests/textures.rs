@@ -163,7 +163,7 @@ fn a_package_embeds_the_images_of_its_textures() {
         ("wood.png", b"wood"),
         ("orm.png", b"orm"),
     ])
-    .expect("package");
+    .0;
     let first = decode_bytes(&source);
     let embedded = |result: &cadmpeg_ir::codec::DecodeResult| -> Vec<Vec<u8>> {
         result
@@ -191,6 +191,26 @@ fn a_package_embeds_the_images_of_its_textures() {
         .losses
         .iter()
         .any(|loss| loss.code == UsdLossCode::ExportTextureExternal.kind()));
+}
+
+#[test]
+fn textures_that_name_one_package_member_share_its_asset() {
+    let root = QUAD.replace("./orm.png", "./wood.png");
+    let source = crate::usdz::package(&[("root.usda", root.as_bytes()), ("wood.png", b"wood")]).0;
+    let result = decode_bytes(&source);
+    let model = &result.ir().model;
+    let [first, second] = model.appearances[0].textures.as_slice() else {
+        panic!("two textures");
+    };
+    assert_eq!(first.asset_guid, second.asset_guid);
+    let asset = model
+        .assets
+        .iter()
+        .find(|asset| asset.id.as_str() == first.asset_guid)
+        .expect("the texture's asset");
+    assert!(
+        matches!(&asset.content, AssetContent::Embedded { data } if data.as_bytes() == b"wood")
+    );
 }
 
 /// A package holds the images that the model names by path when the

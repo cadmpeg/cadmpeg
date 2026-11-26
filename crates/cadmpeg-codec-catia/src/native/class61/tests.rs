@@ -1,5 +1,6 @@
 use super::{records, singleton_face_orientation_bit, CatiaConsolidatedClass61Record};
 use crate::native::CatiaAllocationReferenceEncoding as Encoding;
+use cadmpeg_core::serde_erase::json;
 
 fn framed(payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![
@@ -147,7 +148,7 @@ fn malformed_packed_width_high_bits_and_terminals_refuse() {
 }
 
 #[test]
-fn clothes_record_has_one_counted_interpretation_and_no_scalar_lane() {
+fn long_counted_record_has_one_counted_interpretation_and_no_scalar_lane() {
     let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb];
     for value in [
         74, 80, 86, 91, 94, 97, 99, 101, 104, 111, 114, 132, 137, 142, 144, 146, 148, 150, 152,
@@ -203,21 +204,20 @@ fn clothes_record_has_one_counted_interpretation_and_no_scalar_lane() {
 #[test]
 fn wire_rejects_fields_that_disagree_with_retained_bytes() {
     let rows = decode(&framed(&[0x81, 3, 0x13, 3]));
-    let wire = serde_json::to_value(&rows[0]).expect("roster wire");
+    let wire = json::to_value(&rows[0]).expect("roster wire");
     for field in ["zero_prefix", "roster_control", "value", "orientation_bit"] {
         let mut invalid = wire.clone();
         match field {
-            "zero_prefix" => invalid[field] = serde_json::json!(true),
-            "roster_control" => invalid[field] = serde_json::json!(1),
-            "value" => invalid["members"][0][field] = serde_json::json!(1),
-            "orientation_bit" => invalid["members"][0][field] = serde_json::json!(false),
+            "zero_prefix" => invalid[field] = cadmpeg_core::json!(true),
+            "roster_control" => invalid[field] = cadmpeg_core::json!(1),
+            "value" => invalid["members"][0][field] = cadmpeg_core::json!(1),
+            "orientation_bit" => invalid["members"][0][field] = cadmpeg_core::json!(false),
             _ => unreachable!(),
         }
-        assert!(serde_json::from_value::<CatiaConsolidatedClass61Record>(invalid).is_err());
+        assert!(json::from_value::<CatiaConsolidatedClass61Record>(invalid).is_err());
     }
     assert_eq!(
-        serde_json::from_value::<CatiaConsolidatedClass61Record>(wire)
-            .expect("checked roster wire"),
+        json::from_value::<CatiaConsolidatedClass61Record>(wire).expect("checked roster wire"),
         rows[0]
     );
 }

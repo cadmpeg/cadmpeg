@@ -16,7 +16,7 @@ use crate::test_support::test_streams::topology_partition_stream;
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
+fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::geometry::FinitePoint3> {
     super::points(stream)
 }
 
@@ -213,7 +213,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
         graph
             .get(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(
             1_001_000.0,
             f64::from_bits(1) * 1000.0,
@@ -230,7 +230,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(
-        decoded_tolerance(1_001.0).map(cadmpeg_ir::scalar::PositiveReal::get),
+        decoded_tolerance(1_001.0).map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(1_001_000.0)
     );
     assert_eq!(decoded_tolerance(0.0), None);

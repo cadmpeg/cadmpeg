@@ -2,7 +2,8 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use serde_json::{json, Map, Value};
+use cadmpeg_core::json;
+use serde_json::{Map, Value};
 
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
 
@@ -228,7 +229,9 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
 
 /// The neutral configurations that the native configuration documents of `ir`
 /// project against its native and neutral records.
-pub(crate) fn project(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+pub(crate) fn project(
+    ir: &cadmpeg_ir::CadIr,
+) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let native = crate::test_support::native_test::f3d_native(ir);
     crate::design::configurations::project_configurations(
         &native.design_configurations,

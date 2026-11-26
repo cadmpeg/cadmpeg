@@ -12,6 +12,7 @@ mod identity;
 mod nominals;
 mod parsing;
 mod spherical;
+mod tolerances;
 
 fn length(value: f64) -> Option<PmiValue> {
     pmi_value(value, PmiQuantity::Length)

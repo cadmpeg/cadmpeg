@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    CacheContractError, CacheFirstCurveParameterization, ExactSpline, FitTolerance,
-    IntcurveSupportContext, IntcurveSupportSide, LawFormula, LawSurfaceConstruction,
-    LawSurfaceTail, LegacyCache, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm, SurfaceCurveCacheFirst,
-    SurfaceCurveFamily, SurfaceCurveTail,
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::laws::{LawFormula, LawSurfaceConstruction, LawSurfaceTail};
+use crate::geometry::legacy_cache::{CacheContractError, FitTolerance, LegacyCache};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::{ExactSpline, ProceduralSurfaceDefinition};
+use crate::geometry::revision_forms::{RevisionCacheForm, RevisionSurfaceForm};
+use crate::geometry::surface_curves::{
+    CacheFirstCurveParameterization, SurfaceCurveCacheFirst, SurfaceCurveFamily, SurfaceCurveTail,
 };
+use crate::geometry::{ProceduralCurve, ProceduralSurface};
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
+use cadmpeg_core::serde_erase::json;
 
 fn surface_id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:construction#0").expect("valid identity")
@@ -45,13 +49,13 @@ fn a_full_law_surface_tail_states_its_fit_tolerance() {
         Some(FitTolerance::try_new(0.25).expect("admissible fit tolerance"))
     );
     let surface = ProceduralSurface::new(surface_id(), definition, None);
-    let wire = serde_json::to_value(&surface).expect("serialize");
+    let wire = json::to_value(&surface).expect("serialize");
     assert_eq!(
         wire["definition"]["construction"]["tail"]["cache"]["fit_tolerance"],
         0.25
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralSurface>(wire).expect("read back"),
+        json::from_value::<ProceduralSurface>(wire).expect("read back"),
         surface
     );
 }
@@ -130,7 +134,7 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
     assert_eq!(
         curve
             .cache_fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
 
@@ -195,7 +199,7 @@ fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none
     assert_eq!(
         empty
             .cache_fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(7.0)
     );
 
@@ -212,7 +216,7 @@ fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none
     assert_eq!(
         stated
             .cache_fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(9.0)
     );
 }

@@ -4,16 +4,17 @@
 //!
 //! The committed `FreeCAD` decode goldens store `native` as an elision marker,
 //! so their `ir` does not read back as a `CadIr` and the workspace-wide sweep
-//! in `cadmpeg-ir` skips them. This sweep decodes the charter fixtures instead
+//! in `cadmpeg-test-support` skips them. This sweep decodes the charter fixtures instead
 //! and runs the same walk over the live document, which reaches the sketch,
 //! annotation, assembly, and product shapes no other codec's goldens carry.
 //!
 //! This sweep reads `FREE_FORM_SHAPES` as an allowlist only. The over-listing
 //! check — that every listed entry is reached by something — lives in
-//! `every_golden_shape_refuses_an_unknown_key` in `cadmpeg-ir`, which reaches
+//! `every_golden_shape_refuses_an_unknown_key` in `cadmpeg-test-support`, which reaches
 //! every entry by a committed golden or by a minimal hand-written document, so
 //! a bogus entry fails there.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -25,9 +26,25 @@ use cadmpeg_test_support::unknown_keys::accepting_shapes;
 /// Extension of the committed fixture inputs.
 const FIXTURE_EXTENSION: &str = "FCStd";
 
-#[test]
-fn every_decoded_shape_refuses_an_unknown_key() {
-    let fixtures = fixture_inputs();
+macro_rules! unknown_key_sweep {
+    ($($name:ident: $partition:expr),+ $(,)?) => {
+        $(#[test] fn $name() { check_unknown_keys($partition); })+
+    };
+}
+
+unknown_key_sweep! {
+    every_decoded_shape_refuses_an_unknown_key_0: 0,
+    every_decoded_shape_refuses_an_unknown_key_1: 1,
+    every_decoded_shape_refuses_an_unknown_key_2: 2,
+    every_decoded_shape_refuses_an_unknown_key_3: 3,
+}
+
+fn check_unknown_keys(partition: usize) {
+    let fixtures: Vec<_> = fixture_inputs()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, path)| (index % 4 == partition).then_some(path))
+        .collect();
     assert!(
         !fixtures.is_empty(),
         "the sweep found no fixtures to decode"
@@ -40,7 +57,7 @@ fn every_decoded_shape_refuses_an_unknown_key() {
         let result = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
-        let ir = serde_json::to_value(result.ir()).expect("serialize ir");
+        let ir = json::to_value(result.ir()).expect("serialize ir");
         let sweep = accepting_shapes(&ir)
             .unwrap_or_else(|error| panic!("{} does not read back: {error}", path.display()));
         assert!(

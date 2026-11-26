@@ -1,0 +1,1176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecodeSidecar",
+  "description": "A decode report and source fidelity bound to exact CADIR bytes.",
+  "type": "object",
+  "properties": {
+    "ir_version": {
+      "description": "Exact IR wire version shared with the CADIR document.",
+      "$ref": "#/$defs/IrVersion"
+    },
+    "ir_sha256": {
+      "description": "SHA-256 of the exact CADIR bytes this sidecar describes.",
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "report": {
+      "description": "Native decode transfer report.",
+      "$ref": "#/$defs/DecodeReport"
+    },
+    "fidelity": {
+      "description": "Decode-time annotations and retained source records.",
+      "$ref": "#/$defs/SourceFidelity"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "ir_version",
+    "ir_sha256",
+    "report",
+    "fidelity"
+  ],
+  "$defs": {
+    "Admission": {
+      "description": "How one format layer admitted, or refused, one document.\n\nIdentity and admission are orthogonal: a document can carry a registry row\nof its own while its bytes are read with another grammar, and a damaged\nframe can retain its identity while applying that row's grammar\nunverified. The grammar name is local to the owning [`DialectMatch`]'s\nformat namespace.",
+      "oneOf": [
+        {
+          "description": "Parsed with the strategy declared for the identified dialect.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "admitted"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "Parsed with another declared grammar of the same format namespace.\n\nThe codec must charge its dialect-unverified loss.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unverified"
+            },
+            "using": {
+              "description": "Format-local name of the grammar the parser applied.",
+              "$ref": "#/$defs/Grammar"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "using"
+          ]
+        },
+        {
+          "description": "Parsed without any declared grammar: the residual path.\n\nThe codec must charge its dialect-unverified loss.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "residual"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "Structurally identified; semantic decode refused.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "refused"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AnnotationProvenance": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/StreamName"
+        },
+        "offset": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "tag": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "stream",
+        "offset"
+      ]
+    },
+    "Annotations": {
+      "description": "Document-wide provenance and exactness tables keyed by annotation key.\n\nThe key of a top-level entity is its globally unique entity id. The key\nof a record inside the delta of an evaluation or a process state is the\nid of that evaluation or process state, one space, and the record's id.\nValidation reports a key whose qualifier names no evaluation or process\nstate with a delta, or whose record that delta does not hold, as it\nreports a key that names no entity.\n\nAn entity absent from `exactness` is byte-exact.",
+      "type": "object",
+      "properties": {
+        "provenance": {
+          "description": "Source location for each annotated entity.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AnnotationProvenance"
+          }
+        },
+        "exactness": {
+          "description": "Non-byte-exact entity or field annotations.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ExactnessNote"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provenance",
+        "exactness"
+      ]
+    },
+    "CodecId": {
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "DecodeReport": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "description": "Source format identity and its classified dialect layers.",
+          "$ref": "#/$defs/FormatIdentity"
+        },
+        "transfer": {
+          "description": "Typed source-transfer state.",
+          "$ref": "#/$defs/DecodeTransfer"
+        },
+        "coverage": {
+          "description": "Decode coverage counts keyed by declared measure name.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "losses": {
+          "description": "Explicit loss notes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LossNote"
+          }
+        },
+        "notes": {
+          "description": "Free-form informational notes (e.g. container findings).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "transfer_ledger": {
+          "description": "Per-source disposition ledger for decoded records and entities.",
+          "$ref": "#/$defs/TransferLedger"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "transfer",
+        "coverage",
+        "losses",
+        "notes",
+        "transfer_ledger"
+      ]
+    },
+    "DecodeTransfer": {
+      "description": "Mutually exclusive source-transfer states for a decode report.\n\nThe backend reports the state it delivered; the sealed decode wrapper\nrecords its [`depth`](Self::depth) on the document.",
+      "oneOf": [
+        {
+          "description": "The decoder stopped after container inspection and transferred no\nsemantic geometry.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "container"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The decoder transferred the model and left every design arena empty,\nwith the recorded B-rep geometry outcome.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "geometry"
+            },
+            "geometry_transferred": {
+              "description": "Whether B-rep geometry was transferred into the IR.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "geometry_transferred"
+          ]
+        },
+        {
+          "description": "The decoder transferred the model and its design and left every\nprocess arena empty, with the recorded B-rep geometry outcome.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "design"
+            },
+            "geometry_transferred": {
+              "description": "Whether B-rep geometry was transferred into the IR.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "geometry_transferred"
+          ]
+        },
+        {
+          "description": "The decoder transferred the model and its design, with the recorded\nB-rep geometry outcome.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "full"
+            },
+            "geometry_transferred": {
+              "description": "Whether B-rep geometry was transferred into the IR.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "geometry_transferred"
+          ]
+        }
+      ]
+    },
+    "DialectId": {
+      "description": "A registry dialect id, for example `\"rhino:archive-80\"`.\n\nCanonical form is `<format>:<name>`. The format contains lowercase ASCII\nletters and digits. The name also admits dots and hyphens, but a hyphen\ncannot be first or last. Outside the owning codec the validated id is an\nopaque label.\n\nSerializes and deserializes as the plain string. Read it with\n[`DialectId::as_str`] or print it; there is no other access to the raw\nstring.",
+      "type": "string"
+    },
+    "DialectLayers": {
+      "description": "A report's primary format layer and any nested or carried format layers.\n\nLayers are unique by `(format, instance)`. The wire names the primary\nexplicitly, so the collection carries its complete identity without an\nenclosing report's format.\n\nA read rejects a wire whose `extra` repeats a `(format, instance)` key, and\none whose `extra` carries the primary key. The key set on the wire is the\nkey set of the value, so no layer is silently discarded or overwritten.",
+      "type": "object",
+      "properties": {
+        "primary": {
+          "$ref": "#/$defs/DialectMatch"
+        },
+        "extra": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DialectMatch"
+          }
+        }
+      },
+      "required": [
+        "primary",
+        "extra"
+      ]
+    },
+    "DialectMatch": {
+      "description": "One format layer's identification of one document.\n\nA document carries several format layers: `.sldprt` contains Parasolid;\n`.f3d`, `.ipt`, and SAT contain ACIS; NX contains Parasolid and JT. One\nmatch describes one layer.",
+      "type": "object",
+      "properties": {
+        "dialect": {
+          "description": "Registry dialect id, for example `\"rhino:archive-80\"`.",
+          "$ref": "#/$defs/DialectId"
+        },
+        "declared": {
+          "description": "Version fields the source declared, verbatim, under keys pinned per\ncodec in the registry.\n\nDeclarations are evidence, never a control input: the dialect is what\nthe bytes obey, not what they declare.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+              "type": "string"
+            }
+          }
+        },
+        "instance": {
+          "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
+          "$ref": "#/$defs/NonBlankString"
+        },
+        "admission": {
+          "description": "How this layer was admitted.",
+          "$ref": "#/$defs/Admission"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "dialect",
+        "declared",
+        "admission"
+      ]
+    },
+    "Exactness": {
+      "description": "How an entity or field value was established from its source.",
+      "oneOf": [
+        {
+          "description": "Read verbatim from the source stream with no transformation beyond\ndocumented unit conversion.",
+          "type": "string",
+          "const": "byte_exact"
+        },
+        {
+          "description": "Computed deterministically from byte-exact inputs.",
+          "type": "string",
+          "const": "derived"
+        },
+        {
+          "description": "Filled in from context or convention rather than an explicit source field.",
+          "type": "string",
+          "const": "inferred"
+        },
+        {
+          "description": "Origin or trustworthiness could not be established.",
+          "type": "string",
+          "const": "unknown"
+        }
+      ]
+    },
+    "ExactnessNote": {
+      "description": "Exactness for an entity and sparse overrides for its serialized fields.",
+      "oneOf": [
+        {
+          "description": "The entity itself is not byte-exact; listed fields override it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "entity"
+            },
+            "entity": {
+              "description": "Exactness of the entity except where overridden by `fields`.",
+              "$ref": "#/$defs/Inexactness"
+            },
+            "fields": {
+              "description": "Exactness overrides keyed by serde field path.",
+              "type": "object",
+              "additionalProperties": false,
+              "patternProperties": {
+                "[\\s\\S]": {
+                  "$ref": "#/$defs/Exactness"
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entity",
+            "fields"
+          ]
+        },
+        {
+          "description": "The entity is byte-exact apart from the listed fields.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "fields"
+            },
+            "fields": {
+              "description": "Exactness overrides keyed by serde field path.",
+              "$ref": "#/$defs/NonEmptyMap"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fields"
+          ]
+        }
+      ]
+    },
+    "FormatIdentity": {
+      "description": "A format identity that is either classified by a typed payload or retains\nonly its known format.\n\nClassified state stores no second format string. The payload is the one\nauthor of its namespace, so the format is on the wire exactly once in\neither state.",
+      "oneOf": [
+        {
+          "description": "The payload carries the complete classified identity.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "classified"
+            },
+            "dialects": {
+              "description": "Classified payload, whose namespace is the format.",
+              "$ref": "#/$defs/DialectLayers"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "dialects"
+          ]
+        },
+        {
+          "description": "The format is known but no classification payload exists.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unclassified"
+            },
+            "format": {
+              "description": "Registry format namespace.",
+              "$ref": "#/$defs/CodecId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "format"
+          ]
+        }
+      ]
+    },
+    "Grammar": {
+      "description": "Format-local name of a dialect grammar, for example `sch-sw-33103`.\n\nThe namespace is the owning [`DialectMatch`]'s, so a grammar cannot name a\nforeign format by construction. The name holds the character class a\n[`DialectId`] admits after its separator, which excludes the separator\nitself: a full id has no spelling as a grammar name.\n\nSerializes and deserializes as the plain string. `try_from` is the mint, so\nno read path reaches the field without the check. serde refuses\n`transparent` beside `try_from`; a newtype struct writes its inner string\nwith no wrapper of its own, which is the same wire form.",
+      "type": "string"
+    },
+    "Identity": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
+    },
+    "Inexactness": {
+      "description": "Exactness of an entity that is not byte-exact.",
+      "oneOf": [
+        {
+          "description": "Computed deterministically from byte-exact inputs.",
+          "type": "string",
+          "const": "derived"
+        },
+        {
+          "description": "Filled in from context or convention rather than an explicit source field.",
+          "type": "string",
+          "const": "inferred"
+        },
+        {
+          "description": "Origin or trustworthiness could not be established.",
+          "type": "string",
+          "const": "unknown"
+        }
+      ]
+    },
+    "IrVersion": {
+      "type": "string",
+      "const": "11"
+    },
+    "LossKind": {
+      "description": "Machine-readable loss code on the decode/export wire.\n\nA `kind` tag selects the variant. A shared loss is\n`{ \"kind\": \"shared\", \"value\": { \"kind\": \"pcurve_omitted\" } }`; a codec-local\none is `{ \"kind\": \"namespaced\", \"value\": { \"namespace\": \"rhino\", \"code\":\n\"brep.trim-pcurve-dropped\", \"kind\": \"pcurve_omitted\" } }`, carrying\n`strict_floor` exactly when the code pins one.",
+      "oneOf": [
+        {
+          "description": "Shared loss whose wire code is determined by its taxonomy.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "shared"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "description": "Shared taxonomy, which is also the local code.",
+                  "$ref": "#/$defs/LossTaxonomy"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "Codec-local loss with an independently pinned strict-mode floor.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "namespaced"
+            },
+            "value": {
+              "$ref": "#/$defs/NamespacedLossKind"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LossNamespaceName": {
+      "description": "An owned loss namespace other than the reserved shared namespace.",
+      "type": "string"
+    },
+    "LossNote": {
+      "description": "One attributable instance of incomplete or approximate transfer.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "Stable machine-readable loss kind.",
+          "$ref": "#/$defs/LossKind"
+        },
+        "severity": {
+          "description": "How serious the loss is.",
+          "$ref": "#/$defs/Severity"
+        },
+        "message": {
+          "description": "Human-readable explanation.",
+          "type": "string"
+        },
+        "provenance": {
+          "description": "Where in the source the loss occurred, when attributable.",
+          "$ref": "#/$defs/SourceProvenance"
+        },
+        "count": {
+          "description": "The number of source instances the note reports together.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ]
+    },
+    "LossTaxonomy": {
+      "description": "Shared cross-codec loss taxonomy.\n\nCategory and default severity live here. Codec-local loss enums map into a\ntaxonomy variant for subsystem reporting; strict-mode floors on a\n[`LossKind`] are pinned at construction so a later local→taxonomy remap in\nsource does not silently change rejection.",
+      "oneOf": [
+        {
+          "description": "No geometry stream was located in the container, so no B-rep could be\ntransferred.",
+          "type": "string",
+          "const": "missing_geometry_stream"
+        },
+        {
+          "description": "The B-rep topology graph was not transferred, though carriers or a\ncontainer were decoded.",
+          "type": "string",
+          "const": "topology_not_transferred"
+        },
+        {
+          "description": "The source topology violates a neutral topology invariant; the decoder\nreported the defect and retained only valid neutral topology.",
+          "type": "string",
+          "const": "source_topology_invalid"
+        },
+        {
+          "description": "B-rep geometry was not transferred, though carriers or a container were\ndecoded.",
+          "type": "string",
+          "const": "geometry_not_transferred"
+        },
+        {
+          "description": "Geometric agreement was checked at sampled parameters only.",
+          "type": "string",
+          "const": "geometry_agreement_sampled"
+        },
+        {
+          "description": "A reference graph decoded but did not close into a consistent\nsurface/pcurve/edge/vertex binding.",
+          "type": "string",
+          "const": "reference_graph_not_closed"
+        },
+        {
+          "description": "Face sense, body kind, or a body/region/shell hierarchy was supplied by\na deterministic gauge because the source fields were unresolved.",
+          "type": "string",
+          "const": "topology_gauge_substituted"
+        },
+        {
+          "description": "A carrier axis, plane, or orientation was inferred from adjacent\ncarriers rather than read from a source field.",
+          "type": "string",
+          "const": "carrier_axis_inferred"
+        },
+        {
+          "description": "Informational carrier or record census; no content was lost.",
+          "type": "string",
+          "const": "carrier_summary"
+        },
+        {
+          "description": "Materials or appearances were not transferred.",
+          "type": "string",
+          "const": "material_not_transferred"
+        },
+        {
+          "description": "Document, feature, or part metadata was not transferred.",
+          "type": "string",
+          "const": "metadata_not_transferred"
+        },
+        {
+          "description": "Attributes (names, colors, custom attributes) were not transferred.",
+          "type": "string",
+          "const": "attributes_not_transferred"
+        },
+        {
+          "description": "Named feature operations and their dependency tables were retained as\nnative passthrough rather than replayed.",
+          "type": "string",
+          "const": "feature_history_retained"
+        },
+        {
+          "description": "The part is an assembly; component geometry lives in external referenced\nfiles, not inline.",
+          "type": "string",
+          "const": "assembly_components_external"
+        },
+        {
+          "description": "Assembly component occurrence placements were not transferred.",
+          "type": "string",
+          "const": "assembly_placements_not_transferred"
+        },
+        {
+          "description": "A record was decoded but yielded no typed IR entity.",
+          "type": "string",
+          "const": "record_not_typed"
+        },
+        {
+          "description": "A decode-time diagnostic surfaced as a loss note; detail is in the\nmessage.",
+          "type": "string",
+          "const": "decode_diagnostic"
+        },
+        {
+          "description": "Stored integrity data does not match the bytes it protects.",
+          "type": "string",
+          "const": "integrity_failure"
+        },
+        {
+          "description": "The source uses a recoverable but noncanonical serialization.",
+          "type": "string",
+          "const": "noncanonical_source_syntax"
+        },
+        {
+          "description": "The source declares a dialect or specification version whose semantics\nthe decoder has not verified for that declaration.",
+          "type": "string",
+          "const": "source_dialect_unverified"
+        },
+        {
+          "description": "The writer emitted a different dialect from the source dialect, so the\nsource dialect identity was not preserved.",
+          "type": "string",
+          "const": "source_dialect_displaced"
+        },
+        {
+          "description": "Standalone mesh vertices were stored at reduced (f32) precision by the\nsource archive.",
+          "type": "string",
+          "const": "mesh_vertex_precision"
+        },
+        {
+          "description": "Some source object records were not transferred to typed IR.",
+          "type": "string",
+          "const": "object_records_untransferred"
+        },
+        {
+          "description": "An object family or class is not supported and was not transferred.",
+          "type": "string",
+          "const": "unsupported_object_family"
+        },
+        {
+          "description": "A named source asset (geometry, material, or other) was not transferred.",
+          "type": "string",
+          "const": "asset_not_transferred"
+        },
+        {
+          "description": "The IR contained no exportable solids, so the target representation is\nempty.",
+          "type": "string",
+          "const": "no_exportable_solids"
+        },
+        {
+          "description": "Hidden bodies were omitted from the exported output.",
+          "type": "string",
+          "const": "hidden_body_omitted"
+        },
+        {
+          "description": "A body's non-identity transform was not applied; coordinates are written\nin body-local space.",
+          "type": "string",
+          "const": "body_transform_not_applied"
+        },
+        {
+          "description": "Signed or self-intersecting analytic surfaces were normalized to the\ntarget's positive-radius convention.",
+          "type": "string",
+          "const": "analytic_surface_normalized"
+        },
+        {
+          "description": "Elliptical cones were reduced to circular conical carriers.",
+          "type": "string",
+          "const": "elliptical_cone_reduced"
+        },
+        {
+          "description": "Edges without a typed 3D curve were omitted from their edge loops.",
+          "type": "string",
+          "const": "curveless_edge_omitted"
+        },
+        {
+          "description": "Faces resting on an unknown surface were omitted from the exported shell.",
+          "type": "string",
+          "const": "unknown_surface_face_omitted"
+        },
+        {
+          "description": "Parameter-space pcurves were not written; consumers recompute trims.",
+          "type": "string",
+          "const": "pcurve_omitted"
+        },
+        {
+          "description": "Subdivision surfaces were omitted because the writer does not encode\ncontrol cages.",
+          "type": "string",
+          "const": "subd_omitted"
+        },
+        {
+          "description": "Tessellations were omitted because the writer emits exact geometry only.",
+          "type": "string",
+          "const": "tessellation_omitted"
+        },
+        {
+          "description": "Point clouds were not represented in the target.",
+          "type": "string",
+          "const": "point_cloud_omitted"
+        },
+        {
+          "description": "Product-manufacturing-information annotations were not represented in the target.",
+          "type": "string",
+          "const": "pmi_omitted"
+        },
+        {
+          "description": "Source-object associations were not represented in the target.",
+          "type": "string",
+          "const": "source_association_omitted"
+        },
+        {
+          "description": "Uninterpreted passthrough records were not represented in the target.",
+          "type": "string",
+          "const": "passthrough_record_omitted"
+        },
+        {
+          "description": "Procedural surface or curve definitions were reduced to their solved\ncarriers.",
+          "type": "string",
+          "const": "procedural_reduced"
+        },
+        {
+          "description": "Parametric design or history records were not represented in the target.",
+          "type": "string",
+          "const": "parametric_record_omitted"
+        },
+        {
+          "description": "Appearance assets were reduced to base colors; schemas, textures, and\nshader properties were dropped.",
+          "type": "string",
+          "const": "appearance_reduced"
+        },
+        {
+          "description": "Preserved source bytes required for a byte-exact write were unavailable.",
+          "type": "string",
+          "const": "preserved_source_unavailable"
+        },
+        {
+          "description": "Physical materials, mass properties, rigid bodies, colliders, or joint\ndrives were not transferred.",
+          "type": "string",
+          "const": "physics_not_transferred"
+        },
+        {
+          "description": "Manufacturing process records (setups, operations, tools, programs,\ntoolpaths, or process states) were not represented in the target.",
+          "type": "string",
+          "const": "process_record_omitted"
+        }
+      ]
+    },
+    "NamespacedLossKind": {
+      "description": "Codec-local loss identity and classification.\n\nFields are private so the reserved `shared` namespace can be constructed\nonly as [`LossKind::Shared`].",
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/LossNamespaceName"
+        },
+        "code": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/LossTaxonomy"
+        },
+        "strict_floor": {
+          "description": "Strict-mode severity floor pinned by this code; absent when it has none.",
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "code",
+        "kind"
+      ]
+    },
+    "NonBlankString": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+    },
+    "NonEmptyMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "[\\s\\S]": {
+          "$ref": "#/$defs/Exactness"
+        }
+      },
+      "minProperties": 1
+    },
+    "RetainedBytes": {
+      "description": "The retained image of a source record: its bytes, or the length and digest\nof bytes that are not retained.",
+      "oneOf": [
+        {
+          "description": "The source bytes themselves. Their length and digest are functions of\nthem, so neither is stored.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "inline"
+            },
+            "data": {
+              "description": "Retained source bytes.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "data"
+          ]
+        },
+        {
+          "description": "Unavailable source bytes, described by their length and digest.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "digest"
+            },
+            "byte_len": {
+              "description": "Number of source bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "sha256": {
+              "description": "Lowercase hexadecimal SHA-256 of the source bytes.",
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "byte_len",
+            "sha256"
+          ]
+        }
+      ]
+    },
+    "RetainedSourceRecord": {
+      "description": "Source bytes retained for native recovery or replay.\n\nThe record is addressed by its id in\n[`SourceFidelity::retained_records`], so it carries no id of its own.",
+      "type": "object",
+      "properties": {
+        "stream": {
+          "description": "Source stream containing the record.",
+          "type": "string"
+        },
+        "offset": {
+          "description": "First byte offset in the source stream.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "bytes": {
+          "description": "Retained image of the source bytes.",
+          "$ref": "#/$defs/RetainedBytes"
+        },
+        "untyped": {
+          "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "stream",
+        "offset",
+        "bytes",
+        "untyped"
+      ]
+    },
+    "Severity": {
+      "description": "Severity of a loss note or validation finding.",
+      "oneOf": [
+        {
+          "description": "Informational; no action needed.",
+          "type": "string",
+          "const": "info"
+        },
+        {
+          "description": "Non-fatal approximation or normalization.",
+          "type": "string",
+          "const": "warning"
+        },
+        {
+          "description": "A correctness problem in the produced IR or export.",
+          "type": "string",
+          "const": "error"
+        },
+        {
+          "description": "A hard stop: the requested operation cannot be completed faithfully.",
+          "type": "string",
+          "const": "blocking"
+        }
+      ]
+    },
+    "Sha256Digest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "SourceFidelity": {
+      "description": "Decode-time source digests, annotations, and retained native records.\n\nRetained identities are admitted only through checked insertion.\n\n```compile_fail\nuse cadmpeg_ir::hash::digest::Sha256Digest;\nlet mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b\"source\"));\nfidelity.retained_records().clear();\n```",
+      "type": "object",
+      "properties": {
+        "decode_digest": {
+          "description": "SHA-256 of the decode's root file.",
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "file_digests": {
+          "description": "SHA-256 of each component file, keyed by its `File` definition.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          }
+        },
+        "content_digest": {
+          "description": "SHA-256 of the canonical JSON of the document the decode returned,\nabsent where that document has no canonical JSON.",
+          "default": null,
+          "$ref": "#/$defs/Sha256Digest"
+        },
+        "codec_digests": {
+          "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          }
+        },
+        "unrepresented": {
+          "description": "Union of the retained records' untyped classes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "description": "Sparse source locations and conversion exactness.",
+          "$ref": "#/$defs/Annotations"
+        },
+        "retained_records": {
+          "description": "Native records retained for recovery or replay, keyed by record id.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+              "$ref": "#/$defs/RetainedSourceRecord"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "decode_digest",
+        "file_digests",
+        "codec_digests",
+        "unrepresented",
+        "annotations",
+        "retained_records"
+      ]
+    },
+    "SourceProvenance": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "stream": {
+          "$ref": "#/$defs/StreamName"
+        },
+        "offset": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "tag": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "offset"
+      ]
+    },
+    "StreamName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "TransferLedger": {
+      "description": "Complete source-to-result accounting for a decode.",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "description": "Entries in deterministic source traversal order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TransferRecord"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ]
+    },
+    "TransferOutcome": {
+      "description": "One source object's structurally valid transfer outcome.\n\nThe disposition is the wire's tag, so each outcome carries exactly the\nfields valid for it: an emitted record has no note to state, and an omitted\nrecord has no target.",
+      "oneOf": [
+        {
+          "description": "Transferred as an exact neutral or native entity.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "emitted"
+            },
+            "target": {
+              "description": "Resulting neutral or native identity.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "description": "Preserved in a native retained-record arena.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "retained"
+            },
+            "target": {
+              "description": "Resulting native retained-record identity.",
+              "type": "string"
+            },
+            "note": {
+              "description": "Informational note about retention or semantic projection.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "description": "Transferred with an explicit approximation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "approximated"
+            },
+            "target": {
+              "description": "Resulting neutral or native identity.",
+              "type": "string"
+            },
+            "note": {
+              "description": "Concise reason for the approximation.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "description": "Deliberately not transferred.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "omitted"
+            },
+            "note": {
+              "description": "Concise reason for the omission.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "TransferRecord": {
+      "description": "One source object's transfer disposition.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Stable source identity or source-local record key.",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "Outcome whose variant carries exactly the data valid for its disposition.",
+          "$ref": "#/$defs/TransferOutcome"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "outcome"
+      ]
+    }
+  }
+}

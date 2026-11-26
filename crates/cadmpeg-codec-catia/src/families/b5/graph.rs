@@ -14,10 +14,10 @@ use std::ops::Range;
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    analytic::ConeSurface, nurbs::NurbsSurface, ProceduralSurfaceDefinition,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::ConeSurface;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
     Angle, FiniteReal, NonNegativeLength, PositiveAngle, PositiveLength, PositiveReal,
@@ -106,7 +106,7 @@ pub(crate) struct B5Graph {
     pub(in crate::families) edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
     /// Maximum incident endpoint residual for each logical vertex, keyed by
     /// the combined vertex index used by `edge_vertices`.
-    pub(in crate::families) vertex_tolerances: BTreeMap<usize, PositiveReal>,
+    pub(in crate::families) vertex_residuals: BTreeMap<usize, PositiveReal>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub(in crate::families) profiles: BTreeMap<u32, B5Profile>,
@@ -1399,7 +1399,7 @@ fn parse_from_records_with_class21(
     )?;
     let edge_vertices = bound_vertices.edges;
     let logical_vertices = bound_vertices.vertices;
-    let vertex_tolerances = bound_vertices.tolerances;
+    let vertex_residuals = bound_vertices.tolerances;
     let mut referenced_loops = HashSet::new();
     for face in &faces {
         for &loop_id in &face.loops {
@@ -1447,7 +1447,7 @@ fn parse_from_records_with_class21(
         vertex_incidence_links,
         vertices,
         edge_parameter_incidences,
-        vertex_tolerances,
+        vertex_residuals,
         profiles,
     }))
 }
@@ -1530,9 +1530,11 @@ fn copy_surface(surface: &B5Surface) -> Result<B5Surface, CodecError> {
                 return Ok(surface.clone());
             };
             let stations = jet.stations().to_vec();
-            let jet =
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
-                    .map_err(CodecError::malformed)?;
+            let jet = cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+                jet.degree(),
+                stations,
+            )
+            .map_err(CodecError::malformed)?;
 
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,

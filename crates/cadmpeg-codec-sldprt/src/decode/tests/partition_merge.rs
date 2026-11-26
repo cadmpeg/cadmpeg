@@ -441,7 +441,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
         result
             .ir()
             .geometry
-            .shell_faces(&result.ir().geometry.shells[0].id)
+            .stated_shell_faces(&result.ir().geometry.shells[0].id)
             .count(),
         1
     );
@@ -542,12 +542,12 @@ fn merged_face_color_annotations_retain_site_owners() {
     let provenance = &result.source_fidelity().annotations.provenance;
     let first = provenance
         .iter()
-        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#900@"))
+        .find(|(id, _)| id.as_str().starts_with("sldprt:appearance:entity53#900@"))
         .expect("first merged face color provenance");
     assert_eq!(first.1.stream(), "Contents/Config-0-Partition");
     let second = provenance
         .iter()
-        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#901@"))
+        .find(|(id, _)| id.as_str().starts_with("sldprt:appearance:entity53#901@"))
         .expect("second merged face color provenance");
     assert_eq!(second.1.stream(), "Contents/Config-1-Partition");
 }
@@ -1064,7 +1064,11 @@ fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted()
                 .geometry
                 .vertices
                 .iter()
-                .filter_map(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get))
+                .filter_map(|vertex| {
+                    vertex
+                        .tolerance
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
+                })
                 .collect();
             assert_eq!(values.len(), 1);
             assert!((values[0] - 0.1).abs() < f64::EPSILON);

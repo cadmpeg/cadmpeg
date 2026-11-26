@@ -119,7 +119,7 @@ Exit code 0 prints ``deny census: ok``; any failure prints one
 from __future__ import annotations
 
 import importlib.util
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 import json
 import os
 import re
@@ -209,6 +209,16 @@ EXCEPTIONS = {
     "crates/cadmpeg-ir/src/document.rs:VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
 }
 
+# Set or map fields admitted by declaring path and field label, each with the
+# reason its reader admits a second spelling. An entry is interim: it names
+# the gap whose ruling removes it.
+SET_SPELLING_EXCEPTIONS = {
+    "crates/cadmpeg-ir/src/pmi.rs:PmiDimension.modifiers":
+        "interim (RULINGS-P P7-D5, gap 20261119-ERR1-C-I6-3): reading adds no "
+        "refusal main lacks before errata item Q, and main read the modifiers "
+        "as a list in any order, so the set reads every list main reads",
+}
+
 SKIP_BASENAMES = {
     "tests.rs",
     "golden_tests.rs",
@@ -254,6 +264,8 @@ class ImportBinding:
     def __init__(self, path, scope, alias, target, offsets=(), scopes=(),
                  module_scope=()):
         self.path = path
+        self.path_text = str(path)
+        self.crate_parts = path.parts[:path.parts.index("src")]
         self.scope = scope
         self.alias = alias
         self.target = target
@@ -1332,10 +1344,13 @@ def canonical_path(value):
 
 
 def derives_deserialize(attrs):
+    """Whether ``attrs`` derive serde's ``Deserialize`` or
+    ``cadmpeg_derive::DeserializeTagged``, which reads the serde attributes of
+    a tagged enum as serde's derive does."""
     for arguments, _ in attribute_arguments(attrs, "derive"):
         for name in split_metadata(arguments):
             code = SOURCE_POLICY.mask_rust_non_code(name).strip()
-            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Deserialize", code):
+            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Deserialize(?:Tagged)?", code):
                 return True
     return False
 
@@ -1862,6 +1877,9 @@ def generic_arguments(declaration, position, items, resolve, values=(), names=No
     sources = [(item.body, item, True) for item in items]
     sources += [(value, item, False) for value, item in values]
     for text, item, declared in sources:
+        # Masking only blanks text, so a text that spells no name has no use.
+        if not any(name in text for name in names):
+            continue
         code = SOURCE_POLICY.mask_rust_non_code(text)
         header = GENERIC_HEADER_RE.match(code) if declared else None
         own_header = header.end() - 1 if header is not None else None
@@ -2613,6 +2631,21 @@ def name_pattern(names):
     return re.compile(rf"(?<![\w$])(?:{alternatives})\b")
 
 
+# The identifiers `name_pattern` can match: a run of word characters that no
+# word character or `$` precedes.
+IDENTIFIER_TOKEN = re.compile(r"(?<![\w$])\w+")
+
+
+@SOURCE_POLICY.cached_analysis
+def identifier_offsets(path):
+    """Each identifier of one file's production code, with its sorted offsets."""
+    code, _ = SOURCE_POLICY.production_source(read_source(path))
+    offsets = {}
+    for token in IDENTIFIER_TOKEN.finditer(code):
+        offsets.setdefault(token.group(), []).append(token.start())
+    return offsets
+
+
 @SOURCE_POLICY.cached_analysis
 def use_renames(path):
     """Each ``original as alias`` a ``use`` declaration of one file states."""
@@ -2640,7 +2673,9 @@ def renamed_names(name, paths):
         pattern = name_pattern(names)
         pending = [
             path for path in paths
-            if path not in read and pattern.search(read_source(path))
+            if path not in read
+            and any(name in read_source(path) for name in names)
+            and pattern.search(read_source(path))
         ]
         if not pending:
             return names
@@ -3857,6 +3892,29 @@ class SetSpelling:
             canonical_path(match.group("path")).rsplit("::", 1)[-1]
             for match in DESERIALIZE_CALL_RE.finditer(body)
         ]
+        if not read:
+            erased = re.findall(
+                r"\bcadmpeg_core\s*::\s*serde_erase\s*::\s*deserialize_with\s*\("
+                r"[^,]+,\s*(?P<path>(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*)"
+                r"\s*::\s*deserialize_erased\s*,?\s*\)",
+                body,
+            )
+            if erased:
+                source = SOURCE_POLICY.mask_rust_non_code(read_source(reader.path))
+                verified = []
+                for path in erased:
+                    wire = canonical_path(path).rsplit("::", 1)[-1]
+                    # Confirm `impl <Wire> { fn deserialize_erased(...) { Self::deserialize(...) } }`
+                    # in the same file before accepting the erased delegation.
+                    if re.search(
+                        rf"\bimpl\b[^{{]*\b{re.escape(wire)}\b[^{{]*\{{"
+                        rf"[^}}]*\bfn\s+deserialize_erased\b[^{{]*\{{"
+                        rf"\s*Self\s*::\s*deserialize\s*\(\s*deserializer\s*\)\s*\}}",
+                        source,
+                    ):
+                        verified.append(wire)
+                if len(verified) == len(erased):
+                    read = verified
         return bool(read) and all(
             name in self.declared and name not in SPELLED_TYPES | SEQUENCE_TYPES
             for name in read
@@ -4031,6 +4089,8 @@ def set_spelling_failures():
                 continue
             line = set_spelling_lines(item)
             for label, offset, attributes, field_type in read_fields(item):
+                if f"{path.as_posix()}:{label}" in SET_SPELLING_EXCEPTIONS:
+                    continue
                 failure = spelling.field_failure(item, attributes, field_type)
                 if failure is not None:
                     found.append((path, line(offset), f"{label}: {failure}"))
@@ -4155,7 +4215,7 @@ def main():
                        source_scope=None):
         source_path = owner.path if source_path is None else source_path
         source_scope = owner.scope if source_scope is None else source_scope
-        if binding.path != source_path:
+        if binding.path_text != str(source_path):
             return binding.scope == source_scope
         if position is None:
             call_scope = source_scope
@@ -4181,10 +4241,11 @@ def main():
         prefix, separator, suffix = name.partition("::")
         source_path = owner.path if source_path is None else source_path
         source_scope = owner.scope if source_scope is None else source_scope
-        source_crate = Path(*source_path.parts[:source_path.parts.index("src")])
+        source_parts = source_path.parts
+        source_crate = source_parts[:source_parts.index("src")]
         candidates = [
             binding for binding in imports.get(prefix, ())
-            if binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            if binding.crate_parts == source_crate
             and import_visible(
                 binding,
                 owner,
@@ -4215,7 +4276,7 @@ def main():
         if len(candidates) > 1:
             return import_ambiguous
         if any(
-            binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            binding.crate_parts == source_crate
             and import_visible(binding, owner, position, source_path, source_scope)
             for binding in imports.get("*", ())
         ):
@@ -4561,18 +4622,23 @@ def main():
                 for tree in macro_token_trees(path):
                     if tree.kind == "definition":
                         macro_definitions.setdefault(tree.name, []).append(tree)
-        named = name_pattern(names)
         for path in paths:
-            source = read_source(path)
-            if not named.search(source):
+            identifiers = identifier_offsets(path)
+            spellings = sorted(
+                (offset, name)
+                for name in names
+                for offset in identifiers.get(name, ())
+            )
+            if not spellings:
                 continue
-            code, _ = SOURCE_POLICY.production_source(source)
             for tree in macro_token_trees(path):
-                spelled = named.search(code, tree.start, tree.end)
-                if spelled is None or tree.kind == "definition":
+                if tree.kind == "definition":
+                    continue
+                first = bisect_left(spellings, (tree.start,))
+                if first == len(spellings) or spellings[first][0] >= tree.end:
                     continue
                 if tree.kind == "attribute" or binding_macro(tree.name, macro_definitions):
-                    return tree, spelled.group()
+                    return tree, spellings[first][1]
         return None
 
     def bound_by_expansion(candidate, source):

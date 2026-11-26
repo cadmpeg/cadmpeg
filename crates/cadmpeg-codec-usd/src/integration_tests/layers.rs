@@ -68,7 +68,7 @@ fn a_reference_to_a_usdc_layer_composes_its_default_prim() {
 
 #[test]
 fn a_reference_to_a_package_composes_its_root_layer() {
-    let package = crate::usdz::package(&[("bolt.usda", PART.as_bytes())]).expect("package");
+    let package = crate::usdz::package(&[("bolt.usda", PART.as_bytes())]).0;
     let package: &'static [u8] = Box::leak(package.into_boxed_slice());
     let root = CUBE_REFERENCE.replace("./cube.usdc", "./bolt.usdz");
     let result = decode_with(&root, &Files(vec![("bolt.usdz", package)]));

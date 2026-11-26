@@ -34,9 +34,18 @@ pub(super) struct ProductPrereqs {
     /// trailer sets byte 3; the session reports them as losses.
     pub(super) design_parameter_trailer_flags:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
+    /// Per-stream counts of decoded parameters whose nine-byte or ten-byte
+    /// expression trailer sets the driven flag; the session reports them as
+    /// losses.
+    pub(super) design_parameter_driven_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters; the
     /// session reports them as losses.
     pub(super) design_parameter_null_owners:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
+    /// Per-stream counts of decoded parameters that set the header flag; the
+    /// session reports them as losses.
+    pub(super) design_parameter_header_flags:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Native parameter identities retained without an interpreted owner frame.
     pub(super) design_parameter_owner_unparsed: Vec<String>,
@@ -44,9 +53,10 @@ pub(super) struct ProductPrereqs {
     /// final flag byte; the session reports them as losses.
     pub(super) design_parameter_owner_trailer_flags:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
-    /// Non-equivalent duplicate scope envelopes superseded by the
-    /// primary-indexed envelope; the session reports them as a loss.
-    pub(super) design_superseded_scope_envelopes: usize,
+    /// Non-equivalent duplicate scope envelopes that admission did not
+    /// decode; the session reports them as losses.
+    pub(super) design_superseded_scope_envelopes:
+        crate::design::decode::scopes::parameter_scope::SupersededScopeEnvelopes,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
     /// Headers of the records that entity headers index. Sketch relations
     /// decode from this set only.
@@ -66,6 +76,14 @@ pub(super) struct ProductPrereqs {
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
     pub(super) design_parameter_scope_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Sheet-metal settings records, decoded before the scopes that link them.
+    pub(super) design_sheet_metal_settings:
+        Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    pub(super) design_sheet_metal_settings_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Sheet-metal settings records given up with their frames, which design
+    /// intent gives up as parts with their losses.
+    pub(super) design_sheet_metal_settings_given_up:
+        Vec<crate::design::decode::record::GivenUpFrame>,
     pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
@@ -76,7 +94,7 @@ pub(super) struct ProductPrereqs {
     /// scopes from internal operands. A decode failure that does not refuse
     /// the document stays here; design intent then does not run.
     pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
-    pub(super) design_feature_timeline_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) design_record_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Registered component entities with no context-UUID binding in this
     /// document; the session reports them as a loss.
@@ -120,7 +138,9 @@ impl ProductPrereqs {
             design_parameters,
             design_parameter_unparsed: _,
             design_parameter_trailer_flags: _,
+            design_parameter_driven_flags: _,
             design_parameter_null_owners: _,
+            design_parameter_header_flags: _,
             design_parameter_owner_unparsed: _,
             design_parameter_owner_trailer_flags: _,
             design_superseded_scope_envelopes: _,
@@ -135,11 +155,14 @@ impl ProductPrereqs {
             design_component_occurrence_losses: _,
             design_parameter_scopes,
             design_parameter_scope_losses: _,
+            design_sheet_metal_settings: _,
+            design_sheet_metal_settings_losses: _,
+            design_sheet_metal_settings_given_up: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
             design_hidden_occurrences: _,
             design_feature_timelines,
-            design_feature_timeline_losses: _,
+            design_record_losses: _,
             design_component_naming_spaces,
             design_unbound_component_naming_spaces: _,
             design_body_bindings,
@@ -195,7 +218,9 @@ pub(super) fn decode(
         parameters: design_parameters,
         unparsed: design_parameter_unparsed,
         trailer_flags: design_parameter_trailer_flags,
+        driven_flags: design_parameter_driven_flags,
         null_owners: design_parameter_null_owners,
+        header_flags: design_parameter_header_flags,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
@@ -221,8 +246,15 @@ pub(super) fn decode(
         losses: design_component_occurrence_losses,
         paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
+    let mut design_sheet_metal_settings_losses = Vec::new();
+    let mut design_sheet_metal_settings_given_up = Vec::new();
+    let design_sheet_metal_settings = crate::design::decode::sheet_metal_settings::decode_settings(
+        scan,
+        &mut design_sheet_metal_settings_losses,
+        &mut design_sheet_metal_settings_given_up,
+    )?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
-        given_up,
+        mut given_up,
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
         work_plane_inferred_axes: design_work_plane_inferred_axes,
@@ -236,6 +268,7 @@ pub(super) fn decode(
             parameter_owners: &design_parameter_owners,
             component_occurrences: &design_component_occurrences,
             recipes: &construction_recipes,
+            sheet_metal_settings: &design_sheet_metal_settings,
         },
     )?;
     let primary_frames =
@@ -252,10 +285,16 @@ pub(super) fn decode(
         &design_parameter_scopes,
         &design_types,
     )?;
-    let mut design_feature_timeline_losses = Vec::new();
+    let (mut design_record_losses, primary_given_up) =
+        crate::design::decode::meta::decode_primary_frame_losses(scan)?;
+    given_up.extend(crate::design::decode::record::give_up_frames(
+        ctx,
+        scan,
+        primary_given_up,
+    )?);
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,
-        &mut design_feature_timeline_losses,
+        &mut design_record_losses,
     ) {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
@@ -289,7 +328,9 @@ pub(super) fn decode(
         design_parameters,
         design_parameter_unparsed,
         design_parameter_trailer_flags,
+        design_parameter_driven_flags,
         design_parameter_null_owners,
+        design_parameter_header_flags,
         design_parameter_owner_unparsed,
         design_parameter_owner_trailer_flags,
         design_superseded_scope_envelopes,
@@ -304,11 +345,14 @@ pub(super) fn decode(
         design_component_occurrence_losses,
         design_parameter_scopes,
         design_parameter_scope_losses,
+        design_sheet_metal_settings,
+        design_sheet_metal_settings_losses,
+        design_sheet_metal_settings_given_up,
         design_work_plane_inferred_axes,
         design_joint_motions,
         design_hidden_occurrences,
         design_feature_timelines,
-        design_feature_timeline_losses,
+        design_record_losses,
         design_component_naming_spaces,
         design_unbound_component_naming_spaces,
         design_body_bindings,

@@ -9,23 +9,24 @@ use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::features::boundary_fill::BoundaryFillCell;
-use crate::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    SplitBodyTool, SplitFaceTool, UnresolvedFamily,
-};
-use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use crate::features::datums::DatumPlaneReference;
+use crate::features::direct_edit::{SplitBodyTool, SplitFaceTool};
+use crate::features::extents::ExtrudeStart;
+use crate::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use crate::features::selections::{BodySelection, FaceSelection};
+use crate::features::{Feature, FeatureSourceContent, UnresolvedFamily};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::report::{
-    check::{Check, Finding},
+    check::{Check, Finding, Ruled},
     Severity,
 };
 mod composite;
 mod datums;
 pub(super) mod graphs;
 pub(super) mod nested;
+pub(super) mod procedural_owners;
 mod sheet_metal;
 
 fn check_split_face_input_run(
@@ -55,7 +56,10 @@ fn check_split_face_input_run(
             geometry_error(
                 findings,
                 subject,
-                "split-face direction input run is inconsistent",
+                crate::rule!(
+                    "topology.split-face-direction-input-run-inconsistent",
+                    "split-face direction input run is inconsistent"
+                ),
             );
         }
     }
@@ -63,7 +67,7 @@ fn check_split_face_input_run(
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
+    paths: &mut Vec<&'a crate::features::profiles::PathRef>,
 ) {
     match pattern.definition() {
         PatternTransform::CurveDriven {
@@ -84,7 +88,7 @@ fn collect_pattern_paths<'a>(
 /// A composite stage applies one transform, so its paths do not recurse.
 fn collect_stage_pattern_paths<'a>(
     pattern: &'a crate::features::patterns::StagePatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
+    paths: &mut Vec<&'a crate::features::profiles::PathRef>,
 ) {
     match pattern.definition() {
         PatternTransform::CurveDriven {
@@ -126,14 +130,17 @@ fn ref_error(
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner),
-        format_args!("references missing {target_kind} `{target}`"),
+        crate::rule!(
+            "topology.references-missing",
+            "references missing {target_kind} `{target}`"
+        ),
     );
 }
 
 /// Edge geometry names edges and faces of its own input state, once per edge.
 fn validate_input_edge_geometry(
     findings: &mut Vec<Finding>,
-    state: &crate::features::FeatureInputTopology,
+    state: &crate::features::evaluation::FeatureInputTopology,
 ) {
     if state.edge_geometry.is_empty() {
         return;
@@ -160,7 +167,10 @@ fn validate_input_edge_geometry(
                 Check::Counts,
                 Severity::Error,
                 Some(state.id.as_str()),
-                format_args!("input-state edge `{edge}` has more than one geometry entry"),
+                crate::rule!(
+                    "topology.input-state-edge-more-one-geometry",
+                    "input-state edge `{edge}` has more than one geometry entry"
+                ),
             );
         }
         for face in &geometry.faces {
@@ -176,16 +186,142 @@ fn validate_input_edge_geometry(
     }
 }
 
+/// Each owner entry of an input state names a face and a body of that state,
+/// and a face has one entry.
+fn validate_input_face_owners(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::evaluation::FeatureInputTopology,
+) {
+    if state.face_owners.is_empty() {
+        return;
+    }
+    let faces = state
+        .faces
+        .iter()
+        .map(crate::ids::HistoricalFaceId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let bodies = state
+        .bodies
+        .iter()
+        .map(crate::ids::HistoricalBodyId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut owned = std::collections::HashSet::new();
+    for owner in &state.face_owners {
+        let face = owner.face.as_str();
+        if !faces.contains(face) {
+            ref_error(findings, state.id.as_str(), "input-state face", face);
+        }
+        if !bodies.contains(owner.body.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "input-state body",
+                owner.body.as_str(),
+            );
+        }
+        if !owned.insert(face) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                crate::rule!(
+                    "topology.input-state-face-more-one-owner",
+                    "input-state face `{face}` has more than one owner entry"
+                ),
+            );
+        }
+    }
+}
+
+/// Face geometry names faces of its own input state, once per face.
+fn validate_input_face_geometry(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::evaluation::FeatureInputTopology,
+) {
+    if state.face_geometry.is_empty() {
+        return;
+    }
+    let faces = state
+        .faces
+        .iter()
+        .map(crate::ids::HistoricalFaceId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut sampled = std::collections::HashSet::new();
+    for geometry in &state.face_geometry {
+        let face = geometry.face.as_str();
+        if !faces.contains(face) {
+            ref_error(findings, state.id.as_str(), "input-state face", face);
+        }
+        if !sampled.insert(face) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                crate::rule!(
+                    "topology.input-state-face-more-one-geometry",
+                    "input-state face `{face}` has more than one geometry entry"
+                ),
+            );
+        }
+    }
+}
+
+/// Body writers name bodies of their own input state, once per body, and
+/// features of the model.
+fn validate_input_body_writers<V>(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::evaluation::FeatureInputTopology,
+    features: &BorrowedIdentities<'_, V>,
+) {
+    if state.body_writers.is_empty() {
+        return;
+    }
+    let bodies = state
+        .bodies
+        .iter()
+        .map(crate::ids::HistoricalBodyId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut written = std::collections::HashSet::new();
+    for writer in &state.body_writers {
+        let body = writer.body.as_str();
+        if !bodies.contains(body) {
+            ref_error(findings, state.id.as_str(), "input-state body", body);
+        }
+        if !features.contains(writer.writer.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "body writer feature",
+                writer.writer.as_str(),
+            );
+        }
+        if !written.insert(body) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                crate::rule!(
+                    "topology.input-state-body-more-one-writer",
+                    "input-state body `{body}` has more than one writer entry"
+                ),
+            );
+        }
+    }
+}
+
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
-    expression: &crate::geometry::LawExpression<R, V, P>,
+    expression: &crate::geometry::laws::LawExpression<R, V, P>,
     ids: &ModelIndex<'_>,
     procedural: &crate::geometry::ProceduralSurface,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("law reference depth")?;
     match expression {
-        crate::geometry::LawExpression::Edge { curve, .. } => {
+        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
             if ids
                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -193,7 +329,7 @@ fn check_law_curves<R, V, P>(
                 ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
             }
         }
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
                 check_law_curves(ctx, operand, ids, procedural, findings)?;
             }
@@ -211,15 +347,21 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
             Check::Tolerances,
             Severity::Warning,
             None,
-            format_args!("document tolerance is outside a sane canonical range"),
+            crate::rule!(
+                "topology.document-tolerance-outside-sane-canonical-range",
+                "document tolerance is outside a sane canonical range"
+            ),
         );
     }
 }
 
 /// In a Catmull–Clark cage every face side holds one edge use, and the edges
 /// that state a knot interval state one value.
-pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for surface in &ir.geometry.subds {
+pub(super) fn check_subdivision_schemes(
+    geometry: &crate::document::Topology,
+    findings: &mut Vec<Finding>,
+) {
+    for surface in &geometry.subds {
         if surface.scheme != crate::subd::SubdScheme::CatmullClark {
             continue;
         }
@@ -234,7 +376,10 @@ pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>)
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(surface.id.as_str()),
-                format_args!("Catmull-Clark face side holds more than one edge"),
+                crate::rule!(
+                    "topology.catmull-clark-face-side-holds-more",
+                    "Catmull-Clark face side holds more than one edge"
+                ),
             );
         }
         let mut intervals = surface
@@ -249,7 +394,10 @@ pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>)
                     Check::GeometricConsistency,
                     Severity::Error,
                     Some(surface.id.as_str()),
-                    format_args!("Catmull-Clark cage edges state different knot intervals"),
+                    crate::rule!(
+                        "topology.catmull-clark-cage-edges-state-different",
+                        "Catmull-Clark cage edges state different knot intervals"
+                    ),
                 );
             }
         }
@@ -281,7 +429,10 @@ pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>)
                 Check::Tolerances,
                 Severity::Warning,
                 Some(id),
-                format_args!("topology tolerance is outside a sane canonical range"),
+                crate::rule!(
+                    "topology.topology-tolerance-outside-sane-canonical-range",
+                    "topology tolerance is outside a sane canonical range"
+                ),
             );
         }
     }
@@ -300,7 +451,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, l.id.as_str(), "body", l.body.as_str());
         }
-        for s in &l.shells {
+        for s in l.stated_shells() {
             if ids
                 .shells(s.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -329,6 +480,11 @@ pub(super) fn check_references(
                 ref_error(findings, s.id.as_str(), "free vertex", v.as_str());
             }
         }
+        for c in s.subds() {
+            if ids.subds(c.as_str(), crate::index::StandardIndex).is_none() {
+                ref_error(findings, s.id.as_str(), "subdivision cage", c.as_str());
+            }
+        }
     }
     for f in &ir.geometry.faces {
         if ids
@@ -343,7 +499,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, f.id.as_str(), "surface", f.surface.as_str());
         }
-        for lp in &f.loops {
+        for lp in f.loops.stated() {
             if ids
                 .loops(lp.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -582,7 +738,6 @@ pub(super) fn check_references(
                 }
                 Some(_) => {}
             },
-            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }
@@ -591,7 +746,7 @@ pub(super) fn check_references(
         use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
-        for value in &attribute.values {
+        for value in attribute.values.iter().flatten() {
             if let AttributeValue::Parameter(id) = value {
                 if !records.holds_parameter(id) {
                     ref_error(findings, owner, "parameter", id.as_str());
@@ -833,11 +988,11 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.tail {
-                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                    crate::geometry::lofts::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
                         check_curve(curve, findings);
                     }
-                    crate::geometry::CompoundLoftTail::Seven {
+                    crate::geometry::lofts::CompoundLoftTail::Seven {
                         first_scale,
                         second_scale,
                         ..
@@ -845,9 +1000,10 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -888,7 +1044,7 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.branch {
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
@@ -896,7 +1052,7 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
@@ -904,9 +1060,12 @@ pub(super) fn check_references(
                         scales.extend(scale.iter().map(Box::as_ref));
                         check_curve(curve, findings);
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::Direct {
+                        direction, ..
+                    } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -946,7 +1105,11 @@ pub(super) fn check_references(
                     }
                 };
                 match &construction.layout {
-                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Profiles {
+                        profiles,
+                        path,
+                        ..
+                    } => {
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
@@ -964,7 +1127,7 @@ pub(super) fn check_references(
                             }
                         }
                     }
-                    crate::geometry::SkinSurfaceLayout::Compact {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Compact {
                         curve,
                         secondary_curve,
                         ..
@@ -1052,7 +1215,7 @@ pub(super) fn check_references(
                         );
                     }
                 }
-                if let crate::geometry::G2BlendFirstShape::Full {
+                if let crate::geometry::blends::G2BlendFirstShape::Full {
                     support: Some(support),
                 } = &construction.first_shape
                 {
@@ -1173,8 +1336,10 @@ pub(super) fn check_references(
                             .chain(path.auxiliaries.iter())
                     })
                     .chain(match construction.direction() {
-                        crate::geometry::CompoundLoftDirection::Vector { .. } => None,
-                        crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
+                        crate::geometry::lofts::CompoundLoftDirection::Vector { .. } => None,
+                        crate::geometry::lofts::CompoundLoftDirection::Curve { curve, .. } => {
+                            Some(curve)
+                        }
                     })
                     .chain(construction.tail().curve())
                 {
@@ -1232,8 +1397,14 @@ pub(super) fn check_references(
 
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
-                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
-                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Circle {
+                            curve,
+                            ..
+                        }
+                        | crate::geometry::blends::VertexBlendBoundaryGeometry::Plane {
+                            curve,
+                            ..
+                        } => {
                             if ids
                                 .curves(curve.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1246,8 +1417,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
-                            surface, ..
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Pcurve {
+                            surface,
+                            ..
                         } => {
                             if ids
                                 .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1261,7 +1433,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Degenerate {
+                            ..
+                        } => {}
                     }
                 }
             }
@@ -1339,14 +1513,17 @@ pub(super) fn check_references(
                 }
                 if let Some(native) = native {
                     let formulas = match &native.layout {
-                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            (formulas.iter()).collect::<Vec<_>>()
-                        }
-                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                            formula, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ProfileFirst {
+                            formulas,
+                            ..
+                        } => (formulas.iter()).collect::<Vec<_>>(),
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitFormula {
+                            formula,
+                            ..
                         } => ([formula]).into_iter().collect::<Vec<_>>(),
-                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                            guide_curve, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve,
+                            ..
                         } => {
                             if ids
                                 .curves(guide_curve.as_str(), crate::index::StandardIndex)
@@ -1361,7 +1538,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
                             auxiliary_curve,
                             ..
@@ -1392,7 +1569,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::LawDriven {
                             first_law,
                             second_law,
                             formula,
@@ -1613,11 +1790,16 @@ pub(super) fn check_references(
                         construction.support.as_str(),
                     );
                 }
-                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                    surface, curve, ..
+                if let crate::geometry::deformable_surfaces::DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    curve,
+                    ..
                 }
-                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
-                    &construction.data
+                | crate::geometry::deformable_surfaces::DeformableSurfaceData::Full {
+                    surface,
+                    curve,
+                    ..
+                } = &construction.data
                 {
                     if ids
                         .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1651,14 +1833,14 @@ pub(super) fn check_references(
             } => {
                 fn check<R, V, P>(
                     ctx: &DecodeContext<'_>,
-                    expression: &crate::geometry::LawExpression<R, V, P>,
+                    expression: &crate::geometry::laws::LawExpression<R, V, P>,
                     ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,
                 ) -> Result<(), CodecError> {
                     let _depth = ctx.enter_nested("law reference depth")?;
                     match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
                             if ids
                                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1671,7 +1853,7 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
                                 check(ctx, operand, ids, procedural, findings)?;
                             }
@@ -1871,7 +2053,10 @@ pub(super) fn check_references(
                 let context = definition_payload.context();
                 let source = definition_payload.source();
                 {
-                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if let crate::geometry::procedural_curves::DeformableCurveSource::Curve {
+                        curve,
+                    } = source
+                    {
                         if ids
                             .curves(curve.as_str(), crate::index::StandardIndex)
                             .is_none()
@@ -1933,7 +2118,7 @@ pub(super) fn check_references(
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
-                    if let crate::geometry::OffsetSide::Direction {
+                    if let crate::geometry::curve_offsets::OffsetSide::Direction {
                         support: Some(support),
                         ..
                     } = side
@@ -1950,9 +2135,12 @@ pub(super) fn check_references(
                             );
                         }
                     }
-                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    if let Some(crate::geometry::curve_offsets::CurveOffsetRange::Variable {
                         distance_law:
-                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                            crate::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
+                                function,
+                                ..
+                            },
                         ..
                     }) = range
                     {
@@ -2089,13 +2277,12 @@ pub(super) fn check_references(
                 ref_error(findings, parameter.id.as_str(), "feature", owner.as_str());
             }
         }
-        if scoped_parameters
-            .iter()
-            .any(|previous: &&crate::features::DesignParameter| {
+        if scoped_parameters.iter().any(
+            |previous: &&crate::features::parameters::DesignParameter| {
                 same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
                     && (previous.name.as_str() == parameter.name.as_str())
-            })
-        {
+            },
+        ) {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -2106,19 +2293,20 @@ pub(super) fn check_references(
                     .as_ref()
                     .map(crate::features::FeatureId::as_str)
                     .as_slice(),
-                format_args!(
+                crate::rule!(
+                    "topology.parameter-scope-repeats-parameter-name",
                     "parameter scope {:?} repeats parameter name `{}`",
-                    parameter.owner, parameter.name
+                    parameter.owner,
+                    parameter.name
                 ),
             );
         }
-        if scoped_parameters
-            .iter()
-            .any(|previous: &&crate::features::DesignParameter| {
+        if scoped_parameters.iter().any(
+            |previous: &&crate::features::parameters::DesignParameter| {
                 same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
                     && previous.ordinal == parameter.ordinal
-            })
-        {
+            },
+        ) {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -2129,9 +2317,11 @@ pub(super) fn check_references(
                     .as_ref()
                     .map(crate::features::FeatureId::as_str)
                     .as_slice(),
-                format_args!(
+                crate::rule!(
+                    "topology.parameter-scope-repeats-parameter-ordinal",
                     "parameter scope {:?} repeats parameter ordinal {}",
-                    parameter.owner, parameter.ordinal
+                    parameter.owner,
+                    parameter.ordinal
                 ),
             );
         }
@@ -2166,7 +2356,8 @@ pub(super) fn check_references(
                     Severity::Error,
                     parameter.id.as_str(),
                     &[dependency.as_str()],
-                    format_args!(
+                    crate::rule!(
+                        "topology.parameter-dependency-does-not-precede-consumer",
                         "parameter dependency `{}` does not precede its consumer",
                         dependency.as_str()
                     ),
@@ -2538,7 +2729,8 @@ pub(super) fn check_references(
                     Severity::Error,
                     constraint.id.as_str(),
                     &[entity.as_str()],
-                    format_args!(
+                    crate::rule!(
+                        "topology.sketch-entity-belongs-different-sketch",
                         "sketch entity `{}` belongs to a different sketch",
                         entity.as_str()
                     ),
@@ -2599,9 +2791,10 @@ fn check_feature_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    use crate::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
-    };
+    use crate::features::direct_edit::ScaleCenter;
+    use crate::features::profiles::{PathRef, PlanarProfileRef};
+    use crate::features::selections::EdgeSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     if let Err(error) = crate::document::feature_parents::validate(&[&ir.model]) {
         use crate::document::feature_parents::ParentError;
@@ -2623,7 +2816,7 @@ fn check_feature_references(
             Severity::Error,
             error.owner().as_str(),
             &related,
-            format_args!("{error}"),
+            crate::rule!("topology.child-parent-lists", "{error}"),
         );
     }
 
@@ -2660,7 +2853,8 @@ fn check_feature_references(
                 Check::Counts,
                 Severity::Error,
                 Some(configuration.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "topology.design-repeats-configuration-ordinal",
                     "design repeats configuration ordinal {}",
                     configuration.ordinal
                 ),
@@ -2673,7 +2867,10 @@ fn check_feature_references(
                     Check::Counts,
                     Severity::Error,
                     Some(configuration.id.as_str()),
-                    format_args!("design repeats configuration source index {source_index}"),
+                    crate::rule!(
+                        "topology.design-repeats-configuration-source-index",
+                        "design repeats configuration source index {source_index}"
+                    ),
                 );
             }
         }
@@ -2717,7 +2914,8 @@ fn check_feature_references(
                         Check::ReferentialIntegrity,
                         Severity::Error,
                         Some(configuration.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "topology.active-configuration-suppression-disagrees-current-feature",
                             "active configuration suppression disagrees with current feature state"
                         ),
                     );
@@ -2740,7 +2938,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         configuration.id.as_str(),
-                        "configuration parameter value is invalid",
+                        crate::rule!(
+                            "topology.configuration-parameter-value-invalid",
+                            "configuration parameter value is invalid"
+                        ),
                     );
                 }
                 Some(_) => {}
@@ -2780,7 +2981,8 @@ fn check_feature_references(
                             Severity::Error,
                             configuration.id.as_str(),
                             &[dependency.as_str(), feature.as_str()],
-                            format_args!(
+                            crate::rule!(
+                                "topology.configuration-feature-dependency-does-not-precede",
                                 "configuration feature dependency `{}` does not precede `{}`",
                                 dependency.as_str(),
                                 feature.as_str()
@@ -2809,7 +3011,8 @@ fn check_feature_references(
                             Severity::Error,
                             configuration.id.as_str(),
                             &[reference.as_str(), feature.as_str()],
-                            format_args!(
+                            crate::rule!(
+                                "topology.configuration-definition-feature-does-not-precede",
                                 "configuration definition feature `{}` does not precede `{}`",
                                 reference.as_str(),
                                 feature.as_str()
@@ -2828,7 +3031,7 @@ fn check_feature_references(
                             Severity::Error,
                             configuration.id.as_str(),
                             &[feature.as_str(), reference.as_str()],
-                            format_args!(
+                            crate::rule!("topology.configuration-feature-state-omits-referenced-feature", 
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
                                 feature.as_str(),
                                 reference.as_str()
@@ -2860,7 +3063,10 @@ fn check_feature_references(
             Check::Counts,
             Severity::Error,
             None,
-            format_args!("design has multiple active configurations"),
+            crate::rule!(
+                "topology.design-multiple-active-configurations",
+                "design has multiple active configurations"
+            ),
         );
     }
     let feature_records = BorrowedIdentities::build(|add| {
@@ -2891,6 +3097,7 @@ fn check_feature_references(
                 let cycle = &cycle;
                 if !reported_plane_cycles.contains(cycle) {
                     let finding = Finding {
+                        rule: crate::rule_name!("topology.datum-plane-reference-cycle-contains"),
                         related: cycle
                             .iter()
                             .copied()
@@ -2958,10 +3165,16 @@ fn check_feature_references(
                 Check::Counts,
                 Severity::Error,
                 Some(state.input_of.as_str()),
-                format_args!("feature has multiple input topology states"),
+                crate::rule!(
+                    "topology.feature-multiple-input-topology-states",
+                    "feature has multiple input topology states"
+                ),
             );
         }
         validate_input_edge_geometry(findings, state);
+        validate_input_face_owners(findings, state);
+        validate_input_face_geometry(findings, state);
+        validate_input_body_writers(findings, state, &features);
     }
     let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {
@@ -2979,7 +3192,10 @@ fn check_feature_references(
                 Check::Counts,
                 Severity::Error,
                 Some(state.output_of.as_str()),
-                format_args!("feature has multiple result topology states"),
+                crate::rule!(
+                    "topology.feature-multiple-result-topology-states",
+                    "feature has multiple result topology states"
+                ),
             );
         }
     }
@@ -3032,6 +3248,7 @@ fn check_feature_references(
             })
             .map(|candidate| candidate.id.as_str()),
     );
+    let file_keys = crate::validate::products::decode_set::file_keys(ir);
     let mut feature_ordinals = std::collections::BTreeSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -3040,7 +3257,11 @@ fn check_feature_references(
                 Check::Counts,
                 Severity::Error,
                 Some(feature.id.as_str()),
-                format_args!("design repeats feature ordinal {}", feature.ordinal),
+                crate::rule!(
+                    "topology.design-repeats-feature-ordinal",
+                    "design repeats feature ordinal {}",
+                    feature.ordinal
+                ),
             );
         }
         for dependency in &feature.dependencies {
@@ -3057,7 +3278,8 @@ fn check_feature_references(
                     Severity::Error,
                     feature.id.as_str(),
                     &[dependency.as_str()],
-                    format_args!(
+                    crate::rule!(
+                        "topology.dependency-feature-does-not-precede-consumer",
                         "dependency feature `{}` does not precede its consumer",
                         dependency.as_str()
                     ),
@@ -3085,7 +3307,8 @@ fn check_feature_references(
                                 Severity::Error,
                                 feature.id.as_str(),
                                 &[parameter.as_str()],
-                                format_args!(
+                                crate::rule!(
+                                    "topology.content-parameter-belongs-another-feature",
                                     "content parameter `{}` belongs to another feature",
                                     parameter.as_str()
                                 ),
@@ -3107,7 +3330,8 @@ fn check_feature_references(
                         Severity::Error,
                         feature.id.as_str(),
                         &[child.as_str()],
-                        format_args!(
+                        crate::rule!(
+                            "topology.content-child-does-not-follow-parent",
                             "content child `{}` does not follow its parent",
                             child.as_str()
                         ),
@@ -3329,7 +3553,10 @@ fn check_feature_references(
                             Check::ReferentialIntegrity,
                             Severity::Error,
                             Some(feature.id.as_str()),
-                            format_args!("component transfer placement contains non-finite values"),
+                            crate::rule!(
+                                "topology.component-transfer-placement-contains-non-finite",
+                                "component transfer placement contains non-finite values"
+                            ),
                         );
                         break;
                     }
@@ -3374,8 +3601,9 @@ fn check_feature_references(
             FeatureOperation::Extrude {
                 direction, start, ..
             } => {
-                if let crate::features::ExtrudeDirection::Explicit {
-                    source: Some(crate::features::ExtrusionDirectionSource::Edge { reference }),
+                if let crate::features::extents::ExtrudeDirection::Explicit {
+                    source:
+                        Some(crate::features::extents::ExtrusionDirectionSource::Edge { reference }),
                     ..
                 } = direction
                 {
@@ -3412,7 +3640,10 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "refold Unfold must precede Refold and occur in its dependencies",
+                            crate::rule!(
+                                "topology.refold-unfold-must-precede-refold-occur",
+                                "refold Unfold must precede Refold and occur in its dependencies"
+                            ),
                         );
                     }
                 }
@@ -3431,12 +3662,15 @@ fn check_feature_references(
                 if let Some(edges) = &construction.edges {
                     edge_selections.push(edges);
                 }
-                if matches!(&construction.height, Some(crate::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
+                if matches!(&construction.height, Some(crate::features::sheet_metal_forms::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::sheet_metal_forms::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
                 {
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "sheet-metal edge-flange height is invalid",
+                        crate::rule!(
+                            "topology.sheet-metal-edge-flange-height-invalid",
+                            "sheet-metal edge-flange height is invalid"
+                        ),
                     );
                 }
             }
@@ -3472,7 +3706,7 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "bend attached plate must precede the bend and occur in its dependencies",
+                            crate::rule!("topology.bend-attached-plate-must-precede-bend", "bend attached plate must precede the bend and occur in its dependencies"),
                         );
                     }
                 }
@@ -3493,7 +3727,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "corner bend must precede the corner and occur in its dependencies",
+                        crate::rule!(
+                            "topology.corner-bend-must-precede-corner-occur",
+                            "corner bend must precede the corner and occur in its dependencies"
+                        ),
                     );
                 }
             }
@@ -3507,7 +3744,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "revolution angular travel must not exceed one turn",
+                        crate::rule!(
+                            "topology.revolution-angular-travel-must-not-exceed",
+                            "revolution angular travel must not exceed one turn"
+                        ),
                     );
                 }
             }
@@ -3521,11 +3761,13 @@ fn check_feature_references(
                 if let Some(guide_rail) = guide_rail {
                     paths.push(&guide_rail.path);
                 }
-                if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
+                if let Some(crate::features::sweeps::SweepOrientation::Auxiliary { path, .. }) =
+                    orientation
                 {
                     paths.push(path);
                 }
-                if let Some(crate::features::SweepOrientation::GuideSurface { faces }) = orientation
+                if let Some(crate::features::sweeps::SweepOrientation::GuideSurface { faces }) =
+                    orientation
                 {
                     face_selections.push(faces);
                 }
@@ -3535,15 +3777,15 @@ fn check_feature_references(
             } => {
                 for section in sections {
                     match section {
-                        crate::features::LoftSection::Profile(_) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Native(_),
+                        crate::features::profiles::LoftSection::Profile(_) => {}
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Native(_),
                         ) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Point(_),
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Point(_),
                         ) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Vertex(vertex),
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Vertex(vertex),
                         ) => check_ids(
                             findings,
                             feature.id.as_str(),
@@ -3602,7 +3844,11 @@ fn check_feature_references(
             }
             FeatureOperation::Thicken { faces, result, .. } => {
                 face_selections.push(faces);
-                if let Some(crate::features::SolidFeatureResult::Boolean { targets, .. }) = result {
+                if let Some(crate::features::operation_settings::SolidFeatureResult::Boolean {
+                    targets,
+                    ..
+                }) = result
+                {
                     body_selections.push(targets);
                 }
             }
@@ -3622,10 +3868,12 @@ fn check_feature_references(
                 ..
             } => {
                 match boundary {
-                    crate::features::SurfaceBoundary::Edges(edges) => {
+                    crate::features::surface_inputs::SurfaceBoundary::Edges(edges) => {
                         edge_selections.push(edges);
                     }
-                    crate::features::SurfaceBoundary::Path(path) => paths.push(path),
+                    crate::features::surface_inputs::SurfaceBoundary::Path(path) => {
+                        paths.push(path);
+                    }
                 }
                 face_selections.push(support_faces);
                 paths.extend(interior_constraints);
@@ -3660,21 +3908,27 @@ fn check_feature_references(
                 if second_side.is_some()
                     && !matches!(
                         anchor,
-                        crate::features::DraftAnchor::NeutralPlane { pull: Some(_), .. }
+                        crate::features::direct_edit::DraftAnchor::NeutralPlane {
+                            pull: Some(_),
+                            ..
+                        }
                     )
                 {
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "two-sided draft has no neutral-plane pull direction",
+                        crate::rule!(
+                            "topology.two-sided-draft-no-neutral-plane",
+                            "two-sided draft has no neutral-plane pull direction"
+                        ),
                     );
                 }
                 face_selections.push(faces);
                 match anchor {
-                    crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                    crate::features::direct_edit::DraftAnchor::NeutralPlane { plane, .. } => {
                         face_selections.push(plane);
                     }
-                    crate::features::DraftAnchor::PartingLine { tool, .. } => {
+                    crate::features::direct_edit::DraftAnchor::PartingLine { tool, .. } => {
                         face_selections.push(tool);
                     }
                 }
@@ -3694,7 +3948,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "draft pull states both a datum plane and a plane frame",
+                        crate::rule!(
+                            "topology.draft-pull-states-both-datum-plane",
+                            "draft pull states both a datum plane and a plane frame"
+                        ),
                     );
                 }
                 if anchor
@@ -3704,7 +3961,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "draft pull plane frame normal is not parallel to the pull direction",
+                        crate::rule!(
+                            "topology.draft-pull-plane-frame-normal-not",
+                            "draft pull plane frame normal is not parallel to the pull direction"
+                        ),
                     );
                 }
             }
@@ -3787,7 +4047,14 @@ fn check_feature_references(
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
                 });
                 if !center_valid {
-                    geometry_error(findings, feature.id.as_str(), "scale transform is invalid");
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        crate::rule!(
+                            "topology.scale-transform-invalid",
+                            "scale transform is invalid"
+                        ),
+                    );
                 }
             }
             FeatureOperation::Combine { operands, .. } => {
@@ -3839,7 +4106,8 @@ fn check_feature_references(
                                     Severity::Error,
                                     feature.id.as_str(),
                                     &[seed.as_str()],
-                                    format_args!(
+                                    crate::rule!(
+                                        "topology.seed-feature-does-not-precede-pattern",
                                         "seed feature `{}` does not precede its pattern",
                                         seed.as_str()
                                     ),
@@ -3857,7 +4125,8 @@ fn check_feature_references(
                                     Severity::Error,
                                     feature.id.as_str(),
                                     &[seed.as_str()],
-                                    format_args!(
+                                    crate::rule!(
+                                        "topology.pattern-omits-seed-feature-dependencies",
                                         "pattern omits seed feature `{}` from its dependencies",
                                         seed.as_str()
                                     ),
@@ -3931,7 +4200,7 @@ fn check_feature_references(
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
-                use crate::features::SolidFeatureResult;
+                use crate::features::operation_settings::SolidFeatureResult;
                 if let SolidFeatureResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
@@ -3947,13 +4216,16 @@ fn check_feature_references(
                         .iter()
                         .map(|source| &source.target)
                         .chain(match construction {
-                            crate::features::BinderConstruction::SubShape { context, .. } => {
-                                context.as_ref()
-                            }
-                            crate::features::BinderConstruction::Shape { .. } => None,
+                            crate::features::binders::BinderConstruction::SubShape {
+                                context,
+                                ..
+                            } => context.as_ref(),
+                            crate::features::binders::BinderConstruction::Shape { .. } => None,
                         })
                 {
-                    if let crate::features::BinderTarget::Feature { feature: target } = target {
+                    if let crate::features::binders::BinderTarget::Feature { feature: target } =
+                        target
+                    {
                         match features.get(target.as_str()) {
                             None => ref_error(
                                 findings,
@@ -3968,7 +4240,8 @@ fn check_feature_references(
                                     Severity::Error,
                                     feature.id.as_str(),
                                     &[target.as_str()],
-                                    format_args!(
+                                    crate::rule!(
+                                        "topology.binder-target-feature-does-not-precede",
                                         "binder target feature `{}` does not precede its binder",
                                         target.as_str()
                                     ),
@@ -4013,6 +4286,7 @@ fn check_feature_references(
             FeatureOperation::DatumAxis { axis } => datums::validate(
                 ctx,
                 ids,
+                &file_keys,
                 feature,
                 axis,
                 ir.tolerances.linear.get(),
@@ -4022,21 +4296,21 @@ fn check_feature_references(
                 let mut plane_references = Vec::new();
                 if let Some(construction) = construction.as_deref() {
                     match construction {
-                        crate::features::DatumPointConstruction::CircleCenter { edge }
-                        | crate::features::DatumPointConstruction::DistanceOnEdge {
+                        crate::features::datums::DatumPointConstruction::CircleCenter { edge }
+                        | crate::features::datums::DatumPointConstruction::DistanceOnEdge {
                             edge, ..
                         } => edge_selections.push(edge),
-                        crate::features::DatumPointConstruction::TwoEdgeIntersection { edges } => {
+                        crate::features::datums::DatumPointConstruction::TwoEdgeIntersection { edges } => {
                             edge_selections.extend(edges);
                         }
-                        crate::features::DatumPointConstruction::ThreePlaneIntersection {
+                        crate::features::datums::DatumPointConstruction::ThreePlaneIntersection {
                             planes,
                         } => plane_references.extend(planes.iter()),
-                        crate::features::DatumPointConstruction::Vertex { vertex } => {
+                        crate::features::datums::DatumPointConstruction::Vertex { vertex } => {
                             vertex_selections.push((vertex, "datum-point"));
                         }
-                        crate::features::DatumPointConstruction::SketchPoint { .. } => {}
-                        crate::features::DatumPointConstruction::EdgePlaneIntersection {
+                        crate::features::datums::DatumPointConstruction::SketchPoint { .. } => {}
+                        crate::features::datums::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
                             plane,
                         } => {
@@ -4069,14 +4343,20 @@ fn check_feature_references(
                                     geometry_error(
                                         findings,
                                         feature.id.as_str(),
-                                        "datum-point plane reference does not name a plane",
+                                        crate::rule!(
+                                            "topology.datum-point-plane-reference-does-not",
+                                            "datum-point plane reference does not name a plane"
+                                        ),
                                     );
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
                                     geometry_error(
                                         findings,
                                         feature.id.as_str(),
-                                        "datum-point plane does not precede the point",
+                                        crate::rule!(
+                                            "topology.datum-point-plane-does-not-precede",
+                                            "datum-point plane does not precede the point"
+                                        ),
                                     );
                                 }
                                 Some(_)
@@ -4090,7 +4370,7 @@ fn check_feature_references(
                                         Severity::Error,
                                         feature.id.as_str(),
                                         &[reference.as_str()],
-                                        format_args!(
+                                        crate::rule!("topology.datum-point-omits-plane-feature-dependencies", 
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
                                         ),
@@ -4123,13 +4403,19 @@ fn check_feature_references(
                         Some(ordinal) if *ordinal >= feature.ordinal => geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "sketch block does not precede its instance",
+                            crate::rule!(
+                                "topology.sketch-block-does-not-precede-instance",
+                                "sketch block does not precede its instance"
+                            ),
                         ),
                         Some(_) if !block_definition_ids.contains(block.as_str()) => {
                             geometry_error(
                                 findings,
                                 feature.id.as_str(),
-                                "sketch block target is not a block definition",
+                                crate::rule!(
+                                    "topology.sketch-block-target-not-block-definition",
+                                    "sketch block target is not a block definition"
+                                ),
                             );
                         }
                         Some(_)
@@ -4144,7 +4430,7 @@ fn check_feature_references(
                                 Severity::Error,
                                 feature.id.as_str(),
                                 &[block.as_str()],
-                                format_args!(
+                                crate::rule!("topology.sketch-block-instance-omits-block-feature", 
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
                                 ),
@@ -4167,7 +4453,8 @@ fn check_feature_references(
                     Severity::Error,
                     feature.id.as_str(),
                     &[source.as_str()],
-                    format_args!(
+                    crate::rule!(
+                        "topology.source-feature-does-not-precede-derived",
                         "source feature `{}` does not precede its derived geometry",
                         source.as_str()
                     ),
@@ -4184,7 +4471,8 @@ fn check_feature_references(
                         Severity::Error,
                         feature.id.as_str(),
                         &[source.as_str()],
-                        format_args!(
+                        crate::rule!(
+                            "topology.derived-geometry-omits-source-feature-dependencies",
                             "derived geometry omits source feature `{}` from its dependencies",
                             source.as_str()
                         ),
@@ -4220,7 +4508,10 @@ fn check_feature_references(
                                     geometry_error(
                                         findings,
                                         feature.id.as_str(),
-                                        "datum-plane feature reference does not name a plane",
+                                        crate::rule!(
+                                            "topology.datum-plane-feature-reference-does-not",
+                                            "datum-plane feature reference does not name a plane"
+                                        ),
                                     );
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
@@ -4230,7 +4521,7 @@ fn check_feature_references(
                                         Severity::Error,
                                         feature.id.as_str(),
                                         &[reference.as_str()],
-                                        format_args!(
+                                        crate::rule!("topology.reference-plane-does-not-precede-offset", 
                                             "reference plane `{}` does not precede its offset plane",
                                             reference.as_str()
                                         ),
@@ -4247,7 +4538,7 @@ fn check_feature_references(
                                         Severity::Error,
                                         feature.id.as_str(),
                                         &[reference.as_str()],
-                                        format_args!(
+                                        crate::rule!("topology.offset-plane-omits-reference-feature-dependencies", 
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
                                         ),
@@ -4306,7 +4597,10 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "profile feature is not a preceding dependency",
+                            crate::rule!(
+                                "topology.profile-feature-not-preceding-dependency",
+                                "profile feature is not a preceding dependency"
+                            ),
                         );
                     }
                     Some(_) => {}
@@ -4325,7 +4619,10 @@ fn check_feature_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "generated profile curve is invalid",
+                        crate::rule!(
+                            "topology.generated-profile-curve-invalid",
+                            "generated profile curve is invalid"
+                        ),
                     );
                 }
                 _ => {}
@@ -4414,7 +4711,7 @@ fn check_feature_references(
         }
         for (selection, consumer) in vertex_selections {
             match selection {
-                crate::features::VertexSelection::Generated { vertex, .. } => {
+                crate::features::selections::VertexSelection::Generated { vertex, .. } => {
                     if features
                         .get(vertex.feature.as_str())
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
@@ -4434,11 +4731,14 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            format_args!("generated {consumer} vertex is invalid"),
+                            crate::rule!(
+                                "topology.generated-vertex-invalid",
+                                "generated {consumer} vertex is invalid"
+                            ),
                         );
                     }
                 }
-                crate::features::VertexSelection::Historical {
+                crate::features::selections::VertexSelection::Historical {
                     state,
                     vertex,
                     native: _,
@@ -4455,8 +4755,8 @@ fn check_feature_references(
                             .map(crate::ids::HistoricalVertexId::as_str)
                     },
                 ),
-                crate::features::VertexSelection::Unresolved
-                | crate::features::VertexSelection::Native(_) => {}
+                crate::features::selections::VertexSelection::Unresolved
+                | crate::features::selections::VertexSelection::Native(_) => {}
             }
         }
         for selection in edge_selections {
@@ -4512,7 +4812,10 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "generated edge selection is invalid",
+                            crate::rule!(
+                                "topology.generated-edge-selection-invalid",
+                                "generated edge selection is invalid"
+                            ),
                         );
                     }
                 }
@@ -4572,7 +4875,10 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "generated face selection is invalid",
+                            crate::rule!(
+                                "topology.generated-face-selection-invalid",
+                                "generated face selection is invalid"
+                            ),
                         );
                     }
                 }
@@ -4639,7 +4945,13 @@ fn check_feature_references(
                         },
                     );
                 }
-                BodySelection::Generated { bodies, .. } => {
+                BodySelection::Generated { .. } | BodySelection::GeneratedSet { .. } => {
+                    let bodies: Vec<&crate::features::selections::GeneratedBodyRef> =
+                        match selection {
+                            BodySelection::Generated { bodies, .. } => bodies.iter().collect(),
+                            BodySelection::GeneratedSet { members } => members.bodies().collect(),
+                            _ => Vec::new(),
+                        };
                     if bodies.iter().any(|body| {
                         !feature
                             .dependencies
@@ -4657,7 +4969,10 @@ fn check_feature_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "generated body selection is invalid",
+                            crate::rule!(
+                                "topology.generated-body-selection-invalid",
+                                "generated body selection is invalid"
+                            ),
                         );
                     }
                 }
@@ -4690,11 +5005,11 @@ fn check_historical_members<'a, I, F, M>(
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
-    states: &BorrowedIdentities<'a, &'a crate::features::FeatureInputTopology>,
+    states: &BorrowedIdentities<'a, &'a crate::features::evaluation::FeatureInputTopology>,
     members: F,
 ) where
     I: IntoIterator<Item = &'a str>,
-    F: FnOnce(&'a crate::features::FeatureInputTopology) -> M,
+    F: FnOnce(&'a crate::features::evaluation::FeatureInputTopology) -> M,
     M: IntoIterator<Item = &'a str>,
 {
     let (state_id, selected) = selection;
@@ -4713,7 +5028,10 @@ fn check_historical_members<'a, I, F, M>(
             Check::ReferentialIntegrity,
             Severity::Error,
             Some(feature.as_str()),
-            format_args!("historical {kind} selection uses another feature's input topology"),
+            crate::rule!(
+                "topology.historical-selection-uses-another-feature-input",
+                "historical {kind} selection uses another feature's input topology"
+            ),
         );
     }
     let available = BorrowedIdentities::build(|add| {
@@ -4757,10 +5075,12 @@ fn regeneration_references(
         }
         crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
             for reference in points.iter().filter_map(|point| match point {
-                crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
-                crate::features::VertexSelection::Historical { .. }
-                | crate::features::VertexSelection::Native(_)
-                | crate::features::VertexSelection::Unresolved => None,
+                crate::features::selections::VertexSelection::Generated { vertex, .. } => {
+                    Some(&vertex.feature)
+                }
+                crate::features::selections::VertexSelection::Historical { .. }
+                | crate::features::selections::VertexSelection::Native(_)
+                | crate::features::selections::VertexSelection::Unresolved => None,
             }) {
                 references.insert_unique(reference.as_str(), reference);
             }
@@ -4792,7 +5112,7 @@ fn regeneration_references(
         _ => {}
     }
     for termination in definition_terminations(definition) {
-        if let Some(crate::features::VertexSelection::Generated { vertex, .. }) =
+        if let Some(crate::features::selections::VertexSelection::Generated { vertex, .. }) =
             termination.vertex()
         {
             references.insert_unique(vertex.feature.as_str(), &vertex.feature);
@@ -4800,10 +5120,10 @@ fn regeneration_references(
     }
     for profile in definition_profiles(definition) {
         match profile {
-            crate::features::PlanarProfileRef::Feature(feature) => {
+            crate::features::profiles::PlanarProfileRef::Feature(feature) => {
                 references.insert_unique(feature.as_str(), feature);
             }
-            crate::features::PlanarProfileRef::Generated { curves, .. } => {
+            crate::features::profiles::PlanarProfileRef::Generated { curves, .. } => {
                 for reference in curves.iter().map(|curve| &curve.feature) {
                     references.insert_unique(reference.as_str(), reference);
                 }
@@ -4818,7 +5138,7 @@ fn regeneration_references(
 
 fn definition_profiles(
     definition: &crate::features::FeatureOperation,
-) -> Vec<&crate::features::PlanarProfileRef> {
+) -> Vec<&crate::features::profiles::PlanarProfileRef> {
     let mut profiles = Vec::new();
     match definition {
         crate::features::FeatureOperation::Extrude { profile, .. } => {
@@ -4844,7 +5164,7 @@ fn definition_profiles(
         }
         crate::features::FeatureOperation::Loft { sections, .. } => {
             for section in sections {
-                if let crate::features::LoftSection::Profile(profile) = section {
+                if let crate::features::profiles::LoftSection::Profile(profile) = section {
                     profiles.extend(profile.planar());
                 }
             }
@@ -4860,33 +5180,35 @@ fn definition_profiles(
 
 #[derive(Clone, Copy)]
 enum TerminationRef<'a> {
-    Linear(&'a crate::features::LinearTermination),
-    Angular(&'a crate::features::AngularTermination),
+    Linear(&'a crate::features::extents::LinearTermination),
+    Angular(&'a crate::features::extents::AngularTermination),
 }
 
 impl<'a> TerminationRef<'a> {
-    fn face(self) -> Option<&'a crate::features::FaceSelection> {
+    fn face(self) -> Option<&'a crate::features::selections::FaceSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToFace { face, .. })
-            | Self::Angular(crate::features::AngularTermination::ToFace { face, .. }) => Some(face),
+            Self::Linear(crate::features::extents::LinearTermination::ToFace { face, .. })
+            | Self::Angular(crate::features::extents::AngularTermination::ToFace {
+                face, ..
+            }) => Some(face),
             _ => None,
         }
     }
 
-    fn shape(self) -> Option<&'a crate::features::FaceSelection> {
+    fn shape(self) -> Option<&'a crate::features::selections::FaceSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToShape { target })
-            | Self::Angular(crate::features::AngularTermination::ToShape { target }) => {
+            Self::Linear(crate::features::extents::LinearTermination::ToShape { target })
+            | Self::Angular(crate::features::extents::AngularTermination::ToShape { target }) => {
                 Some(target)
             }
             _ => None,
         }
     }
 
-    fn vertex(self) -> Option<&'a crate::features::VertexSelection> {
+    fn vertex(self) -> Option<&'a crate::features::selections::VertexSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToVertex { vertex })
-            | Self::Angular(crate::features::AngularTermination::ToVertex { vertex }) => {
+            Self::Linear(crate::features::extents::LinearTermination::ToVertex { vertex })
+            | Self::Angular(crate::features::extents::AngularTermination::ToVertex { vertex }) => {
                 Some(vertex)
             }
             _ => None,
@@ -4900,11 +5222,11 @@ fn definition_terminations(
     let mut terminations = Vec::new();
     match definition {
         crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
-            crate::features::ExtrudeExtent::OneSided { side }
-            | crate::features::ExtrudeExtent::Symmetric { side } => {
+            crate::features::extents::ExtrudeExtent::OneSided { side }
+            | crate::features::extents::ExtrudeExtent::Symmetric { side } => {
                 terminations.push(TerminationRef::Linear(&side.termination));
             }
-            crate::features::ExtrudeExtent::TwoSided { first, second } => {
+            crate::features::extents::ExtrudeExtent::TwoSided { first, second } => {
                 terminations.extend([
                     TerminationRef::Linear(&first.termination),
                     TerminationRef::Linear(&second.termination),
@@ -4914,11 +5236,11 @@ fn definition_terminations(
         crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
             if let Some(extent) = &construction.extent {
                 match extent {
-                    crate::features::ExtrudeExtent::OneSided { side }
-                    | crate::features::ExtrudeExtent::Symmetric { side } => {
+                    crate::features::extents::ExtrudeExtent::OneSided { side }
+                    | crate::features::extents::ExtrudeExtent::Symmetric { side } => {
                         terminations.push(TerminationRef::Linear(&side.termination));
                     }
-                    crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                    crate::features::extents::ExtrudeExtent::TwoSided { first, second } => {
                         terminations.extend([
                             TerminationRef::Linear(&first.termination),
                             TerminationRef::Linear(&second.termination),
@@ -4930,10 +5252,10 @@ fn definition_terminations(
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             match construction.extent() {
                 Some(
-                    crate::features::RevolveExtent::OneSided { termination }
-                    | crate::features::RevolveExtent::Symmetric { termination },
+                    crate::features::revolve::RevolveExtent::OneSided { termination }
+                    | crate::features::revolve::RevolveExtent::Symmetric { termination },
                 ) => terminations.push(TerminationRef::Angular(termination)),
-                Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
+                Some(crate::features::revolve::RevolveExtent::TwoSided { first, second }) => {
                     terminations.extend([
                         TerminationRef::Angular(first),
                         TerminationRef::Angular(second),
@@ -4952,7 +5274,7 @@ fn definition_terminations(
 }
 
 fn check_configuration_state_closure(
-    configuration: &crate::features::DesignConfiguration,
+    configuration: &crate::features::parameters::DesignConfiguration,
     findings: &mut Vec<Finding>,
 ) {
     if configuration.feature_states.is_empty() {
@@ -4984,7 +5306,8 @@ fn check_configuration_state_closure(
                         Severity::Error,
                         configuration.id.as_str(),
                         &[dependency.as_str()],
-                        format_args!(
+                        crate::rule!(
+                            "topology.configuration-state-closure-uses-suppressed-dependency",
                             "configuration state closure uses suppressed dependency state `{}`",
                             dependency.as_str()
                         ),
@@ -5027,7 +5350,10 @@ fn check_plane_feature_reference(
             geometry_error(
                 findings,
                 feature.id.as_str(),
-                "feature reference does not name a datum plane",
+                crate::rule!(
+                    "topology.feature-reference-does-not-name-datum",
+                    "feature reference does not name a datum plane"
+                ),
             );
         }
         Some(record) if record.ordinal >= feature.ordinal => super::record_related_finding(
@@ -5036,7 +5362,8 @@ fn check_plane_feature_reference(
             Severity::Error,
             feature.id.as_str(),
             &[reference.as_str()],
-            format_args!(
+            crate::rule!(
+                "topology.does-not-precede-consuming-feature",
                 "{reference_kind} `{}` does not precede its consuming feature",
                 reference.as_str()
             ),
@@ -5053,7 +5380,8 @@ fn check_plane_feature_reference(
                 Severity::Error,
                 feature.id.as_str(),
                 &[reference.as_str()],
-                format_args!(
+                crate::rule!(
+                    "topology.feature-omits-dependency",
                     "feature omits {reference_kind} dependency `{}`",
                     reference.as_str()
                 ),
@@ -5063,13 +5391,13 @@ fn check_plane_feature_reference(
     }
 }
 
-fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: impl fmt::Display) {
+fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::GeometricConsistency,
         Severity::Error,
         Some(entity),
-        format_args!("{message}"),
+        message,
     );
 }
 
@@ -5089,7 +5417,7 @@ fn check_ids<'a>(
 
 #[derive(Clone, Copy)]
 enum ProfileReference<'a> {
-    Planar(&'a crate::features::PlanarProfileRef),
+    Planar(&'a crate::features::profiles::PlanarProfileRef),
     SpatialSketchProfiles {
         sketch: &'a crate::sketches::SpatialSketchId,
         profiles: &'a [u32],
@@ -5099,14 +5427,14 @@ enum ProfileReference<'a> {
     },
 }
 
-impl<'a> From<&'a crate::features::ProfileRef> for ProfileReference<'a> {
-    fn from(profile: &'a crate::features::ProfileRef) -> Self {
+impl<'a> From<&'a crate::features::profiles::ProfileRef> for ProfileReference<'a> {
+    fn from(profile: &'a crate::features::profiles::ProfileRef) -> Self {
         match profile {
-            crate::features::ProfileRef::Planar(profile) => Self::Planar(profile),
-            crate::features::ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+            crate::features::profiles::ProfileRef::Planar(profile) => Self::Planar(profile),
+            crate::features::profiles::ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
                 Self::SpatialSketchProfiles { sketch, profiles }
             }
-            crate::features::ProfileRef::SpatialSketchSelection { sketch, .. } => {
+            crate::features::profiles::ProfileRef::SpatialSketchSelection { sketch, .. } => {
                 Self::SpatialSketchSelection { sketch }
             }
         }
@@ -5118,9 +5446,9 @@ fn check_feature_sketch_references(
     sketches: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
 ) {
-    use crate::features::{
-        FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, SketchPointSelection,
-    };
+    use crate::features::datums::SketchPointSelection;
+    use crate::features::profiles::{PathRef, PlanarProfileRef};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let spatial_sketches = BorrowedIdentities::build(|add| {
         for sketch in &ir.model.spatial_sketches {
@@ -5202,7 +5530,10 @@ fn check_feature_sketch_references(
                 Severity::Error,
                 feature.id.as_str(),
                 &[sketch],
-                format_args!("sketch `{sketch}` has multiple owning features"),
+                crate::rule!(
+                    "topology.sketch-multiple-owning-features",
+                    "sketch `{sketch}` has multiple owning features"
+                ),
             );
         }
     }
@@ -5215,7 +5546,8 @@ fn check_feature_sketch_references(
         else {
             continue;
         };
-        let crate::features::DatumPointConstruction::SketchPoint { point } = construction.as_ref()
+        let crate::features::datums::DatumPointConstruction::SketchPoint { point } =
+            construction.as_ref()
         else {
             continue;
         };
@@ -5251,7 +5583,10 @@ fn check_feature_sketch_references(
             geometry_error(
                 findings,
                 feature.id.as_str(),
-                "datum-point sketch-point selection is invalid",
+                crate::rule!(
+                    "topology.datum-point-sketch-point-selection-invalid",
+                    "datum-point sketch-point selection is invalid"
+                ),
             );
         }
         let sketch_id = match point {
@@ -5268,7 +5603,8 @@ fn check_feature_sketch_references(
                         Severity::Error,
                         feature.id.as_str(),
                         &[owner],
-                        format_args!(
+                        crate::rule!(
+                            "topology.sketch-owner-does-not-precede-datum",
                             "sketch owner `{owner}` does not precede its datum-point consumer"
                         ),
                     );
@@ -5321,7 +5657,7 @@ fn check_feature_sketch_references(
                 sections, guidance, ..
             } => {
                 for section in sections {
-                    if let crate::features::LoftSection::Profile(profile) = section {
+                    if let crate::features::profiles::LoftSection::Profile(profile) = section {
                         profiles.push(ProfileReference::from(profile));
                     }
                 }
@@ -5367,7 +5703,8 @@ fn check_feature_sketch_references(
                         Severity::Error,
                         feature.id.as_str(),
                         &[owner],
-                        format_args!(
+                        crate::rule!(
+                            "topology.owner-does-not-precede-profile-consumer",
                             "{sketch_kind} owner `{owner}` does not precede its profile consumer"
                         ),
                     );
@@ -5386,7 +5723,7 @@ fn check_feature_sketch_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "spatial sketch profile indices are empty, repeated, or out of range",
+                            crate::rule!("topology.spatial-sketch-profile-indices-empty-repeated", "spatial sketch profile indices are empty, repeated, or out of range"),
                         );
                     }
                 }
@@ -5401,7 +5738,10 @@ fn check_feature_sketch_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "sketch profile indices are empty, repeated, or out of range",
+                            crate::rule!(
+                                "topology.sketch-profile-indices-empty-repeated-out",
+                                "sketch profile indices are empty, repeated, or out of range"
+                            ),
                         );
                     }
                 }
@@ -5411,7 +5751,7 @@ fn check_feature_sketch_references(
                         .copied()
                         .unwrap_or(0);
                     let invalid = regions.iter().any(|region| match region {
-                        crate::features::SketchProfileRegion::Loops { loops } => {
+                        crate::features::profiles::SketchProfileRegion::Loops { loops } => {
                             cadmpeg_core::decode::index_from_u32(loops.outer())
                                 >= sketch_profile_count
                                 || loops.holes().iter().any(|index| {
@@ -5419,12 +5759,12 @@ fn check_feature_sketch_references(
                                         >= sketch_profile_count
                                 })
                         }
-                        crate::features::SketchProfileRegion::Trimmed {
+                        crate::features::profiles::SketchProfileRegion::Trimmed {
                             outer_boundary,
                             hole_boundaries,
                         } => {
                             let valid_ring =
-                                |ring: &[crate::features::SketchProfileBoundaryUse]| {
+                                |ring: &[crate::features::profiles::SketchProfileBoundaryUse]| {
                                     ring.iter().all(|use_| {
                                         sketch_entity_memberships
                                             .contains(&(use_.entity.as_str(), sketch.as_str()))
@@ -5438,7 +5778,7 @@ fn check_feature_sketch_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
+                            crate::rule!("topology.sketch-regions-empty-repeated-invalid-out", "sketch regions have empty, repeated, invalid, or out-of-range boundaries"),
                         );
                     }
                 }
@@ -5451,7 +5791,7 @@ fn check_feature_sketch_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
+                            crate::rule!("topology.sketch-profile-entities-empty-repeated-missing", "sketch profile entities are empty, repeated, missing, or owned by another sketch"),
                         );
                     }
                 }
@@ -5479,7 +5819,10 @@ fn check_feature_sketch_references(
                     geometry_error(
                         findings,
                         feature.id.as_str(),
-                        "sketch path curves are empty, repeated, or owned by another sketch",
+                        crate::rule!(
+                            "topology.sketch-path-curves-empty-repeated-owned",
+                            "sketch path curves are empty, repeated, or owned by another sketch"
+                        ),
                     );
                 }
             }
@@ -5498,7 +5841,7 @@ fn check_feature_sketch_references(
                         geometry_error(
                             findings,
                             feature.id.as_str(),
-                            "spatial sketch path curves are empty, repeated, missing, or owned by another sketch",
+                            crate::rule!("topology.spatial-sketch-path-curves-empty-repeated", "spatial sketch path curves are empty, repeated, missing, or owned by another sketch"),
                         );
                     }
                     (
@@ -5522,7 +5865,10 @@ fn check_feature_sketch_references(
                         Severity::Error,
                         feature.id.as_str(),
                         &[owner],
-                        format_args!("sketch owner `{owner}` does not precede its path consumer"),
+                        crate::rule!(
+                            "topology.sketch-owner-does-not-precede-path",
+                            "sketch owner `{owner}` does not precede its path consumer"
+                        ),
                     );
                 }
             }

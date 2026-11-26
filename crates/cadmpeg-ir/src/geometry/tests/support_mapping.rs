@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    pcurve::PcurveGeometry, DirectedParameterRange, IntcurveSupportSide, SupportPcurve,
-};
+use crate::geometry::intersection_curves::IntcurveSupportSide;
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::{DirectedParameterRange, SupportPcurve};
 use crate::scalar::FiniteReal;
 use crate::test_support::nurbs::pcurve;
 use crate::topology::ParameterInterval;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn numerical_audit_identity_map_keeps_a_small_finite_parameter() {
@@ -52,8 +53,7 @@ fn support_mapping_preserves_decreasing_parameter_direction() {
     assert_eq!(range.endpoints(), [5.0, 2.0]);
     assert_eq!(range.finite_endpoints().map(FiniteReal::get), [5.0, 2.0]);
     assert_eq!(
-        serde_json::from_value::<IntcurveSupportSide>(serde_json::to_value(&side).unwrap())
-            .unwrap(),
+        json::from_value::<IntcurveSupportSide>(json::to_value(&side).unwrap()).unwrap(),
         side
     );
 }
@@ -118,7 +118,7 @@ fn support_mapping_preserves_endpoints_despite_subtraction_cancellation() {
 
 #[test]
 fn a_support_context_over_an_increasing_interval_matches_its_raw_admission() {
-    use crate::geometry::IntcurveSupportContext;
+    use crate::geometry::intersection_curves::IntcurveSupportContext;
     use crate::topology::IncreasingParameterInterval;
 
     let side = |range| IntcurveSupportSide {
@@ -145,7 +145,7 @@ fn a_support_context_over_an_increasing_interval_matches_its_raw_admission() {
 
 #[test]
 fn a_support_context_holds_its_admitted_interval_and_discontinuities() {
-    use crate::geometry::IntcurveSupportContext;
+    use crate::geometry::intersection_curves::IntcurveSupportContext;
 
     let sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,
@@ -162,14 +162,14 @@ fn a_support_context_holds_its_admitted_interval_and_discontinuities() {
         FiniteReal::raw_lanes(context.discontinuities()),
         [vec![2.5], vec![], vec![3.0, 4.0]]
     );
-    let wire = serde_json::to_value(&context).unwrap();
-    assert_eq!(wire["parameter_range"], serde_json::json!([2.0, 5.0]));
+    let wire = json::to_value(&context).unwrap();
+    assert_eq!(wire["parameter_range"], cadmpeg_core::json!([2.0, 5.0]));
     assert_eq!(
         wire["discontinuities"],
-        serde_json::json!([[2.5], [], [3.0, 4.0]])
+        cadmpeg_core::json!([[2.5], [], [3.0, 4.0]])
     );
     assert_eq!(
-        serde_json::from_value::<IntcurveSupportContext>(wire).unwrap(),
+        json::from_value::<IntcurveSupportContext>(wire).unwrap(),
         context
     );
 }

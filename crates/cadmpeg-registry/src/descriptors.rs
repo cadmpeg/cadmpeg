@@ -8,6 +8,137 @@ use crate::{ForcedInput, Format};
 
 type DecoderConstructor = fn() -> Box<dyn Codec>;
 type EncoderConstructor = fn() -> Box<dyn Encoder>;
+type ScanConstructor = fn(
+    cadmpeg_core::decode::View<'_>,
+    &cadmpeg_core::scan::ScanBudget<'_>,
+) -> cadmpeg_core::scan::DesignScan;
+type CompoundScanProbe = fn(
+    &[cadmpeg_container::compound::scan::ScanCompoundEntry],
+    &cadmpeg_core::scan::ScanBudget<'_>,
+) -> Result<bool, cadmpeg_core::scan::StopReason>;
+
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd",
+    feature = "solidedge",
+    feature = "ironcad",
+    feature = "edrawings",
+    feature = "onshape"
+))]
+macro_rules! scan_backend {
+    (F3D) => {
+        Some(cadmpeg_codec_f3d::F3dCodec::scan_design_with_budget)
+    };
+    (SLDPRT) => {
+        Some(cadmpeg_codec_sldprt::SldprtCodec::scan_design_with_budget)
+    };
+    (INVENTOR) => {
+        Some(cadmpeg_codec_inventor::InventorCodec::scan_design_with_budget)
+    };
+    ($name:ident) => {
+        None
+    };
+}
+
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd",
+    feature = "solidedge",
+    feature = "ironcad",
+    feature = "edrawings",
+    feature = "onshape"
+))]
+macro_rules! compound_scan_probe {
+    (SLDPRT) => {
+        Some(cadmpeg_codec_sldprt::SldprtCodec::scan_detect_compound)
+    };
+    (INVENTOR) => {
+        Some(cadmpeg_codec_inventor::InventorCodec::scan_detect_compound)
+    };
+    ($name:ident) => {
+        None
+    };
+}
+
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd",
+    feature = "solidedge",
+    feature = "ironcad",
+    feature = "edrawings",
+    feature = "onshape"
+))]
+macro_rules! zip_scan_probe {
+    (FCSTD) => {
+        Some(|name: &str| name == "Document.xml")
+    };
+    (F3D) => {
+        Some(|name: &str| {
+            [
+                "Breps.BlobParts",
+                "FusionAssetName",
+                "FusionDocType",
+                ".smbh",
+                "Manifest.json",
+                "DesignDescription.json",
+                ".f3d",
+            ]
+            .iter()
+            .any(|marker| name.contains(marker))
+        })
+    };
+    (PVZ) => {
+        Some(|name: &str| {
+            name.rsplit_once('.')
+                .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("pvs"))
+        })
+    };
+    (USD) => {
+        Some(|name: &str| {
+            name.rsplit_once('.').is_some_and(|(_, extension)| {
+                ["usd", "usda", "usdc"]
+                    .iter()
+                    .any(|kind| extension.eq_ignore_ascii_case(kind))
+            })
+        })
+    };
+    ($name:ident) => {
+        None
+    };
+}
 
 /// Opaque witness that a compiled format has a native decoder.
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +146,9 @@ pub struct NativeDescriptor {
     id: FormatId,
     input_extensions: &'static [&'static str],
     pub(crate) decoder: DecoderConstructor,
+    pub(crate) scanner: Option<ScanConstructor>,
+    pub(crate) zip_scan_probe: Option<fn(&str) -> bool>,
+    pub(crate) compound_scan_probe: Option<CompoundScanProbe>,
 }
 
 impl NativeDescriptor {
@@ -38,6 +172,8 @@ pub(crate) enum FormatKind {
     #[cfg(any(
         feature = "fcstd",
         feature = "f3d",
+        feature = "solidedge",
+        feature = "ironcad",
         feature = "inventor",
         feature = "sldprt",
         feature = "catia",
@@ -48,7 +184,9 @@ pub(crate) enum FormatKind {
         feature = "iges",
         feature = "sat",
         feature = "pvz",
-        feature = "usd"
+        feature = "edrawings",
+        feature = "usd",
+        feature = "onshape"
     ))]
     Native(NativeDescriptor),
 }
@@ -108,6 +246,8 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -118,7 +258,9 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "edrawings",
+                feature = "usd",
+                feature = "onshape"
             ))]
             FormatKind::Native(native) => native.id,
         }
@@ -133,6 +275,8 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -143,7 +287,9 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "edrawings",
+                feature = "usd",
+                feature = "onshape"
             ))]
             FormatKind::Native(native) => native.input_extensions,
         }
@@ -155,6 +301,8 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -165,7 +313,9 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "edrawings",
+                feature = "usd",
+                feature = "onshape"
             ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
         }
@@ -173,12 +323,16 @@ impl FormatDescriptor {
 }
 
 #[cfg(any(
+    feature = "solidedge",
+    feature = "ironcad",
     feature = "inventor",
     feature = "catia",
     feature = "creo",
     feature = "nx",
     feature = "sat",
-    feature = "pvz"
+    feature = "pvz",
+    feature = "edrawings",
+    feature = "onshape"
 ))]
 macro_rules! reader {
     ($name:ident, $id:expr, $input_exts:expr, $decoder:expr) => {
@@ -187,6 +341,9 @@ macro_rules! reader {
                 id: $id,
                 input_extensions: $input_exts,
                 decoder: $decoder,
+                scanner: scan_backend!($name),
+                zip_scan_probe: zip_scan_probe!($name),
+                compound_scan_probe: compound_scan_probe!($name),
             }),
         };
     };
@@ -227,6 +384,9 @@ macro_rules! writable {
                 id: $id,
                 input_extensions: $input_exts,
                 decoder: $decoder,
+                scanner: scan_backend!($name),
+                zip_scan_probe: zip_scan_probe!($name),
+                compound_scan_probe: compound_scan_probe!($name),
             }),
         };
     };
@@ -254,6 +414,17 @@ writable!(
     OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_f3d::F3dCodec)
 );
+#[cfg(feature = "solidedge")]
+reader!(
+    SOLIDEDGE,
+    FormatId::new("solidedge"),
+    &["par", "psm", "asm"],
+    || Box::new(cadmpeg_codec_solidedge::SolidEdgeCodec)
+);
+#[cfg(feature = "ironcad")]
+reader!(IRONCAD, FormatId::new("ironcad"), &["ics"], || {
+    Box::new(cadmpeg_codec_ironcad::IronCadCodec)
+});
 #[cfg(feature = "inventor")]
 reader!(INVENTOR, FormatId::new("inventor"), &["ipt", "iam"], || {
     Box::new(cadmpeg_codec_inventor::InventorCodec)
@@ -325,6 +496,26 @@ reader!(
 reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
+#[cfg(feature = "edrawings")]
+reader!(
+    EDRAWINGS,
+    FormatId::new("edrawings"),
+    &["easm", "eprt"],
+    || Box::new(cadmpeg_codec_edrawings::EdrawingsCodec)
+);
+#[cfg(feature = "onshape")]
+reader!(
+    ONSHAPE,
+    FormatId::new("onshape"),
+    &["onshape-bundle"],
+    || Box::new(cadmpeg_codec_onshape::OnshapeCodec::new(|ctx, view| {
+        cadmpeg_ir::codec::CodecBackend::decode_impl(
+            &cadmpeg_codec_step::StepCodec::default(),
+            ctx,
+            view,
+        )
+    }))
+);
 #[cfg(feature = "usd")]
 writable!(
     USD,
@@ -356,6 +547,10 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &F3D,
     #[cfg(feature = "inventor")]
     &INVENTOR,
+    #[cfg(feature = "solidedge")]
+    &SOLIDEDGE,
+    #[cfg(feature = "ironcad")]
+    &IRONCAD,
     #[cfg(feature = "sldprt")]
     &SLDPRT,
     #[cfg(feature = "catia")]
@@ -374,8 +569,12 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &SAT,
     #[cfg(feature = "pvz")]
     &PVZ,
+    #[cfg(feature = "edrawings")]
+    &EDRAWINGS,
     #[cfg(feature = "usd")]
     &USD,
+    #[cfg(feature = "onshape")]
+    &ONSHAPE,
     &CADIR,
 ];
 

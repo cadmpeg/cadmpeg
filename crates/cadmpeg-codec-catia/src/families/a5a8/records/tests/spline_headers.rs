@@ -125,8 +125,8 @@ fn linear_knot_marker_requires_an_owned_two_knot_linear_axis() {
 }
 
 #[test]
-fn owned_compact_array_controls_preserve_the_complete_plane() {
-    for control in [0x01, 0x1d, 0x21, 0xfd] {
+fn owned_array_controls_require_known_markers() {
+    for control in [0x01, 0x05, 0x09, 0x0d, 0x11, 0x15, 0x19, 0x1d, 0x21, 0xfd] {
         let mut bytes = Vec::new();
         for _ in 0..2 {
             bytes.extend([5, 9, 8, control]);
@@ -142,7 +142,11 @@ fn owned_compact_array_controls_preserve_the_complete_plane() {
             }
         }
         bytes.extend(a5_surface_tail());
-        let surface = decode(&bytes).expect("complete plane with compact array controls");
+        if !matches!(control, 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19) {
+            assert!(decode(&bytes).is_none());
+            continue;
+        }
+        let surface = decode(&bytes).expect("complete plane with known array controls");
         for u in [0.0, 0.23, 0.61, 1.0] {
             for v in [0.0, 0.17, 0.79, 1.0] {
                 let point = eval::decode::nurbs_surface_point(

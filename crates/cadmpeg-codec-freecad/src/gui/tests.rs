@@ -1894,6 +1894,12 @@ fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str
     assert!(assert_gui_metadata_recovery(&recovered)
         .message
         .contains(expected));
+    assert!(recovered.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(
+                "part archive-entry \"GuiDocument.xml\" stream=\"GuiDocument.xml\" offset=0 ",
+            )
+    }));
     assert!(recovered.ir().model.appearances.is_empty());
 }
 

@@ -16,9 +16,11 @@ use crate::feature::{
     FACE_ITEM_TYPE,
 };
 use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList, PmDcU32List};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::{
-    DistinctMembers, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureId, FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -54,7 +56,7 @@ fn annotation(native: String) -> Feature {
 }
 
 fn property(kind: &PmDcFeaturePropertyKind, type_id: [u8; 16]) -> TestResult<PmDcFeatureProperty> {
-    Ok(serde_json::from_value(serde_json::json!({
+    Ok(json::from_value(cadmpeg_core::json!({
         "id": "inventor:pmdc:feature-property#generated-0",
         "segment_token": "generated",
         "record_ordinal": 0,
@@ -111,9 +113,9 @@ fn face_collection(marker: u16, references: &[u32]) -> TestResult<PmDcFeaturePro
 fn face_items_require_their_record_type_and_type_two_indices() -> TestResult {
     let valid = face_item(2, &[0, 0x8000_0001, u32::MAX])?;
     assert!(face_property_is_admitted(&valid, |_| None));
-    let wire = serde_json::to_value(&valid)?;
-    let restored: PmDcFeatureProperty = serde_json::from_value(wire.clone())?;
-    assert_eq!(serde_json::to_value(restored)?, wire);
+    let wire = json::to_value(&valid)?;
+    let restored: PmDcFeatureProperty = json::from_value(wire.clone())?;
+    assert_eq!(json::to_value(restored)?, wire);
     assert!(face_property_is_admitted(&face_item(2, &[])?, |_| None));
     assert!(!face_property_is_admitted(&face_item(3, &[1])?, |_| None));
     let wrong_type = property(&valid.kind, FACE_COLLECTION_TYPE)?;
@@ -174,78 +176,7 @@ fn face_collections_require_decoded_face_items() -> TestResult {
 }
 
 fn empty_data() -> super::NativeData {
-    super::NativeData {
-        storage_bands: Vec::new(),
-        databases: Vec::new(),
-        database_issues: Vec::new(),
-        registry: Vec::new(),
-        revisions: Vec::new(),
-        pairs: Vec::new(),
-        metadata: Vec::new(),
-        meta_sections: Vec::new(),
-        meta_types: Vec::new(),
-        metadata_issues: Vec::new(),
-        bulk: Vec::new(),
-        records: Vec::new(),
-        bulk_issues: Vec::new(),
-        unpaired: Vec::new(),
-        structural_issues: Vec::new(),
-        property_sets: Vec::new(),
-        property_sections: Vec::new(),
-        properties: Vec::new(),
-        property_issues: Vec::new(),
-        protein: super::ProteinRecord::Absent { id: String::new() },
-        protein_assets: Vec::new(),
-        protein_rejections: Vec::new(),
-        ufrx: super::UfrxRecord::Absent { id: String::new() },
-        assembly_occurrences: Vec::new(),
-        assembly_placements: Vec::new(),
-        design_view_representations: Vec::new(),
-        design_view_visibility: Vec::new(),
-        assembly_groundings: Vec::new(),
-        assembly_record_issues: Vec::new(),
-        pm_app_default_styles: Vec::new(),
-        pm_app_rendering_styles: Vec::new(),
-        pm_graphics_faces: Vec::new(),
-        pm_graphics_style_collections: Vec::new(),
-        pm_graphics_primary_color_styles: Vec::new(),
-        face_native_keys: Vec::new(),
-        body_native_keys: Vec::new(),
-        body_wrapper_links: Vec::new(),
-        composite_member_links: Vec::new(),
-        feature_history_states: Vec::new(),
-        presentation_record_issues: Vec::new(),
-        pm_dc_parameters: Vec::new(),
-        pm_dc_expressions: Vec::new(),
-        pm_dc_units: Vec::new(),
-        pm_dc_parameter_tables: Vec::new(),
-        pm_dc_model_roots: Vec::new(),
-        design_record_issues: Vec::new(),
-        pm_dc_sketches: Vec::new(),
-        pm_dc_sketch_entities: Vec::new(),
-        pm_dc_sketch_constraints: Vec::new(),
-        pm_dc_transforms: Vec::new(),
-        pm_dc_directions: Vec::new(),
-        sketch_record_issues: Vec::new(),
-        pm_dc_features: Vec::new(),
-        pm_dc_pattern_features: Vec::new(),
-        pm_dc_pattern_operands: Vec::new(),
-        pm_dc_feature_terminators: Vec::new(),
-        pm_dc_feature_properties: Vec::new(),
-        pm_dc_sheet_metal_styles: Vec::new(),
-        pm_dc_sheet_metal_flanges: Vec::new(),
-        pm_app_sheet_metal_unfold_rules: Vec::new(),
-        pm_app_sheet_metal_unfold_selections: Vec::new(),
-        pm_dc_feature_dimensions: Vec::new(),
-        pm_dc_feature_labels: Vec::new(),
-        pm_dc_thread_definitions: Vec::new(),
-        pm_dc_entity_style_links: Vec::new(),
-        pm_dc_kernel_entity_links: Vec::new(),
-        pm_dc_work_planes: Vec::new(),
-        feature_record_issues: Vec::new(),
-        active_carrier: super::ActiveCarrierRecord::NotApplicable { id: String::new() },
-        unknowns: Vec::new(),
-    }
+    super::NativeData::empty()
 }
 
 #[test]
@@ -364,7 +295,7 @@ fn thread_data() -> TestResult<super::NativeData> {
     )
     .ok_or("invalid Thread property fixture list")?;
     data.pm_dc_features
-        .push(serde_json::from_value(serde_json::json!({
+        .push(json::from_value(cadmpeg_core::json!({
             "id": "inventor:pmdc:feature#generated-4",
             "segment_token": "generated", "record_ordinal": 4,
             "type_id": "914d8790d011f8d10008cabc0663dc09",
@@ -372,7 +303,7 @@ fn thread_data() -> TestResult<super::NativeData> {
             "state": 69, "outline_value": 0, "properties": slots, "value": 0
         }))?);
     data.pm_dc_feature_labels.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "inventor:pmdc:feature-label#generated-8",
             "segment_token": "generated", "record_ordinal": 8,
             "type_id": "2ba4482bd2115864600074b79b49ebb0",
@@ -425,7 +356,7 @@ fn thread_data() -> TestResult<super::NativeData> {
         )
         .chain(data.pm_dc_parameters.iter().map(|record| &record.identity))
     {
-        data.records.push(serde_json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#generated-{}", identity.record_ordinal),
             "token": "generated", "ordinal": identity.record_ordinal,
             "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
@@ -463,9 +394,9 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
         "Inventor thread annotation does not match its PmDc face selection"
     );
     data.pm_dc_parameters.push(parameter);
-    let mut label = serde_json::to_value(&data.pm_dc_feature_labels[0])?;
-    label["class_id"] = serde_json::json!("00000000000000000000000000000000");
-    data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
+    let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
+    label["class_id"] = cadmpeg_core::json!("00000000000000000000000000000000");
+    data.pm_dc_feature_labels[0] = json::from_value(label)?;
     findings.clear();
     super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
@@ -513,9 +444,9 @@ fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestRe
         "808b00afd41140881000fca5bba647b5",
     ] {
         let mut data = thread_data()?;
-        let mut label = serde_json::to_value(&data.pm_dc_feature_labels[0])?;
-        label["class_id"] = serde_json::json!(class);
-        data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
+        let mut label = json::to_value(&data.pm_dc_feature_labels[0])?;
+        label["class_id"] = cadmpeg_core::json!(class);
+        data.pm_dc_feature_labels[0] = json::from_value(label)?;
         for (reference, invalid) in [(0, false), (1, true)] {
             let source = &data.pm_dc_features[0];
             let mut payload = (**source).clone();
@@ -553,13 +484,13 @@ fn sketch_point(
     let serde_json::Value::Object(tail) = tail else {
         return Err("point tail".into());
     };
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-    let mut kind = serde_json::json!({
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
+    let mut kind = cadmpeg_core::json!({
         "form": "point", "position": [0.0, 0.0], "endpoint_of": list, "center_of": list
     });
     kind.as_object_mut().ok_or("point kind")?.extend(tail);
     let mut payload: crate::sketch::PmDcSketchEntityPayload =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "save_version_major": version,
             "header": {
                 "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
@@ -571,7 +502,7 @@ fn sketch_point(
                 "endpoint_of": list, "center_of": list, "state": null, "associations": null
             }
         }))?;
-    payload.kind = serde_json::from_value(kind)?;
+    payload.kind = json::from_value(kind)?;
     Ok(crate::record_identity::Located::new(
         payload,
         crate::record_identity::RecordTypeId::try_from(
@@ -583,7 +514,7 @@ fn sketch_point(
 }
 
 fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "state": 2, "associations": null,
         "paired": {
             "scalar_metadata": [2, 0], "scalars": [0.25, 0.75],
@@ -595,7 +526,7 @@ fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
 fn sketch_records(data: &mut super::NativeData) -> TestResult {
     for entity in &data.pm_dc_sketch_entities {
         let ordinal = entity.identity.record_ordinal;
-        data.records.push(serde_json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#generated-{ordinal}"),
             "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
             "type_id": entity.identity.type_id.as_str(),
@@ -622,7 +553,7 @@ fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestRe
             data.pm_dc_sketch_entities.push(sketch_point(
                 25,
                 ordinal,
-                serde_json::json!({"state": null, "associations": null}),
+                cadmpeg_core::json!({"state": null, "associations": null}),
             )?);
         }
         sketch_records(&mut data)?;
@@ -648,23 +579,23 @@ fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestRe
 
 #[test]
 fn native_validation_checks_point_tail_save_version() -> TestResult {
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
     for version in [23, 25, 31] {
         for (tail, valid) in [
             (
-                serde_json::json!({"state": null, "associations": null}),
+                cadmpeg_core::json!({"state": null, "associations": null}),
                 true,
             ),
             (
-                serde_json::json!({"state": 0, "associations": list}),
+                cadmpeg_core::json!({"state": 0, "associations": list}),
                 version < 25,
             ),
             (
-                serde_json::json!({"state": 0, "associations": list, "links": list}),
+                cadmpeg_core::json!({"state": 0, "associations": list, "links": list}),
                 version >= 25,
             ),
             (
-                serde_json::json!({"state": 2, "associations": list}),
+                cadmpeg_core::json!({"state": 2, "associations": list}),
                 version < 25,
             ),
             (paired_tail([1, 1]), version >= 25),
@@ -696,8 +627,10 @@ fn work_plane_features_match_their_work_plane_frames() -> TestResult {
     let skewed = work_plane(4, [0.0; 3], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]);
     let admitted = frame(&plane).ok_or("orthonormal frame")?;
     let shifted = admitted.with_origin(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 16.0))
-            .ok_or("finite origin")?,
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 16.0,
+        ))
+        .ok_or("finite origin")?,
     );
     let native = FeatureOperation::Native {
         kind: cadmpeg_ir::features::NativeFeatureKind::Other("WorkPlane".into()),
@@ -750,7 +683,7 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
             frame: frame(&plane).ok_or("orthonormal frame")?,
         },
     ));
-    let target = cadmpeg_ir::features::BodySelection::Native(properties[7].id());
+    let target = cadmpeg_ir::features::selections::BodySelection::Native(properties[7].id());
     let other = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
         cadmpeg_ir::identity_key!("other"),
@@ -758,31 +691,33 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
     for (mode, tool, mismatches) in [
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             0,
         ),
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane: other },
             1,
         ),
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+                properties[10].id(),
+            )),
             1,
         ),
         (
             1,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             1,
         ),
         (
             2,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             1,
@@ -838,9 +773,8 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
 
 #[test]
 fn neutral_sweep_validation_runs_the_shared_operand_gate() -> TestResult {
-    use cadmpeg_ir::features::{
-        PathRef, PlanarProfileRef, SolidSweepOperation, SweepSection, SweepShape,
-    };
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection, SweepShape};
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -902,7 +836,8 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
     use cadmpeg_ir::features::edge_treatments::{
         ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec,
     };
-    use cadmpeg_ir::features::{EdgeSelection, ParameterValue};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -933,14 +868,14 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
         let distance = PositiveLength::new(2.0).ok_or("distance")?;
         let operation = match form {
             None => FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::Native(properties[3].id()),
                     radius: RadiusSpec::Constant { radius: distance },
                     tangency_weight: None,
                 }),
             },
             Some(form) => FeatureOperation::Chamfer {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                     edges: EdgeSelection::Native(if form == 0 {
                         properties[0].id()
                     } else {

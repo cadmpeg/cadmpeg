@@ -4,7 +4,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, AxisValue, Construction, FrameAxis, FrameValue, PostStep,
 };
@@ -13,7 +12,7 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::ids::ContainerId;
-use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::names::{CodecName, NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::body::Combine;
 use cadmpeg_ir::design::ops::shared::{Limit, RadialDimension, Span, ToolDisposition};
 use cadmpeg_ir::design::ops::swept::{
@@ -26,7 +25,8 @@ use cadmpeg_ir::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureId, FinitePoint3};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -105,6 +105,7 @@ pub(in crate::reader) fn attach(
                 suppressed: None,
                 definition: FeatureDefinition {
                     operation: operation(item, csg),
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 },
@@ -148,6 +149,7 @@ pub(in crate::reader) fn attach(
                         tessellations: Vec::new(),
                         origin: StoredOrigin::Base {},
                     },
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 },
@@ -171,6 +173,7 @@ pub(in crate::reader) fn attach(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
     }
     losses
@@ -222,9 +225,9 @@ fn operation(item: &Item, csg: &CsgData) -> FeatureOperation {
     })
 }
 
-fn native_kind(entity: &str) -> NonBlankString {
-    let text = format!("step:{}", entity.to_ascii_lowercase());
-    NonBlankString::new(&text).unwrap_or_else(|| cadmpeg_core::nonblank_literal!("step:csg"))
+fn native_kind(entity: &str) -> CodecName {
+    CodecName::new(&cadmpeg_ir::codec_id!("step"), &entity.to_ascii_lowercase())
+        .unwrap_or_else(|| cadmpeg_ir::codec_name!("step:csg"))
 }
 
 fn typed_operation(item: &Item, csg: &CsgData) -> Option<FeatureOperation> {
@@ -402,7 +405,7 @@ fn single<O: MemberOrder>(at: Anchor, pick: Picked) -> Selection<O> {
 
 fn step_name(id: u64) -> NativeName {
     NativeName {
-        codec: CodecId::from(cadmpeg_core::nonblank_literal!("step")),
+        codec: cadmpeg_ir::codec_id!("step"),
         value: NativeNameValue::Text(cadmpeg_core::nonblank_literal!("#{id}")),
     }
 }

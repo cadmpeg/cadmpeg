@@ -1,9 +1,11 @@
-use super::super::{
-    PcurveGeometry, ProceduralCurveDefinition, TolerantIntersectionConstruction,
-    TolerantIntersectionParameterization,
+use super::super::intersection_curves::{
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
 };
+use super::super::procedural_curves::ProceduralCurveDefinition;
+use super::super::PcurveGeometry;
 use crate::{ids::SurfaceId, math::Point3};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 fn supports() -> [SurfaceId; 2] {
     ["test:model:surface#1", "test:model:surface#2"].map(|id| SurfaceId::mint(id).unwrap())
@@ -35,7 +37,7 @@ fn tolerant_intersection_rejects_equal_supports_and_invalid_numeric_bounds() {
 #[test]
 fn tolerant_intersection_from_parts_refuses_only_equal_supports() {
     let endpoints = [Point3::new(1.0, -0.0, 5.0e-324), Point3::new(2.0, 3.0, 4.0)]
-        .map(|point| crate::features::FinitePoint3::new(point).unwrap());
+        .map(|point| crate::features::geometry::FinitePoint3::new(point).unwrap());
     let tolerance = crate::scalar::NonNegativeReal::new(0.25).unwrap();
     let built = TolerantIntersectionConstruction::from_parts(supports(), endpoints, tolerance)
         .expect("distinct supports");
@@ -43,7 +45,7 @@ fn tolerant_intersection_from_parts_refuses_only_equal_supports() {
         Ok(built),
         TolerantIntersectionConstruction::try_new(
             supports(),
-            endpoints.map(crate::features::FinitePoint3::get),
+            endpoints.map(crate::features::geometry::FinitePoint3::get),
             0.25
         )
     );
@@ -94,14 +96,14 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
             "tolerance": 0.0
         }
     });
-    let value: ProceduralCurveDefinition = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    let value: ProceduralCurveDefinition = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(value).unwrap(), wire);
     let mut invalid = wire.clone();
     invalid["construction"]["supports"][1] = invalid["construction"]["supports"][0].clone();
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let mut invalid = wire;
     invalid["construction"]["tolerance"] = json!(-1.0);
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let parameterization = TolerantIntersectionParameterization::try_new(
         [
             PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS),
@@ -110,9 +112,9 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
         [0.0, 1.0],
     )
     .unwrap();
-    let mut invalid = serde_json::to_value(parameterization).unwrap();
+    let mut invalid = json::to_value(parameterization).unwrap();
     invalid["parameter_range"] = json!([1.0, 1.0]);
-    assert!(serde_json::from_value::<TolerantIntersectionParameterization>(invalid).is_err());
+    assert!(json::from_value::<TolerantIntersectionParameterization>(invalid).is_err());
 }
 
 #[test]
@@ -133,7 +135,7 @@ fn tolerant_intersection_hands_back_its_admitted_tolerance() {
 
 #[test]
 fn a_tolerant_intersection_holds_its_admitted_endpoints() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     let endpoints = [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, 5.0, 6.0)];
     let construction =
@@ -143,7 +145,7 @@ fn a_tolerant_intersection_holds_its_admitted_endpoints() {
         endpoints.map(|point| FinitePoint3::new(point).unwrap())
     );
     assert_eq!(
-        serde_json::to_value(&construction).unwrap()["endpoints"],
+        json::to_value(&construction).unwrap()["endpoints"],
         json!(endpoints)
     );
 }

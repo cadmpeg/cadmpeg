@@ -6,6 +6,7 @@ use crate::records::feature::direct_face::{DesignMoveForm, DesignMoveOperation};
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
     let mut scope = DesignParameterScope::empty(
@@ -154,7 +155,8 @@ fn move_transform_validator_reports_shifted_matrix_location() {
             let validate = |native: &crate::native::F3dNative| {
                 let ctx = super::super::Ctx::new(&ir, native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                    .unwrap();
                 findings
             };
             assert!(validate(&native).is_empty());
@@ -219,9 +221,9 @@ fn move_prefix_validator_rejects_inconsistent_native_claims() {
         }
         assert!(!move_operation_links_hold(&changed, Some(&header)));
     }
-    let mut wire = serde_json::to_value(scope.move_operation().unwrap()).unwrap();
+    let mut wire = json::to_value(scope.move_operation().unwrap()).unwrap();
     wire["prefix"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<DesignMoveOperation>(wire).is_err());
+    assert!(json::from_value::<DesignMoveOperation>(wire).is_err());
 }
 
 #[test]

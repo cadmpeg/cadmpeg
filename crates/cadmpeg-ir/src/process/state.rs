@@ -67,7 +67,7 @@ pub struct ProcessContent {
 }
 
 /// The point of the process that a process state holds the workpiece at.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -86,7 +86,7 @@ pub enum ProcessStateOf {
 }
 
 /// The state a process state's delta applies to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -113,6 +113,7 @@ pub enum ProcessBase {
 pub(crate) fn admit_state_chains(
     states: &[ProcessState],
     evaluations: &BTreeMap<&str, u64>,
+    cycles: evaluation::Cycles,
 ) -> Result<(), String> {
     let mut index = BTreeMap::new();
     for (at, state) in states.iter().enumerate() {
@@ -138,6 +139,7 @@ pub(crate) fn admit_state_chains(
             }) => ChainLink::Below(0),
         },
         |state| format!("process state {}", state.id.as_str()),
+        cycles,
     )?;
     Ok(())
 }

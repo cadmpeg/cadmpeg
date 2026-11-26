@@ -5,10 +5,11 @@ use std::borrow::Cow;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsSurface};
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -288,6 +289,9 @@ impl Carrier<'_> {
 
     pub(super) fn rolling_boundary_gap(&self, u: f64, v: f64) -> Option<f64> {
         let (definition, _) = self.rolling_definition()?;
+        if let Some(end) = self.extended_rolling_span() {
+            return (0.0..=end).contains(&v).then_some(0.0);
+        }
         let [u, s] = self.point([u, v]);
         if let Some(end) = self.extended_rolling_span() {
             return (0.0..=end).contains(&s).then_some(0.0);

@@ -2,13 +2,13 @@
 //! Sorted historical row diffs and lazy chain materialization.
 use super::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityTags,
-    AsmHistoricalPersistentSubentityTag, AsmHistoricalRow, AsmHistoricalRowDelta,
-    AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat, AsmHistoricalTopology,
+    AsmHistoricalEnvelopeCache, AsmHistoricalPersistentSubentityTag, AsmHistoricalRow,
+    AsmHistoricalRowDelta, AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyScope,
     AsmTransitionError,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod membership;
@@ -29,12 +29,20 @@ pub(crate) struct AsmIdentityMemberships {
     pub(crate) all_states_available: bool,
 }
 
+/// Cached decoded ASM record archive and subtype table reused between
+/// historical topology binding and historical body extraction.
+pub(crate) struct CachedRecordArchive {
+    pub(crate) archive: crate::history::HistoricalRecordArchive,
+    pub(crate) subtypes: cadmpeg_asm::nurbs::toks::SubtypeTable,
+}
+
 /// Derived state topologies. Clones start without materializations.
 #[derive(Default)]
 pub(crate) struct MaterializedTopologies {
     states: OnceLock<Vec<OnceLock<Option<Box<AsmHistoricalTopology>>>>>,
     order: OnceLock<Result<Option<Vec<usize>>, AsmTransitionError>>,
-    transition_validity: OnceLock<Vec<bool>>,
+    validity_and_retained: OnceLock<(Vec<bool>, Vec<bool>)>,
+    record_archive: OnceLock<Box<CachedRecordArchive>>,
 }
 
 impl Clone for MaterializedTopologies {
@@ -141,12 +149,20 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
     }
 
     fn apply(&self, family: &mut Vec<R>) -> Result<(), AsmTransitionError> {
+        self.apply_inner(family, false)
+    }
+
+    fn apply_inner(
+        &self,
+        family: &mut Vec<R>,
+        trusted_sorted: bool,
+    ) -> Result<(), AsmTransitionError> {
         if self.is_empty() {
             return Ok(());
         }
         if !ordered_keys(&self.set)
             || !strictly_sorted(self.removed.iter().copied())
-            || !ordered_keys(family)
+            || (!trusted_sorted && !ordered_keys(family))
         {
             return Err(AsmTransitionError::UnsortedFamily);
         }
@@ -210,10 +226,112 @@ fn replace_key_runs<'a, R: Clone + 'a>(
         .fold((0, 0), |(kept, replacing), (run, rows)| {
             (kept + run.len(), replacing + rows.len())
         });
+    let old_len = family.len();
+    // In-place left-to-right compaction is clobber-free whenever the cumulative
+    // net shift never turns positive (write cursor never passes read cursor).
+    if replacing <= kept {
+        let mut net = 0_isize;
+        let mut monotonic_shrink = true;
+        for (run, rows) in &resized {
+            let Some(delta) = isize::try_from(rows.len())
+                .ok()
+                .zip(isize::try_from(run.len()).ok())
+                .and_then(|(a, b)| a.checked_sub(b))
+                .and_then(|d| net.checked_add(d))
+            else {
+                monotonic_shrink = false;
+                break;
+            };
+            net = delta;
+            if net > 0 {
+                monotonic_shrink = false;
+                break;
+            }
+        }
+        if monotonic_shrink {
+            let mut write = first;
+            let mut read = first;
+            for (run, rows) in &resized {
+                let keep = run.start - read;
+                if keep > 0 {
+                    if write != read {
+                        for offset in 0..keep {
+                            family.swap(write + offset, read + offset);
+                        }
+                    }
+                    write += keep;
+                }
+                if !rows.is_empty() {
+                    family[write..write + rows.len()].clone_from_slice(rows);
+                    write += rows.len();
+                }
+                read = run.end;
+            }
+            let tail_keep = old_len - read;
+            if tail_keep > 0 {
+                if write != read {
+                    for offset in 0..tail_keep {
+                        family.swap(write + offset, read + offset);
+                    }
+                }
+                write += tail_keep;
+            }
+            family.truncate(write);
+            return Ok(());
+        }
+    }
     if let Some(growth) = replacing.checked_sub(kept) {
         family
             .try_reserve_exact(growth)
             .map_err(|_| AsmTransitionError::Allocation)?;
+        // In-place right-to-left expansion is clobber-free whenever the trailing
+        // write cursor stays at or ahead of the read cursor at every run.
+        if growth > 0 {
+            let mut gap = isize::try_from(growth).ok();
+            let mut monotonic_grow = gap.is_some();
+            for (run, rows) in resized.iter().rev() {
+                let Some(next_gap) = gap
+                    .and_then(|g| g.checked_sub(isize::try_from(rows.len()).ok()?))
+                    .and_then(|g| g.checked_add(isize::try_from(run.len()).ok()?))
+                else {
+                    monotonic_grow = false;
+                    break;
+                };
+                if next_gap < 0 {
+                    monotonic_grow = false;
+                    break;
+                }
+                gap = Some(next_gap);
+            }
+            if monotonic_grow {
+                if let Some(sample) = resized.iter().find_map(|(_, rows)| rows.first()).cloned() {
+                    let new_len = old_len + growth;
+                    drop(family.try_reserve(growth));
+                    for _ in 0..growth {
+                        family.push(sample.clone());
+                    }
+                    let mut write_end = new_len;
+                    let mut read_end = old_len;
+                    for (run, rows) in resized.into_iter().rev() {
+                        let keep = read_end - run.end;
+                        if keep > 0 {
+                            write_end -= keep;
+                            if write_end != run.end {
+                                for offset in (0..keep).rev() {
+                                    family.swap(write_end + offset, run.end + offset);
+                                }
+                            }
+                        }
+                        if !rows.is_empty() {
+                            write_end -= rows.len();
+                            family[write_end..write_end + rows.len()].clone_from_slice(rows);
+                        }
+                        read_end = run.start;
+                    }
+                    return Ok(());
+                }
+            }
+        }
     }
     let mut tail = family.split_off(first).into_iter();
     let mut position = first;
@@ -281,11 +399,12 @@ fn distinct_slots(family: &[i64]) -> Vec<i64> {
     slots
 }
 
-fn apply_slot_repeats(
+fn apply_slot_repeats_inner(
     membership: &AsmHistoricalEntityDelta,
     rows: &AsmHistoricalRowDelta<AsmHistoricalSlotRepeat>,
     family: &mut Vec<i64>,
     updated_records: &[i64],
+    trusted_sorted: bool,
 ) -> Result<(), AsmTransitionError> {
     if rows.is_empty()
         && membership.inserted.is_empty()
@@ -294,10 +413,13 @@ fn apply_slot_repeats(
     {
         return Ok(());
     }
+    if rows.is_empty() && !family.windows(2).any(|pair| pair[0] == pair[1]) {
+        return apply_membership_inner(membership, family, updated_records, trusted_sorted);
+    }
     let mut repeats = slot_repeats(family).ok_or(AsmTransitionError::UnsortedFamily)?;
     let mut slots = distinct_slots(family);
-    apply_membership(membership, &mut slots, updated_records)?;
-    rows.apply(&mut repeats)?;
+    apply_membership_inner(membership, &mut slots, updated_records, true)?;
+    rows.apply_inner(&mut repeats, true)?;
     if repeats
         .iter()
         .any(|repeat| repeat.count < 2 || slots.binary_search(&repeat.slot).is_err())
@@ -387,6 +509,16 @@ impl AsmHistoricalTransition {
                 pcurves: delta(&new.pcurves, &old_topology.pcurves)?,
             },
             rows: AsmHistoricalRowsDelta {
+                face_envelopes: AsmHistoricalRowDelta::between(
+                    &old_topology.face_envelopes,
+                    &new.face_envelopes,
+                )?
+                .into(),
+                edge_envelopes: AsmHistoricalRowDelta::between(
+                    &old_topology.edge_envelopes,
+                    &new.edge_envelopes,
+                )?
+                .into(),
                 surface_repeats: AsmHistoricalRowDelta::between(&old_surfaces, &new_surfaces)?,
                 curve_repeats: AsmHistoricalRowDelta::between(&old_curves, &new_curves)?,
                 surface_radii: AsmHistoricalRowDelta::between(
@@ -477,113 +609,180 @@ impl AsmHistoricalTransition {
                     &old_topology.edge_samples,
                     &new.edge_samples,
                 )?,
+                face_samples: AsmHistoricalRowDelta::between(
+                    &old_topology.face_samples,
+                    &new.face_samples,
+                )?,
             },
         })
     }
 
+    #[cfg(test)]
     fn apply_topology(
         &self,
         topology: &mut AsmHistoricalTopology,
     ) -> Result<(), AsmTransitionError> {
-        apply_membership(
+        self.apply_topology_inner(topology, false)
+    }
+
+    fn apply_topology_sorted(
+        &self,
+        topology: &mut AsmHistoricalTopology,
+    ) -> Result<(), AsmTransitionError> {
+        self.apply_topology_inner(topology, true)
+    }
+
+    fn apply_topology_inner(
+        &self,
+        topology: &mut AsmHistoricalTopology,
+        trusted_sorted: bool,
+    ) -> Result<(), AsmTransitionError> {
+        apply_membership_inner(
             &self.topology.bodies,
             &mut topology.bodies,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.regions,
             &mut topology.regions,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.shells,
             &mut topology.shells,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.faces,
             &mut topology.faces,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.loops,
             &mut topology.loops,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.coedges,
             &mut topology.coedges,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.edges,
             &mut topology.edges,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.vertices,
             &mut topology.vertices,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.points,
             &mut topology.points,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_slot_repeats(
+        apply_slot_repeats_inner(
             &self.topology.surfaces,
             &self.rows.surface_repeats,
             &mut topology.surfaces,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_slot_repeats(
+        apply_slot_repeats_inner(
             &self.topology.curves,
             &self.rows.curve_repeats,
             &mut topology.curves,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        apply_membership(
+        apply_membership_inner(
             &self.topology.pcurves,
             &mut topology.pcurves,
             &self.records.updated,
+            trusted_sorted,
         )?;
-        self.rows.surface_radii.apply(&mut topology.surface_radii)?;
+        self.rows
+            .surface_radii
+            .apply_inner(&mut topology.surface_radii, trusted_sorted)?;
         self.rows
             .surface_cylinders
-            .apply(&mut topology.surface_cylinders)?;
+            .apply_inner(&mut topology.surface_cylinders, trusted_sorted)?;
         self.rows
             .surface_planes
-            .apply(&mut topology.surface_planes)?;
-        self.rows.surface_axes.apply(&mut topology.surface_axes)?;
-        self.rows.curve_axes.apply(&mut topology.curve_axes)?;
-        self.rows.body_regions.apply(&mut topology.body_regions)?;
-        self.rows.region_shells.apply(&mut topology.region_shells)?;
-        self.rows.shell_faces.apply(&mut topology.shell_faces)?;
+            .apply_inner(&mut topology.surface_planes, trusted_sorted)?;
+        self.rows
+            .surface_axes
+            .apply_inner(&mut topology.surface_axes, trusted_sorted)?;
+        self.rows
+            .curve_axes
+            .apply_inner(&mut topology.curve_axes, trusted_sorted)?;
+        self.rows
+            .body_regions
+            .apply_inner(&mut topology.body_regions, trusted_sorted)?;
+        self.rows
+            .region_shells
+            .apply_inner(&mut topology.region_shells, trusted_sorted)?;
+        self.rows
+            .shell_faces
+            .apply_inner(&mut topology.shell_faces, trusted_sorted)?;
         self.rows
             .shell_wire_edges
-            .apply(&mut topology.shell_wire_edges)?;
+            .apply_inner(&mut topology.shell_wire_edges, trusted_sorted)?;
         self.rows
             .shell_free_vertices
-            .apply(&mut topology.shell_free_vertices)?;
+            .apply_inner(&mut topology.shell_free_vertices, trusted_sorted)?;
         self.rows
             .body_design_links
-            .apply(&mut topology.body_design_links)?;
-        self.rows.face_loops.apply(&mut topology.face_loops)?;
-        self.rows.loop_coedges.apply(&mut topology.loop_coedges)?;
+            .apply_inner(&mut topology.body_design_links, trusted_sorted)?;
+        self.rows
+            .face_envelopes
+            .apply_inner(&mut topology.face_envelopes, trusted_sorted)?;
+        self.rows
+            .edge_envelopes
+            .apply_inner(&mut topology.edge_envelopes, trusted_sorted)?;
+        self.rows
+            .face_loops
+            .apply_inner(&mut topology.face_loops, trusted_sorted)?;
+        self.rows
+            .loop_coedges
+            .apply_inner(&mut topology.loop_coedges, trusted_sorted)?;
         self.rows
             .coedge_topology
-            .apply(&mut topology.coedge_topology)?;
-        self.rows.edge_vertices.apply(&mut topology.edge_vertices)?;
-        self.rows.face_surfaces.apply(&mut topology.face_surfaces)?;
-        self.rows.vertex_points.apply(&mut topology.vertex_points)?;
-        self.rows.edge_curves.apply(&mut topology.edge_curves)?;
+            .apply_inner(&mut topology.coedge_topology, trusted_sorted)?;
+        self.rows
+            .edge_vertices
+            .apply_inner(&mut topology.edge_vertices, trusted_sorted)?;
+        self.rows
+            .face_surfaces
+            .apply_inner(&mut topology.face_surfaces, trusted_sorted)?;
+        self.rows
+            .vertex_points
+            .apply_inner(&mut topology.vertex_points, trusted_sorted)?;
+        self.rows
+            .edge_curves
+            .apply_inner(&mut topology.edge_curves, trusted_sorted)?;
         self.rows
             .coedge_pcurves
-            .apply(&mut topology.coedge_pcurves)?;
+            .apply_inner(&mut topology.coedge_pcurves, trusted_sorted)?;
         self.rows
             .point_positions
-            .apply(&mut topology.point_positions)?;
-        self.rows.edge_samples.apply(&mut topology.edge_samples)?;
+            .apply_inner(&mut topology.point_positions, trusted_sorted)?;
+        self.rows
+            .edge_samples
+            .apply_inner(&mut topology.edge_samples, trusted_sorted)?;
+        self.rows
+            .face_samples
+            .apply_inner(&mut topology.face_samples, trusted_sorted)?;
         let tags = &self.rows.persistent_subentity_tags;
         if !tags.is_empty() {
             if tags.set.iter().any(|group| {
@@ -594,9 +793,10 @@ impl AsmHistoricalTransition {
                         .any(|tag| tag.entity_ref != group.entity_ref)
             }) || !strictly_sorted(tags.set.iter().map(|group| group.entity_ref))
                 || !strictly_sorted(tags.removed.iter().copied())
-                || !topology
-                    .persistent_subentity_tags
-                    .is_sorted_by_key(|tag| tag.entity_ref)
+                || (!trusted_sorted
+                    && !topology
+                        .persistent_subentity_tags
+                        .is_sorted_by_key(|tag| tag.entity_ref))
             {
                 return Err(AsmTransitionError::UnsortedFamily);
             }
@@ -649,7 +849,7 @@ impl AsmHistoricalTransition {
 
     fn apply_version_map(
         &self,
-        versions: &mut BTreeMap<i64, i64>,
+        versions: &mut HashMap<i64, i64>,
     ) -> Result<(), AsmTransitionError> {
         self.check_revision_coverage()?;
         for revision in &self.record_revisions {
@@ -748,32 +948,61 @@ fn check_delta_order(delta: &AsmHistoricalEntityDelta) -> Result<(), AsmTransiti
     Ok(())
 }
 
+#[cfg(test)]
 fn apply_membership(
     delta: &AsmHistoricalEntityDelta,
     family: &mut Vec<i64>,
     updated_records: &[i64],
 ) -> Result<(), AsmTransitionError> {
+    apply_membership_inner(delta, family, updated_records, false)
+}
+
+fn apply_membership_inner(
+    delta: &AsmHistoricalEntityDelta,
+    family: &mut Vec<i64>,
+    updated_records: &[i64],
+    trusted_sorted: bool,
+) -> Result<(), AsmTransitionError> {
     if delta.inserted.is_empty() && delta.deleted.is_empty() && delta.updated.is_empty() {
         return Ok(());
     }
     check_delta_order(delta)?;
-    if !strictly_sorted(family.iter().copied()) {
+    if !trusted_sorted && !strictly_sorted(family.iter().copied()) {
         return Err(AsmTransitionError::UnsortedFamily);
     }
-    let mut revisions = updated_records.iter().peekable();
-    let mut deleted = delta.deleted.iter().peekable();
-    let expected_updates = family.iter().copied().filter(|slot| {
-        while revisions.peek().is_some_and(|&&key| key < *slot) {
-            revisions.next();
-        }
-        while deleted.peek().is_some_and(|&&key| key < *slot) {
-            deleted.next();
-        }
-        revisions.peek().is_some_and(|&&key| key == *slot)
-            && deleted.peek().is_none_or(|&&key| key != *slot)
-    });
-    if !expected_updates.eq(delta.updated.iter().copied()) {
+    let updates_match = if updated_records.is_empty() {
+        delta.updated.is_empty()
+    } else if updated_records.len() < family.len() / 4
+        && strictly_sorted(updated_records.iter().copied())
+    {
+        let mut deleted = delta.deleted.iter().peekable();
+        let expected_updates = updated_records.iter().copied().filter(|slot| {
+            while deleted.peek().is_some_and(|&&key| key < *slot) {
+                deleted.next();
+            }
+            deleted.peek().is_none_or(|&&key| key != *slot) && family.binary_search(slot).is_ok()
+        });
+        expected_updates.eq(delta.updated.iter().copied())
+    } else {
+        let mut revisions = updated_records.iter().peekable();
+        let mut deleted = delta.deleted.iter().peekable();
+        let expected_updates = family.iter().copied().filter(|slot| {
+            while revisions.peek().is_some_and(|&&key| key < *slot) {
+                revisions.next();
+            }
+            while deleted.peek().is_some_and(|&&key| key < *slot) {
+                deleted.next();
+            }
+            revisions.peek().is_some_and(|&&key| key == *slot)
+                && deleted.peek().is_none_or(|&&key| key != *slot)
+        });
+        expected_updates.eq(delta.updated.iter().copied())
+    };
+    if !updates_match {
         return Err(AsmTransitionError::InvalidUpdate);
+    }
+    if delta.inserted.is_empty() && delta.deleted.is_empty() {
+        return Ok(());
     }
     if intersects(&delta.inserted, &delta.deleted) {
         return Err(AsmTransitionError::InsertedPresent);
@@ -814,6 +1043,8 @@ fn apply_membership(
 
 impl AsmHistoricalRowsDelta {
     pub(crate) fn retain_projection_rows(&mut self) {
+        self.face_envelopes = AsmHistoricalEnvelopeCache::default();
+        self.edge_envelopes = AsmHistoricalEnvelopeCache::default();
         self.surface_radii = AsmHistoricalRowDelta::default();
         self.surface_axes = AsmHistoricalRowDelta::default();
         self.persistent_subentity_tags = AsmHistoricalRowDelta::default();
@@ -827,6 +1058,7 @@ impl AsmHistoricalRowsDelta {
         self.vertex_points = AsmHistoricalRowDelta::default();
         self.point_positions = AsmHistoricalRowDelta::default();
         self.edge_samples = AsmHistoricalRowDelta::default();
+        self.face_samples = AsmHistoricalRowDelta::default();
     }
 }
 
@@ -862,6 +1094,85 @@ impl AsmHistoricalTopology {
         .copied()
         .collect()
     }
+}
+
+fn reserve_topology_prefix(
+    states: &[AsmDeltaState],
+    ordinals_newest_first: &[usize],
+    topology: &mut AsmHistoricalTopology,
+) {
+    macro_rules! reserve_membership {
+        ($field:ident) => {{
+            let mut cur = topology.$field.len();
+            let mut peak = cur;
+            for &ordinal in ordinals_newest_first.iter().rev() {
+                if let Some(t) = states.get(ordinal).and_then(|s| s.transition.as_ref()) {
+                    let d = &t.topology.$field;
+                    cur = cur
+                        .checked_add(d.inserted.len())
+                        .and_then(|v| v.checked_sub(d.deleted.len()))
+                        .unwrap_or(0);
+                    peak = peak.max(cur);
+                }
+            }
+            if let Some(extra) = peak.checked_sub(topology.$field.len()) {
+                drop(topology.$field.try_reserve(extra));
+            }
+        }};
+    }
+    macro_rules! reserve_rows {
+        ($field:ident) => {{
+            let mut cur = topology.$field.len();
+            let mut peak = cur;
+            for &ordinal in ordinals_newest_first.iter().rev() {
+                if let Some(t) = states.get(ordinal).and_then(|s| s.transition.as_ref()) {
+                    let d = &t.rows.$field;
+                    cur = cur
+                        .checked_add(d.set.len())
+                        .and_then(|v| v.checked_sub(d.removed.len()))
+                        .unwrap_or(0);
+                    peak = peak.max(cur);
+                }
+            }
+            if let Some(extra) = peak.checked_sub(topology.$field.len()) {
+                drop(topology.$field.try_reserve(extra));
+            }
+        }};
+    }
+    reserve_membership!(bodies);
+    reserve_membership!(regions);
+    reserve_membership!(shells);
+    reserve_membership!(faces);
+    reserve_membership!(loops);
+    reserve_membership!(coedges);
+    reserve_membership!(edges);
+    reserve_membership!(vertices);
+    reserve_membership!(points);
+    reserve_membership!(surfaces);
+    reserve_membership!(curves);
+    reserve_membership!(pcurves);
+    reserve_rows!(surface_radii);
+    reserve_rows!(surface_cylinders);
+    reserve_rows!(surface_planes);
+    reserve_rows!(surface_axes);
+    reserve_rows!(curve_axes);
+    reserve_rows!(body_regions);
+    reserve_rows!(region_shells);
+    reserve_rows!(shell_faces);
+    reserve_rows!(shell_wire_edges);
+    reserve_rows!(shell_free_vertices);
+    reserve_rows!(body_design_links);
+    reserve_rows!(face_loops);
+    reserve_rows!(loop_coedges);
+    reserve_rows!(coedge_topology);
+    reserve_rows!(edge_vertices);
+    reserve_rows!(face_surfaces);
+    reserve_rows!(vertex_points);
+    reserve_rows!(edge_curves);
+    reserve_rows!(coedge_pcurves);
+    reserve_rows!(point_positions);
+    reserve_rows!(edge_samples);
+    reserve_rows!(face_samples);
 }
 
 impl AsmHistory {
@@ -939,6 +1250,7 @@ impl AsmHistory {
             return Ok(());
         };
         let mut topology = AsmHistoricalTopology::default();
+        reserve_topology_prefix(&self.states, &order, &mut topology);
         let mut versions = Vec::new();
         for index in order.into_iter().rev() {
             let transition = self.states[index]
@@ -946,18 +1258,15 @@ impl AsmHistory {
                 .as_ref()
                 .ok_or(AsmTransitionError::MissingTransition)?;
             transition.apply_versions(&mut versions)?;
-            transition.apply_topology(&mut topology)?;
+            transition.apply_topology_sorted(&mut topology)?;
         }
         Ok(())
     }
 
-    fn walk_memberships(
-        &self,
-        order: &[usize],
-        mut visit: impl FnMut(usize, &Memberships),
-    ) -> Vec<bool> {
+    fn walk_memberships(&self, order: &[usize]) -> (Vec<bool>, Vec<bool>) {
         let mut validity = vec![false; self.states.len()];
-        let mut versions = BTreeMap::new();
+        let mut retained = vec![false; self.states.len()];
+        let mut versions = HashMap::new();
         let mut membership = Memberships::default();
         for &index in order.iter().rev() {
             let Some(transition) = self.states[index].transition.as_ref() else {
@@ -969,15 +1278,19 @@ impl AsmHistory {
                 break;
             }
             validity[index] = true;
-            visit(index, &membership);
+            retained[index] = membership.has_retained_rows();
         }
-        validity
+        (validity, retained)
+    }
+
+    fn validity_and_retained(&self, order: &[usize]) -> &(Vec<bool>, Vec<bool>) {
+        self.materialized
+            .validity_and_retained
+            .get_or_init(|| self.walk_memberships(order))
     }
 
     fn transition_validity(&self, order: &[usize]) -> &[bool] {
-        self.materialized
-            .transition_validity
-            .get_or_init(|| self.walk_memberships(order, |_, _| {}))
+        &self.validity_and_retained(order).0
     }
 
     /// State indexes of the bound chain, oldest first.
@@ -1038,13 +1351,12 @@ impl AsmHistory {
         else {
             return;
         };
-        let advanced = order[position..older]
-            .iter()
-            .rev()
-            .try_for_each(|&ordinal| {
-                let transition = self.states.get(ordinal)?.transition.as_ref()?;
-                transition.apply_topology(&mut materialized).ok()
-            });
+        let slice = &order[position..older];
+        reserve_topology_prefix(&self.states, slice, &mut materialized);
+        let advanced = slice.iter().rev().try_for_each(|&ordinal| {
+            let transition = self.states.get(ordinal)?.transition.as_ref()?;
+            transition.apply_topology_sorted(&mut materialized).ok()
+        });
         if let Some(state) = cache.get_mut(index) {
             *state = OnceLock::from(advanced.map(|()| materialized));
         }
@@ -1083,9 +1395,11 @@ impl AsmHistory {
                         break;
                     }
                 }
-                for &ordinal in order.get(position..older_position)?.iter().rev() {
+                let slice = order.get(position..older_position)?;
+                reserve_topology_prefix(&self.states, slice, &mut materialized);
+                for &ordinal in slice.iter().rev() {
                     let transition = self.states.get(ordinal)?.transition.as_ref()?;
-                    transition.apply_topology(&mut materialized).ok()?;
+                    transition.apply_topology_sorted(&mut materialized).ok()?;
                 }
                 Some(Box::new(materialized))
             })
@@ -1101,6 +1415,20 @@ impl AsmHistory {
         requested: &std::collections::HashSet<i64>,
         entities: &std::collections::HashSet<i64>,
     ) -> AsmIdentityMemberships {
+        const KINDS: [AsmHistoricalEntityKind; 12] = [
+            AsmHistoricalEntityKind::Body,
+            AsmHistoricalEntityKind::Region,
+            AsmHistoricalEntityKind::Shell,
+            AsmHistoricalEntityKind::Face,
+            AsmHistoricalEntityKind::Loop,
+            AsmHistoricalEntityKind::Coedge,
+            AsmHistoricalEntityKind::Edge,
+            AsmHistoricalEntityKind::Vertex,
+            AsmHistoricalEntityKind::Point,
+            AsmHistoricalEntityKind::Surface,
+            AsmHistoricalEntityKind::Curve,
+            AsmHistoricalEntityKind::Pcurve,
+        ];
         let Some(order) = self
             .materialized
             .order
@@ -1111,53 +1439,95 @@ impl AsmHistory {
         else {
             return AsmIdentityMemberships::default();
         };
-        let mut selected = BTreeMap::new();
-        let mut result = AsmIdentityMemberships::default();
-        let mut available = 0;
-        let validity = self.walk_memberships(order, |index, membership| {
-            if let Some(transition) = self.states[index].transition.as_ref() {
-                for slot in &transition.records.deleted {
-                    selected.remove(slot);
+        let (validity, retained) = self.validity_and_retained(order);
+        let mut tracked = entities.clone();
+        if !requested.is_empty() {
+            for &index in order.iter().rev() {
+                if !validity[index] {
+                    break;
                 }
-                for version in &transition.record_revisions {
-                    if requested.contains(&version.record_ref) {
-                        selected.insert(version.entity_ref, version.record_ref);
-                    } else {
-                        selected.remove(&version.entity_ref);
+                if let Some(transition) = self.states[index].transition.as_ref() {
+                    for version in &transition.record_revisions {
+                        if requested.contains(&version.record_ref) {
+                            tracked.insert(version.entity_ref);
+                        }
                     }
                 }
             }
-            if self.topology_scope == AsmTopologyScope::Retained && !membership.has_retained_rows()
-            {
-                return;
+        }
+        let mut active: [HashSet<i64>; 12] = std::array::from_fn(|_| HashSet::new());
+        let mut selected: HashMap<i64, i64> = HashMap::new();
+        let mut result = AsmIdentityMemberships::default();
+        let mut available = 0;
+        for &index in order.iter().rev() {
+            if !validity[index] {
+                break;
+            }
+            let Some(transition) = self.states[index].transition.as_ref() else {
+                break;
+            };
+            let topo = &transition.topology;
+            let deltas = [
+                &topo.bodies,
+                &topo.regions,
+                &topo.shells,
+                &topo.faces,
+                &topo.loops,
+                &topo.coedges,
+                &topo.edges,
+                &topo.vertices,
+                &topo.points,
+                &topo.surfaces,
+                &topo.curves,
+                &topo.pcurves,
+            ];
+            for (family, delta) in active.iter_mut().zip(deltas) {
+                if !family.is_empty() {
+                    for slot in &delta.deleted {
+                        family.remove(slot);
+                    }
+                }
+                for &slot in &delta.inserted {
+                    if tracked.contains(&slot) {
+                        family.insert(slot);
+                    }
+                }
+            }
+            if !selected.is_empty() {
+                for slot in &transition.records.deleted {
+                    selected.remove(slot);
+                }
+            }
+            for version in &transition.record_revisions {
+                if requested.contains(&version.record_ref) {
+                    selected.insert(version.entity_ref, version.record_ref);
+                } else if !selected.is_empty() {
+                    selected.remove(&version.entity_ref);
+                }
+            }
+            if self.topology_scope == AsmTopologyScope::Retained && !retained[index] {
+                continue;
             }
             available += 1;
-            for (kind, family) in membership.families() {
-                result.entities.extend(
-                    entities
-                        .iter()
-                        .filter(|slot| family.contains(slot))
-                        .map(|&slot| (index, slot, kind)),
-                );
+            for (kind, family) in KINDS.iter().copied().zip(&active) {
+                for &slot in family {
+                    if entities.contains(&slot) {
+                        result.entities.push((index, slot, kind));
+                    }
+                }
             }
-            result.revisions.extend(
-                selected
-                    .iter()
-                    .filter(|(slot, _)| membership.contains(**slot))
-                    .map(|(&entity_ref, &record_ref)| {
-                        (
-                            index,
-                            AsmEntityVersion {
-                                entity_ref,
-                                record_ref,
-                            },
-                        )
-                    }),
-            );
-        });
-        self.materialized
-            .transition_validity
-            .get_or_init(|| validity);
+            for (&entity_ref, &record_ref) in &selected {
+                if active.iter().any(|family| family.contains(&entity_ref)) {
+                    result.revisions.push((
+                        index,
+                        AsmEntityVersion {
+                            entity_ref,
+                            record_ref,
+                        },
+                    ));
+                }
+            }
+        }
         result
             .revisions
             .sort_by_key(|(index, version)| (*index, version.entity_ref));
@@ -1202,8 +1572,24 @@ impl AsmHistory {
         })
     }
 
-    /// Drop all cached materializations.
+    /// Attach a decoded record archive and subtype table for reuse by late passes.
+    pub(crate) fn cache_record_archive(&self, archive: CachedRecordArchive) {
+        drop(self.materialized.record_archive.set(Box::new(archive)));
+    }
+
+    /// Borrow the cached record archive and subtype table, when present.
+    pub(crate) fn cached_record_archive(&self) -> Option<&CachedRecordArchive> {
+        self.materialized.record_archive.get().map(Box::as_ref)
+    }
+
+    /// Drop all cached state topology materializations while retaining
+    /// immutable chain metadata and the cached record archive.
     pub(crate) fn release_topologies(&mut self) {
+        self.materialized.states = OnceLock::new();
+    }
+
+    /// Drop all derived caches (used when `states` itself is mutated).
+    pub(crate) fn invalidate_all_caches(&mut self) {
         self.materialized = MaterializedTopologies::default();
     }
 }

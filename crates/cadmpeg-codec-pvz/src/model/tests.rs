@@ -5,9 +5,10 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
-use super::{definitions, display_geometry, occurrences, placement, Placed, MAX_OCCURRENCES};
+use super::{definitions, display_geometry, occurrences, placement, Placed};
 use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{ChildOccurrence, Definition, DefinitionRole, Placement, Property, Structure};
@@ -37,13 +38,26 @@ fn structure(definitions: Vec<Definition>) -> Structure {
     }
 }
 
-fn expand(structure: &Structure) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossKind>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+/// Occurrence limit of the tests that reach it.
+const LIMIT: usize = 8;
+
+fn expand_within(structure: &Structure, max_occurrences: usize) -> (CadIr, Vec<LossNote>) {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     definitions(&ctx, structure, &mut ir, &mut losses).unwrap();
-    occurrences(&ctx, structure, &mut ir, &mut losses).unwrap();
-    (ir, losses.into_iter().map(|loss| loss.code).collect())
+    occurrences(&ctx, structure, max_occurrences, &mut ir, &mut losses).unwrap();
+    (ir, losses)
+}
+
+fn codes(losses: &[LossNote]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    losses.iter().map(|loss| loss.code.clone()).collect()
+}
+
+/// Expands `structure` with no occurrence limit.
+fn expand(structure: &Structure) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    let (ir, losses) = expand_within(structure, usize::MAX);
+    (ir, codes(&losses))
 }
 
 fn rows(placed: &Placed) -> ([[f64; 4]; 3], f64) {
@@ -180,6 +194,7 @@ fn cycles_and_extra_roots_are_reported() {
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
             PvzLossCode::StructureOccurrenceCycle.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 }
@@ -198,22 +213,45 @@ fn repeated(name: &str, child: usize, count: usize) -> Definition {
     definition
 }
 
-/// Expansion work that finishes well inside this bound is linear in the
-/// occurrence limit.
-const EXPANSION_DEADLINE: Duration = Duration::from_secs(20);
-
 #[test]
 fn exponential_instancing_stops_at_the_occurrence_limit() {
-    let fan_out = 100_000;
-    let started = Instant::now();
-    let (ir, losses) = expand(&structure(vec![
-        repeated("A", 1, fan_out),
-        repeated("B", 2, fan_out),
-        definition("C", &[]),
-    ]));
-    assert!(started.elapsed() < EXPANSION_DEADLINE);
-    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+    let (ir, losses) = expand_within(
+        &structure(vec![
+            repeated("A", 1, LIMIT),
+            repeated("B", 2, LIMIT),
+            definition("C", &[]),
+        ]),
+        LIMIT,
+    );
+    assert_eq!(ir.model.occurrences.len(), LIMIT);
+    assert_eq!(
+        codes(&losses),
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
+    assert!(
+        losses[1].message.starts_with(&format!(
+            "record pvz:model:child-occurrence#1-{} given up: ",
+            LIMIT - 1
+        )),
+        "{}",
+        losses[1].message
+    );
+    // The walk stops inside the first child of A, so every later child of A
+    // is dropped with the stopped child occurrence.
+    let dropped = losses[1]
+        .message
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge names the dropped child occurrences");
+    let mut expected = (1..LIMIT)
+        .map(|occurrence| format!("pvz:model:child-occurrence#0-{occurrence}"))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(dropped, expected);
 }
 
 /// Each definition's children are walked once (§8.1), so the walk is linear
@@ -221,30 +259,78 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
 /// out without cutting off the other children.
 #[test]
 fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
-    let started = Instant::now();
-    let (ir, losses) = expand(&structure(vec![
-        repeated("ROOT", 1, MAX_OCCURRENCES / 2),
-        repeated("LOOP", 1, MAX_OCCURRENCES),
-    ]));
-    assert!(started.elapsed() < EXPANSION_DEADLINE);
-    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES / 2);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceCycle.kind()]);
+    let (ir, losses) = expand_within(
+        &structure(vec![
+            repeated("ROOT", 1, LIMIT / 2),
+            repeated("LOOP", 1, LIMIT),
+        ]),
+        LIMIT,
+    );
+    assert_eq!(ir.model.occurrences.len(), LIMIT / 2);
+    let mut expected = vec![PvzLossCode::StructureOccurrenceCycle.kind()];
+    expected.extend(std::iter::repeat_n(
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        LIMIT,
+    ));
+    assert_eq!(codes(&losses), expected);
+    assert_eq!(
+        losses[0].message,
+        format!("{LIMIT} child occurrences close a definition cycle and were left out")
+    );
 }
+
+/// Bound on the expansion time of [`MANY_ROOTS`] root definitions.
+const EXPANSION_DEADLINE: Duration = Duration::from_secs(20);
+/// Root count at which attaching occurrences in quadratic time runs past
+/// [`EXPANSION_DEADLINE`].
+const MANY_ROOTS: usize = 100_001;
 
 #[test]
 fn roots_count_toward_the_occurrence_limit() {
-    let roots: Vec<_> = (0..=MAX_OCCURRENCES)
-        .map(|_| definition("ROOT", &[]))
-        .collect();
-    let (ir, losses) = expand(&structure(roots));
-    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES);
+    let started = Instant::now();
+    let roots: Vec<_> = (0..MANY_ROOTS).map(|_| definition("ROOT", &[])).collect();
+    let (ir, losses) = expand_within(&structure(roots), LIMIT);
+    assert!(started.elapsed() < EXPANSION_DEADLINE);
+    assert_eq!(ir.model.occurrences.len(), LIMIT);
     assert_eq!(
-        losses,
+        codes(&losses),
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
             PvzLossCode::StructureOccurrenceTruncated.kind(),
         ]
     );
+}
+
+#[test]
+fn the_document_root_over_several_leaf_tops_is_charged_once() {
+    let tops = structure(vec![definition("A", &[]), definition("B", &[])]);
+    // Two definitions, the two occurrences placing them, and the document.
+    let expand_within = |max_entities| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = max_entities;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the service input limit");
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        definitions(&ctx, &tops, &mut ir, &mut losses)?;
+        occurrences(&ctx, &tops, LIMIT, &mut ir, &mut losses)?;
+        Ok::<_, CodecError>(ir)
+    };
+    let error = expand_within(4).expect_err("five entities exceed four");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::Entities
+            && limit.operation == "pvz_document"));
+    let ir = expand_within(5).expect("five entities fit five");
+    assert_eq!(ir.entity_count(), 5);
+    let roots: Vec<_> = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .map(|definition| definition.id.to_string())
+        .collect();
+    assert_eq!(roots, ["pvz:model:document#0"]);
 }
 
 fn retained_refusal(result: &Result<(), CodecError>) -> bool {
@@ -256,14 +342,16 @@ fn retained_refusal(result: &Result<(), CodecError>) -> bool {
 
 #[test]
 fn a_shared_name_is_charged_each_time_it_enters_the_model() {
-    let name: Rc<str> = "N".repeat(60_000).into();
-    let shared: Vec<_> = (0..100_000)
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    // One charge of the name fits the retained allowance, and two do not.
+    let length = usize::try_from(ctx.retained_bytes_available() / 2 + 1).unwrap();
+    let name: Rc<str> = "N".repeat(length).into();
+    let shared: Vec<_> = (0..2)
         .map(|_| Definition {
             name: Rc::clone(&name),
             ..definition("", &[])
         })
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     assert!(retained_refusal(&definitions(
@@ -273,15 +361,16 @@ fn a_shared_name_is_charged_each_time_it_enters_the_model() {
         &mut losses
     )));
 
-    let mut root = repeated("ROOT", 1, 100_000);
+    let mut root = repeated("ROOT", 1, 2);
     for child in &mut root.occurrences {
         child.feature_id = Rc::clone(&name);
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     assert!(retained_refusal(&occurrences(
         &ctx,
         &structure(vec![root, definition("LEAF", &[])]),
+        LIMIT,
         &mut ir,
         &mut losses
     )));
@@ -320,7 +409,7 @@ fn properties_become_bom_properties_keyed_by_stream() {
 
 #[test]
 fn a_mesh_with_a_non_finite_vertex_is_rejected() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let geometry = MemberGeometry {
         appearances: crate::ol::AppearanceTable::default(),
         meshes: vec![
@@ -342,16 +431,26 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         ],
         has_exact: false,
         residue: crate::ol::MemberResidue::default(),
+        given_up: Vec::new(),
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let body = display_geometry(&ctx, "part.ol", &geometry, None, &mut ir, &mut losses)
-        .unwrap()
-        .unwrap();
-    assert_eq!(body.as_str(), "pvz:model:body#part.ol");
+    let part: cadmpeg_ir::ids::ProductDefinitionId =
+        "pvz:model:product-definition#part".try_into().unwrap();
+    display_geometry(
+        &ctx,
+        "part.ol",
+        &geometry,
+        None,
+        Some(part.clone()),
+        &mut ir,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(ir.geometry.bodies.is_empty());
     assert_eq!(ir.model.tessellations.len(), 1);
     let mesh = &ir.model.tessellations[0];
-    assert_eq!(mesh.body.as_ref(), Some(&body));
+    assert_eq!(mesh.of, cadmpeg_ir::tessellation::Meshed::definition(part));
     assert_eq!(
         mesh.vertices()[1].get(),
         cadmpeg_ir::math::Point3::new(f64::from(0.001_f32) * 1000.0, 0.0, 0.0)
@@ -361,6 +460,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         [
             PvzLossCode::TessellationRecordsUndecoded.kind(),
             PvzLossCode::TessellationMeshRejected.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 
@@ -368,11 +468,9 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         meshes: Vec::new(),
         ..geometry
     };
-    assert!(
-        display_geometry(&ctx, "e.ol", &empty, None, &mut ir, &mut Vec::new())
-            .unwrap()
-            .is_none()
-    );
+    let meshes = ir.model.tessellations.len();
+    display_geometry(&ctx, "e.ol", &empty, None, None, &mut ir, &mut Vec::new()).unwrap();
+    assert_eq!(ir.model.tessellations.len(), meshes);
 }
 
 #[test]
@@ -407,7 +505,7 @@ fn placement_defects_and_deep_chains_are_reported() {
     );
 
     let depth = usize::try_from(
-        cadmpeg_test_support::service_decode_context()
+        cadmpeg_core::decode::test_support::service_decode_context()
             .policy()
             .limits
             .max_recursion_depth,
@@ -427,7 +525,13 @@ fn placement_defects_and_deep_chains_are_reported() {
     // Each definition above the depth limit places the next; the root
     // definition, at the top, is placed by no occurrence (§8.1).
     assert_eq!(ir.model.occurrences.len(), depth - 1);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+    assert_eq!(
+        losses,
+        [
+            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
 }
 
 #[test]
@@ -457,12 +561,16 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
             (STREAM_SURFACE_TESSELLATION, surface),
         ],
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let geometry =
-        crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let geometry = crate::ol::decode(
+        &ctx,
+        "hot.ol",
+        cadmpeg_core::decode::View::over_retained(&bytes),
+    )
+    .unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    display_geometry(&ctx, "hot.ol", &geometry, None, &mut ir, &mut losses).unwrap();
+    display_geometry(&ctx, "hot.ol", &geometry, None, None, &mut ir, &mut losses).unwrap();
     assert!(ir.model.appearances[0].base_color.is_none());
     assert_eq!(ir.model.appearance_bindings.len(), 1);
     assert_eq!(

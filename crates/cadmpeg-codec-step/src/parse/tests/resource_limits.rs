@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nesting follows the session depth; value-node limits omit the bounded item.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -74,6 +74,20 @@ fn parse_with_service(
 ) -> (crate::parse::Exchange, Vec<crate::parse::ParseDiagnostic>) {
     with_service_context(source.as_bytes(), crate::parse::parse)
         .expect("a bounded expansion omits items instead of refusing the decode")
+}
+
+/// The records dropped with the one given-up statement that starts with
+/// `text`.
+fn given_up_with(exchange: &crate::parse::Exchange, source: &str, text: &str) -> Vec<String> {
+    let statements = exchange
+        .given_up()
+        .iter()
+        .filter(|statement| source[statement.span.clone()].starts_with(text))
+        .collect::<Vec<_>>();
+    let [statement] = statements.as_slice() else {
+        panic!("one given-up statement starts with {text}");
+    };
+    statement.dropped.clone()
 }
 
 fn has_diagnostic(
@@ -312,6 +326,28 @@ fn repeated_bounded_anchor_items_stop_before_copying() {
             None
         );
         assert_eq!(resolver.remaining_nodes, 10_000 - 8_191);
+    });
+}
+
+#[test]
+fn aggregate_anchor_materialization_omits_the_records_past_the_total() {
+    with_service_context(b"", |_, ctx| {
+        let anchors = doubling_anchor_values(3);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
+        // Each copy of `a3` takes 31 value nodes, so five copies fit.
+        resolver.remaining_nodes = 5 * 31 + 30;
+        for copy in 1..=8 {
+            let mut item = [Value::Resource("#a3".into())];
+            assert_eq!(
+                resolver
+                    .resolve_item(item.iter_mut())
+                    .expect("a node limit is not an error")
+                    .as_deref(),
+                (copy > 5).then_some(ANCHOR_BOUND),
+                "copy {copy}"
+            );
+        }
+        assert_eq!(resolver.remaining_nodes, 30);
     });
 }
 
@@ -575,16 +611,8 @@ fn reference_expansion_limit_omits_the_record_and_its_dependents() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("instance #1 omitted: {REFERENCE_BOUND}; exact source retained"),
     ));
-    assert!(exchange
-        .omitted_spans()
-        .iter()
-        .any(|span| source[span.clone()].starts_with("#1=ITEM((@10,")));
+    assert_eq!(given_up_with(&exchange, &source, "#1=ITEM((@10,"), ["#3"]);
     assert!(exchange.records().contains_key(&2));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::RecordOmitted,
-        "instance #3 omitted: unresolved instance reference #1; exact source retained",
-    ));
     assert!(!exchange.records().contains_key(&3));
 }
 
@@ -602,11 +630,7 @@ fn reference_to_a_bounded_anchor_omits_the_record() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("anchor <a5> omitted: {ANCHOR_BOUND}; exact source retained"),
     ));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        "instance #1 omitted: REFERENCE @10 names anchor <a5>, omitted at its expansion limit; exact source retained",
-    ));
+    assert_eq!(given_up_with(&exchange, &source, "<a5>="), ["#1"]);
     assert!(!exchange.records().contains_key(&1));
     assert!(exchange.records().contains_key(&2));
 }
@@ -625,11 +649,7 @@ fn anchor_naming_a_bounded_instance_is_omitted_not_refused() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("instance #1 omitted: {ANCHOR_BOUND}; exact source retained"),
     ));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        "anchor <b> omitted: depends on instance #1, omitted at its expansion limit; exact source retained",
-    ));
+    assert_eq!(given_up_with(&exchange, &source, "#1="), ["<b>"]);
     assert!(exchange
         .omitted_spans()
         .iter()
@@ -668,21 +688,24 @@ fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occur
     let bound = format!(
         "{expansion} expansion exceeds {allowance} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)"
     );
+    let bounded = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.kind == ParseDiagnosticKind::ExpansionBounded)
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<HashSet<_>>();
     for id in kept + 1..=LARGE_STRING_RECORDS {
         assert!(
-            has_diagnostic(
-                &diagnostics,
-                ParseDiagnosticKind::ExpansionBounded,
-                &format!("instance #{id} omitted: {bound}; exact source retained"),
+            bounded.contains(
+                format!("instance #{id} omitted: {bound}; exact source retained").as_str()
             ),
             "#{id}"
         );
     }
     let last = format!("#{LARGE_STRING_RECORDS}=ITEM({occurrence});");
     assert!(exchange
-        .omitted_spans()
+        .given_up()
         .iter()
-        .any(|span| source[span.clone()] == last));
+        .any(|statement| source[statement.span.clone()] == last));
 }
 
 #[test]

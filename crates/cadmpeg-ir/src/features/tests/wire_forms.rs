@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::examples::unit_cube;
-use crate::features::{DistinctMembers, FeatureContent};
-use crate::features::{PlanarProfileRef, ProfileRef};
+use crate::features::profiles::{PlanarProfileRef, ProfileRef};
+use crate::features::selections::DistinctMembers;
+use crate::features::FeatureContent;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json as json_wire;
 
 #[test]
 fn complete_face_motion_preserves_its_literal_affine_wire() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     use crate::transform::Transform;
 
     let motion = FaceMotion::Transform {
         transform: Transform::affine([[0., -1., 0., 2.5], [1., 0., 0., -5.], [0., 0., 1., 1.25]])
             .unwrap(),
     };
-    let expected = serde_json::json!({
+    let expected = cadmpeg_core::json!({
         "kind": "transform",
         "transform": [
             [0.0, -1.0, 0.0, 2.5],
@@ -22,18 +24,18 @@ fn complete_face_motion_preserves_its_literal_affine_wire() {
             [0.0, 0.0, 1.0, 1.25]
         ]
     });
-    assert_eq!(serde_json::to_value(&motion).unwrap(), expected);
+    assert_eq!(json_wire::to_value(&motion).unwrap(), expected);
     assert_eq!(
-        serde_json::from_value::<FaceMotion>(expected).unwrap(),
+        json_wire::from_value::<FaceMotion>(expected).unwrap(),
         motion
     );
-    let wire = serde_json::to_string(&motion).unwrap();
+    let wire = json_wire::to_string(&motion).unwrap();
     assert_eq!(serde_json::from_str::<FaceMotion>(&wire).unwrap(), motion);
 }
 
 #[test]
 fn complete_face_motion_rejects_malformed_or_nonfinite_wire() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     for wire in [
         r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0]]}"#,
         r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0],[0,0,1,1e999]]}"#,
@@ -46,7 +48,7 @@ fn complete_face_motion_rejects_malformed_or_nonfinite_wire() {
 
 #[test]
 fn complete_face_motion_survives_identity_rewrite() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     use crate::transform::Transform;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -87,24 +89,24 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
     };
-    let mut wire = serde_json::to_value(&feature).unwrap();
+    let mut wire = json_wire::to_value(&feature).unwrap();
     assert_eq!(
-        serde_json::from_value::<Feature>(wire.clone()).unwrap(),
+        json_wire::from_value::<Feature>(wire.clone()).unwrap(),
         feature
     );
 
-    wire["regeneration_parent"] = serde_json::json!("test:model:feature#parent");
-    let error = serde_json::from_value::<Feature>(wire)
+    wire["regeneration_parent"] = cadmpeg_core::json!("test:model:feature#parent");
+    let error = json_wire::from_value::<Feature>(wire)
         .expect_err("a parent edge belongs to the model that owns it")
         .to_string();
     assert!(
@@ -115,15 +117,17 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
 
 #[test]
 fn a_datum_plane_reference_states_which_support_it_names() {
-    use crate::features::{DatumPlaneReference, FaceSelection, FeatureSupportPlaneFrame};
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::geometry::FeatureSupportPlaneFrame;
+    use crate::features::selections::FaceSelection;
 
     let feature = DatumPlaneReference::Feature {
         feature: crate::features::FeatureId::mint("test:model:feature#feature")
             .expect("identity grammar"),
     };
     assert_eq!(
-        serde_json::to_value(&feature).unwrap(),
-        serde_json::json!({
+        json_wire::to_value(&feature).unwrap(),
+        cadmpeg_core::json!({
             "kind": "feature",
             "feature": "test:model:feature#feature"
         })
@@ -135,8 +139,8 @@ fn a_datum_plane_reference_states_which_support_it_names() {
         ]),
     };
     assert_eq!(
-        serde_json::to_value(&face).unwrap(),
-        serde_json::json!({
+        json_wire::to_value(&face).unwrap(),
+        cadmpeg_core::json!({
             "kind": "face",
             "face": {"kind": "faces", "value": ["test:model:face#face"]}
         })
@@ -151,8 +155,8 @@ fn a_datum_plane_reference_states_which_support_it_names() {
         .unwrap(),
     };
     assert_eq!(
-        serde_json::to_value(&resolved).unwrap(),
-        serde_json::json!({
+        json_wire::to_value(&resolved).unwrap(),
+        cadmpeg_core::json!({
             "kind": "resolved_plane",
             "frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -163,28 +167,28 @@ fn a_datum_plane_reference_states_which_support_it_names() {
     );
 
     for reference in [&feature, &face, &resolved] {
-        let wire = serde_json::to_value(reference).unwrap();
+        let wire = json_wire::to_value(reference).unwrap();
         assert_eq!(
-            &serde_json::from_value::<DatumPlaneReference>(wire).unwrap(),
+            &json_wire::from_value::<DatumPlaneReference>(wire).unwrap(),
             reference
         );
     }
 
-    let mut legacy = serde_json::to_value(&resolved).unwrap();
-    legacy["face"] = serde_json::json!({"kind": "unresolved"});
-    let error = serde_json::from_value::<DatumPlaneReference>(legacy)
+    let mut legacy = json_wire::to_value(&resolved).unwrap();
+    legacy["face"] = cadmpeg_core::json!({"kind": "unresolved"});
+    let error = json_wire::from_value::<DatumPlaneReference>(legacy)
         .unwrap_err()
         .to_string();
     assert!(error.contains("face"), "{error}");
 
-    let mut stray = serde_json::to_value(&face).unwrap();
-    stray["origin"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
-    let error = serde_json::from_value::<DatumPlaneReference>(stray)
+    let mut stray = json_wire::to_value(&face).unwrap();
+    stray["origin"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0});
+    let error = json_wire::from_value::<DatumPlaneReference>(stray)
         .unwrap_err()
         .to_string();
     assert!(error.contains("origin"), "{error}");
 
-    let error = serde_json::from_value::<DatumPlaneReference>(serde_json::json!(
+    let error = json_wire::from_value::<DatumPlaneReference>(cadmpeg_core::json!(
         "test:model:feature#feature"
     ))
     .unwrap_err()
@@ -194,14 +198,13 @@ fn a_datum_plane_reference_states_which_support_it_names() {
 
 #[test]
 fn feature_extents_round_trip_through_json() {
-    use crate::ids::FaceId;
-    use crate::{
-        features::{
-            AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, LinearTermination,
-            RevolveExtent,
-        },
-        scalar::Length,
+    use crate::features::extents::{
+        AngularTermination, ExtrudeExtent, ExtrudeSide, LinearTermination,
     };
+    use crate::features::revolve::RevolveExtent;
+    use crate::features::selections::FaceSelection;
+    use crate::ids::FaceId;
+    use crate::scalar::Length;
 
     let extents = vec![
         ExtrudeExtent::OneSided {
@@ -244,7 +247,7 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
-    let json = serde_json::to_string(&extents).unwrap();
+    let json = json_wire::to_string(&extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<ExtrudeExtent>>(&json).unwrap(),
         extents
@@ -270,7 +273,7 @@ fn feature_extents_round_trip_through_json() {
             },
         },
     ];
-    let json = serde_json::to_string(&revolve_extents).unwrap();
+    let json = json_wire::to_string(&revolve_extents).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<RevolveExtent>>(&json).unwrap(),
         revolve_extents
@@ -279,36 +282,36 @@ fn feature_extents_round_trip_through_json() {
 
 #[test]
 fn termination_families_preserve_wire_and_reject_cross_family_variants() {
-    use crate::features::{AngularTermination, LinearTermination};
+    use crate::features::extents::{AngularTermination, LinearTermination};
 
-    let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
-    let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
+    let blind_wire = cadmpeg_core::json!({"kind": "blind", "length": 12.5});
+    let blind: LinearTermination = json_wire::from_value(blind_wire.clone()).unwrap();
     assert_eq!(
         blind,
         LinearTermination::Blind {
             length: crate::scalar::NonZeroLength::new(12.5).unwrap()
         }
     );
-    assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
-    assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
+    assert_eq!(json_wire::to_value(blind).unwrap(), blind_wire);
+    assert!(json_wire::from_value::<AngularTermination>(blind_wire).is_err());
 
-    let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
-    let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
+    let angle_wire = cadmpeg_core::json!({"kind": "angle", "angle": 1.25});
+    let angle: AngularTermination = json_wire::from_value(angle_wire.clone()).unwrap();
     assert_eq!(
         angle,
         AngularTermination::Angle {
             angle: crate::scalar::PositiveAngle::new(1.25).unwrap()
         }
     );
-    assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
-    assert!(serde_json::from_value::<LinearTermination>(angle_wire).is_err());
+    assert_eq!(json_wire::to_value(angle).unwrap(), angle_wire);
+    assert!(json_wire::from_value::<LinearTermination>(angle_wire).is_err());
 }
 
 #[test]
 fn to_plane_termination_keeps_its_frame_and_native_record() {
-    use crate::features::{AngularTermination, LinearTermination};
+    use crate::features::extents::{AngularTermination, LinearTermination};
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "to_plane",
         "plane": {
             "origin": {"x": 10.0, "y": -20.0, "z": 5.0},
@@ -317,7 +320,7 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
         },
         "native": "native:plane"
     });
-    let termination: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
+    let termination: LinearTermination = json_wire::from_value(wire.clone()).unwrap();
     let LinearTermination::ToPlane { plane, native, .. } = &termination else {
         panic!("not a to-plane termination: {termination:?}");
     };
@@ -326,30 +329,30 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
         crate::math::Vector3::new(0.0, 0.0, 2.0)
     );
     assert_eq!(native.as_str(), "native:plane");
-    assert_eq!(serde_json::to_value(&termination).unwrap(), wire);
-    let angular: AngularTermination = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(json_wire::to_value(&termination).unwrap(), wire);
+    let angular: AngularTermination = json_wire::from_value(wire.clone()).unwrap();
     assert!(matches!(angular, AngularTermination::ToPlane { .. }));
-    assert_eq!(serde_json::to_value(&angular).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&angular).unwrap(), wire);
 
     let mut blank = wire.clone();
-    blank["native"] = serde_json::json!(" ");
+    blank["native"] = cadmpeg_core::json!(" ");
     let mut missing = wire.clone();
     missing.as_object_mut().unwrap().remove("native");
     let mut oblique = wire.clone();
-    oblique["plane"]["u_axis"] = serde_json::json!({"x": 1.0, "y": 0.0, "z": 1.0});
+    oblique["plane"]["u_axis"] = cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 1.0});
     let mut degenerate = wire;
-    degenerate["plane"]["normal"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
+    degenerate["plane"]["normal"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0});
     for refused in [blank, missing, oblique, degenerate] {
-        assert!(serde_json::from_value::<LinearTermination>(refused.clone()).is_err());
-        assert!(serde_json::from_value::<AngularTermination>(refused).is_err());
+        assert!(json_wire::from_value::<LinearTermination>(refused.clone()).is_err());
+        assert!(json_wire::from_value::<AngularTermination>(refused).is_err());
     }
 }
 
 #[test]
 fn from_plane_start_keeps_its_frame_and_native_record() {
-    use crate::features::ExtrudeStart;
+    use crate::features::extents::ExtrudeStart;
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "from_plane",
         "plane": {
             "origin": {"x": 0.0, "y": 0.0, "z": 40.0},
@@ -358,32 +361,31 @@ fn from_plane_start_keeps_its_frame_and_native_record() {
         },
         "native": "native:plane"
     });
-    let start: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
+    let start: ExtrudeStart = json_wire::from_value(wire.clone()).unwrap();
     assert!(matches!(
         &start,
         ExtrudeStart::FromPlane { native, .. } if native.as_str() == "native:plane"
     ));
-    assert_eq!(serde_json::to_value(&start).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&start).unwrap(), wire);
     let mut with_offset = wire;
-    with_offset["offset"] = serde_json::json!(1.0);
-    assert!(serde_json::from_value::<ExtrudeStart>(with_offset).is_err());
+    with_offset["offset"] = cadmpeg_core::json!(1.0);
+    assert!(json_wire::from_value::<ExtrudeStart>(with_offset).is_err());
 }
 
 /// The plane-to-plane extrusion example of `docs/cad-ir.md`.
 #[test]
 fn plane_to_plane_extrusion_example_round_trips() {
-    use crate::features::{
-        ExtrudeExtent, ExtrudeStart, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use crate::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let plane = |z: f64| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "origin": {"x": 0.0, "y": 0.0, "z": z},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
             "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
         })
     };
-    let wire = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
+    let wire = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
         "profile": {"kind": "planar", "value": {"kind": "native", "value": "native:profile"}},
         "direction": {"kind": "profile_normal"},
         "start": {
@@ -403,7 +405,7 @@ fn plane_to_plane_extrusion_example_round_trips() {
         },
         "op": "join"
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(wire.clone()).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = &definition
     else {
         panic!("not an extrusion: {definition:?}");
@@ -419,16 +421,16 @@ fn plane_to_plane_extrusion_example_round_trips() {
         panic!("not a to-plane termination: {:?}", side.termination);
     };
     assert_eq!(end.origin().get(), Point3::new(0.0, 0.0, 100.0));
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
+    assert_eq!(json_wire::to_value(&definition).unwrap(), wire);
 }
 
 #[test]
 fn loft_sections_preserve_profile_shape() {
-    use crate::features::{
-        BooleanOp, FeatureDefinition, FeatureOperation, LoftSection, PlanarProfileRef, ProfileRef,
-    };
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
-    let wire = serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {
+    let wire = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "loft", "value": {
         "sections": [{"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:section"}}}],
         "guidance": {"kind": "guides", "value": []},
         "op": "new_body",
@@ -437,7 +439,7 @@ fn loft_sections_preserve_profile_shape() {
         "ruled": false,
         "linearize": false
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(wire).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(wire).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -449,25 +451,23 @@ fn loft_sections_preserve_profile_shape() {
         }) if sections == &vec![LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native("native:section".into())))]
             && guides.is_empty()
     ));
-    let encoded = serde_json::to_value(definition).unwrap();
+    let encoded = json_wire::to_value(definition).unwrap();
     assert_eq!(
         encoded["value"]["value"]["sections"][0],
-        serde_json::json!({"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:section"}}})
+        cadmpeg_core::json!({"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:section"}}})
     );
 }
 
 #[test]
 fn generated_sweep_sections_round_trip_and_validate() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedSweepSection, SweepMode,
-        SweepSection,
-    };
+    use crate::features::sweeps::{GeneratedSweepSection, SweepMode, SweepSection};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: crate::features::SweepShape::Solid {
-            op: crate::features::SolidSweepOperation::NewBody,
+        shape: crate::features::sweeps::SweepShape::Solid {
+            op: crate::features::sweeps::SolidSweepOperation::NewBody,
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                region: crate::features::SweepCircularRegion::new(
+                region: crate::features::sweeps::SweepCircularRegion::new(
                     crate::scalar::PositiveLength::new(3.0).unwrap(),
                     Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
                 )
@@ -490,7 +490,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
         scale: None,
         allow_multi_profile_faces: None,
     });
-    let json = serde_json::to_string(&definition).unwrap();
+    let json = json_wire::to_string(&definition).unwrap();
     assert!(json.contains("\"kind\":\"generated\""));
     assert!(json.contains("\"kind\":\"circular_region\""));
     assert_eq!(
@@ -513,21 +513,22 @@ fn generated_sweep_sections_round_trip_and_validate() {
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
         ir.finalize();
+        crate::examples::add_document_root(&mut ir);
         validate_neutral(&ir, Vec::new()).expect("validate the neutral model")
     };
     let report = validate_definition(definition.clone());
     assert!(report.is_ok(), "{report:#?}");
 
-    assert!(crate::features::SweepCircularRegion::new(
+    assert!(crate::features::sweeps::SweepCircularRegion::new(
         crate::scalar::PositiveLength::new(2.0).unwrap(),
         Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
     )
     .is_err());
-    assert!(crate::features::SweepCircularRegion::new(
+    assert!(crate::features::sweeps::SweepCircularRegion::new(
         crate::scalar::PositiveLength::new(3.0).unwrap(),
         Some(crate::scalar::PositiveLength::new(3.5).unwrap()),
     )
@@ -545,15 +546,14 @@ fn generated_sweep_sections_round_trip_and_validate() {
 
 #[test]
 fn full_round_fillet_keeps_automatic_side_semantics() {
-    use crate::features::{
-        edge_treatments::FullRoundSideSelection, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureOperation,
-    };
+    use crate::features::edge_treatments::FullRoundSideSelection;
+    use crate::features::selections::FaceSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let center = ir.geometry.faces[0].id.clone();
     let definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-        groups: crate::features::NonEmptyMembers::one(
+        groups: crate::features::selections::NonEmptyMembers::one(
             crate::features::edge_treatments::FullRoundFilletGroup::new(
                 FaceSelection::Faces(vec![center.clone()]),
                 FullRoundSideSelection::Automatic,
@@ -563,7 +563,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         ),
     });
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
+        json_wire::from_value::<FeatureDefinition>(json_wire::to_value(&definition).unwrap())
             .unwrap(),
         definition
     );
@@ -579,7 +579,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         source_text: None,
         source_content: FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
     assert!(!validate_neutral(&ir, Vec::new())
@@ -601,10 +601,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
 
 #[test]
 fn flex_modes_round_trip_and_validate() {
-    use crate::{
-        features::FlexMode,
-        scalar::{Angle, Length},
-    };
+    use crate::features::direct_edit::FlexMode;
+    use crate::scalar::{Angle, Length};
 
     let modes = vec![
         FlexMode::Bending {
@@ -620,68 +618,66 @@ fn flex_modes_round_trip_and_validate() {
             distance: Length::new(12.0).unwrap(),
         },
     ];
-    let json = serde_json::to_string(&modes).unwrap();
+    let json = json_wire::to_string(&modes).unwrap();
     assert_eq!(serde_json::from_str::<Vec<FlexMode>>(&json).unwrap(), modes);
 }
 
 #[test]
 fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
-    use crate::features::{
-        holes::{HoleKind, PartialPair},
-        FlexMode,
-    };
+    use crate::features::direct_edit::FlexMode;
+    use crate::features::holes::{HoleKind, PartialPair};
 
-    let counterbore = serde_json::json!({
+    let counterbore = cadmpeg_core::json!({
         "kind": "partial_counterbore",
         "dimension": {"kind": "diameter", "diameter": 10.0}
     });
-    let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
+    let kind: HoleKind = json_wire::from_value(counterbore.clone()).unwrap();
     assert_eq!(
         kind,
         HoleKind::PartialCounterbore(PartialPair::First(
             crate::scalar::PositiveLength::new(10.0).unwrap()
         ))
     );
-    assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
+    assert_eq!(json_wire::to_value(kind).unwrap(), counterbore);
 
-    let flex = serde_json::json!({"kind": "unresolved", "form": "twisting"});
-    let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
+    let flex = cadmpeg_core::json!({"kind": "unresolved", "form": "twisting"});
+    let mode: FlexMode = json_wire::from_value(flex.clone()).unwrap();
     assert_eq!(
         mode,
         FlexMode::Unresolved {
-            form: Some(crate::features::FlexForm::Twisting)
+            form: Some(crate::features::direct_edit::FlexForm::Twisting)
         }
     );
-    assert_eq!(serde_json::to_value(mode).unwrap(), flex);
+    assert_eq!(json_wire::to_value(mode).unwrap(), flex);
 }
 
 #[test]
 fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
     use crate::features::holes::{HoleForm, HoleKind};
 
-    let unresolved = serde_json::json!({"kind": "unresolved", "form": "counterbore"});
-    let kind: HoleKind = serde_json::from_value(unresolved.clone()).unwrap();
+    let unresolved = cadmpeg_core::json!({"kind": "unresolved", "form": "counterbore"});
+    let kind: HoleKind = json_wire::from_value(unresolved.clone()).unwrap();
     assert_eq!(kind, HoleKind::Unresolved(Some(HoleForm::Counterbore)));
-    assert_eq!(serde_json::to_value(kind).unwrap(), unresolved);
+    assert_eq!(json_wire::to_value(kind).unwrap(), unresolved);
 
     let mut with_dimension = unresolved.clone();
-    with_dimension["countersink_angle"] = serde_json::json!(0.5);
-    let error = serde_json::from_value::<HoleKind>(with_dimension)
+    with_dimension["countersink_angle"] = cadmpeg_core::json!(0.5);
+    let error = json_wire::from_value::<HoleKind>(with_dimension)
         .unwrap_err()
         .to_string();
     assert!(error.contains("countersink_angle"), "{error}");
 
-    let formless = serde_json::json!({"kind": "unresolved"});
-    let kind: HoleKind = serde_json::from_value(formless.clone()).unwrap();
+    let formless = cadmpeg_core::json!({"kind": "unresolved"});
+    let kind: HoleKind = json_wire::from_value(formless.clone()).unwrap();
     assert_eq!(kind, HoleKind::Unresolved(None));
-    assert_eq!(serde_json::to_value(kind).unwrap(), formless);
+    assert_eq!(json_wire::to_value(kind).unwrap(), formless);
 }
 
 #[test]
 fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
-    use crate::features::FlexMode;
+    use crate::features::direct_edit::FlexMode;
 
-    assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
+    assert!(json_wire::from_value::<FlexMode>(cadmpeg_core::json!({
         "kind": "unresolved",
         "form": "twisting",
         "factor": 2.0
@@ -696,7 +692,7 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
         FeatureDefinition, FeatureOperation,
     };
 
-    let standard = serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {
+    let standard = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "hole", "value": {
         "shape": {
             "construction": {"kind": "form", "value": {
             "kind": {"kind": "simple"},
@@ -713,16 +709,16 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
             }}
         }
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(standard.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if matches!(shape.construction(),
             HoleConstruction::Form { kind: HoleKind::Simple, specification: Some(specification) }
             if matches!(specification.as_ref(), HoleSpecification::Clearance { .. }))
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), standard);
+    assert_eq!(json_wire::to_value(definition).unwrap(), standard);
 
-    let native_thread = serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {
+    let native_thread = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "hole", "value": {
         "shape": {
             "construction": {"kind": "native_thread", "value": {
                 "major_diameter": 8.0,
@@ -733,12 +729,12 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
             "diameter": 6.0
         }
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(native_thread.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if matches!(shape.construction(), HoleConstruction::NativeThread { .. })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
+    assert_eq!(json_wire::to_value(definition).unwrap(), native_thread);
 }
 
 #[test]
@@ -749,24 +745,22 @@ fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
     where
         T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
     {
-        let admitted: T = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        let admitted: T = json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(admitted).unwrap(), wire);
 
         let mut unknown = wire;
-        unknown["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<T>(unknown)
-            .unwrap_err()
-            .to_string();
+        unknown["zz_bogus"] = cadmpeg_core::json!(1);
+        let error = json_wire::from_value::<T>(unknown).unwrap_err().to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
-    round_trips_and_rejects_unknown_keys::<HoleKind>(serde_json::json!({"kind": "simple"}));
-    round_trips_and_rejects_unknown_keys::<HoleBottom>(serde_json::json!({"kind": "flat"}));
+    round_trips_and_rejects_unknown_keys::<HoleKind>(cadmpeg_core::json!({"kind": "simple"}));
+    round_trips_and_rejects_unknown_keys::<HoleBottom>(cadmpeg_core::json!({"kind": "flat"}));
     round_trips_and_rejects_unknown_keys::<HoleThreadDepth>(
-        serde_json::json!({"kind": "hole_depth"}),
+        cadmpeg_core::json!({"kind": "hole_depth"}),
     );
     round_trips_and_rejects_unknown_keys::<HoleThreadDepth>(
-        serde_json::json!({"kind": "tapped_standard"}),
+        cadmpeg_core::json!({"kind": "tapped_standard"}),
     );
 }
 
@@ -774,24 +768,24 @@ fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
 fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
     use crate::features::{FeatureDefinition, FeatureOperation};
 
-    let hole = serde_json::json!({"kind": "hole", "value": {
+    let hole = cadmpeg_core::json!({"kind": "hole", "value": {
         "shape": {"construction": {"kind": "form", "value": {"kind": {"kind": "simple"}}}, "diameter": 3.0}
     }});
-    assert!(serde_json::from_value::<FeatureDefinition>(
-        serde_json::json!({"kind": "operation", "value": hole.clone()})
+    assert!(json_wire::from_value::<FeatureDefinition>(
+        cadmpeg_core::json!({"kind": "operation", "value": hole.clone()})
     )
     .is_ok());
 
     let mut beside_shape = hole.clone();
-    beside_shape["value"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(beside_shape)
+    beside_shape["value"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<FeatureOperation>(beside_shape)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 
     let mut inside_shape = hole;
-    inside_shape["value"]["shape"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside_shape)
+    inside_shape["value"]["shape"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<FeatureOperation>(inside_shape)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -802,7 +796,7 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     use crate::features::{holes::HoleSpecification, FeatureDefinition};
 
     let specification = |kind| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": kind,
             "standard": "ISO metric",
             "modeled": false,
@@ -815,24 +809,24 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     // Thread data has no key on the clearance arm and a fit has none on the
     // threaded arm, so each is an unknown field rather than a refused value.
     for (kind, orphan, value) in [
-        ("clearance", "class", serde_json::json!("6H")),
-        ("clearance", "pitch", serde_json::json!(1.25)),
-        ("clearance", "major_diameter", serde_json::json!(8.0)),
-        ("threaded", "fit", serde_json::json!("normal")),
+        ("clearance", "class", cadmpeg_core::json!("6H")),
+        ("clearance", "pitch", cadmpeg_core::json!(1.25)),
+        ("clearance", "major_diameter", cadmpeg_core::json!(8.0)),
+        ("threaded", "fit", cadmpeg_core::json!("normal")),
     ] {
         let mut wire = specification(kind);
         wire[orphan] = value;
-        let error = serde_json::from_value::<HoleSpecification>(wire)
+        let error = json_wire::from_value::<HoleSpecification>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown field"), "{kind}/{orphan}: {error}");
         assert!(error.contains(orphan), "{kind}/{orphan}: {error}");
     }
     assert!(
-        serde_json::from_value::<HoleSpecification>(specification("threaded")).is_ok(),
+        json_wire::from_value::<HoleSpecification>(specification("threaded")).is_ok(),
         "the threaded arm reads without the thread fields"
     );
-    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+    let error = json_wire::from_value::<HoleSpecification>(cadmpeg_core::json!({
         "standard": "ISO metric",
         "threaded": true,
         "modeled": false,
@@ -844,7 +838,7 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     .to_string();
     assert!(error.contains("kind"), "{error}");
 
-    let mut native_with_standard = serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {
+    let mut native_with_standard = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "hole", "value": {
         "shape": {
             "kind": {
                 "kind": "threaded",
@@ -855,37 +849,38 @@ fn hole_wire_rejects_cross_form_thread_fields() {
         }
     }}});
     native_with_standard["value"]["value"]["shape"]["specification"] = specification("threaded");
-    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
+    assert!(json_wire::from_value::<FeatureDefinition>(native_with_standard).is_err());
 }
 
 #[test]
 fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-        SurfaceContinuity,
+    use crate::features::selections::{EdgeSelection, FaceSelection};
+    use crate::features::surface_inputs::{
+        FilledSurfaceContinuity, SurfaceBoundary, SurfaceContinuity,
     };
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(
-            crate::features::NonEmptyMembers::try_from(vec![
+        continuity: Some(FilledSurfaceContinuity {
+            conditions: crate::features::selections::NonEmptyMembers::try_from(vec![
                 SurfaceContinuity::Contact.into(),
                 SurfaceContinuity::Contact.into(),
             ])
             .unwrap(),
-        ),
+        }),
         merge_result: Some(false),
         interior_constraints: Vec::new(),
         reverse_normal: None,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(
         wire["value"]["value"]["continuity"],
-        serde_json::json!([{ "kind": "contact" }, { "kind": "contact" }])
+        cadmpeg_core::json!([{ "kind": "contact" }, { "kind": "contact" }])
     );
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
     );
 
@@ -894,92 +889,91 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     else {
         panic!("filled-surface fixture");
     };
-    assert_eq!(continuity.uniform_value(), Some(SurfaceContinuity::Contact));
+    let uniform = continuity
+        .as_ref()
+        .and_then(FilledSurfaceContinuity::uniform_continuity);
+    assert_eq!(uniform, Some(SurfaceContinuity::Contact));
 
     let mut mixed = wire;
     mixed["value"]["value"]["continuity"] =
-        serde_json::json!([{ "kind": "contact" }, { "kind": "curvature" }]);
+        cadmpeg_core::json!([{ "kind": "contact" }, { "kind": "curvature" }]);
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. }) =
-        serde_json::from_value::<FeatureDefinition>(mixed).unwrap()
+        json_wire::from_value::<FeatureDefinition>(mixed).unwrap()
     else {
         panic!("filled-surface fixture");
     };
-    assert_eq!(continuity.uniform_value(), None);
+    let uniform = continuity
+        .as_ref()
+        .and_then(FilledSurfaceContinuity::uniform_continuity);
+    assert_eq!(uniform, None);
 }
 
 #[test]
 fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-    };
+    use crate::features::selections::{EdgeSelection, FaceSelection};
+    use crate::features::surface_inputs::SurfaceBoundary;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::unresolved(),
+        continuity: None,
         merge_result: None,
         interior_constraints: Vec::new(),
         reverse_normal: None,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert!(wire["value"]["value"].get("continuity").is_none(), "{wire}");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
     );
 }
 
 #[test]
 fn empty_filled_surface_continuity_list_is_refused() {
-    use crate::features::{FilledSurfaceContinuityState, SurfaceContinuity};
+    use crate::features::surface_inputs::{FilledSurfaceContinuity, SurfaceContinuity};
 
     // Absence is the only spelling of unresolved: an empty list is refused by
     // the non-empty member mint, not read as a second spelling of it.
-    let error = serde_json::from_value::<FilledSurfaceContinuityState>(serde_json::json!([]))
+    let error = json_wire::from_value::<FilledSurfaceContinuity>(cadmpeg_core::json!([]))
         .expect_err("an empty continuity list is refused");
     assert!(error.to_string().contains("empty"), "{error}");
 
-    let error = serde_json::from_value::<FilledSurfaceContinuityState>(serde_json::Value::Null)
-        .expect_err("null is refused");
-    assert!(error.to_string().contains("does not state null"), "{error}");
-
-    let resolved: FilledSurfaceContinuityState =
-        serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
+    let resolved: FilledSurfaceContinuity =
+        json_wire::from_value(cadmpeg_core::json!([{ "kind": "tangent" }])).unwrap();
     assert_eq!(
-        resolved.resolved().map(|value| value.conditions.as_slice()),
-        Some(
-            &[crate::features::FilledSurfaceBoundaryCondition::from(
-                SurfaceContinuity::Tangent
-            )][..]
-        )
+        resolved,
+        FilledSurfaceContinuity::one(SurfaceContinuity::Tangent)
     );
 }
 
 #[test]
 fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
-    use crate::features::{
-        FilledSurfaceBoundaryCondition, FilledSurfaceContinuity, NonEmptyMembers,
+    use crate::features::selections::NonEmptyMembers;
+    use crate::features::surface_inputs::{
+        FilledSurfaceBoundaryCondition, FilledSurfaceContinuity,
     };
     use crate::scalar::PositiveReal;
 
     for wire in [
-        serde_json::json!({"kind":"contact","weight":0.5}),
-        serde_json::json!({"kind":"tangent","weight":0.0}),
-        serde_json::json!({"kind":"curvature","weight":-1.0}),
-        serde_json::json!({"kind":"tangent","weight":null}),
+        cadmpeg_core::json!({"kind":"contact","weight":0.5}),
+        cadmpeg_core::json!({"kind":"tangent","weight":0.0}),
+        cadmpeg_core::json!({"kind":"curvature","weight":-1.0}),
+        cadmpeg_core::json!({"kind":"tangent","weight":null}),
     ] {
         assert!(
-            serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire.clone()).is_err(),
+            json_wire::from_value::<FilledSurfaceBoundaryCondition>(wire.clone()).is_err(),
             "accepted {wire}"
         );
     }
     let condition = FilledSurfaceBoundaryCondition::Tangent {
         weight: PositiveReal::new(0.15),
     };
-    let wire = serde_json::to_value(condition).unwrap();
-    assert_eq!(wire, serde_json::json!({"kind":"tangent","weight":0.15}));
+    let wire = json_wire::to_value(condition).unwrap();
+    assert_eq!(wire, cadmpeg_core::json!({"kind":"tangent","weight":0.15}));
     assert_eq!(
-        serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire).unwrap(),
+        json_wire::from_value::<FilledSurfaceBoundaryCondition>(wire).unwrap(),
         condition
     );
     let unequal = FilledSurfaceContinuity {
@@ -996,39 +990,39 @@ fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
 
 #[test]
 fn scale_factor_forms_name_themselves_on_the_wire() {
-    use crate::features::ScaleFactors;
+    use crate::features::direct_edit::ScaleFactors;
 
     for wire in [
-        serde_json::json!({"kind": "unresolved"}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
+        cadmpeg_core::json!({"kind": "unresolved"}),
+        cadmpeg_core::json!({"kind": "uniform", "factor": 2.0}),
+        cadmpeg_core::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
     ] {
-        let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(factors).unwrap(), wire);
+        let factors: ScaleFactors = json_wire::from_value(wire.clone()).unwrap();
+        assert_eq!(json_wire::to_value(factors).unwrap(), wire);
     }
 }
 
 #[test]
 fn scale_factor_wire_rejects_mixed_and_partial_forms() {
-    use crate::features::ScaleFactors;
+    use crate::features::direct_edit::ScaleFactors;
 
     // The old flat wire spelled the form by which of four optional keys were
     // present, so a mixed or partial set was representable. Each form now
     // names itself and carries only its own field.
     for wire in [
-        serde_json::json!({"uniform": 2.0, "x": 1.0}),
-        serde_json::json!({"x": 1.0, "z": 3.0}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0, "factors": [1.0, 2.0, 3.0]}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
-        serde_json::json!({}),
+        cadmpeg_core::json!({"uniform": 2.0, "x": 1.0}),
+        cadmpeg_core::json!({"x": 1.0, "z": 3.0}),
+        cadmpeg_core::json!({"kind": "uniform", "factor": 2.0, "factors": [1.0, 2.0, 3.0]}),
+        cadmpeg_core::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
+        cadmpeg_core::json!({}),
     ] {
-        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
+        assert!(json_wire::from_value::<ScaleFactors>(wire).is_err());
     }
 }
 
 #[test]
 fn edge_selections_round_trip_through_json() {
-    use crate::features::EdgeSelection;
+    use crate::features::selections::EdgeSelection;
     use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 
     let selections = vec![
@@ -1057,7 +1051,7 @@ fn edge_selections_round_trip_through_json() {
         .unwrap(),
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<EdgeSelection>>(&json).unwrap(),
         selections
@@ -1066,7 +1060,7 @@ fn edge_selections_round_trip_through_json() {
 
 #[test]
 fn historical_edge_paths_round_trip_through_json() {
-    use crate::features::PathRef;
+    use crate::features::profiles::PathRef;
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
     let path = PathRef::historical_edges(
@@ -1078,13 +1072,13 @@ fn historical_edge_paths_round_trip_through_json() {
         "native:path#0".into(),
     )
     .unwrap();
-    let json = serde_json::to_string(&path).unwrap();
+    let json = json_wire::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 }
 
 #[test]
 fn face_selections_round_trip_through_json() {
-    use crate::features::FaceSelection;
+    use crate::features::selections::FaceSelection;
     use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 
     let selections = vec![
@@ -1113,7 +1107,7 @@ fn face_selections_round_trip_through_json() {
         .unwrap(),
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<FaceSelection>>(&json).unwrap(),
         selections
@@ -1130,7 +1124,7 @@ fn historical_face_profiles_round_trip_through_json() {
         vec!["native:profile-group#0".into()],
     )
     .unwrap();
-    let json = serde_json::to_string(&ProfileRef::Planar(profile.clone())).unwrap();
+    let json = json_wire::to_string(&ProfileRef::Planar(profile.clone())).unwrap();
     assert_eq!(
         serde_json::from_str::<ProfileRef>(&json).unwrap(),
         ProfileRef::Planar(profile)
@@ -1139,19 +1133,20 @@ fn historical_face_profiles_round_trip_through_json() {
 
 #[test]
 fn body_selections_round_trip_through_json() {
-    use crate::features::BodySelection;
+    use crate::features::selections::BodySelection;
     use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};
 
     let selections = vec![
         BodySelection::Unresolved,
         BodySelection::Bodies(
-            crate::features::DistinctMembers::try_from(vec![
-                BodyId::mint("synthetic:test:body#0").expect("valid identity")
-            ])
+            crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
+                "synthetic:test:body#0",
+            )
+            .expect("valid identity")])
             .expect("distinct bodies"),
         ),
         BodySelection::Resolved {
-            bodies: crate::features::DistinctMembers::try_from(vec![BodyId::mint(
+            bodies: crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "synthetic:test:body#0",
             )
             .expect("valid identity")])
@@ -1159,13 +1154,13 @@ fn body_selections_round_trip_through_json() {
             native: "body:17".into(),
         },
         BodySelection::ResolvedSet {
-            members: crate::features::BodyMembers::try_from_rows(vec![
-                crate::features::BodyMember::new(
+            members: crate::features::selections::BodyMembers::try_from_rows(vec![
+                crate::features::selections::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:17")
                         .expect("valid body selection row"),
                 ),
-                crate::features::BodyMember::new(
+                crate::features::selections::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:18")
                         .expect("valid body selection row"),
@@ -1183,14 +1178,14 @@ fn body_selections_round_trip_through_json() {
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            members: crate::features::BodyMembers::try_from_rows(vec![
-                crate::features::BodyMember::new(
+            members: crate::features::selections::BodyMembers::try_from_rows(vec![
+                crate::features::selections::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:16")
                         .expect("valid historical body selection row"),
                 ),
-                crate::features::BodyMember::new(
+                crate::features::selections::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:17")
@@ -1202,7 +1197,7 @@ fn body_selections_round_trip_through_json() {
         BodySelection::Native("body:17,body:18".into()),
         BodySelection::NativeSet(vec!["body:17".into(), "body:18".into()].try_into().unwrap()),
     ];
-    let json = serde_json::to_string(&selections).unwrap();
+    let json = json_wire::to_string(&selections).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
@@ -1211,14 +1206,14 @@ fn body_selections_round_trip_through_json() {
 
 #[test]
 fn body_selection_members_reject_blank_native_rows() {
-    use crate::features::BodyMembers;
+    use crate::features::selections::BodyMembers;
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
     assert!(cadmpeg_core::text::NonBlankString::new(" \t").is_none());
     assert!(cadmpeg_core::text::NonBlankString::new("\n").is_none());
     assert!(
-        serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
+        json_wire::from_value::<BodyMembers<BodyId>>(cadmpeg_core::json!([
             {"body": body, "native": " "}
         ]))
         .is_err()
@@ -1227,15 +1222,16 @@ fn body_selection_members_reject_blank_native_rows() {
 
 #[test]
 fn loft_guidance_rejects_mixed_wire_members() {
-    use crate::features::{LoftGuidance, PathRef};
+    use crate::features::profiles::PathRef;
+    use crate::features::LoftGuidance;
 
     let guidance = LoftGuidance::Centerline(PathRef::Native("test:centerline".into()));
-    let wire = serde_json::to_value(&guidance).unwrap();
+    let wire = json_wire::to_value(&guidance).unwrap();
     assert_eq!(
-        serde_json::from_value::<LoftGuidance>(wire).unwrap(),
+        json_wire::from_value::<LoftGuidance>(wire).unwrap(),
         guidance
     );
-    assert!(serde_json::from_value::<LoftGuidance>(serde_json::json!({
+    assert!(json_wire::from_value::<LoftGuidance>(cadmpeg_core::json!({
         "kind": "guides",
         "path": [],
         "centerline": {"kind": "native", "value": "test:centerline"}
@@ -1245,10 +1241,11 @@ fn loft_guidance_rejects_mixed_wire_members() {
 
 #[test]
 fn feature_result_topology_round_trips_without_current_model_bodies() {
-    use crate::features::{FeatureId, FeatureResultTopology};
+    use crate::features::evaluation::FeatureResultTopology;
+    use crate::features::FeatureId;
     use crate::ids::FeatureResultTopologyId;
 
-    let state = crate::features::FeatureResultMembers::new(
+    let state = crate::features::evaluation::FeatureResultMembers::new(
         vec![cadmpeg_core::nonblank_literal!("body:17")],
         vec![cadmpeg_core::nonblank_literal!("face:3")],
         vec![cadmpeg_core::nonblank_literal!("edge:5")],
@@ -1264,7 +1261,7 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
         )
     })
     .unwrap();
-    let json = serde_json::to_string(&state).unwrap();
+    let json = json_wire::to_string(&state).unwrap();
     assert_eq!(
         serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
         state
@@ -1273,7 +1270,9 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
 
 #[test]
 fn combine_omits_the_default_keep_tools_flag_from_json() {
-    use crate::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    use crate::features::operation_settings::BooleanKind;
+    use crate::features::selections::BodySelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: crate::features::CombineOperands::new(
@@ -1285,19 +1284,18 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: crate::features::CombineDestination::default(),
+        destination: crate::features::operation_settings::CombineDestination::default(),
     });
-    let json = serde_json::to_value(definition).unwrap();
+    let json = json_wire::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
     assert_eq!(json.get("destination"), None);
 }
 
 #[test]
 fn combine_new_component_destination_round_trips() {
-    use crate::features::{
-        BodySelection, BooleanKind, CombineDestination, CombineOperands, FeatureDefinition,
-        FeatureOperation,
-    };
+    use crate::features::operation_settings::{BooleanKind, CombineDestination};
+    use crate::features::selections::BodySelection;
+    use crate::features::{CombineOperands, FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: CombineOperands::new(
@@ -1309,13 +1307,13 @@ fn combine_new_component_destination_round_trips() {
         keep_tools: true,
         destination: CombineDestination::NewComponent,
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(
         wire["value"]["value"]["destination"],
-        serde_json::json!("new_component")
+        cadmpeg_core::json!("new_component")
     );
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
     );
 }
@@ -1324,44 +1322,44 @@ fn combine_new_component_destination_round_trips() {
 /// spelling and an unknown key beside `op` is refused by name.
 #[test]
 fn sweep_mode_spells_new_body_once_and_refuses_a_key_beside_op() {
-    use crate::features::{SolidSweepOperation, SweepMode};
+    use crate::features::sweeps::{SolidSweepOperation, SweepMode};
 
     for (wire, expected) in [
         (
-            serde_json::json!({"kind": "solid", "op": "new_body"}),
+            cadmpeg_core::json!({"kind": "solid", "op": "new_body"}),
             SweepMode::Solid {
                 op: SolidSweepOperation::NewBody,
             },
         ),
         (
-            serde_json::json!({"kind": "solid", "op": "join"}),
+            cadmpeg_core::json!({"kind": "solid", "op": "join"}),
             SweepMode::Solid {
                 op: SolidSweepOperation::Join,
             },
         ),
         (
-            serde_json::json!({"kind": "unresolved"}),
+            cadmpeg_core::json!({"kind": "unresolved"}),
             SweepMode::Unresolved {},
         ),
         (
-            serde_json::json!({"kind": "surface"}),
+            cadmpeg_core::json!({"kind": "surface"}),
             SweepMode::Surface {},
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
+            json_wire::from_value::<SweepMode>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
-    assert!(serde_json::from_value::<SweepMode>(
-        serde_json::json!({"kind": "solid", "op": "unresolved"})
+    assert!(json_wire::from_value::<SweepMode>(
+        cadmpeg_core::json!({"kind": "solid", "op": "unresolved"})
     )
     .is_err());
 
-    let error = serde_json::from_value::<SweepMode>(
-        serde_json::json!({"kind": "solid", "op": "join", "zz_bogus": 1}),
+    let error = json_wire::from_value::<SweepMode>(
+        cadmpeg_core::json!({"kind": "solid", "op": "join", "zz_bogus": 1}),
     )
     .unwrap_err()
     .to_string();
@@ -1377,22 +1375,22 @@ fn an_unresolved_form_refuses_a_dimension_beside_it() {
         patterns::PatternKind,
     };
 
-    let error = serde_json::from_value::<RadiusSpec>(
-        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
+    let error = json_wire::from_value::<RadiusSpec>(
+        cadmpeg_core::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `radius`"), "{error}");
 
-    let error = serde_json::from_value::<ChamferSpec>(
-        serde_json::json!({"kind": "unresolved", "form": "distance", "distance": 1}),
+    let error = json_wire::from_value::<ChamferSpec>(
+        cadmpeg_core::json!({"kind": "unresolved", "form": "distance", "distance": 1}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `distance`"), "{error}");
 
-    let error = serde_json::from_value::<PatternKind>(
-        serde_json::json!({"kind": "unresolved", "form": "linear", "count": 2}),
+    let error = json_wire::from_value::<PatternKind>(
+        cadmpeg_core::json!({"kind": "unresolved", "form": "linear", "count": 2}),
     )
     .unwrap_err()
     .to_string();
@@ -1408,73 +1406,73 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
 
     for (wire, expected) in [
         (
-            serde_json::json!({"kind": "unresolved"}),
+            cadmpeg_core::json!({"kind": "unresolved"}),
             RadiusSpec::Unresolved { form: None },
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "constant"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "constant"}),
             RadiusSpec::Unresolved {
                 form: Some(crate::features::edge_treatments::RadiusForm::Constant),
             },
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "variable"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "variable"}),
             RadiusSpec::Unresolved {
                 form: Some(crate::features::edge_treatments::RadiusForm::Variable),
             },
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<RadiusSpec>(wire.clone()).unwrap(),
+            json_wire::from_value::<RadiusSpec>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
     for (wire, expected) in [
         (
-            serde_json::json!({"kind": "unresolved"}),
+            cadmpeg_core::json!({"kind": "unresolved"}),
             ChamferSpec::Unresolved { form: None },
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "distance"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "distance"}),
             ChamferSpec::Unresolved {
                 form: Some(crate::features::edge_treatments::ChamferForm::Distance),
             },
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "distance_angle"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "distance_angle"}),
             ChamferSpec::Unresolved {
                 form: Some(crate::features::edge_treatments::ChamferForm::DistanceAngle),
             },
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<ChamferSpec>(wire.clone()).unwrap(),
+            json_wire::from_value::<ChamferSpec>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 
     for (wire, expected) in [
         (
-            serde_json::json!({"kind": "unresolved"}),
+            cadmpeg_core::json!({"kind": "unresolved"}),
             PatternKind::UNRESOLVED,
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "linear"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "linear"}),
             PatternKind::UNRESOLVED_LINEAR,
         ),
         (
-            serde_json::json!({"kind": "unresolved", "form": "mirror"}),
+            cadmpeg_core::json!({"kind": "unresolved", "form": "mirror"}),
             PatternKind::UNRESOLVED_MIRROR,
         ),
     ] {
         assert_eq!(
-            serde_json::from_value::<PatternKind>(wire.clone()).unwrap(),
+            json_wire::from_value::<PatternKind>(wire.clone()).unwrap(),
             expected
         );
-        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+        assert_eq!(json_wire::to_value(expected).unwrap(), wire);
     }
 }
 
@@ -1482,7 +1480,7 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
 fn an_unknown_hole_wire_key_is_rejected_by_name() {
     use crate::features::holes::{HoleKind, HoleShape, HoleSpecification};
 
-    let error = serde_json::from_value::<HoleKind>(serde_json::json!({
+    let error = json_wire::from_value::<HoleKind>(cadmpeg_core::json!({
         "kind": "partial_counterbore",
         "diameter": 10.0,
         "counter_bore_depth": 4.0
@@ -1491,7 +1489,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("counter_bore_depth"), "{error}");
 
-    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+    let error = json_wire::from_value::<HoleShape>(cadmpeg_core::json!({
         "construction": {"kind": "form", "value": {
             "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": 10.0}}
         }},
@@ -1502,7 +1500,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("counter_bore_depth"), "{error}");
 
-    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+    let error = json_wire::from_value::<HoleShape>(cadmpeg_core::json!({
         "construction": {"kind": "native_thread", "value": {
             "major_diameter": 8.0,
             "thread_depth": 12.0,
@@ -1522,7 +1520,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     .to_string();
     assert!(error.contains("unknown field `specification`"), "{error}");
 
-    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+    let error = json_wire::from_value::<HoleSpecification>(cadmpeg_core::json!({
         "kind": "clearance",
         "standard": "iso",
         "modeled": false,
@@ -1547,36 +1545,36 @@ fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
     let cases = [
         (
             HoleKind::PartialCounterbore(PartialPair::First(diameter)),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_counterbore",
                 "dimension": {"kind": "diameter", "diameter": 10.0}
             }),
         ),
         (
             HoleKind::PartialCounterbore(PartialPair::Second(depth)),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_counterbore",
                 "dimension": {"kind": "depth", "depth": 4.0}
             }),
         ),
         (
             HoleKind::PartialCountersink(PartialPair::First(diameter)),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_countersink",
                 "dimension": {"kind": "diameter", "diameter": 10.0}
             }),
         ),
         (
             HoleKind::PartialCountersink(PartialPair::Second(angle)),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_countersink",
                 "dimension": {"kind": "angle", "angle": 1.5}
             }),
         ),
     ];
     for (kind, wire) in cases {
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
-        assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
+        assert_eq!(json_wire::to_value(kind).unwrap(), wire);
+        assert_eq!(json_wire::from_value::<HoleKind>(wire).unwrap(), kind);
     }
 }
 
@@ -1586,31 +1584,31 @@ fn a_partial_hole_dimension_carries_exactly_one_measurement() {
 
     for (wire, rejected) in [
         (
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_counterbore",
                 "dimension": {"kind": "diameter", "diameter": 10.0, "depth": 4.0}
             }),
             "depth",
         ),
         (
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "partial_countersink",
                 "dimension": {"kind": "diameter", "diameter": 10.0, "angle": 1.5}
             }),
             "angle",
         ),
     ] {
-        let error = serde_json::from_value::<HoleKind>(wire)
+        let error = json_wire::from_value::<HoleKind>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains(rejected), "{error}");
     }
 
     for wire in [
-        serde_json::json!({"kind": "partial_counterbore", "dimension": {}}),
-        serde_json::json!({"kind": "partial_countersink", "dimension": {}}),
+        cadmpeg_core::json!({"kind": "partial_counterbore", "dimension": {}}),
+        cadmpeg_core::json!({"kind": "partial_countersink", "dimension": {}}),
     ] {
-        assert!(serde_json::from_value::<HoleKind>(wire).is_err());
+        assert!(json_wire::from_value::<HoleKind>(wire).is_err());
     }
 }
 
@@ -1621,15 +1619,15 @@ fn assert_key_beside_the_nested_field_is_rejected(document: &serde_json::Value) 
     use crate::features::{FeatureDefinition, FeatureOperation};
 
     assert!(
-        serde_json::from_value::<FeatureDefinition>(
-            serde_json::json!({"kind": "operation", "value": document.clone()})
+        json_wire::from_value::<FeatureDefinition>(
+            cadmpeg_core::json!({"kind": "operation", "value": document.clone()})
         )
         .is_ok(),
         "{document}"
     );
     let mut beside = document.clone();
-    beside["value"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(beside)
+    beside["value"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<FeatureOperation>(beside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1639,8 +1637,8 @@ fn assert_key_inside_the_nested_field_is_rejected(document: &serde_json::Value, 
     use crate::features::FeatureOperation;
 
     let mut inside = document.clone();
-    inside["value"][field]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside)
+    inside["value"][field]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1648,7 +1646,7 @@ fn assert_key_inside_the_nested_field_is_rejected(document: &serde_json::Value, 
 
 #[test]
 fn an_unknown_key_beside_the_helix_shape_is_rejected_by_name() {
-    let helix = serde_json::json!({"kind": "helix", "value": {
+    let helix = cadmpeg_core::json!({"kind": "helix", "value": {
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         "radius": 2.0,
@@ -1663,7 +1661,7 @@ fn an_unknown_key_beside_the_helix_shape_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
-    let wrap = serde_json::json!({"kind": "wrap", "value": {
+    let wrap = cadmpeg_core::json!({"kind": "wrap", "value": {
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
         "mode": {"kind": "emboss", "depth": 2.5}
@@ -1671,8 +1669,8 @@ fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
     assert_key_beside_the_nested_field_is_rejected(&wrap);
 
     let mut inside = wrap;
-    inside["value"]["mode"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::features::FeatureOperation>(inside)
+    inside["value"]["mode"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<crate::features::FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1680,7 +1678,7 @@ fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_sketch_binding_is_rejected_by_name() {
-    let sketch = serde_json::json!({"kind": "sketch", "value": {
+    let sketch = cadmpeg_core::json!({"kind": "sketch", "value": {
         "sketch": {"kind": "planar", "sketch": "test:model:sketch#1"}
     }});
     assert_key_beside_the_nested_field_is_rejected(&sketch);
@@ -1689,7 +1687,7 @@ fn an_unknown_key_beside_the_sketch_binding_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_extrude_direction_is_rejected_by_name() {
-    let extrude = serde_json::json!({"kind": "extrude", "value": {
+    let extrude = cadmpeg_core::json!({"kind": "extrude", "value": {
         "profile": {"kind": "planar", "value": {"kind": "native", "value": "test:profile"}},
         "direction": {
             "kind": "explicit",
@@ -1707,7 +1705,7 @@ fn an_unknown_key_beside_the_extrude_direction_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_trim_region_is_rejected_by_name() {
-    let trim = serde_json::json!({"kind": "trim_surface", "value": {
+    let trim = cadmpeg_core::json!({"kind": "trim_surface", "value": {
         "faces": {"kind": "unresolved"},
         "tool": {"kind": "unresolved", "value": "test:trim-tool"},
         "keep": {"kind": "cells", "removed": [1, 4], "total": 5}
@@ -1717,7 +1715,7 @@ fn an_unknown_key_beside_the_trim_region_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
-    let draft = serde_json::json!({"kind": "draft", "value": {
+    let draft = cadmpeg_core::json!({"kind": "draft", "value": {
         "faces": {"kind": "native", "value": "draft:faces"},
         "anchor": {
             "kind": "parting_line",
@@ -1733,13 +1731,13 @@ fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
 
 #[test]
 fn an_unknown_key_beside_the_stored_geometry_definition_is_rejected_by_name() {
-    let stored = serde_json::json!({"kind": "stored_geometry", "value": {}});
+    let stored = cadmpeg_core::json!({"kind": "stored_geometry", "value": {}});
     assert_key_beside_the_nested_field_is_rejected(&stored);
 }
 
 #[test]
 fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
-    let extrude = serde_json::json!({"kind": "extrude", "value": {
+    let extrude = cadmpeg_core::json!({"kind": "extrude", "value": {
         "profile": {"kind": "planar", "value": {"kind": "native", "value": "test:profile"}},
         "direction": {"kind": "profile_normal"},
         "start": {"kind": "profile_plane"},
@@ -1755,12 +1753,12 @@ fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
     for kind in ["unresolved", "reversed_profile_normal", "explicit"] {
         let mut variant = extrude.clone();
         variant["value"]["direction"] = if kind == "explicit" {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "explicit",
                 "vector": {"x": 0.0, "y": 1.0, "z": 0.0}
             })
         } else {
-            serde_json::json!({"kind": kind})
+            cadmpeg_core::json!({"kind": kind})
         };
         assert_key_beside_the_nested_field_is_rejected(&variant);
         assert_key_inside_the_nested_field_is_rejected(&variant, "direction");
@@ -1771,21 +1769,21 @@ fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
 fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
     use crate::features::{FeatureDefinition, FeatureOperation};
 
-    let trim = serde_json::json!({"kind": "trim_surface", "value": {
+    let trim = cadmpeg_core::json!({"kind": "trim_surface", "value": {
         "faces": {"kind": "unresolved"},
         "tool": {"kind": "unresolved", "value": "test:trim-tool"},
         "keep": {"kind": "cells", "removed": [1, 4], "total": 5}
     }});
     assert!(
-        serde_json::from_value::<FeatureDefinition>(
-            serde_json::json!({"kind": "operation", "value": trim.clone()})
+        json_wire::from_value::<FeatureDefinition>(
+            cadmpeg_core::json!({"kind": "operation", "value": trim.clone()})
         )
         .is_ok(),
         "{trim}"
     );
     let mut inside = trim;
-    inside["value"]["keep"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<FeatureOperation>(inside)
+    inside["value"]["keep"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json_wire::from_value::<FeatureOperation>(inside)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1793,19 +1791,19 @@ fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
 
 #[test]
 fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
-    use crate::features::{AngularTermination, ExtrudeStart, LinearTermination};
+    use crate::features::extents::{AngularTermination, ExtrudeStart, LinearTermination};
 
     for wire in [
-        serde_json::json!({"kind": "profile_plane"}),
-        serde_json::json!({"kind": "unresolved"}),
+        cadmpeg_core::json!({"kind": "profile_plane"}),
+        cadmpeg_core::json!({"kind": "unresolved"}),
     ] {
         assert!(
-            serde_json::from_value::<ExtrudeStart>(wire.clone()).is_ok(),
+            json_wire::from_value::<ExtrudeStart>(wire.clone()).is_ok(),
             "{wire}"
         );
         let mut bogus = wire;
-        bogus["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<ExtrudeStart>(bogus)
+        bogus["zz_bogus"] = cadmpeg_core::json!(1);
+        let error = json_wire::from_value::<ExtrudeStart>(bogus)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
@@ -1818,12 +1816,12 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         "to_first",
         "to_last",
     ] {
-        let bogus = serde_json::json!({"kind": kind, "zz_bogus": 1});
-        let error = serde_json::from_value::<LinearTermination>(bogus.clone())
+        let bogus = cadmpeg_core::json!({"kind": kind, "zz_bogus": 1});
+        let error = json_wire::from_value::<LinearTermination>(bogus.clone())
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "linear {kind}: {error}");
-        let error = serde_json::from_value::<AngularTermination>(bogus)
+        let error = json_wire::from_value::<AngularTermination>(bogus)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "angular {kind}: {error}");
@@ -1832,27 +1830,27 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
 
 #[test]
 fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
-    use crate::features::SheetMetalThicknessSide;
+    use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
 
     for (side, wire) in [
         (SheetMetalThicknessSide::Forward, "forward"),
         (SheetMetalThicknessSide::Reverse, "reverse"),
         (SheetMetalThicknessSide::Symmetric, "symmetric"),
     ] {
-        assert_eq!(serde_json::to_value(side).unwrap(), wire);
+        assert_eq!(json_wire::to_value(side).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!(wire)).unwrap(),
+            json_wire::from_value::<SheetMetalThicknessSide>(cadmpeg_core::json!(wire)).unwrap(),
             side
         );
     }
-    assert!(serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
+    assert!(json_wire::from_value::<SheetMetalThicknessSide>(cadmpeg_core::json!("both")).is_err());
 }
 
 #[test]
 fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
     use crate::features::{FeatureDefinition, FeatureOperation};
 
-    let full = serde_json::json!({"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {
+    let full = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {
         "face": {"kind": "unresolved"},
         "standard": "Profile",
         "designation": "D5",
@@ -1861,7 +1859,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
         "modeled": false,
         "extent": {"kind": "through"}
     }}});
-    let definition: FeatureDefinition = serde_json::from_value(full.clone()).unwrap();
+    let definition: FeatureDefinition = json_wire::from_value(full.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1869,10 +1867,10 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
             ..
         })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), full);
+    assert_eq!(json_wire::to_value(definition).unwrap(), full);
 
-    let minimal = serde_json::json!({"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {"face": {"kind": "unresolved"}}}});
-    let definition: FeatureDefinition = serde_json::from_value(minimal.clone()).unwrap();
+    let minimal = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "cosmetic_thread", "value": {"face": {"kind": "unresolved"}}}});
+    let definition: FeatureDefinition = json_wire::from_value(minimal.clone()).unwrap();
     assert!(matches!(
         &definition,
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1885,18 +1883,18 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
             ..
         })
     ));
-    assert_eq!(serde_json::to_value(definition).unwrap(), minimal);
+    assert_eq!(json_wire::to_value(definition).unwrap(), minimal);
 
     for (field, value) in [
-        ("modeled", serde_json::json!(null)),
-        ("standard", serde_json::json!("")),
-        ("designation", serde_json::json!(" ")),
-        ("pitch", serde_json::json!(0.0)),
+        ("modeled", cadmpeg_core::json!(null)),
+        ("standard", cadmpeg_core::json!("")),
+        ("designation", cadmpeg_core::json!(" ")),
+        ("pitch", cadmpeg_core::json!(0.0)),
     ] {
         let mut wire = minimal.clone();
         wire["value"]["value"][field] = value;
         assert!(
-            serde_json::from_value::<FeatureDefinition>(wire).is_err(),
+            json_wire::from_value::<FeatureDefinition>(wire).is_err(),
             "{field} must be refused"
         );
     }
@@ -1904,7 +1902,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
 
 #[test]
 fn planar_target_sources_round_trip_and_refuse_invalid_values() {
-    use crate::features::{ExtrudeStart, LinearTermination};
+    use crate::features::extents::{ExtrudeStart, LinearTermination};
     for (kind, source) in [
         ("to_plane", "work_plane"),
         ("to_plane", "work_point"),
@@ -1912,7 +1910,7 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
         ("from_plane", "work_plane"),
         ("from_plane", "face_surface"),
     ] {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "kind": kind,
             "plane": {"origin": {"x": 0.0, "y": 0.0, "z": 1.0},
                 "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
@@ -1920,18 +1918,18 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
             "native": "native:target", "source": source
         });
         if kind == "to_plane" {
-            let decoded: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            let decoded: LinearTermination = json_wire::from_value(wire.clone()).unwrap();
+            assert_eq!(json_wire::to_value(decoded).unwrap(), wire);
         } else {
-            let decoded: ExtrudeStart = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+            let decoded: ExtrudeStart = json_wire::from_value(wire.clone()).unwrap();
+            assert_eq!(json_wire::to_value(decoded).unwrap(), wire);
         }
-        for invalid in [serde_json::Value::Null, serde_json::json!("unknown")] {
+        for invalid in [serde_json::Value::Null, cadmpeg_core::json!("unknown")] {
             wire["source"] = invalid;
             if kind == "to_plane" {
-                assert!(serde_json::from_value::<LinearTermination>(wire.clone()).is_err());
+                assert!(json_wire::from_value::<LinearTermination>(wire.clone()).is_err());
             } else {
-                assert!(serde_json::from_value::<ExtrudeStart>(wire.clone()).is_err());
+                assert!(json_wire::from_value::<ExtrudeStart>(wire.clone()).is_err());
             }
         }
     }
@@ -1939,7 +1937,8 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
 
 #[test]
 fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling() {
-    use crate::features::{ComponentTransferMode, FeatureOperation};
+    use crate::features::tree::ComponentTransferMode;
+    use crate::features::FeatureOperation;
 
     let operation = FeatureOperation::component_transfer(
         ComponentTransferMode::Reparent,
@@ -1950,13 +1949,13 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
         None,
         None,
     );
-    let wire = serde_json::to_value(&operation).unwrap();
+    let wire = json_wire::to_value(&operation).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "component_transfer", "value": {"mode": "reparent"}})
+        cadmpeg_core::json!({"kind": "component_transfer", "value": {"mode": "reparent"}})
     );
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureOperation>(wire.clone()).unwrap(),
         operation
     );
     for key in [
@@ -1969,7 +1968,7 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
     ] {
         let mut stated = wire.clone();
         stated["value"][key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<FeatureOperation>(stated)
+        let error = json_wire::from_value::<FeatureOperation>(stated)
             .expect_err("an unresolved operand is spelled by omission")
             .to_string();
         assert!(error.contains(key), "{error}");
@@ -1978,18 +1977,19 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
 
 #[test]
 fn unstitch_faces_carries_its_face_selection_on_the_wire() {
-    use crate::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use crate::features::selections::FaceSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::UnstitchFaces {
         faces: FaceSelection::Native("native:face-group".into()),
     });
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json_wire::to_value(&definition).unwrap();
     assert_eq!(wire["value"]["kind"], "unstitch_faces");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        json_wire::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
     );
     let mut extended = wire;
-    extended["heal"] = serde_json::json!(false);
-    assert!(serde_json::from_value::<FeatureDefinition>(extended).is_err());
+    extended["heal"] = cadmpeg_core::json!(false);
+    assert!(json_wire::from_value::<FeatureDefinition>(extended).is_err());
 }

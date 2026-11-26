@@ -10,7 +10,6 @@ use reporting::{
 };
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -23,15 +22,14 @@ use serde::{Serialize, Serializer};
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
-    Inspected, Selection,
+    Inspected,
 };
 
 use crate::application::artifact_store::{self, FileDestination};
-use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::transcoder::{
-    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
-    SourceRequest, TargetSelection,
+    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, SourceRequest,
+    StrictnessFlags, TargetSelection, Validation,
 };
 use crate::application::validators::validate_loaded;
 use crate::loader;
@@ -41,29 +39,13 @@ use cadmpeg_measure::compare::Verdict;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
-pub(crate) fn print_load_notice(document: &LoadedDocument) {
-    let LoadOrigin::Decoded {
-        selection: Selection::Detected { confidence },
-        report,
-        ..
-    } = &document.origin
-    else {
-        return;
-    };
-    if *confidence < Confidence::High {
-        let format_id = report.format();
-        eprintln!(
-            "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
-        );
-    }
-}
-
 /// CLI-facing conversion arguments assembled from argv.
 pub(crate) struct ConversionArgs {
-    /// Decode and export loss refusal.
-    pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// The flags that set the decode's and the write's strictness.
+    pub(crate) strictness: StrictnessFlags,
+    /// The form of features whose states the target needs and the document
+    /// lacks.
+    pub(crate) missing_states: cadmpeg_ir::codec::write::MissingStateForm,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -345,7 +327,7 @@ pub(crate) fn inspect(
                     path,
                     report_path,
                     "inspect",
-                    Payload::Refused(serde_json::json!({ "summary": null }), refusal),
+                    Payload::Refused(cadmpeg_core::json!({ "summary": null }), refusal),
                     json,
                 );
             }
@@ -355,7 +337,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, OpenUSD usda/usd; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usd; use --input-format to override detection",
         path.display()
     )
 }
@@ -394,13 +376,12 @@ pub(crate) fn dump(
                 )?;
             }
         }
-        let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
-        print_load_notice(&loaded);
+        let loaded = loader::load_artifact(inputs, path, &args.options(), forced)?;
         let encoder = build_encoder(Format::Cadir);
         let plan = encoder
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
@@ -419,7 +400,7 @@ pub(crate) fn dump(
             CommandReportBody::Ok {
                 decode_report: loaded.decode_report(),
                 check_report: None,
-                export: None,
+                export: Some(&emission.report),
             },
         )?;
         Ok(())
@@ -437,8 +418,7 @@ pub(crate) fn check_cmd(
     report_path: Option<&FileDestination>,
 ) -> CommandResult<()> {
     let result = (|| {
-        let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
-        print_load_notice(&loaded);
+        let loaded = loader::load_artifact(inputs, path, &args.options(), forced)?;
         let mut stdout = io::stdout();
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -450,7 +430,6 @@ pub(crate) fn check_cmd(
             args.policy.limits.work_profile(),
         )?;
         let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-            operation: crate::application::refusal::CheckOperation::Check,
             decode_report: loaded.decode_report().cloned(),
             validation: report.clone(),
         });
@@ -483,8 +462,8 @@ pub(crate) fn convert(
 ) -> CommandResult<()> {
     let result = (|| {
         let policy = ConversionPolicy {
-            losses: conversion.losses,
-            allow_errors: conversion.allow_errors,
+            strictness: conversion.strictness,
+            missing_states: conversion.missing_states,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
@@ -501,15 +480,18 @@ pub(crate) fn convert(
             }
         }
 
-        let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
+        let depth = if conversion.full_decode || conversion.strictness.needs_full_decode() {
             DecodeDepth::Full
         } else {
-            target.needs().request()
+            target.request()
         };
         let source = SourceRequest {
             path,
             forced: conversion.forced_input,
-            options: args.options_at(depth),
+            options: cadmpeg_ir::DecodeOptions {
+                strictness: conversion.strictness.decode(),
+                ..args.options_at(depth)
+            },
             work: args.policy.limits.work_profile(),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
@@ -517,25 +499,31 @@ pub(crate) fn convert(
 
         let (decode_report, validation) = {
             let prepared = planned.prepared();
-            print_load_notice(&prepared.document);
             let mut stderr = io::stderr();
             if let Some(report) = prepared.document.decode_report() {
                 print_decode_report(&mut stderr, report)?;
                 writeln!(stderr)?;
             }
-            print_check_report(&mut stderr, &prepared.validation)?;
-            let total = prepared.validation.error_count();
-            if total > 0 {
-                writeln!(
-                    stderr,
-                    "check: {} of {total} error(s) in what the {} output writes",
-                    planned.carried_errors(),
-                    prepared.format().name()
-                )?;
+            match &prepared.validation {
+                Validation::Complete(report) => {
+                    print_check_report(&mut stderr, report)?;
+                    let total = report.error_count();
+                    if total > 0 {
+                        writeln!(
+                            stderr,
+                            "check: {} of {total} error(s) in what the {} output writes",
+                            planned.carried_errors(),
+                            prepared.format().name()
+                        )?;
+                    }
+                }
+                Validation::Incomplete(reason) => {
+                    writeln!(stderr, "check: did not run to its end: {reason}")?;
+                }
             }
             (
                 prepared.document.decode_report().cloned(),
-                prepared.validation.clone(),
+                prepared.validation.report().cloned(),
             )
         };
         let emission = planned
@@ -548,7 +536,7 @@ pub(crate) fn convert(
             "convert",
             CommandReportBody::Ok {
                 decode_report: decode_report.as_ref(),
-                check_report: Some(&validation),
+                check_report: validation.as_ref(),
                 export: Some(&emission.report),
             },
         ) {
@@ -576,10 +564,8 @@ pub(crate) fn diff(
             report_path.check(a.path)?;
             report_path.check(b.path)?;
         }
-        let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
-        print_load_notice(&left);
-        let right = loader::load_artifact(inputs, b.path, args.options(), b.forced)?;
-        print_load_notice(&right);
+        let left = loader::load_artifact(inputs, a.path, &args.options(), a.forced)?;
+        let right = loader::load_artifact(inputs, b.path, &args.options(), b.forced)?;
         let result = cadmpeg_ir::diff(&left.ir, &right.ir);
         let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
         let measured = match &geometry {
@@ -621,6 +607,13 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some((before, after)) = result.scope_change {
+            println!(
+                "  scope: {} → {}",
+                reporting::render_scope(before),
+                reporting::render_scope(after)
+            );
         }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {

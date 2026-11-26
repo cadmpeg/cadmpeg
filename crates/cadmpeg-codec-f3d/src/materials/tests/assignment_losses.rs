@@ -49,10 +49,12 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
         )
         .into(),
         appearance: appearance.id.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     }];
     ir.model.appearances = vec![appearance];
     let mut report = appearance_loss_report();

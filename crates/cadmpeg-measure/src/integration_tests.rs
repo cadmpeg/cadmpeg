@@ -3,6 +3,7 @@
 
 mod acceptance;
 mod aggregates;
+mod body_boxes;
 mod boundaries;
 mod closed_nurbs;
 mod compare;
@@ -11,6 +12,7 @@ mod cones;
 mod cube;
 mod cylinders;
 mod declared;
+mod empty_scope;
 mod extrusion;
 mod findings;
 mod history_bodies;

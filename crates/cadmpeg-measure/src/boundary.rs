@@ -12,7 +12,7 @@ pub(crate) mod pcurve;
 pub(crate) mod piece;
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Coedge, Face, Loop, LoopBoundary, Sense};
@@ -77,7 +77,7 @@ pub(crate) struct ResolvedLoop<'ir> {
 
 /// A coedge's 3D curve, its interval in traversal order, and the source
 /// its inverted image reports.
-type ThreeD<'ir> = (Rc<CurveChart<'ir>>, [f64; 2], UvSource);
+type ThreeD<'ir> = (Arc<CurveChart<'ir>>, [f64; 2], UvSource);
 
 /// Two consecutive boundary points and their parameters.
 #[derive(Clone, Copy)]
@@ -121,7 +121,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
     /// Resolve every loop of the face.
     pub(crate) fn resolve(&self, eval: &Eval<'_, '_>) -> Measure<ResolvedFace<'ir>> {
         let mut loops = Vec::new();
-        for loop_id in &self.face.loops {
+        let Some(boundary) = self.face.loops.boundary() else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryPartialFace,
+                Some(self.face.id.as_str()),
+                "the face does not state its boundary in full, so its extent is not stated",
+            ));
+        };
+        for loop_id in boundary {
             let declared_role = declared(self.face.loop_role(loop_id));
             let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                 return Err(MeasureFailure::unavailable(
@@ -718,7 +725,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 ));
             };
             return Ok(Some((
-                Rc::new(CurveChart::new(record, self.body)?),
+                Arc::new(CurveChart::new(record, self.body)?),
                 use_curve.parameter_range.endpoints(),
                 UvSource::InvertedUseCurve,
             )));

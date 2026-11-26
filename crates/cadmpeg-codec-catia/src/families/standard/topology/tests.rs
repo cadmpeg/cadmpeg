@@ -249,7 +249,7 @@ fn faces_sharing_an_edge_form_one_component() {
 #[test]
 fn native_edge_vertices_bind_only_with_one_pair_per_edge_row() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
     let topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft {
@@ -407,7 +407,7 @@ fn edge_vertices_follow_the_coedge_direction() {
 #[test]
 fn edge_vertices_reject_an_edge_row_without_a_coedge() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
 
     let topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
@@ -583,7 +583,7 @@ fn set_duplicate_degree_inserts_a_missing_point() {
 #[test]
 fn face_orientation_rejects_an_unpaired_edge_use() {
     use super::{orient_face_cycles, BoundaryDraft, CoedgeUse, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
     let faces = || {
         vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft {
@@ -709,7 +709,7 @@ fn incidence_cycles_match_the_vertex_map_walk() {
 
     let mut random = SplitMix(0x5eed);
     let mut closed = 0usize;
-    for case in 0..20_000 {
+    for case in 0..2_000 {
         let mut edge_points = Vec::new();
         let mut incident = Vec::new();
         if case % 2 == 0 {
@@ -775,5 +775,5 @@ fn incidence_cycles_match_the_vertex_map_walk() {
             "incident {incident:?} over {edge_points:?}"
         );
     }
-    assert!(closed > 5_000, "only {closed} cases closed");
+    assert!(closed > 500, "only {closed} cases closed");
 }

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
     use crate::design::decode::placement_construction::work_planes::bind;
@@ -20,12 +22,12 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
                 &native.design_placement_constructions
             )
             .is_empty());
-            let scope = serde_json::from_value::<
-                crate::records::feature::scope::DesignParameterScope,
-            >(serde_json::to_value(scope).unwrap())
+            let scope = json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                json::to_value(scope).unwrap(),
+            )
             .unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-            assert!(super::super::valid_work_plane_construction(
+            assert!(super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &scope,
                 "f3d:Design/BulkStream.dat"
@@ -35,7 +37,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
                 .work_plane_frame_mut()
                 .unwrap()
                 .work_plane_transform_offset += 1;
-            assert!(!super::super::valid_work_plane_construction(
+            assert!(!super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &bad_offset,
                 "f3d:Design/BulkStream.dat"
@@ -45,7 +47,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
             let mut rows = frame.work_plane_transform.rows();
             rows[1][3] += 7.0;
             frame.work_plane_transform = rows.try_into().unwrap();
-            assert!(!super::super::valid_work_plane_construction(
+            assert!(!super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &bad_matrix,
                 "f3d:Design/BulkStream.dat"
@@ -75,7 +77,7 @@ fn work_plane_validator_refuses_a_frame_whose_typed_placement_does_not_bind() {
             ..Default::default()
         };
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        assert!(!super::super::valid_work_plane_construction(
+        assert!(!super::super::work_geometry::valid_work_plane_construction(
             &ctx,
             &scope,
             "f3d:Design/BulkStream.dat"
@@ -112,7 +114,7 @@ fn work_plane_validator_rejects_modern_controls_that_do_not_bind_the_retained_fr
                     ..Default::default()
                 };
                 let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-                assert!(!super::super::valid_work_plane_construction(
+                assert!(!super::super::work_geometry::valid_work_plane_construction(
                     &ctx,
                     &scope,
                     "f3d:Design/BulkStream.dat"

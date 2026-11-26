@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-onshape"
+description = "Offline Onshape Part Studio bundle decoder."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-container.workspace = true
+cadmpeg-ir.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+flate2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+cadmpeg-codec-step.workspace = true
+cadmpeg-test-support.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

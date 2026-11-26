@@ -9,8 +9,10 @@ use crate::records::feature::scope::{
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:test:scope#12", kind, 12);
@@ -50,7 +52,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
 }
 
 pub(super) fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#100",
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,
@@ -89,7 +91,12 @@ fn offset_faces_projects_native_group() {
     let scope = scope(DesignFeatureKind::OffsetFaces);
     let group = group(DesignOperandRole::ROLE_0X10);
     let FeatureOperation::MoveFace { faces, .. } = projected_operation(
-        super::super::project_offset_faces(&scope, &[], &[], std::slice::from_ref(&group)),
+        crate::design::feature_project::direct_face::project_offset_faces(
+            &scope,
+            &[],
+            &[],
+            std::slice::from_ref(&group),
+        ),
     ) else {
         panic!("expected a face move");
     };
@@ -170,7 +177,8 @@ fn thicken_boolean_results_survive_missing_scalar_and_target_definitions() {
     use crate::records::feature::direct_face::{
         DesignThickenBoolean, DesignThickenBooleanOperation,
     };
-    use cadmpeg_ir::features::{BooleanKind, SolidFeatureResult, ThickenSide};
+    use cadmpeg_ir::features::direct_edit::ThickenSide;
+    use cadmpeg_ir::features::operation_settings::{BooleanKind, SolidFeatureResult};
 
     for (stored, expected) in [
         (DesignThickenBooleanOperation::Join, BooleanKind::Join),
@@ -326,7 +334,7 @@ fn thicken_zero_and_overflow_keep_result_and_chain_settings() {
         assert_eq!(thickness, None);
         assert_eq!(
             result,
-            Some(cadmpeg_ir::features::SolidFeatureResult::NewBody {})
+            Some(cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {})
         );
         assert_eq!(tangent_chain, Some(true));
         assert_eq!(losses.len(), 1);
@@ -361,19 +369,31 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
     };
     assert_eq!(
         project(true, 0.5),
-        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+        (
+            Some(10.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)
+        )
     );
     assert_eq!(
         project(true, -0.5),
-        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+        (
+            Some(10.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)
+        )
     );
     assert_eq!(
         project(false, 0.5),
-        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+        (
+            Some(5.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Forward)
+        )
     );
     assert_eq!(
         project(false, -0.5),
-        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Reverse))
+        (
+            Some(5.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Reverse)
+        )
     );
 
     let mut scope = scope(DesignFeatureKind::Thicken);
@@ -469,7 +489,7 @@ fn shell_projects_native_face_group() {
         bodies,
         removed_faces,
         ..
-    } = projected_operation(super::super::project_shell(
+    } = projected_operation(crate::design::feature_project::direct_face::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
@@ -489,7 +509,7 @@ fn shell_projects_native_body_group() {
         bodies,
         removed_faces,
         ..
-    } = projected_operation(super::super::project_shell(
+    } = projected_operation(crate::design::feature_project::direct_face::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
@@ -526,7 +546,7 @@ fn wall_slot_scope(
 
 #[test]
 fn wall_slots_project_thickness_direction_mode_and_corners() {
-    use cadmpeg_ir::features::{ShellJoin, ShellMode};
+    use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
     let group = group(DesignOperandRole::ROLE_0X10);
     let project = |scope: &DesignParameterScope| {
         let FeatureOperation::Shell {
@@ -535,7 +555,7 @@ fn wall_slots_project_thickness_direction_mode_and_corners() {
             mode,
             join,
             ..
-        } = projected_operation(super::super::project_shell(
+        } = projected_operation(crate::design::feature_project::direct_face::project_shell(
             scope,
             &[],
             std::slice::from_ref(&group),
@@ -575,7 +595,7 @@ fn unequal_walls_project_both_sides_with_unresolved_thickness() {
         removed_faces,
         join,
         ..
-    } = projected_operation(super::super::project_shell(
+    } = projected_operation(crate::design::feature_project::direct_face::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
@@ -585,18 +605,28 @@ fn unequal_walls_project_both_sides_with_unresolved_thickness() {
     };
     assert_eq!(thickness, None);
     assert_eq!(outward, None);
-    assert_eq!(mode, Some(cadmpeg_ir::features::ShellMode::BothSides));
+    assert_eq!(
+        mode,
+        Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides)
+    );
     assert_eq!(removed_faces, FaceSelection::Native(group.id));
-    assert_eq!(join, Some(cadmpeg_ir::features::ShellJoin::Intersection));
+    assert_eq!(
+        join,
+        Some(cadmpeg_ir::features::operation_settings::ShellJoin::Intersection)
+    );
 }
 
 #[test]
 fn a_shell_without_wall_slots_states_no_corners() {
     let group = group(DesignOperandRole::ROLE_0X10);
     let scope = scope(DesignFeatureKind::Shell);
-    let FeatureOperation::Shell { outward, join, .. } = projected_operation(
-        super::super::project_shell(&scope, &[], std::slice::from_ref(&group)),
-    ) else {
+    let FeatureOperation::Shell { outward, join, .. } =
+        projected_operation(crate::design::feature_project::direct_face::project_shell(
+            &scope,
+            &[],
+            std::slice::from_ref(&group),
+        ))
+    else {
         panic!("expected a shell");
     };
     assert_eq!(outward, Some(true));
@@ -647,7 +677,7 @@ fn a_shell_table_reference_outside_the_face_group_keeps_the_shell_and_reports_it
         thickness,
         outward,
         ..
-    } = projected_operation(super::super::project_shell(
+    } = projected_operation(crate::design::feature_project::direct_face::project_shell(
         &scope,
         &[],
         std::slice::from_ref(&group),
@@ -703,7 +733,7 @@ fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {
 
 #[test]
 fn move_face_projects_a_translation_of_its_group() {
-    use cadmpeg_ir::features::FaceMotion;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
     let scope = move_face_scope([
         [1., 0., 0., 0.],
         [0., 1., 0., -0.25],
@@ -717,11 +747,13 @@ fn move_face_projects_a_translation_of_its_group() {
             direction,
             distance,
         },
-    } = projected_operation(super::super::project_move_face(
-        &scope,
-        std::slice::from_ref(&group),
-        &mut Vec::new(),
-    ))
+    } = projected_operation(
+        crate::design::feature_project::direct_face::project_move_face(
+            &scope,
+            std::slice::from_ref(&group),
+            &mut Vec::new(),
+        ),
+    )
     else {
         panic!("expected a face translation");
     };
@@ -748,18 +780,24 @@ fn move_face_projects_a_transform_stored_as_the_first_reference() {
         .unwrap();
     let mut faces = group(DesignOperandRole::ROLE_0X10);
     assert!(
-        super::super::project_move_face(&scope, std::slice::from_ref(&faces), &mut Vec::new(),)
-            .unwrap()
-            .is_some(),
+        crate::design::feature_project::direct_face::project_move_face(
+            &scope,
+            std::slice::from_ref(&faces),
+            &mut Vec::new(),
+        )
+        .unwrap()
+        .is_some(),
         "the decoded motion survives an unresolved group ordinal"
     );
     faces.scope_reference_ordinal = 1;
     assert!(matches!(
-        projected_operation(super::super::project_move_face(
-            &scope,
-            std::slice::from_ref(&faces),
-            &mut Vec::new(),
-        )),
+        projected_operation(
+            crate::design::feature_project::direct_face::project_move_face(
+                &scope,
+                std::slice::from_ref(&faces),
+                &mut Vec::new(),
+            )
+        ),
         FeatureOperation::MoveFace { .. }
     ));
 }
@@ -774,9 +812,13 @@ fn move_face_keeps_motion_without_a_resolved_group() {
     ];
     let faces = group(DesignOperandRole::ROLE_0X10);
     let refused = |transform, groups: &[DesignConstructionOperandGroup]| {
-        super::super::project_move_face(&move_face_scope(transform), groups, &mut Vec::new())
-            .unwrap()
-            .is_none()
+        crate::design::feature_project::direct_face::project_move_face(
+            &move_face_scope(transform),
+            groups,
+            &mut Vec::new(),
+        )
+        .unwrap()
+        .is_none()
     };
     assert!(!refused(translation, std::slice::from_ref(&faces)));
     assert!(!refused(translation, &[]));
@@ -796,7 +838,7 @@ fn move_face_keeps_motion_without_a_resolved_group() {
 
 #[test]
 fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
-    use cadmpeg_ir::features::FaceMotion;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
     const EPS_ROTATION_FIELD: f64 = 1.0e-9;
     let (sine, cosine) = 5f64.to_radians().sin_cos();
     // A rotation about +X through (0, 1.5, 2) cm stores t = p - R p.
@@ -826,11 +868,13 @@ fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
                     axis_dir,
                     angle,
                 },
-        } = projected_operation(super::super::project_move_face(
-            &move_face_scope(transform),
-            std::slice::from_ref(&faces),
-            &mut Vec::new(),
-        ))
+        } = projected_operation(
+            crate::design::feature_project::direct_face::project_move_face(
+                &move_face_scope(transform),
+                std::slice::from_ref(&faces),
+                &mut Vec::new(),
+            ),
+        )
         else {
             panic!("expected a face rotation");
         };
@@ -863,13 +907,15 @@ fn move_face_preserves_a_screw_motion() {
         [0., 0., 1., 0.25],
         [0., 0., 0., 1.],
     ];
-    assert!(super::super::project_move_face(
-        &move_face_scope(screw),
-        std::slice::from_ref(&group(DesignOperandRole::ROLE_0X10)),
-        &mut Vec::new(),
-    )
-    .unwrap()
-    .is_some());
+    assert!(
+        crate::design::feature_project::direct_face::project_move_face(
+            &move_face_scope(screw),
+            std::slice::from_ref(&group(DesignOperandRole::ROLE_0X10)),
+            &mut Vec::new(),
+        )
+        .unwrap()
+        .is_some()
+    );
 }
 
 #[test]
@@ -889,13 +935,15 @@ fn move_face_stays_native_for_a_reflection() {
             [0., 0., 0., 1.],
         ],
     ] {
-        assert!(super::super::project_move_face(
-            &move_face_scope(transform),
-            std::slice::from_ref(&faces),
-            &mut Vec::new(),
-        )
-        .unwrap()
-        .is_none());
+        assert!(
+            crate::design::feature_project::direct_face::project_move_face(
+                &move_face_scope(transform),
+                std::slice::from_ref(&faces),
+                &mut Vec::new(),
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 }
 
@@ -929,7 +977,12 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         translation,
         rotation: Some(rotation),
         copies,
-    })) = super::super::project_move(&scope, std::slice::from_ref(&group), &[], &mut Vec::new())
+    })) = crate::design::feature_project::body_ops::project_move(
+        &scope,
+        std::slice::from_ref(&group),
+        &[],
+        &mut Vec::new(),
+    )
     else {
         panic!("MoveBody");
     };
@@ -945,8 +998,14 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     assert_eq!(rotation.direction.z, -1.);
     assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() <= f64::EPSILON);
     assert_eq!(copies, 0);
-    assert!(super::super::project_move(&scope, &[], &[], &mut Vec::new()).is_none());
-    assert!(super::super::project_move(
+    assert!(crate::design::feature_project::body_ops::project_move(
+        &scope,
+        &[],
+        &[],
+        &mut Vec::new()
+    )
+    .is_none());
+    assert!(crate::design::feature_project::body_ops::project_move(
         &scope,
         &[group.clone(), group.clone()],
         &[],
@@ -965,10 +1024,13 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         })
         .unwrap();
     let mut losses = Vec::new();
-    assert!(
-        super::super::project_move(&scope, std::slice::from_ref(&group), &[], &mut losses)
-            .is_some()
-    );
+    assert!(crate::design::feature_project::body_ops::project_move(
+        &scope,
+        std::slice::from_ref(&group),
+        &[],
+        &mut losses
+    )
+    .is_some());
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
@@ -985,7 +1047,13 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     ]
     .try_into()
     .unwrap();
-    assert!(super::super::project_move(&scope, &[group], &[], &mut Vec::new()).is_none());
+    assert!(crate::design::feature_project::body_ops::project_move(
+        &scope,
+        &[group],
+        &[],
+        &mut Vec::new()
+    )
+    .is_none());
 }
 
 fn move_owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParameterOwner {
@@ -999,7 +1067,7 @@ fn owner_in(
     local_ordinal: u32,
     value: f64,
 ) -> DesignParameterOwner {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{stream}:design-parameter-owner#{record_index}"),
         "byte_offset": 2000 + record_index,
         "frame_length": 104,
@@ -1063,7 +1131,7 @@ fn move_scope_reference_loss(
     owners: &[DesignParameterOwner],
 ) -> Option<String> {
     let mut losses = Vec::new();
-    assert!(super::super::project_move(
+    assert!(crate::design::feature_project::body_ops::project_move(
         scope,
         std::slice::from_ref(&group(DesignOperandRole::BODIES_A)),
         owners,
@@ -1317,14 +1385,14 @@ fn offset_faces_keeps_its_group_when_a_member_resolves_a_face() {
     let scope = scope(DesignFeatureKind::OffsetFaces);
     let group = group(DesignOperandRole::ROLE_0X10);
     let operand = resolved_member_operand();
-    let FeatureOperation::MoveFace { faces, .. } =
-        projected_operation(super::super::project_offset_faces(
+    let FeatureOperation::MoveFace { faces, .. } = projected_operation(
+        crate::design::feature_project::direct_face::project_offset_faces(
             &scope,
             &[],
             std::slice::from_ref(&operand),
             std::slice::from_ref(&group),
-        ))
-    else {
+        ),
+    ) else {
         panic!("expected a face move");
     };
     assert_eq!(faces, FaceSelection::Native(group.id.clone()));
@@ -1335,7 +1403,7 @@ fn shell_keeps_its_group_when_a_member_resolves_a_face() {
     let scope = scope(DesignFeatureKind::Shell);
     let group = group(DesignOperandRole::ROLE_0X10);
     let FeatureOperation::Shell { removed_faces, .. } =
-        projected_operation(super::super::project_shell(
+        projected_operation(crate::design::feature_project::direct_face::project_shell(
             &scope,
             &[resolved_member_operand()],
             std::slice::from_ref(&group),
@@ -1344,4 +1412,62 @@ fn shell_keeps_its_group_when_a_member_resolves_a_face() {
         panic!("expected a shell");
     };
     assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn shell_projects_preceding_faces_with_empty_active_candidates() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let operand = resolved_member_operand();
+    assert!(operand.candidate_faces.is_empty());
+    let FeatureOperation::Shell { removed_faces, .. } =
+        projected_operation(crate::design::feature_project::direct_face::project_shell(
+            &scope,
+            &[operand],
+            std::slice::from_ref(&group),
+        ))
+    else {
+        panic!("expected a shell");
+    };
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::feature_input_prefix(&feature, 5);
+    let expected = FaceSelection::historical(
+        crate::ids::feature_input_topology_id(&feature, 5),
+        vec![crate::ids::history_input_face_id(&prefix, 27)],
+        group.id,
+    )
+    .unwrap();
+    assert_eq!(removed_faces, expected);
+}
+
+#[test]
+fn shell_keeps_a_group_with_an_unresolved_historical_member() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let mut operand = resolved_member_operand();
+    operand.resolved_face_slots.clear();
+    let FeatureOperation::Shell { removed_faces, .. } =
+        projected_operation(crate::design::feature_project::direct_face::project_shell(
+            &scope,
+            &[operand],
+            std::slice::from_ref(&group),
+        ))
+    else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id));
 }

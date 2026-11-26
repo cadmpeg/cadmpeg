@@ -6,7 +6,7 @@ use crate::report::{check::Check, Severity};
 fn tolerance_validation_preserves_warning_owners_and_arena_order() {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.tolerances = crate::units::Tolerances::new(2.0e6, 1.0).unwrap();
-    let tolerance = crate::scalar::PositiveReal::new(2.0e6);
+    let tolerance = crate::scalar::PositiveLength::new(2.0e6);
     ir.geometry.vertices[0].tolerance = tolerance;
     ir.geometry.edges[0].tolerance = tolerance;
     ir.geometry.faces[0].tolerance = tolerance;

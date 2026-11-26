@@ -53,7 +53,7 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
     super::assert_valid(&decoded);
     assert!(!decoded.report().losses.is_empty());
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )
@@ -138,7 +138,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             assert_eq!(decoded.ir().model, expected.ir().model);
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 decoded.ir(),
                 None,
             )
@@ -161,7 +161,11 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .expect("the loss names the stub");
             // No product definition stands for this document, so no record
             // contains the entry.
-            assert!(decoded.ir().model.product_definitions.is_empty());
+            assert!(cadmpeg_ir::products::stated_definitions(
+                &decoded.ir().model.product_definitions
+            )
+            .next()
+            .is_none());
             assert!(stub.links.is_empty());
             let retained = decoded
                 .source_fidelity()
@@ -190,6 +194,70 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             assert_eq!(replayed, changed);
         }
     }
+}
+
+/// Appends a second central record that names the stored span of `name` under
+/// `alias`, a name of the same length.
+fn alias_entry(bytes: &mut Vec<u8>, name: &str, alias: &str) {
+    assert_eq!(name.len(), alias.len());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let central = usize::try_from(archive.entry(name).unwrap().central_start).unwrap();
+    let field = |offset: usize| usize::from(View::u16_le_at(bytes, central + offset).unwrap());
+    let length = 46 + field(28) + field(30) + field(32);
+    let mut record = bytes[central..central + length].to_vec();
+    record[46..46 + alias.len()].copy_from_slice(alias.as_bytes());
+    let eocd = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    let directory_size = View::u32_le_at(bytes, eocd + 12).unwrap();
+    let directory_end =
+        usize::try_from(View::u32_le_at(bytes, eocd + 16).unwrap() + directory_size).unwrap();
+    assert_eq!(directory_end, eocd);
+    for offset in [eocd + 8, eocd + 10] {
+        let count = View::u16_le_at(bytes, offset).unwrap() + 1;
+        bytes[offset..offset + 2].copy_from_slice(&count.to_le_bytes());
+    }
+    let directory_size = directory_size + u32::try_from(length).unwrap();
+    bytes[eocd + 12..eocd + 16].copy_from_slice(&directory_size.to_le_bytes());
+    bytes.splice(eocd..eocd, record);
+}
+
+/// §3.3: a part is given up once. Two directory entries that name one stored
+/// span that does not open make one stub and one `record.unreadable`.
+#[test]
+fn two_entries_that_name_one_unreadable_span_are_given_up_once() {
+    let name = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let alias = "FusionAssetName[Active]/Previews/thumbnail.pnG";
+    let mut changed = f3d_with_configuration(&synthetic_geometry_smbh(), name, b"preview");
+    damage_entry(&mut changed, name, Defect::Crc);
+    alias_entry(&mut changed, name, alias);
+    let decoded = super::decode(changed);
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss: {losses:?}");
+    };
+    let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+    let named = stubs
+        .iter()
+        .filter(|stub| loss.message.contains(&format!("record={}", stub.id)))
+        .collect::<Vec<_>>();
+    let [stub] = named.as_slice() else {
+        panic!("one stub named by the loss: {named:?}");
+    };
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some());
+    super::assert_valid(&decoded);
 }
 
 #[test]
@@ -256,21 +324,70 @@ fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_defin
     super::assert_valid(&decoded);
 }
 
+/// A binary B-rep member whose payload does not open is given up alone: the
+/// other member's body decodes as it does from the intact archive, a loss
+/// names the member, and a strict decode refuses that loss.
 #[test]
-fn required_brep_payload_defects_remain_fatal() {
-    let name = "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
-    let original = crate::test_support::zip_test::f3d_with_smbh(&synthetic_geometry_smbh());
-    for defect in [
+fn a_brep_payload_that_does_not_open_is_given_up_alone() {
+    use std::io::Write as _;
+    let kept = "FusionAssetName[Active]/Breps.BlobParts/BREP.kept.smbh";
+    let name = "FusionAssetName[Active]/Breps.BlobParts/BREP.lost.smbh";
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut writer, stored);
+    for entry in [kept, name] {
+        writer.start_file(entry, stored).unwrap();
+        writer.write_all(&synthetic_geometry_smbh()).unwrap();
+    }
+    let original = writer.finish().unwrap().into_inner();
+    let intact = super::decode(original.clone());
+    assert_eq!(intact.ir().geometry.bodies.len(), 2);
+    let mut damaged = [
         Defect::Crc,
         Defect::Encryption,
         Defect::UnsupportedCompression,
         Defect::InvalidDeflate,
-    ] {
+    ]
+    .map(|defect| {
         let mut changed = original.clone();
         damage_entry(&mut changed, name, defect);
-        assert!(F3dCodec
-            .decode(&mut Cursor::new(changed), &DecodeOptions::default())
-            .is_err());
+        changed
+    })
+    .to_vec();
+    // An archive cut inside its last member keeps no central directory, and
+    // the member's local payload runs past the end of the file.
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let payload = usize::try_from(archive.entry(name).unwrap().data_start.unwrap()).unwrap();
+    damaged.push(original[..=payload].to_vec());
+    for changed in damaged {
+        let decoded = super::decode(changed.clone());
+        let [body] = decoded.ir().geometry.bodies.as_slice() else {
+            panic!("one body: {:?}", decoded.ir().geometry.bodies);
+        };
+        assert!(intact.ir().geometry.bodies.contains(body));
+        let losses = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+            .collect::<Vec<_>>();
+        let [loss] = losses.as_slice() else {
+            panic!("one record.unreadable loss: {losses:?}");
+        };
+        assert!(loss
+            .message
+            .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
+        let strict = DecodeOptions {
+            strictness: cadmpeg_ir::report::strictness::Strictness {
+                pinned: true,
+                ..Default::default()
+            },
+            ..DecodeOptions::default()
+        };
+        assert!(F3dCodec.decode(&mut Cursor::new(changed), &strict).is_err());
     }
 }
 

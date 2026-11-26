@@ -7,24 +7,24 @@ use crate::eval::sweep_law::scalar_sweep_law_differential;
 use crate::eval::sweep_profile_differential;
 use crate::eval::sweep_profile_reversed;
 use crate::eval::tests::bilinear_surface;
-use crate::features::FinitePoint3;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FinitePoint3;
+use crate::features::geometry::FiniteVector3;
+use crate::geometry::laws::LawExpression;
+use crate::geometry::laws::LawFormula;
 use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::RevisionCacheForm;
+use crate::geometry::revision_forms::RevisionSurfaceParameterization;
+use crate::geometry::sweep_surfaces::SweepRevisionForm;
+use crate::geometry::sweep_surfaces::SweepSurfaceConstruction;
+use crate::geometry::sweep_surfaces::SweepSurfaceLayout;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
-use crate::geometry::LawExpression;
-use crate::geometry::LawFormula;
 use crate::geometry::ProceduralSurface;
-use crate::geometry::ProceduralSurfaceDefinition;
-use crate::geometry::RevisionCacheForm;
-use crate::geometry::RevisionSurfaceParameterization;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::SolvedSurfaceGeometry;
 use crate::geometry::Surface;
 use crate::geometry::SurfaceGeometry;
-use crate::geometry::SweepRevisionForm;
-use crate::geometry::SweepSurfaceConstruction;
-use crate::geometry::SweepSurfaceLayout;
 use crate::ids::CurveId;
 use crate::ids::ProceduralSurfaceId;
 use crate::ids::SurfaceId;
@@ -284,12 +284,12 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         id: construction_id,
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
-                cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
+                cache: crate::geometry::legacy_cache::CacheContract::Revision { form: SweepRevisionForm {
                     revision: crate::scalar::PositiveI64::new(22601).expect("positive revision"),
                     primary_flag: true,
                     profile_endpoints: [None, None],
                     path_endpoints: [None, None],
-                    cache: crate::geometry::RevisionCacheForm::Parameterization(
+                    cache: crate::geometry::revision_forms::RevisionCacheForm::Parameterization(
                         RevisionSurfaceParameterization::default(),
                     ),
                 } },
@@ -386,8 +386,8 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         };
 
         let form = native.cache.form_mut().expect("revision sweep form");
-        form.cache = crate::geometry::RevisionCacheForm::SolvedCache {
-            fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+        form.cache = crate::geometry::revision_forms::RevisionCacheForm::SolvedCache {
+            fit_tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.0).unwrap(),
         };
         *definition_payload = crate::geometry::surface_payloads::SweepSurfacePayload::try_new(
             definition_payload.profile().clone(),
@@ -406,7 +406,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(
@@ -434,7 +434,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         };
 
         let form = native.cache.form_mut().expect("revision sweep form");
-        form.cache = crate::geometry::RevisionCacheForm::Parameterization(
+        form.cache = crate::geometry::revision_forms::RevisionCacheForm::Parameterization(
             RevisionSurfaceParameterization::default(),
         );
         if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
@@ -509,7 +509,8 @@ fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
 #[test]
 fn numerical_seventh_normalized_derivative_keeps_finite_results() {
     use crate::eval::unit_vector_with_derivative;
-    let vector = |x, y, z| crate::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
+    let vector =
+        |x, y, z| crate::features::geometry::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
     for magnitude in [1.0, 1.0e200, f64::MAX] {
         let (_, derivative) = unit_vector_with_derivative(
             vector(1.0, 1.0, 1.0),
@@ -582,7 +583,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
-                cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
+                cache: crate::geometry::legacy_cache::CacheContract::Revision { form: SweepRevisionForm {
                     revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
                     primary_flag: false,
                     profile_endpoints: [Some(0.0), Some(1.0)],
@@ -647,7 +648,7 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
         ),
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             1.0,
@@ -699,7 +700,7 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             0.0
@@ -722,7 +723,7 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
 #[test]
 fn recursive_law_and_zero_radius_return_the_session_depth_refusal() {
     use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
-    use crate::geometry::{VariableBlendValue, VariableBlendValuePayload};
+    use crate::geometry::variable_blends::{VariableBlendValue, VariableBlendValuePayload};
     use crate::scalar::FiniteReal;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let law = LawExpression::Algebraic {
@@ -806,7 +807,7 @@ fn sweep_text_projections_ignore_whitespace() {
             .unwrap(),
         variables: Vec::new(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale),
         Ok(Some(Vector3::new(2.0, 3.0, 4.0)))

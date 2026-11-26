@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn draft_edge_groups_require_an_explicit_parting_tool_or_fixed_edge_reference() {
     use crate::records::{
@@ -71,7 +73,10 @@ fn draft_edge_groups_require_an_explicit_parting_tool_or_fixed_edge_reference() 
                 DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
             let ctx = super::super::Ctx::new(&ir, &data, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), expected, "tool={tool} fixed={fixed:?}");
         }
     });
@@ -240,7 +245,10 @@ fn reference_findings(
         });
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         findings
     })
 }
@@ -298,12 +306,18 @@ fn hole_construction_group_accepts_its_retained_auxiliary_role() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X21);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty());
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -340,12 +354,18 @@ fn move_face_group_requires_the_selected_face_role() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty(), "{findings:?}");
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -386,7 +406,10 @@ fn align_group_requires_the_body_or_geometry_role() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.len(), findings_expected, "{role:?} {findings:?}");
         }
     });
@@ -427,7 +450,10 @@ fn mesh_face_group_scope_keeps_native_body_group_guards() {
                 }
                 let ctx = super::super::Ctx::new(&ir, &native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_construction_operand_groups(&ctx, &mut findings);
+                super::super::construction_operands::validate_construction_operand_groups(
+                    &ctx,
+                    &mut findings,
+                );
                 assert_eq!(findings.is_empty(), mutation == 0, "{findings:?}");
             });
         }
@@ -465,12 +491,18 @@ fn thread_face_group_does_not_require_a_specialized_thread_payload() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty(), "{findings:?}");
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -536,7 +568,10 @@ fn revolve_target_group_requires_a_scope_without_an_angle_construction() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(
                 findings.len(),
                 finding_count,
@@ -578,21 +613,20 @@ fn pattern_native(
     native.design_construction_operand_groups[0].operand_role =
         DesignConstructionOperandRole::Other(first);
     if let Some(second) = second {
-        let mut group =
-            serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+        let mut group = json::to_value(&native.design_construction_operand_groups[0]).unwrap();
         group["id"] = format!("{stream}:design-construction-operand-group#2000").into();
         group["record_index"] = 102.into();
         group["scope_reference_ordinal"] = 2.into();
         group["byte_offset"] = 2_000.into();
-        group["member_offsets"] = serde_json::json!([2_026]);
-        group["members"] = serde_json::json!([103]);
+        group["member_offsets"] = cadmpeg_core::json!([2_026]);
+        group["members"] = cadmpeg_core::json!([103]);
         group["frame"]["member_count_offset"] = 2_021.into();
         group["frame"]["opaque_index_offset"] = 2_058.into();
         group["frame"]["opaque_scalar_offset"] = 2_062.into();
         group["role_offset"] = 2_040.into();
         group["paired_byte_offset"] = 2_080.into();
         let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
-            serde_json::from_value(group).unwrap();
+            json::from_value(group).unwrap();
         group.operand_role = DesignConstructionOperandRole::Other(second);
         native.design_construction_operand_groups.push(group);
         for (index, offset) in [(102, 2_000), (103, 2_100)] {
@@ -612,7 +646,10 @@ fn invalid_group_records(native: &crate::native::F3dNative) -> Vec<String> {
         let ir = cadmpeg_ir::CadIr::empty();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         findings
             .iter()
             .filter(|finding| {
@@ -680,16 +717,16 @@ fn path_seed_native(
     };
     let stream = "f3d:Design/BulkStream.dat";
     let mut native = pattern_native(kind, DesignOperandRole::PATH_SEED, None);
-    let mut group = serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
-    group["members"] = serde_json::json!([]);
-    group["member_offsets"] = serde_json::json!([]);
-    group["frame"]["auxiliary_record_indices"] = serde_json::json!([103, 106]);
-    group["frame"]["auxiliary_record_offsets"] = serde_json::json!([1_026, 1_037]);
-    group["frame"]["trailing_record_indices"] = serde_json::json!([109]);
-    group["frame"]["trailing_record_offsets"] = serde_json::json!([1_030]);
+    let mut group = json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+    group["members"] = cadmpeg_core::json!([]);
+    group["member_offsets"] = cadmpeg_core::json!([]);
+    group["frame"]["auxiliary_record_indices"] = cadmpeg_core::json!([103, 106]);
+    group["frame"]["auxiliary_record_offsets"] = cadmpeg_core::json!([1_026, 1_037]);
+    group["frame"]["trailing_record_indices"] = cadmpeg_core::json!([109]);
+    group["frame"]["trailing_record_offsets"] = cadmpeg_core::json!([1_030]);
     edit(&mut group);
     let mut group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(group).unwrap();
+        json::from_value(group).unwrap();
     let path = |record_index: u32, byte_offset: u64, placement| {
         let scope_offset = byte_offset
             + match placement {
@@ -768,8 +805,8 @@ fn a_path_carried_seed_group_keeps_its_exact_shape() {
     let bare_references = path_seed_native(RPattern, 0, |_| {});
     let one_path = path_seed_native(RPattern, 1, |_| {});
     let member = path_seed_native(RPattern, 2, |group| {
-        group["members"] = serde_json::json!([101]);
-        group["member_offsets"] = serde_json::json!([1_026]);
+        group["members"] = cadmpeg_core::json!([101]);
+        group["member_offsets"] = cadmpeg_core::json!([1_026]);
     });
     let outside_patterns = path_seed_native(Fillet, 2, |_| {});
     for native in [bare_references, one_path, member, outside_patterns] {
@@ -806,7 +843,10 @@ fn a_loft_construction_group_admits_the_point_role() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
         }
     });
@@ -838,7 +878,10 @@ fn a_surface_patch_group_admits_boundary_profile_and_interior_roles() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
         }
     });
@@ -877,7 +920,10 @@ fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             findings.len()
         };
         let seed_table = || vec![300, 100, 101];
@@ -937,7 +983,10 @@ fn sheet_metal_fold_and_line_bend_groups_validate_their_source_roles() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), valid, "{findings:?}");
         });
     }

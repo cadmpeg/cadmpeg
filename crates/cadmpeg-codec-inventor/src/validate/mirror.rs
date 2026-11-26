@@ -20,6 +20,9 @@ pub(super) fn validate_mirrors(
     data: &NativeData,
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<cadmpeg_ir::features::FeatureId>, CodecError> {
+    if !ir.model.omitted_arenas_held() {
+        return Ok(HashSet::new());
+    }
     if !data
         .pm_dc_pattern_features
         .iter()
@@ -185,7 +188,7 @@ struct Joins<'a> {
     features: &'a HashMap<&'a cadmpeg_ir::features::FeatureId, Option<&'a Feature>>,
     results: &'a HashMap<
         &'a cadmpeg_ir::features::FeatureId,
-        Option<&'a cadmpeg_ir::features::FeatureResultTopology>,
+        Option<&'a cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     >,
 }
 

@@ -51,12 +51,17 @@ fn nurbs_display_model(placed: bool) -> CadIr {
 fn assign(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
-    let result = super::super::assign_unique_surface_owners(&ctx, ir, &mut Vec::new());
+    let result = super::super::assign_unique_surface_owners(
+        &ctx,
+        ir,
+        &std::collections::HashSet::default(),
+        &mut Vec::new(),
+    );
     if let Err(CodecError::ResourceLimit(first)) = &result {
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(sticky)) if sticky == *first));
     }
-    result
+    result.map(|owned| owned.iter().map(|id| id.as_str().to_owned()).collect())
 }
 
 #[test]
@@ -67,7 +72,7 @@ fn geometric_nurbs_surface_route_assigns_the_face() {
         vec!["synthetic:test:tessellation#admitted-nurbs"]
     );
     assert_eq!(
-        ir.model.tessellations[0].faces,
+        ir.model.tessellations[0].of.faces(),
         vec![ir.geometry.faces[0].id.clone()]
     );
 }

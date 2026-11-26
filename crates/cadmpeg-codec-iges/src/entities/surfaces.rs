@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
+use super::composite::{
+    bounded_parameter_range_for_curve, curve_carrier_id, curve_carrier_sequence, CompositeIndex,
+};
 use super::geometry::{
     declared_unit_vector, resolve_transform, source_object, unit_vector, DeclaredInterval,
     ProjectionOutcome,
@@ -17,17 +19,18 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, positive_controls, HomogeneousBezierSpan,
 };
+use cadmpeg_ir::geometry::nurbs::{
+    KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
+    SurfaceParameterAxis, WeightedPole3,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{
-        KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
-        SurfaceParameterAxis, WeightedPole3,
-    },
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1081,7 +1084,7 @@ fn homogeneous_curve_boundary_matches(
     Ok(Some(true))
 }
 
-fn surface_boundary_is_closed(
+pub(super) fn surface_boundary_is_closed(
     ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
@@ -1381,12 +1384,12 @@ pub(super) fn project(
             );
             continue;
         };
-        let boundary_sequence = u32::try_from(boundary)
+        let boundary_pointer = u32::try_from(boundary)
             .ok()
-            .filter(|sequence| sequence % 2 == 1)
-            .filter(|sequence| entries.contains_key(sequence));
+            .filter(|sequence| sequence % 2 == 1);
+        let boundary_sequence = boundary_pointer.filter(|sequence| entries.contains_key(sequence));
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
-            super::push_geometry_loss(&mut losses, entry, format_args!("plane form and boundary pointer are inconsistent or the boundary target is missing"));
+            super::push_geometry_loss_needing(&mut losses, entry, boundary_pointer.filter(|_| entry.form != 0), format_args!("plane form and boundary pointer are inconsistent or the boundary target is missing"));
             continue;
         }
         let local_normal = Vector3::new(a, b, c);
@@ -1426,7 +1429,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1550,22 +1558,27 @@ pub(super) fn project(
             second_sequence,
             &mut second_storage,
         );
+        let first_curve = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| Some(curve.id.as_str()) == first_id);
+        let second_curve = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| Some(curve.id.as_str()) == second_id);
+        let missing_rail = match (first_curve, second_curve) {
+            (None, _) => Some(first_sequence),
+            (_, None) => Some(second_sequence),
+            _ => None,
+        };
         let rails = (
-            match ir
-                .geometry
-                .curves
-                .iter()
-                .find(|curve| Some(curve.id.as_str()) == first_id)
-            {
+            match first_curve {
                 Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
                 None => Ok(None),
             },
-            match ir
-                .geometry
-                .curves
-                .iter()
-                .find(|curve| Some(curve.id.as_str()) == second_id)
-            {
+            match second_curve {
                 Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
                 None => Ok(None),
             },
@@ -1583,9 +1596,10 @@ pub(super) fn project(
             }
         };
         let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                missing_rail,
                 format_args!("rail curves do not have bounded polynomial or NURBS carriers"),
             );
             continue;
@@ -1620,7 +1634,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                super::push_attributed_loss(
+                super::push_given_up_loss(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
@@ -1629,7 +1643,8 @@ pub(super) fn project(
                 continue;
             }
         }
-        let surface = match ruled_carrier_or_loss(ruled_surface_carrier(&first, &second, ctx))? {
+        let carrier = ruled_surface_carrier(&first, &second, ctx);
+        let surface = match ruled_carrier_or_loss(carrier)? {
             Ok(surface) => surface,
             Err(message) => {
                 super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
@@ -1714,9 +1729,10 @@ pub(super) fn project(
             continue;
         };
         let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                Some(directrix_sequence),
                 format_args!("directrix entity is missing"),
             );
             continue;
@@ -1754,7 +1770,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1787,9 +1808,14 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_geometry_loss(
+                super::push_geometry_loss_needing(
                     &mut losses,
                     entry,
+                    composite_index
+                        .curve_by_id(ir, &directrix_id)
+                        .is_none()
+                        .then(|| curve_carrier_sequence(directrix_sequence, &entries, &records))
+                        .flatten(),
                     format_args!(
                         "directrix has no bounded polynomial, NURBS, or exact evaluable carrier"
                     ),
@@ -1884,9 +1910,11 @@ pub(super) fn project(
                 native_ref: None,
             });
             let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
-                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                    "Extrusion.parameter_interval is not finite",
-                ))
+                CodecError::malformed(
+                    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                        "Extrusion.parameter_interval is not finite",
+                    ),
+                )
             })?;
             let bounds = RecordBounds::try_new([
                 Some(carrier_interval[0]),
@@ -1895,9 +1923,11 @@ pub(super) fn project(
                 None,
             ])
             .map_err(|_| {
-                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                    "record bounds must be finite",
-                ))
+                CodecError::malformed(
+                    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                        "record bounds must be finite",
+                    ),
+                )
             })?;
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -1938,7 +1968,7 @@ pub(super) fn project(
             {
                 Ok(()) => directrix,
                 Err(()) => {
-                    super::push_attributed_loss(
+                    super::push_given_up_loss(
                         &mut losses,
                         entry,
                         IgesLossCode::NurbsTransformNonFinite,
@@ -2097,9 +2127,11 @@ pub(super) fn project(
             native_ref: None,
         });
         let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
-            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                "Extrusion.parameter_interval is not finite",
-            ))
+            CodecError::malformed(
+                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "Extrusion.parameter_interval is not finite",
+                ),
+            )
         })?;
         let bounds = RecordBounds::try_new([
             Some(carrier_interval[0]),
@@ -2108,9 +2140,11 @@ pub(super) fn project(
             None,
         ])
         .map_err(|_| {
-            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                "record bounds must be finite",
-            ))
+            CodecError::malformed(
+                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "record bounds must be finite",
+                ),
+            )
         })?;
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -2201,15 +2235,21 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
         let axis_id = crate::ids::curve(&crate::ids::Stem::directory(axis_sequence));
         let Some(axis_curve) = ir.geometry.curves.iter().find(|curve| curve.id == axis_id) else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                Some(axis_sequence),
                 format_args!("revolution axis carrier is missing"),
             );
             continue;
@@ -2226,9 +2266,10 @@ pub(super) fn project(
         let axis_origin = admitted_axis.0.get();
         let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                (!entries.contains_key(&generatrix_sequence)).then_some(generatrix_sequence),
                 format_args!("revolution model-space carrier pointer is invalid"),
             );
             continue;
@@ -2254,9 +2295,14 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_geometry_loss(
+                super::push_geometry_loss_needing(
                     &mut losses,
                     entry,
+                    composite_index
+                        .curve_by_id(ir, &generatrix_id)
+                        .is_none()
+                        .then(|| curve_carrier_sequence(generatrix_sequence, &entries, &records))
+                        .flatten(),
                     format_args!(
                         "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier"
                     ),
@@ -2350,7 +2396,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     Ok(ProceduralSurface::new(
@@ -2364,7 +2410,7 @@ pub(super) fn project(
                                 None,
                             ])
                             .map_err(|_| {
-                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                                     "record bounds must be finite",
                                 )
                             })?,
@@ -2499,7 +2545,7 @@ pub(super) fn project(
             let Ok(()) = placed_generatrix
                 .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
-                super::push_attributed_loss(
+                super::push_given_up_loss(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
@@ -2553,7 +2599,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     RecordBounds::try_new([
@@ -2563,7 +2609,7 @@ pub(super) fn project(
                         None,
                     ])
                     .map_err(|_| {
-                        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                             "record bounds must be finite",
                         )
                     })
@@ -2888,7 +2934,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -3092,9 +3143,10 @@ pub(super) fn project(
             .iter()
             .find(|surface| surface.id == support_id)
         else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                Some(support_sequence),
                 format_args!("offset support surface is missing"),
             );
             continue;

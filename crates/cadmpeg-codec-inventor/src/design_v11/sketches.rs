@@ -5,21 +5,39 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::construction::{Construction, FrameValue};
+use cadmpeg_ir::design::construction::{
+    Construction, ConstructionInput, FrameValue, InputReference,
+};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::{
     DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
     SketchEntity, SketchPlane, SketchSolve,
 };
+use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
-use cadmpeg_ir::sketches::{SketchGeometryDefinition as Geometry, SketchPlacement};
+use cadmpeg_ir::sketches::{
+    SketchEntity as LegacyEntity, SketchGeometryDefinition as Geometry, SketchId, SketchPlacement,
+};
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 use cadmpeg_ir::CadIr;
 
 mod constraints;
 
-pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+type EndpointRoles<'a> = BTreeMap<(&'a SketchId, &'a str), Vec<EntityRole<Planar>>>;
+
+pub(super) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    let roles = endpoint_roles(&ir.model.sketch_entities);
+    let kinds = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.kind.clone()))
+        .collect();
     for feature in &ir.model.features {
         let (id, block) = match feature.evaluation.definition().operation() {
             LegacyOperation::Sketch { sketch } => (sketch.id(), false),
@@ -39,7 +57,7 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             continue;
         };
         ctx.charge_entities(1, "project Inventor v11 sketch")?;
-        let resolved = match source.placement {
+        let (inputs, resolved) = match source.placement {
             SketchPlacement::Resolved { .. } => {
                 let (origin, normal, u_axis) = source
                     .placement
@@ -49,15 +67,28 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
                     .ok_or_else(|| CodecError::malformed("Inventor sketch x axis"))?;
                 let z_axis = UnitVector3::normalized_nonzero(normal)
                     .ok_or_else(|| CodecError::malformed("Inventor sketch normal"))?;
-                Some(FrameValue {
+                let frame = FrameValue {
                     origin,
                     x_axis,
                     z_axis,
                     y_axis: UnitVector3::normalized(z_axis.as_raw().cross(*x_axis.as_raw()))
                         .ok_or_else(|| CodecError::malformed("Inventor sketch y axis"))?,
-                })
+                };
+                (Vec::new(), Some(frame))
             }
-            SketchPlacement::Unresolved {} => None,
+            SketchPlacement::Unresolved {} => (
+                vec![ConstructionInput {
+                    role: None,
+                    reference: Some(InputReference::Picks(Selection {
+                        at: Anchor::Input,
+                        picks: Picks::Unread,
+                        native: None,
+                    })),
+                    value: None,
+                    reversed: None,
+                }],
+                None,
+            ),
         };
         ir.design.sketches.push(Sketch {
             id: source.id.clone(),
@@ -67,7 +98,7 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
                 SketchPlane::Block
             } else {
                 SketchPlane::Placed(Box::new(Construction {
-                    inputs: Vec::new(),
+                    inputs,
                     after: Vec::new(),
                     solution: None,
                     mode: None,
@@ -96,14 +127,24 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
                 sketch: source.id.clone(),
                 definition: curve(&entity.geometry).map_or_else(
                     || EntityDefinition::Defined {
-                        form: Box::new(EntityForm::Native(cadmpeg_core::nonblank_literal!(
-                            "inventor:sketch_entity"
-                        ))),
+                        form: Box::new(EntityForm::Native(match entity.geometry.definition() {
+                            Geometry::Native { native_kind } => native_kind.clone(),
+                            _ => cadmpeg_core::nonblank_literal!("inventor:sketch_entity"),
+                        })),
                         solved: None,
                     },
                     EntityDefinition::Free,
                 ),
-                roles: endpoint_roles(entity, &ir.model.sketch_entities),
+                roles: if matches!(entity.geometry.definition(), Geometry::Point { .. }) {
+                    entity
+                        .native_ref
+                        .as_deref()
+                        .and_then(|native| roles.get(&(&entity.sketch, native)))
+                        .cloned()
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                },
                 construction: if entity.construction
                     || matches!(entity.geometry.definition(), Geometry::Line { .. })
                 {
@@ -125,40 +166,36 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             .filter(|item| item.sketch == source.id)
         {
             ctx.charge_entities(1, "project Inventor v11 sketch constraint")?;
+            losses.extend(constraints::loss(constraint, &kinds));
             ir.design
                 .sketch_constraints
-                .push(constraints::project(constraint));
+                .push(constraints::project(constraint, &kinds)?);
         }
     }
     ir.design.sketches.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.sketch_entities.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(())
+    Ok(losses)
 }
 
-fn endpoint_roles(
-    point: &cadmpeg_ir::sketches::SketchEntity,
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Vec<EntityRole<Planar>> {
-    let Some(native) = point.native_ref.as_ref() else {
-        return Vec::new();
-    };
-    if !matches!(point.geometry.definition(), Geometry::Point { .. }) {
-        return Vec::new();
-    }
-    let mut roles = Vec::new();
-    for curve in entities.iter().filter(|curve| curve.sketch == point.sketch) {
+fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
+    let mut roles: EndpointRoles<'_> = BTreeMap::new();
+    for curve in entities {
         let [start, end] = curve.endpoint_refs.as_slice() else {
             continue;
         };
         for (reference, role) in [(start, DefiningRole::Start), (end, DefiningRole::End)] {
-            if reference == native {
-                roles.push(EntityRole {
+            roles
+                .entry((&curve.sketch, reference.as_str()))
+                .or_default()
+                .push(EntityRole {
                     of: curve.id().clone(),
                     role,
                 });
-            }
         }
+    }
+    for roles in roles.values_mut() {
+        roles.sort_by(|left, right| left.of.cmp(&right.of));
     }
     roles
 }

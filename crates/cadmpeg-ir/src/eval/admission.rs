@@ -109,6 +109,18 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             EvaluationAdmission<'frame, 'frame>,
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
+        self.within_model_work(&WorkBudget::new(MAX_MODEL_EVALUATION_WORK), run)
+    }
+
+    /// [`Self::within_model`], with `work` as the slice of an admission
+    /// that has none.
+    fn within_model_work<T, R>(
+        self,
+        work: &WorkBudget,
+        run: impl for<'frame> FnOnce(
+            EvaluationAdmission<'frame, 'frame>,
+        ) -> Result<T, EvaluationFailure<R>>,
+    ) -> Result<T, EvaluationFailure<R>> {
         let evaluate = |admission: EvaluationAdmission<'_, '_>| {
             let scratch = super::decode::Scratch::new(admission);
             scratch.unless_refused()?;
@@ -119,11 +131,10 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             };
             scratch.settle(result)
         };
-        let work = WorkBudget::new(MAX_MODEL_EVALUATION_WORK);
         match self {
-            Self::Decode(_) => self.within_work_slice(&work, evaluate),
+            Self::Decode(_) => self.within_work_slice(work, evaluate),
             Self::Standard => evaluate(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Standalone(&work),
+                policy: WorkSlicePolicy::Standalone(work),
             })),
             Self::WorkSlice(_) => evaluate(self),
         }
@@ -311,12 +322,28 @@ fn session_refusal<R>(context: &DecodeContext<'_>) -> Result<(), EvaluationFailu
         .map_or(Ok(()), |limit| Err(EvaluationFailure::ResourceLimit(limit)))
 }
 
+#[cfg(not(test))]
+const fn evaluation_cap() -> usize {
+    MAX_MODEL_EVALUATION_WORK
+}
+
+#[cfg(test)]
+fn evaluation_cap() -> usize {
+    crate::test_support::evaluation_work::EVALUATION_CAP
+        .with(Cell::get)
+        .unwrap_or(MAX_MODEL_EVALUATION_WORK)
+}
+
 /// The model evaluation work of one validation pass.
 ///
 /// An evaluation that runs out of its slice reports
 /// [`EvaluationFailure::WorkExhausted`]; the pass and the decode session go
 /// on, and the pass counts it against the cap that ran out.
 pub(crate) struct ModelEvaluationPass {
+    /// The work slice of one evaluation.
+    evaluation_cap: usize,
+    /// The work of every evaluation of the pass.
+    pass_cap: usize,
     allowance: WorkBudget,
     capped: Cell<usize>,
     starved: Cell<usize>,
@@ -324,12 +351,14 @@ pub(crate) struct ModelEvaluationPass {
 
 impl ModelEvaluationPass {
     pub(crate) fn new() -> Self {
-        Self::with_allowance(MAX_MODEL_PASS_EVALUATION_WORK)
+        Self::with_caps(evaluation_cap(), MAX_MODEL_PASS_EVALUATION_WORK)
     }
 
-    fn with_allowance(allowance: usize) -> Self {
+    fn with_caps(evaluation_cap: usize, pass_cap: usize) -> Self {
         Self {
-            allowance: WorkBudget::new(allowance),
+            evaluation_cap,
+            pass_cap,
+            allowance: WorkBudget::new(pass_cap),
             capped: Cell::new(0),
             starved: Cell::new(0),
         }
@@ -343,8 +372,8 @@ impl ModelEvaluationPass {
             EvaluationAdmission<'slice, 'slice>,
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
-        let slice = self.allowance.child_slice(MAX_MODEL_EVALUATION_WORK);
-        let full = slice.remaining() == MAX_MODEL_EVALUATION_WORK;
+        let slice = self.allowance.child_slice(self.evaluation_cap);
+        let full = slice.remaining() == self.evaluation_cap;
         let result = admission.within_work_slice(&slice, run);
         let ran_out = slice.exhausted();
         // The slice is no larger than the allowance's remainder, so the
@@ -363,16 +392,17 @@ impl ModelEvaluationPass {
             (
                 self.capped.get(),
                 "MAX_MODEL_EVALUATION_WORK",
-                MAX_MODEL_EVALUATION_WORK,
+                self.evaluation_cap,
             ),
             (
                 self.starved.get(),
                 "MAX_MODEL_PASS_EVALUATION_WORK",
-                MAX_MODEL_PASS_EVALUATION_WORK,
+                self.pass_cap,
             ),
         ] {
             if count > 0 {
                 findings.push(crate::report::check::Finding {
+                    rule: crate::rule_name!("eval.model-carrier-evaluations-reached-local-work"),
                     check: crate::report::check::Check::GeometricConsistency,
                     severity: crate::report::Severity::Warning,
                     message: format!(
@@ -436,6 +466,8 @@ mod tests {
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
     };
     use cadmpeg_core::CodecError;
+
+    use crate::test_support::evaluation_work::doubling_model;
 
     #[test]
     fn model_text_comparison_exhausts_only_its_local_slice() {
@@ -544,7 +576,7 @@ mod tests {
                 .map(|partials| partials.point),
                 _ => crate::eval::model_surface_point(
                     EvaluationAdmission::Decode(&ctx),
-                    &ir,
+                    &crate::index::ModelIndex::new_model_only(&ir),
                     &ir.geometry.surfaces[0].geometry,
                     0.5,
                     0.5,
@@ -565,9 +597,8 @@ mod tests {
 
     #[test]
     fn model_work_slice_keeps_cycles_distinct_from_resource_refusal() {
-        use crate::geometry::{
-            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-        };
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
         let mut ir = crate::CadIr::empty();
         let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
         ir.geometry.curves.push(Curve {
@@ -603,147 +634,66 @@ mod tests {
         assert!(ctx.finish_session().is_ok());
     }
 
-    /// A line, then `levels` tolerant intersections. Each intersection reads
-    /// two axis revolutions of the curve below, so a point of the top curve
-    /// reads the bottom line `2^levels` times.
-    fn doubling_model(levels: usize) -> (crate::CadIr, crate::ids::CurveId) {
-        use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
-        use crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction;
-        use crate::geometry::{
-            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-            ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-            SurfaceGeometry, TolerantIntersectionConstruction,
-            TolerantIntersectionParameterization,
-        };
-        use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-        use crate::math::{Point2, Point3, Vector3};
+    /// The point of the top curve of `doubling_model(levels)`, evaluated as
+    /// `model_curve_point_by_id` evaluates it, with `work` as the local cap.
+    fn capped_doubling_point(
+        admission: EvaluationAdmission<'_, '_>,
+        levels: usize,
+        work: &WorkBudget,
+    ) -> Result<crate::features::geometry::FinitePoint3, EvaluationFailure<crate::math::Point3>>
+    {
+        let (ir, curve) = doubling_model(levels);
+        let index = crate::index::ModelIndex::build(&ir);
+        admission.within_model_work(work, |admission| {
+            crate::eval::model_curve_point_by_id_inner(admission, &index, &curve, 0.5)
+        })
+    }
 
-        let line = |id: &CurveId| Curve {
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        };
-        let pcurve = PcurveGeometry::Line(
-            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+    /// Under a cap of twice the work of the cheap carrier, the cheap carrier
+    /// evaluates and the carrier that reads 16 times as many carriers
+    /// exhausts the cap.
+    fn assert_local_work_cap(
+        evaluate: impl Fn(usize, &WorkBudget) -> Result<(), EvaluationFailure<crate::math::Point3>>,
+    ) {
+        let measured = WorkBudget::new(super::MAX_MODEL_EVALUATION_WORK);
+        assert_eq!(evaluate(2, &measured), Ok(()));
+        let cap = 2 * measured.consumed();
+        assert!(cap > 0);
+        assert_eq!(evaluate(2, &WorkBudget::new(cap)), Ok(()));
+        let exhausted = WorkBudget::new(cap);
+        assert_eq!(
+            evaluate(6, &exhausted),
+            Err(EvaluationFailure::WorkExhausted)
         );
-        let mut ir = crate::CadIr::empty();
-        let mut below = CurveId::mint("test:model:curve#0").unwrap();
-        ir.geometry.curves.push(line(&below));
-        for level in 1..=levels {
-            let supports = [0, 1]
-                .map(|side| SurfaceId::mint(format!("test:model:surface#{level}-{side}")).unwrap());
-            for (side, support) in supports.iter().enumerate() {
-                ir.geometry.surfaces.push(Surface {
-                    id: support.clone(),
-                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                        crate::geometry::analytic::PlaneSurface::try_new(
-                            Point3::new(0.0, 0.0, 0.0),
-                            Vector3::new(0.0, 0.0, 1.0),
-                            Vector3::new(1.0, 0.0, 0.0),
-                        )
-                        .unwrap(),
-                    )),
-                    source_object: None,
-                    native_ref: None,
-                });
-                ir.geometry
-                    .add_procedural_surface(
-                        support,
-                        ProceduralSurface::new(
-                            ProceduralSurfaceId::mint(format!(
-                                "test:model:procedural#surface-{level}-{side}"
-                            ))
-                            .unwrap(),
-                            ProceduralSurfaceDefinition::AxisRevolution(
-                                AxisRevolutionSurfaceConstruction::try_new(
-                                    below.clone(),
-                                    Point3::new(0.0, 0.0, 0.0),
-                                    Vector3::new(0.0, 0.0, 1.0),
-                                )
-                                .unwrap(),
-                            ),
-                            None,
-                        ),
-                    )
-                    .unwrap();
-            }
-            let curve = CurveId::mint(format!("test:model:curve#{level}")).unwrap();
-            ir.geometry.curves.push(line(&curve));
-            ir.geometry
-                .add_procedural_curve(
-                    &curve,
-                    ProceduralCurve::new(
-                        ProceduralCurveId::mint(format!("test:model:procedural#curve-{level}"))
-                            .unwrap(),
-                        ProceduralCurveDefinition::TolerantIntersection {
-                            construction: TolerantIntersectionConstruction::try_new(
-                                supports,
-                                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                                1.0e-9,
-                            )
-                            .unwrap(),
-                            parameterization: Some(
-                                TolerantIntersectionParameterization::try_new(
-                                    [pcurve.clone(), pcurve.clone()],
-                                    [-1.0, 1.0],
-                                )
-                                .unwrap(),
-                            ),
-                            cache: None,
-                        },
-                    ),
-                )
-                .unwrap();
-            below = curve;
-        }
-        (ir, below)
+        assert!(exhausted.exhausted());
     }
 
     #[test]
     fn decode_model_evaluation_has_a_local_work_cap() {
-        let evaluate = |levels| {
-            let (ir, curve) = doubling_model(levels);
-            let index = crate::index::ModelIndex::build(&ir);
+        assert_local_work_cap(|levels, work| {
             let arena = DecodeArena::new();
             let policy = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = crate::eval::model_curve_point_by_id(
-                EvaluationAdmission::Decode(&ctx),
-                &index,
-                &curve,
-                0.5,
-            );
+            let result = capped_doubling_point(EvaluationAdmission::Decode(&ctx), levels, work);
             // Exhausting the cap skips the evaluation; the session continues.
             assert_eq!(ctx.resource_refusal(), None);
             assert!(ctx.finish_session().is_ok());
-            result
-        };
-        assert!(evaluate(2).is_ok());
-        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+            result.map(|_| ())
+        });
     }
 
     #[test]
     fn standard_model_evaluation_has_a_local_work_cap() {
-        let evaluate = |levels| {
-            let (ir, curve) = doubling_model(levels);
-            let index = crate::index::ModelIndex::build(&ir);
-            crate::eval::model_curve_point_by_id(EvaluationAdmission::Standard, &index, &curve, 0.5)
-        };
-        assert!(evaluate(2).is_ok());
-        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+        assert_local_work_cap(|levels, work| {
+            capped_doubling_point(EvaluationAdmission::Standard, levels, work).map(|_| ())
+        });
     }
 
     #[test]
     fn validation_pass_evaluations_share_one_allowance() {
         const EVALUATIONS: usize = 1 << 12;
+        // The top curve reads at least 2^18 carriers, each for one step.
+        const EVALUATION_CAP: usize = 64;
         let (ir, curve) = doubling_model(18);
         let index = crate::index::ModelIndex::build(&ir);
         let arena = DecodeArena::new();
@@ -756,7 +706,7 @@ mod tests {
         };
         // One evaluation uses up a full slice, the next a slice of one step;
         // the rest find the allowance empty and stop at their first step.
-        let pass = super::ModelEvaluationPass::with_allowance(super::MAX_MODEL_EVALUATION_WORK + 1);
+        let pass = super::ModelEvaluationPass::with_caps(EVALUATION_CAP, EVALUATION_CAP + 1);
         for _ in 0..EVALUATIONS {
             assert_eq!(
                 evaluate(&pass, &index, &curve),
@@ -782,13 +732,13 @@ mod tests {
                 (
                     crate::report::Severity::Warning,
                     "1 model carrier evaluations reached the local work cap \
-                     MAX_MODEL_EVALUATION_WORK (16777216 steps); their geometric consistency \
+                     MAX_MODEL_EVALUATION_WORK (64 steps); their geometric consistency \
                      checks were skipped"
                 ),
                 (
                     crate::report::Severity::Warning,
                     "4096 model carrier evaluations reached the local work cap \
-                     MAX_MODEL_PASS_EVALUATION_WORK (1073741824 steps); their geometric \
+                     MAX_MODEL_PASS_EVALUATION_WORK (65 steps); their geometric \
                      consistency checks were skipped"
                 ),
             ]

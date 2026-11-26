@@ -4,7 +4,7 @@
 use crate::records::{FeatureContent, FeatureHistory};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use serde::Serialize;
 
 /// The digest of one record set's canonical JSON.
@@ -62,7 +62,8 @@ struct FeatureHashView<'a> {
     name: Option<&'a str>,
     suppressed: Option<bool>,
     parent: Option<&'a cadmpeg_ir::features::FeatureId>,
-    dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+    dependencies:
+        &'a cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::features::FeatureId>,
     source_properties: &'a std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     source_tag: Option<&'a str>,
     source_text: Option<&'a str>,
@@ -183,6 +184,7 @@ mod tests {
     use super::hash_records;
     use crate::records::Configuration;
     use crate::records::FeatureHistory;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     fn history(part_name: &str) -> FeatureHistory {
@@ -212,16 +214,21 @@ mod tests {
     #[test]
     fn a_record_digests_the_same_as_the_record_read_back_from_its_bytes() {
         let record = history("Bracket");
-        let bytes = serde_json::to_vec(&record).expect("the record serializes");
-        let read_back: FeatureHistory =
-            serde_json::from_slice(&bytes).expect("the record reads back");
+        let bytes = json::to_vec(&record).expect("the record serializes");
+        let read_back: FeatureHistory = json::from_slice(&bytes).expect("the record reads back");
 
         assert_eq!(read_back, record);
         assert_eq!(
-            hash_records(&cadmpeg_test_support::service_decode_context(), &read_back)
-                .expect("the record digests"),
-            hash_records(&cadmpeg_test_support::service_decode_context(), &record)
-                .expect("the record digests"),
+            hash_records(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &read_back
+            )
+            .expect("the record digests"),
+            hash_records(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &record
+            )
+            .expect("the record digests"),
         );
     }
 
@@ -230,12 +237,12 @@ mod tests {
     fn a_changed_field_moves_the_digest() {
         assert_ne!(
             hash_records(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &history("Bracket")
             )
             .expect("the record digests"),
             hash_records(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &history("Plate")
             )
             .expect("the record digests"),

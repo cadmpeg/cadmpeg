@@ -10,16 +10,26 @@ mod cc0_controller;
 mod configuration_parameters;
 mod design_containment;
 mod design_parameters;
+mod design_v11;
+mod document_identity;
 mod emboss_operands;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
+mod fusion_circular_patterns;
+mod fusion_combine_middle_lists;
+mod fusion_combine_patterns;
+mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
+mod fusion_reverse_normal;
+mod fusion_surface_loft;
 mod fusion_surface_revolve;
+mod fusion_tessellate;
+mod fusion_timeline_state;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -32,6 +42,8 @@ mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
 mod reference_rows;
+mod saved_cadir;
+mod scan;
 mod scene;
 mod sketch_regions;
 mod split_face_binding;
@@ -40,6 +52,7 @@ mod tracking_path_headers;
 mod treatment_losses;
 mod work_planes;
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
@@ -53,7 +66,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native};
 use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
@@ -209,7 +222,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = serde_json::to_vec(&table_document(
+    let payload = json::to_vec(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
@@ -236,7 +249,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let mut edited = decoded.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             2.5, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -258,10 +271,10 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
 fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = None;
-    drop(f3d_native_mut(&mut ir));
+    add_empty_f3d_native(&mut ir);
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(
@@ -293,13 +306,11 @@ fn f3z_pipeline_merges_three_levels_of_occurrences() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    let scope = format!("xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
-    let expected = format!("f3d:{scope}{scope}{scope}");
     assert_eq!(merged.ir().geometry.bodies.len(), 1);
     assert!(merged.ir().geometry.bodies[0]
         .id
         .as_str()
-        .starts_with(&expected));
+        .starts_with("f3d:component.f3d@"));
     assert_valid(&merged);
 }
 
@@ -321,9 +332,10 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    assert!(merged.ir().geometry.bodies[0].id.as_str().contains(&format!(
-        "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
-    )));
+    assert!(merged.ir().geometry.bodies[0]
+        .id
+        .as_str()
+        .starts_with("f3d:component.f3d@"));
     assert_valid(&merged);
 
     let cyclic_middle =
@@ -485,7 +497,7 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
         EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
         request,
@@ -505,15 +517,15 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
 /// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
 /// catalog row keeps the archive it was handed, and says so.
 ///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits preservation. Before resolution the report named no dialect at all,
+/// The command line names no target for a same-format conversion, so the
+/// request inherits, the resolved dialect is the source's by construction,
+/// and the replay law admits preservation. Before resolution the report named no dialect at all,
 /// so the bytes went out with the claim unstated.
 #[test]
 fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
     let result = decode(source.clone());
-    let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
+    let plan = plan(&result, true, TargetRequest::Unnamed).expect("preservation is available");
 
     assert!(matches!(
         plan.report().write_path(),
@@ -525,41 +537,43 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     assert_eq!(written, source);
 }
 
-/// A dialect this codec reads but cannot generate refuses under `Inherit` once
-/// its retained image is gone. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the archive is, and the
-/// refusal names both the source's dialect and the escape.
+/// A dialect this codec reads but cannot generate is written as the catalog
+/// default under a request that names no target once its retained image is
+/// gone. The report names the default as the target and charges the
+/// displacement of the source's dialect.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
+fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_default() {
     let result = decode(f3d_with_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
-    let error = plan(&result, false, TargetRequest::Inherit)
-        .expect_err("f3d:unknown is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "f3d");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:unknown")
+    let report = crate::test_support::assert_written_with_loss(
+        result.ir(),
+        None,
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
+        "f3d:unknown",
     );
     assert!(
-        refusal
-            .available()
+        report
+            .losses
             .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+            .any(|loss| loss.message.contains("f3d:manifest-3-2-0-0")),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
     );
 }
 
@@ -627,7 +641,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -638,7 +652,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let plan = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
@@ -698,7 +712,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         ("replay", &replayed, true, replay_matches),
         ("synthesize", &synthesized, false, synthesize_matches),
     ] {
-        let plan = plan(result, fidelity, TargetRequest::Inherit)
+        let plan = plan(result, fidelity, TargetRequest::Unnamed)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
         let path = plan.report().write_path();
         assert!(path_matches(path), "{label}: took the {path} path");

@@ -44,6 +44,7 @@ use crate::layout::{
     component_source_three_handle_record as three, component_source_two_handle_record as two,
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
+    sweep_component_profile_extended_prefix as sweep_profile,
 };
 use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
@@ -198,7 +199,7 @@ pub(crate) fn compact_body_state_ids_for_selection(
 pub(crate) fn compact_body_retention_mode_for_selection(
     lane: &FeatureInputLane,
     selection: &FeatureInputBodySelection,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+) -> Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode> {
     let token = compact_body_state_token(lane)?;
     let mut start = None;
     for name in &lane.names {
@@ -218,7 +219,7 @@ fn compact_body_retention_mode(
     start: usize,
     end: usize,
     token: u16,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+) -> Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode> {
     const HEADER_LEN: usize = 83;
     let scan_end = end.checked_sub(HEADER_LEN - 1)?;
     (|| {
@@ -232,8 +233,8 @@ fn compact_body_retention_mode(
             return None;
         }
         match View::u32_le_at(field, 2)? {
-            0 => Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected),
-            1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
+            0 => Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::KeepSelected),
+            1 => Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected),
             _ => None,
         }
     })()
@@ -406,6 +407,7 @@ pub(super) fn compact_edge_selections(
                 references,
                 producer_feature_refs,
                 terminal_feature_ref,
+                mark_reference: false,
             });
         }
         for mut selection in input_owned_edge_selections(feature_selections) {
@@ -2387,12 +2389,31 @@ pub(crate) fn generated_surface_identities(
         prefixes.insert(prefix);
     }
 
+    if prefixes.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let mut identities_by_hash = HashMap::<u64, Vec<usize>>::new();
     let Some(last) = lane.native_payload.len().checked_sub(16) else {
         return Ok(Vec::new());
     };
-    for terminal in 0..=last {
+    let search_slice = &lane.native_payload[..last + 4];
+    let mut candidate_terminals = Vec::new();
+    for prefix in &prefixes {
+        let finder = memchr::memmem::Finder::new(prefix);
+        let mut cursor = 0usize;
+        while let Some(relative) = search_slice
+            .get(cursor..)
+            .and_then(|rest| finder.find(rest))
+        {
+            let terminal = cursor + relative;
+            candidate_terminals.push(terminal);
+            cursor = terminal + 1;
+        }
+    }
+    candidate_terminals.sort_unstable();
+    candidate_terminals.dedup();
+    for terminal in candidate_terminals {
         let Some(window) = lane
             .native_payload
             .get(terminal..terminal + 16)
@@ -2402,9 +2423,6 @@ pub(crate) fn generated_surface_identities(
         };
         let [p0, p1, p2, p3, .., t0, t1, t2, t3] = *window;
         let prefix = [p0, p1, p2, p3];
-        if !prefixes.contains(&prefix) {
-            continue;
-        }
         let Some(feature_source_id) = signature_prefix(window, prefix) else {
             continue;
         };
@@ -3422,7 +3440,7 @@ pub(super) fn declared_general_curve_profile_prefix(
     component_child_prefix_at(payload, prefix).then_some(prefix)
 }
 
-fn component_source_record_at(payload: &[u8], source: usize) -> Option<u32> {
+fn component_source_record_at(payload: &[u8], source: usize) -> Option<(u32, usize)> {
     const HANDLE: &[u8] = &[0xc7, 0xcf, 0xff, 0xff];
     let id = View::u32_le_at(payload, source + two::FEATURE_ID)?;
     let stamp = View::u32_le_at(payload, source + two::STAMP)?;
@@ -3443,10 +3461,15 @@ fn component_source_record_at(payload: &[u8], source: usize) -> Option<u32> {
     let three_handles = handle_at(three::THIRD_HANDLE)
         && zero_at(three::HANDLE_END)
         && View::u32_le_at(payload, source + three::VERSION).is_some();
-    (header && (two_handles || three_handles)).then_some(id)
+    let len = if three_handles { three::LEN } else { two::LEN };
+    (header && (two_handles || three_handles)).then_some((id, source + len))
 }
 
 pub(super) fn component_profile_source_at(payload: &[u8], prefix: usize) -> Option<u32> {
+    component_profile_record_at(payload, prefix).map(|(source, _)| source)
+}
+
+pub(super) fn component_profile_record_at(payload: &[u8], prefix: usize) -> Option<(u32, usize)> {
     if !component_child_prefix_at(payload, prefix) {
         return None;
     }
@@ -3460,6 +3483,27 @@ pub(super) fn component_profile_source_at(payload: &[u8], prefix: usize) -> Opti
         .filter_map(|placement| component_source_record_at(payload, prefix + placement));
     let source = sources.next()?;
     sources.next().is_none().then_some(source)
+}
+
+pub(super) fn component_profile_path_record_at(
+    payload: &[u8],
+    prefix: usize,
+) -> Option<(u32, usize, bool)> {
+    if let Some((source, end)) = component_profile_record_at(payload, prefix) {
+        return Some((source, end, false));
+    }
+    if !component_child_prefix_at(payload, prefix) {
+        return None;
+    }
+    let sentinel = prefix.checked_add(sweep_profile::REFERENCE_SENTINEL)?;
+    let sentinel_end = sentinel.checked_add(sweep_profile::REFERENCE_SENTINEL_VALUE.len())?;
+    if payload.get(sentinel..sentinel_end)? != sweep_profile::REFERENCE_SENTINEL_VALUE {
+        return None;
+    }
+    View::u32_le_at(payload, prefix.checked_add(sweep_profile::HEADER_WORD)?)?;
+    let (source, end) =
+        component_source_record_at(payload, prefix.checked_add(sweep_profile::LEN)?)?;
+    Some((source, end, true))
 }
 
 pub(super) fn component_reference_curve_path_at(

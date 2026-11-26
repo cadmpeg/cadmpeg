@@ -2,7 +2,7 @@
 //! Unit tests for the writable brep model the encoder builds from CADIR.
 
 use super::{adjacent_quad_sheet, polygon_sheet};
-use crate::writer::model::{WritableFaceSurface, WritableModel};
+use crate::writer::model::{TrimEdge, WritableFaceSurface, WritableModel};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -80,7 +80,7 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     let expected = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &WritableModel::try_new(&ir).expect("writable triangle"),
         crate::RhinoArchiveVersion::V8,
     )
@@ -91,7 +91,7 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     let model =
         WritableModel::try_new(&ir).expect("references resolve independently of arena order");
     let actual = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &model,
         crate::RhinoArchiveVersion::V8,
     )
@@ -119,7 +119,7 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
                 .map(cadmpeg_ir::units::FiniteVector::finite_components)
         );
         for coedge in &edge.uses {
-            assert_eq!(model.coedges[*coedge].edge, position);
+            assert_eq!(model.coedges[*coedge].edge, TrimEdge::Edge(position));
         }
     }
     for face in &model.faces {

@@ -32,7 +32,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_container::compression::inflate_zlib_member_owned;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
@@ -5482,7 +5482,7 @@ pub(super) fn display_jt_tessellations(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(Tessellation, u64)>, CodecError> {
+) -> Result<Vec<(Tessellation, u64, Option<Color>)>, CodecError> {
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -5798,17 +5798,14 @@ pub(super) fn display_jt_tessellations(
             mesh_tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Nx,
+                    format: cadmpeg_ir::codec_id!("nx"),
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         shape_node.id.clone(),
                     )),
-                    name: None,
-                    color,
-                    visible: None,
-                    layer: None,
                     instance_path,
                 })),
                 shape_node.source_offset,
+                color,
             ));
         }
         tessellations.append(&mut mesh_tessellations);

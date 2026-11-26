@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn flagged_collection_direct_owner_joins_all_imported_bodies() {
@@ -18,24 +19,23 @@ fn flagged_collection_direct_owner_joins_all_imported_bodies() {
         let [feature] = features.as_slice() else {
             panic!("one mesh collection");
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["collection_record"]["frame_length"], length);
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!(offsets)
+            cadmpeg_core::json!(offsets)
         );
         assert_eq!(wire["collection_flagged_data"]["word"], 9);
         assert_eq!(
             wire["collection_flagged_data"]["entries"],
-            serde_json::json!([])
+            cadmpeg_core::json!([])
         );
         assert_eq!(wire["collection_owner_reference_offset"], length - 11);
         assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
         if count == 2 {
             assert_eq!(feature.bodies()[1].placement.record().record_index(), 117);
         }
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(*feature, decoded);
     }
 }
@@ -183,7 +183,7 @@ fn mesh_operation_member_links_an_unlisted_body() {
     };
     assert_eq!(input.guid.record.record_index(), 103);
     assert_eq!(input.entry.record.record_index(), 102);
-    let wire = serde_json::to_value(&features[0]).unwrap();
+    let wire = json::to_value(&features[0]).unwrap();
     assert_eq!(
         wire["operation_bodies"][0]["member"]["record"]["record_index"],
         126
@@ -197,7 +197,7 @@ fn mesh_operation_member_links_an_unlisted_body() {
         102
     );
     assert_eq!(
-        serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(wire).unwrap(),
+        json::from_value::<crate::records::mesh::DesignMeshFeature>(wire).unwrap(),
         features[0]
     );
 }
@@ -352,14 +352,14 @@ fn mesh_collection_joins_bodies_from_two_scopes() {
                 body.scope_body_ordinal
             ))
             .collect::<Vec<_>>(),
-        [(104, 109, Some(0)), (117, 122, Some(0))]
+        [(104, Some(109), Some(0)), (117, Some(122), Some(0))]
     );
-    let wire = serde_json::to_value(feature).unwrap();
+    let wire = json::to_value(feature).unwrap();
     assert_eq!(wire["scopes"][1]["scope_record"]["record_index"], 122);
     assert_eq!(wire["bodies"][1]["scope_record_index"], 122);
     assert_eq!(wire["bodies"][1]["scope_body_ordinal"], 0);
     assert_eq!(
-        serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(wire).unwrap(),
+        json::from_value::<crate::records::mesh::DesignMeshFeature>(wire).unwrap(),
         *feature
     );
 }
@@ -379,4 +379,64 @@ fn distinct_guid_records_for_one_container_do_not_join() {
         Some(vec![(0, 0, 0)])
     );
     assert_eq!(resolve_mesh_bodies(&[first, second], &entry, &uuid), None);
+}
+
+fn with_received_count(mut graph: SyntheticMeshGraph, count: u32) -> SyntheticMeshGraph {
+    let collection_start = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID).start;
+    graph.bytes[collection_start + mesh_collection::BODY_COUNT
+        ..collection_start + mesh_collection::BODY_COUNT + 4]
+        .copy_from_slice(&count.to_le_bytes());
+    graph
+}
+
+fn parse(
+    graph: &SyntheticMeshGraph,
+) -> Result<Vec<crate::records::mesh::DesignMeshFeature>, CodecError> {
+    parse_mesh_design_records(
+        &graph.bytes,
+        &graph.meta,
+        "Synthetic/BulkStream.dat",
+        &mut no_texture_asset,
+    )
+}
+
+#[test]
+fn collection_prefix_count_records_bodies_that_the_list_no_longer_holds() {
+    let graph = with_received_count(synthetic_mesh_graph_with_body_count(false, 1), 2);
+    let features = parse(&graph).unwrap();
+    let [feature] = features.as_slice() else {
+        panic!("one mesh collection");
+    };
+    assert_eq!(feature.bodies().len(), 1);
+    assert_eq!(feature.collection().received_count(), Some(2));
+    let wire = json::to_value(feature).unwrap();
+    assert_eq!(wire["collection_received_count"], 2);
+    let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
+    assert_eq!(*feature, decoded);
+}
+
+#[test]
+fn collection_prefix_count_equal_to_the_list_records_nothing() {
+    let graph = synthetic_mesh_graph_with_body_count(false, 1);
+    let features = parse(&graph).unwrap();
+    assert_eq!(features[0].collection().received_count(), None);
+    assert!(json::to_value(&features[0])
+        .unwrap()
+        .get("collection_received_count")
+        .is_none());
+}
+
+#[test]
+fn collection_with_an_empty_list_and_a_received_body_is_an_empty_registry() {
+    let graph = with_received_count(
+        synthetic_mesh_graph_with_collection(false, 0, CollectionForm::Plain),
+        1,
+    );
+    assert!(parse(&graph).unwrap().is_empty());
+}
+
+#[test]
+fn collection_prefix_count_below_the_list_is_rejected() {
+    let graph = with_received_count(synthetic_mesh_graph_with_body_count(false, 2), 1);
+    assert!(parse(&graph).is_err());
 }

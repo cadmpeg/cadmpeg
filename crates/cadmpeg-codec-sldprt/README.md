@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(&mut output)?;
     Ok(())
@@ -111,16 +111,148 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 the retained `source_fidelity` sidecar replays an unchanged source image byte
 for byte after an integrity check, and patches supported edits in place.
 Geometry-only changes may retain or patch the native Parasolid partition when
-the entity graph and provenance permit it. Container regeneration requires a
-retained envelope with validated local, central-directory, and end-of-directory
-signature tokens. Source-less IR and unproved envelopes are refused before
-output is written.
+the entity graph and provenance permit it. Container regeneration reuses the
+`file_id` and the local, central-directory, and end-of-directory signature
+tokens of a proved retained envelope. For source-less IR or an unproved
+envelope it derives a nonzero `file_id` from a SHA-256 of the written members
+and three nonzero, distinct tokens from that `file_id`, and charges
+`export:record.residual-unavailable` naming each one. A member with no source
+member takes a placeholder time/date word and `internal_attrs`, charged the
+same way. Open item CM-16 holds the rules these fields lack. No serializer
+writes a saved property: each property carrier is written as its retained
+record stores it, and each saved property that carrier does not hold as the
+document states it is charged.
 
 Retained writing can synchronize supported feature, sketch, parameter,
 configuration, active-configuration XML, and PMI edits while rejecting
-structural edits it cannot safely rewrite.
+structural edits it cannot safely rewrite. The writer has no modeling kernel.
+An edit of a feature, a parameter, a suppression state, or a configuration
+state that shapes the solid is written as edited over the stored solid, and a
+`writer.solid-stale-after-edit` loss names each edited feature and states that
+the solid shows the state before the edit. The writer does not write the active
+configuration snapshot that the decoder synthesizes from the model; an edit of
+that snapshot which the model does not state gets a
+`writer.configuration-snapshot-edit-unwritten` loss. An edit that the native
+records cannot carry keeps the stored record or value: an edit of a
+display-only relation parameter or a parameter value that the written
+expression does not state gets an `export:edit.dropped` loss of kind parameter, and
+an edited compact selection, a feature definition that the encoder cannot
+restate, or a construction edit that the written part, decoded again, does not
+read back as edited gets an `export:edit.dropped` loss of kind feature, and the
+feature is written with its stored definition record. A feature that keeps its
+stored definition record keeps its stored operands and source properties too,
+and its loss names each edit of its definition, dependencies and source
+properties that the written part does not read back as edited. A record field
+that no edit moves keeps its stored state: an unedited feature or parameter is
+written as stored, and a rename changes only the name and the references that
+name it. The decoder fills some field groups of a record from the
+feature-input lane as one unit while the record states none of the group's
+gate (a revolution axis; a coordinate-system or reference-axis frame; a
+reference-plane frame with the plane's reference; a move-face translation; an
+extrusion's end conditions and depths; the two directions of a linear
+pattern); an edit of one member writes every member the encoding states. An
+extrusion depth is written under the dimension name the record holds, and an
+edited dimension text keeps the scale of the text the record stored (a part
+whose display unit is not the millimetre states its texts in that unit).
 
-With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
+The full decoder reads the written part again, and the read-back compares it
+with the document the write must equal: the decoded source with the edits the
+write carries applied. An edit that a loss names as not written reads back as
+the source. A carried edit of a number or a text reads back with its edited
+value in each record that restates it: the parameters of the edited feature,
+the feature that owns an edited parameter, and the design records and
+configuration entries keyed by them; a configuration's state of an edited
+feature reads back as that feature's definition. A renamed feature reads back
+with its edited name in its design records and in each `name@feature`
+reference. The comparison covers every record of every arena of the geometry,
+model, design and process homes, the units, the tolerances and the source
+attributes. The native namespaces hold the encoding, and the read-back leaves
+them out. A write moves the block and lane offsets and the history indices
+that ids embed, so records pair by content: a record pairs with the record
+whose wire form is the same once each paired id is replaced by its pair; a
+record with a name pairs by name and owner, and records with no name pair by
+the form of their ids. An edited feature is found in the written part through
+this pairing. Paired records compare exactly: a string compares character by
+character once each paired id is replaced, and only the locator digits of a
+native reference (after its `#`) are offsets that a write moves.
+
+Each difference from that document is removed or named. A difference that a
+written edit causes is removed: that feature is written with its stored
+definition record, and its `export:edit.dropped` loss names each
+differing record and the place in it. With several written edits, each one in
+turn is withheld alone, and the one whose withholding removes the difference
+is kept as stored; when no single edit removes it, every written edit is. An
+edited feature that reads back with a parameter added or removed, a source
+property missing, or its content or written dependencies changed is written
+with its stored definition record in the same way. A variant edit (a change of
+termination kind, of a list, or of a field that is present or absent) writes
+the record in the shape of the new variant, and a
+`writer.feature-record-reshaped` loss names each parameter or source property
+that shape adds or drops and each record that restates the new variant. An
+edit that clears an extrusion's reversal drops its `Reverse` property, the
+record form of that edit. The decoder settles an extrusion's travel and its
+`reverse_decoded` mark against the stored solid; for an edit that the
+`writer.solid-stale-after-edit` loss names, these read back as the stale solid
+decides once the reversal flag reads back as written, and that loss names the
+difference. A difference that the source part, written with no edit and
+decoded again, has as well is a writer difference that no edit causes: a
+`writer.read-back-differs` loss names it by arena, count and first records. A
+record that a writer loss names as omitted or as holding its source state
+without the edit (`export:edit.dropped`), and an arena that an `arena.omitted`
+loss names, are named there. A difference that remains with every edit kept
+as stored, or that a parameter, rename or tree-order edit causes, is named in
+an `export:edit.dropped` loss, and no stale-solid loss calls a tree
+place or an output body written that reads back otherwise. A written part that
+does not decode again or does not serialize holds every written edit back; with
+none left, a `writer.read-back-unread` loss (severity error) names it.
+
+An edited compound-file part is written into a native envelope, and
+`export:native.records-omitted` names each compound-file stream that the write
+neither generates nor replaces. Each parameter is an entry of its owner
+feature's record. In a part with a feature history, an `export:edit.dropped`
+loss names the edit of a global parameter, which has no owner feature, and the
+written part keeps the stored state. A part with no feature history, such as a compound-file part or a
+document from another format, holds no record for a parameter, and the write
+leaves out each parameter it cannot place. Where the codec digests state no
+history baseline, a `writer.features-omitted` loss names it; otherwise an
+`export:edit.dropped` loss names it.
+
+An edited part that the patch path cannot write, or that it writes on another
+dialect than the source's, is synthesized without its SolidWorks history:
+`export:native.records-omitted` names each native record that the synthesis
+does not write, outside the `unknowns` arena, and the degraded reason of the
+synthesized write path states why the patch declined. Where the synthesis also refuses the part, or lands on another
+dialect than the source's, the output is the stored part. One
+`export:edit.dropped` loss (severity error) per arena names each record that
+the document adds, removes or edits against the decoded source; where no
+record differs, one such loss names the file.
+`cadmpeg convert --reject-lossy=export` refuses such a write;
+`--reject-errors` does not, because it judges the written file's check
+findings, not export losses.
+
+The writer regenerates no state. When it writes an edit that shapes the stored
+solid, it marks the configuration of that solid, the active one for a model
+edit, `swConfigurationNeedsUpdate="YES"` in the retained `swSolidWorks`
+document or in the configuration row the synthesis generates, and an
+`export:evaluation.stale` loss names the written edits. An edit that shapes no
+solid, such as a dimension display, takes no mark. A configuration whose evaluation the document states
+`Stale` or `Failed` takes the same mark; where no written row takes it, an
+`export:evaluation.stale` loss names the evaluation. The native envelope
+stores at most 65535 members and 32-bit offsets: a section past these limits,
+or with a name the envelope cannot encode, is not written, and an
+`export:value.unwritable` loss names it.
+
+A part read from CADIR JSON holds none of the feature, sketch, parameter, and
+configuration arenas the writer applies native history edits from. Given its
+decode sidecar, the writer restores them from the decode of the retained source
+part and writes into them each edit of a parameter definition or value, or of a
+feature suppression or name, that the `design` records state. It leaves out an
+edit those arenas cannot state, such as a parameter comment, and an
+`export:edit.dropped` loss names it by its path. Where the retained source does
+not decode, the output is the stored part, and an `export:edit.dropped` loss
+names it.
+
+Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
 writes analytic and non-periodic NURBS geometry, body and face base colors,
 selected document attributes, sequential triangle strips, feature history, and

@@ -39,9 +39,58 @@ pub(crate) struct Walk {
     /// The sketch profile bodies read, each with the extent of the
     /// profile-family object that holds it.
     pub(crate) sketch_profiles: Vec<SketchProfile>,
+    /// The `moPMarkRecord_c` objects read, each with the named object that
+    /// holds it.
+    pub(crate) marks: Vec<reader::MarkOwner>,
+    /// The seed lists of the feature patterns read, by name.
+    pub(crate) pattern_seeds: Vec<PatternSeeds>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+/// A feature pattern's seeds, named through the map indices its seed list
+/// references (sldprt.md §2.2, §2.3).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PatternSeeds {
+    /// The pattern's name, when its header gave one.
+    pub(crate) pattern: Option<String>,
+    /// Each seed's name, `None` where the entry names no object this stream
+    /// read under a name.
+    pub(crate) seeds: Vec<Option<String>>,
+    /// The parameter objects the pattern holds.
+    pub(crate) parameters: Vec<reader::ParameterRecord>,
+    /// A circular pattern's axis tail: its seven f64 and the byte after them.
+    pub(crate) axis: Option<([f64; 7], u8)>,
+    /// Whether the pattern's object holds a seed identity record or a
+    /// temporary-axis carrier.
+    pub(crate) other_sources: bool,
+}
+
+/// The seeds of `lists`, named through `positions` and `names`.
+fn pattern_seeds(
+    lists: &[reader::PatternSeedList],
+    positions: &HashMap<u32, usize>,
+    names: &HashMap<usize, String>,
+) -> Vec<PatternSeeds> {
+    lists
+        .iter()
+        .map(|list| PatternSeeds {
+            pattern: names.get(&list.at).cloned(),
+            seeds: list
+                .seeds
+                .iter()
+                .map(|seed| {
+                    seed.and_then(|index| positions.get(&index))
+                        .and_then(|at| names.get(at))
+                        .cloned()
+                })
+                .collect(),
+            parameters: list.parameters.clone(),
+            axis: list.axis,
+            other_sources: list.other_sources,
+        })
+        .collect()
 }
 
 /// A sketch's profile body and the stream extent of the profile-family object
@@ -107,7 +156,9 @@ pub(crate) fn walk<'b>(
     Some(Walk {
         sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
+        pattern_seeds: pattern_seeds(&r.pattern_seeds, &r.positions, &r.names),
         parameters: r.parameters,
+        marks: r.marks,
         #[cfg(test)]
         trace: r.trace,
         #[cfg(test)]
@@ -115,23 +166,17 @@ pub(crate) fn walk<'b>(
     })
 }
 
-/// Walk a configuration's `ResolvedFeatures` stream from its `Config-N`
-/// stream's class map: `None` when that map does not reconcile with the
-/// stream's count, or the stream carries no count. A decode-context refusal
-/// is an error, not a stop.
+/// Walk a configuration's `ResolvedFeatures` stream from `map`, the class
+/// map of its `Config-N` stream that reconciles with the stream's count
+/// ([`crate::archive::class_index_map`]). A decode-context refusal is an
+/// error, not a stop.
 pub(crate) fn walk_configuration(
     ctx: &DecodeContext<'_>,
-    config: &[u8],
+    map: &BTreeMap<u32, String>,
     resolved: &[u8],
     ver: Option<u32>,
 ) -> Result<Option<Walk>, cadmpeg_core::CodecError> {
-    let Some(count) = crate::archive::resolved_features_count(resolved) else {
-        return Ok(None);
-    };
-    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
-        return Ok(None);
-    };
-    let walk = walk(ctx, &map, resolved, ver);
+    let walk = walk(ctx, map, resolved, ver);
     if let Some(Status::Stop(reader::Stop::Refused(limit))) = walk.as_ref().map(|walk| &walk.status)
     {
         return Err((*limit).into());

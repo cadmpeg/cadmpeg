@@ -9,11 +9,11 @@ use crate::families::standard::decode::SPHERE_SECTION_ENDPOINT_TOLERANCE;
 use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::blends::RollingBallJetDerivative;
+use cadmpeg_ir::geometry::blends::RollingBallJetSite;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::geometry::RollingBallJetDerivative;
-use cadmpeg_ir::geometry::RollingBallJetSite;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -37,7 +37,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -162,7 +162,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             )
@@ -259,7 +259,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             )
@@ -368,7 +368,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -475,7 +475,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -505,11 +505,11 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         )),
     );
     let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::try_new(
             5,
             [0.0, 1.0]
                 .into_iter()
-                .map(|knot| cadmpeg_ir::geometry::RollingBallJetStation {
+                .map(|knot| cadmpeg_ir::geometry::blends::RollingBallJetStation {
                     knot,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -598,7 +598,7 @@ fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation()
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -691,13 +691,13 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
             }));
         standard_spline_line(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &[(
                 SurfaceId::mint("catia:test:surface#surface".to_string())
@@ -839,7 +839,7 @@ fn equal_intersecting_cylinders_have_conic_sections_at_oblique_angles() {
         for (index, sign) in [1.0, -1.0].into_iter().enumerate() {
             ir.geometry.points.push(Point::new(
                 PointId::mint(format!("catia:test:point#{index}")).expect("point id"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     major.x * expected_radius * sign,
                     0.0,
                     major.z * expected_radius * sign,

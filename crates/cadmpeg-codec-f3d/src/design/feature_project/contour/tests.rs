@@ -12,11 +12,10 @@ use crate::records::{
     },
     identity::Located,
 };
-use cadmpeg_ir::{
-    features::FeatureDirection3,
-    math::Vector3,
-    scalar::{FiniteReal, PositiveReal},
-};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 fn scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
@@ -234,7 +233,7 @@ fn contour_missing_source_links_preserves_direction_and_signed_distance() {
 
 #[test]
 fn contour_native_optional_fields_refuse_nulls_and_bad_locations() {
-    let value = serde_json::to_value(prefix()).unwrap();
+    let value = json::to_value(prefix()).unwrap();
     for key in [
         "settings",
         "carrier",
@@ -245,7 +244,7 @@ fn contour_native_optional_fields_refuse_nulls_and_bad_locations() {
     ] {
         let mut invalid = value.clone();
         invalid[key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<DesignContourFlangeOperation>(invalid)
+        let error = json::from_value::<DesignContourFlangeOperation>(invalid)
             .unwrap_err()
             .to_string();
         assert!(error.contains(key), "{error}");

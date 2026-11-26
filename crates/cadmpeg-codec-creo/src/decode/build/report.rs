@@ -5,10 +5,9 @@ use crate::container::SectionRole;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::container::{self, ContainerScan};
@@ -18,7 +17,7 @@ use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
-    push_report_loss, push_structural_layer_notes,
+    push_report_loss, push_structural_layer_notes, push_unread_legacy_rows,
 };
 use cadmpeg_ir::codec::DecodeBody;
 
@@ -95,12 +94,8 @@ pub(in super::super) fn build_report(
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
     let mut losses = Vec::new();
-    for message in &scan.framing.expansion_losses {
-        push_report_loss(
-            &mut losses,
-            CreoLossCode::CompressedSectionUnexpanded,
-            &message.message,
-        );
+    for expansion in &scan.framing.expansion_losses {
+        losses.push(CreoLossCode::CompressedSectionUnexpanded.note(expansion.message.clone()));
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
     for offset in &scan.framing.unowned_physical_geometry {
@@ -179,8 +174,9 @@ pub(in super::super) fn build_report(
     }
 
     push_legacy_value_losses(&mut losses, &coverage);
+    push_unread_legacy_rows(&mut losses, scan)?;
 
-    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
+    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections)?;
 
     push_carrier_transfer_notes(&mut losses, scan, &coverage, container_only);
     push_structural_layer_notes(&mut losses, scan);

@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::ids::DeclaredMeasureId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
@@ -24,7 +24,7 @@ const AREA_FIELD: usize = 4;
 
 struct SavedQuantity {
     value: f64,
-    source_error: f64,
+    precision: f64,
 }
 
 struct SavedMeasures {
@@ -91,7 +91,7 @@ pub(crate) fn append(
     let Some(bodies) = configuration
         .bodies
         .as_ref()
-        .map(cadmpeg_ir::features::DistinctMembers::as_slice)
+        .map(cadmpeg_ir::features::selections::DistinctMembers::as_slice)
     else {
         not_compared(losses, "the active configuration body set is unresolved");
         return Ok(());
@@ -139,12 +139,12 @@ pub(crate) fn append(
     let volume_value = FiniteReal::new(saved.volume.value).ok_or_else(|| {
         CodecError::malformed("SolidWorks cached volume is not finite after unit conversion")
     })?;
-    let volume_error = NonNegativeReal::new(saved.volume.source_error)
+    let volume_error = NonNegativeReal::new(saved.volume.precision)
         .ok_or_else(|| CodecError::malformed("SolidWorks cached volume precision is not finite"))?;
     let area_value = FiniteReal::new(saved.area.value).ok_or_else(|| {
         CodecError::malformed("SolidWorks cached area is not finite after unit conversion")
     })?;
-    let area_error = NonNegativeReal::new(saved.area.source_error)
+    let area_error = NonNegativeReal::new(saved.area.precision)
         .ok_or_else(|| CodecError::malformed("SolidWorks cached area precision is not finite"))?;
     let volume_label = format!("Saved mass-property cache: {property_name} volume");
     let area_label = format!("Saved mass-property cache: {property_name} area");
@@ -179,8 +179,8 @@ pub(crate) fn append(
                 value: volume_value,
             },
         )
-        .with_provenance(DeclaredMeasureProvenance::SavedCache)
-        .with_source_error(volume_error)
+        .with_basis(MeasureBasis::Cache)
+        .with_precision(volume_error)
         .with_label(volume_label)
         .with_native_ref(native_ref.clone()),
         DeclaredMeasure::new(
@@ -188,8 +188,8 @@ pub(crate) fn append(
             target,
             DeclaredQuantity::SolidArea { value: area_value },
         )
-        .with_provenance(DeclaredMeasureProvenance::SavedCache)
-        .with_source_error(area_error)
+        .with_basis(MeasureBasis::Cache)
+        .with_precision(area_error)
         .with_label(area_label)
         .with_native_ref(native_ref),
     ]);
@@ -208,7 +208,7 @@ fn property_configuration_index(name: &str) -> Option<u32> {
 }
 
 fn saved_measures(attribute: &SourceAttribute) -> Option<SavedMeasures> {
-    let [AttributeValue::String(value)] = attribute.values.as_slice() else {
+    let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
         return None;
     };
     let mut count = 0usize;
@@ -249,11 +249,11 @@ fn saved_measures(attribute: &SourceAttribute) -> Option<SavedMeasures> {
     Some(SavedMeasures {
         volume: SavedQuantity {
             value: volume,
-            source_error: volume_error,
+            precision: volume_error,
         },
         area: SavedQuantity {
             value: area,
-            source_error: area_error,
+            precision: area_error,
         },
     })
 }
@@ -302,7 +302,8 @@ mod tests {
                 .expect("attribute id"),
             target: AttributeTarget::Document.into(),
             name: name.to_owned(),
-            values: vec![AttributeValue::String(value.to_owned())],
+            values: vec![Some(AttributeValue::String(value.to_owned()))],
+            native_ref: None,
         }
     }
 
@@ -321,9 +322,9 @@ mod tests {
         );
         let measures = saved_measures(&property).expect("mass-property values");
         assert_approx(measures.volume.value, 123_000.0, 1.0e-9);
-        assert_approx(measures.volume.source_error, 500.0, 1.0e-9);
+        assert_approx(measures.volume.precision, 500.0, 1.0e-9);
         assert_approx(measures.area.value, 234.0, 1.0e-12);
-        assert_approx(measures.area.source_error, 0.5, 1.0e-12);
+        assert_approx(measures.area.precision, 0.5, 1.0e-12);
     }
 
     #[test]

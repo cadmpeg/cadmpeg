@@ -70,13 +70,13 @@ impl Removal {
 
 /// Whether a name mentions a record of `records`.
 fn mentions(name: &TopoName, records: &BTreeSet<String>) -> Result<bool, EditError> {
-    let json = serde_json::to_value(name).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(name).map_err(malformed)?;
     Ok(names_deleted(&json, records, &BTreeSet::new()))
 }
 
 /// The wire form of every record of every arena of a home, with its arena.
 fn arena_records<T: Serialize>(home: &T) -> Result<Vec<(String, Json)>, EditError> {
-    let json = serde_json::to_value(home).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(home).map_err(malformed)?;
     let mut found = Vec::new();
     if let Json::Object(arenas) = json {
         for (arena, records) in arenas {
@@ -238,13 +238,15 @@ impl CadIr {
         };
         self.mark_states_stale(&history, &stale);
         let before = if step.ordered {
-            Some(match step.index.checked_sub(1) {
-                Some(previous) => {
-                    let (_, members) = history
-                        .members(&step.container)
-                        .ok_or_else(|| EditError::NotAMember(member.clone()))?;
-                    Position::After(members[previous].clone())
-                }
+            let (_, members) = history
+                .members(&step.container)
+                .ok_or_else(|| EditError::NotAMember(member.clone()))?;
+            let previous = members[..step.index]
+                .iter()
+                .rev()
+                .find(|member| matches!(member, Member::Feature(_)));
+            Some(match previous {
+                Some(previous) => Position::After(previous.clone()),
                 None => {
                     Position::Start(ContainerId::mint(step.container.clone()).map_err(malformed)?)
                 }
@@ -252,7 +254,10 @@ impl CadIr {
         } else {
             None
         };
-        let own = Position::After(member.clone());
+        let own = match member {
+            Member::Feature(_) => Some(Position::After(member.clone())),
+            Member::Container(_) => None,
+        };
         let doomed: Vec<(ProductDefinitionId, Position)> = self
             .design
             .scopes
@@ -263,7 +268,7 @@ impl CadIr {
                     .iter()
                     .map(move |current| (scope.definition.clone(), current.at.clone()))
             })
-            .filter(|(_, at)| removal.names(at) && (before.is_none() || *at != own))
+            .filter(|(_, at)| removal.names(at) && (before.is_none() || own.as_ref() != Some(at)))
             .collect();
         for (scope, at) in &doomed {
             self.rebase_off_current(scope, at)?;
@@ -291,13 +296,13 @@ impl CadIr {
         for (id, state) in keyed {
             self.delete_evaluation(&id)?;
             gone.insert(id.as_str().to_owned());
-            states.push(serde_json::to_value(state).map_err(malformed)?);
+            states.push(crate::hash::finite_json::to_json_value(&state).map_err(malformed)?);
         }
         let lost = self.delete_current_states(&doomed)?;
         let from = positions(&removal.positions)?;
         match &before {
             Some(before) => {
-                let to = serde_json::to_value(before).map_err(malformed)?;
+                let to = crate::hash::finite_json::to_json_value(before).map_err(malformed)?;
                 rewrite(&mut self.design, |json| Ok(retarget(json, &from, &to)))?;
                 rewrite(&mut self.process, |json| Ok(retarget(json, &from, &to)))?;
                 rewrite(&mut self.model, |json| Ok(retarget(json, &from, &to)))?;
@@ -339,7 +344,7 @@ impl CadIr {
     /// Rebases every evaluation and process state based on the current
     /// state at `at` onto `Empty`, its delta composed with that state's
     /// extent, so its resolved state is unchanged.
-    fn rebase_off_current(
+    pub(super) fn rebase_off_current(
         &mut self,
         scope: &ProductDefinitionId,
         at: &Position,
@@ -647,8 +652,8 @@ impl CadIr {
 
     /// Takes the member out of its container. In an ordered container a
     /// rollback before it moves to the member after it, or to `End` where it
-    /// is the last member, and a folder loses it; one left with no member is
-    /// removed.
+    /// is the last member, an unstated rollback stays unstated, and a folder
+    /// loses it; one left with no member is removed.
     fn leave_container(&mut self, member: &Member, step: &Step) -> Result<(), EditError> {
         let record = self
             .design
@@ -663,11 +668,11 @@ impl CadIr {
                 rollback,
                 ..
             } => {
-                if *rollback == Rollback::Before(member.clone()) {
-                    *rollback = match members.get(step.index + 1) {
+                if *rollback == Some(Rollback::Before(member.clone())) {
+                    *rollback = Some(match members.get(step.index + 1) {
                         Some(next) => Rollback::Before(next.clone()),
                         None => Rollback::End,
-                    };
+                    });
                 }
                 members.remove(step.index);
                 let at = u32::try_from(step.index).map_err(malformed)?;

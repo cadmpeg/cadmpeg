@@ -1,8 +1,10 @@
+use crate::features::geometry::FinitePoint3;
 use crate::features::{
     Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-    FinitePoint3, ParameterId,
+    ParameterId,
 };
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
@@ -42,27 +44,24 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
             FeatureSourceContent::Text("text".into()),
         ]
     );
-    let wire = serde_json::to_value(&content).unwrap();
-    assert_eq!(
-        serde_json::from_value::<FeatureContent>(wire).unwrap(),
-        content
-    );
+    let wire = json::to_value(&content).unwrap();
+    assert_eq!(json::from_value::<FeatureContent>(wire).unwrap(), content);
 }
 
 #[test]
-fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
+fn feature_membership_is_checked_on_the_feature_wire() {
     let mut feature = Feature {
         product_definition: None,
         id: FeatureId::mint("test:test:feature#owner").unwrap(),
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -79,32 +78,32 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
         .push(parameter.clone())
         .map_err(cadmpeg_core::CodecError::from)
         .unwrap();
-    let original = serde_json::to_value(&feature).unwrap();
+    let original = json::to_value(&feature).unwrap();
     assert_eq!(
-        serde_json::from_value::<Feature>(original.clone()).unwrap(),
+        json::from_value::<Feature>(original.clone()).unwrap(),
         feature
     );
     for (field, bad) in [
-        ("dependencies", serde_json::json!([dependency, dependency])),
-        ("source_content", serde_json::json!([parameter, parameter])),
+        (
+            "dependencies",
+            cadmpeg_core::json!([dependency, dependency]),
+        ),
+        (
+            "source_content",
+            cadmpeg_core::json!([parameter, parameter]),
+        ),
     ] {
         let mut wire = original.clone();
         wire[field] = bad;
-        assert!(serde_json::from_value::<Feature>(wire.clone())
-            .unwrap_err()
-            .to_string()
-            .contains(field));
-        let mut model = serde_json::to_value(crate::document::Model::default()).unwrap();
-        model["features"] = serde_json::json!([wire]);
-        assert!(serde_json::from_value::<crate::document::Model>(model)
+        assert!(json::from_value::<Feature>(wire)
             .unwrap_err()
             .to_string()
             .contains(field));
     }
     feature.dependencies.clear();
     feature.source_content = FeatureContent::default();
-    let wire = serde_json::to_value(&feature).unwrap();
-    assert_eq!(wire["dependencies"], serde_json::json!([]));
-    assert_eq!(wire["source_content"], serde_json::json!([]));
-    assert_eq!(serde_json::from_value::<Feature>(wire).unwrap(), feature);
+    let wire = json::to_value(&feature).unwrap();
+    assert_eq!(wire["dependencies"], cadmpeg_core::json!([]));
+    assert_eq!(wire["source_content"], cadmpeg_core::json!([]));
+    assert_eq!(json::from_value::<Feature>(wire).unwrap(), feature);
 }

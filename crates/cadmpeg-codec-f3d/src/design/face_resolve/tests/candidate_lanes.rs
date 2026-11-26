@@ -9,12 +9,13 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup, face::DesignFaceOperand,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        let mut operand: DesignFaceOperand = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#200",
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -65,7 +66,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             reference(20, "selected-b", 201),
         ];
 
-        let mut group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        let mut group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
             "id": "f3d:test:construction-group#150",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -94,14 +95,14 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("resolve the bounded face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })
         );
         group.operand_role =
             crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
+        let scope: DesignParameterScope = json::from_value(cadmpeg_core::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,
             "class_tag": "304",
@@ -131,8 +132,8 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
                 &[operand.clone()]
             )
             .unwrap(),
-            Some(cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face(10), face(20),])
+            Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Faces(vec![face(10), face(20),])
             ))
         );
         operand.resolved_active_face =
@@ -140,7 +141,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand))
                 .expect("resolve the face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![
                     FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")
                 ],
@@ -171,7 +172,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("resolve the bounded face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })

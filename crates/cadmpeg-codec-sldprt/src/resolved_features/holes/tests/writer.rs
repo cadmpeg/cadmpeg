@@ -14,9 +14,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -62,7 +62,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -78,9 +78,9 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -139,13 +139,11 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     ] {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
             &detached,
             decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains(message));
+        );
+        assert!(error.contains(message));
     }
     let mut detached = decoded.ir().clone();
     detached.model.features[2].native_ref = None;
@@ -170,13 +168,11 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     )
     .unwrap();
     updated_detached_evaluation.set_definition(updated_detached_definition);
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved hole termination"));
+    );
+    assert!(error.contains("unresolved hole termination"));
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
@@ -203,9 +199,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{
-        holes::HolePlacement, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HolePlacement;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -236,11 +233,13 @@ fn semantic_writer_round_trips_hole_placement() {
             placements.as_deref(),
             Some(
                 &[HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, -1.0
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        1.0, 2.0, 3.0
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, -1.0)
+                    )
                     .unwrap(),
                 }][..]
             )
@@ -248,16 +247,19 @@ fn semantic_writer_round_trips_hole_placement() {
 
         *face = Some(FaceSelection::Native("face:13".into()));
         *placements = Some(vec![HolePlacement::Directed {
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 1.0, 0.0,
+            ))
+            .unwrap(),
         }]);
         *extent = Some(LinearTermination::ThroughAll {});
         updated_ir_evaluation.set_definition(updated_ir_definition);
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -281,17 +283,17 @@ fn semantic_writer_round_trips_hole_placement() {
             ..
         }) if face == "face:13"
             && placements.as_deref() == Some(&[HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
             }][..])
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -390,7 +392,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

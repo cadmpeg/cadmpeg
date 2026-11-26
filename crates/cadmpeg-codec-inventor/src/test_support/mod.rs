@@ -4,6 +4,7 @@
 
 pub(crate) mod coil;
 pub(crate) mod combine;
+pub(crate) mod history_carrier;
 pub(crate) mod rse_compression;
 pub(crate) mod test_fixtures;
 pub(crate) mod truncation;
@@ -30,5 +31,16 @@ pub(crate) fn root_part_ir() -> cadmpeg_ir::CadIr {
     definition.kind = Some(ProductDefinitionKind::Part);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.product_definitions.push(definition);
+    ir.source = Some(cadmpeg_ir::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("inventor:cfb3-rse31-meta8"),
+        )),
+        [(
+            cadmpeg_core::nonblank_literal!("document_kind"),
+            "part".to_owned(),
+        )]
+        .into_iter()
+        .collect(),
+    ));
     ir
 }

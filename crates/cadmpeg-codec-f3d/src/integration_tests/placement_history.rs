@@ -57,7 +57,11 @@ fn decode(bytes: &[u8], max_retained_bytes: u64) -> Result<Decoded, String> {
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .map_err(|error| error.to_string())?;
     let available = ctx.retained_bytes_available();
-    let result = F3dCodec.decode_with_context(&ctx, root);
+    let result = F3dCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let retained_bytes = available - ctx.retained_bytes_available();
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(format!("{refusal:?}"));
@@ -77,18 +81,17 @@ fn decode_bound(bytes: &[u8]) -> Decoded {
     bound
 }
 
-/// Decode under each `step / steps` fraction of `full_charge` below it.
+/// Decode under each `step / steps` fraction of `full_charge` below it, one
+/// decode per item taken.
 fn below_full_charge(
     bytes: &[u8],
     full_charge: u64,
     steps: u64,
-) -> Vec<(u64, Result<Decoded, String>)> {
-    (1..steps)
-        .map(|step| {
-            let allowance = full_charge * step / steps;
-            (allowance, decode(bytes, allowance))
-        })
-        .collect()
+) -> impl DoubleEndedIterator<Item = (u64, Result<Decoded, String>)> + '_ {
+    (1..steps).map(move |step| {
+        let allowance = full_charge * step / steps;
+        (allowance, decode(bytes, allowance))
+    })
 }
 
 fn binding_skipped(result: &DecodeResult) -> bool {
@@ -130,9 +133,14 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
     let bound = decode_bound(&bytes);
     let mut outcomes = Vec::new();
     let mut skipped = None;
-    for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 64) {
+    // Search down from the full charge, where an allowance first falls short
+    // of the binding estimate.
+    for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 64).rev() {
         match outcome {
-            Ok(decoded) if binding_skipped(&decoded.result) => skipped = Some(decoded),
+            Ok(decoded) if binding_skipped(&decoded.result) => {
+                skipped = Some(decoded);
+                break;
+            }
             Ok(decoded) => outcomes.push(format!("{allowance}: bound, {}", decoded.retained_bytes)),
             Err(error) => outcomes.push(format!("{allowance}: {error}")),
         }
@@ -175,7 +183,13 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
-    let expanded = crate::tree::expand(&model.product_definitions, &model.occurrences).unwrap();
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let poses = crate::tree::world_poses(model);
     let leaves = expanded
         .occurrences

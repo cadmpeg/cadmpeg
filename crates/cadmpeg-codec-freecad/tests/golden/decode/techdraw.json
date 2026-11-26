@@ -446,7 +446,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -470,7 +470,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -494,7 +494,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -516,7 +516,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -564,7 +564,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -612,7 +612,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -660,7 +660,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -686,7 +686,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1740,7 +1740,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -1767,7 +1767,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1808,7 +1808,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1825,7 +1825,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1866,7 +1866,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1885,7 +1885,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 30.0,
@@ -1955,11 +1955,9 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [
         {
@@ -2009,6 +2007,7 @@
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 2.0,
           "scale_from": "own",
+          "views": [],
           "x_direction": [
             1.0,
             0.0,
@@ -2047,7 +2046,13 @@
                   }
                 },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "drawing",
+                  "value": {
+                    "drawing": "fcstd:model:drawing#Front:entity",
+                    "part": {
+                      "kind": "unread"
+                    }
+                  }
                 }
               }
             ]
@@ -2055,7 +2060,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [],
@@ -2089,7 +2095,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [],
@@ -2103,75 +2110,16 @@
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
           "projection": "first",
-          "relationships": {
-            "Template": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Template"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ],
-            "Views": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Front"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Top"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Length"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Note"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ]
-          },
+          "relationships": {},
           "runtime_type": "TechDraw::DrawPage",
           "scale": 1.0,
-          "template": "fcstd:model:drawing#Template:entity"
+          "template": "fcstd:model:drawing#Template:entity",
+          "views": [
+            "fcstd:model:drawing#Front:entity",
+            "fcstd:model:drawing#Top:entity",
+            "fcstd:model:drawing#Length:entity",
+            "fcstd:model:drawing#Note:entity"
+          ]
         },
         {
           "assets": [
@@ -2275,7 +2223,8 @@
                 "text": "Synthetic box"
               }
             ]
-          }
+          },
+          "views": []
         },
         {
           "assets": [],
@@ -2324,6 +2273,7 @@
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 1.0,
           "scale_from": "own",
+          "views": [],
           "x_direction": [
             1.0,
             0.0,
@@ -2331,87 +2281,30 @@
           ]
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "height": 10.0,
-                  "kind": "box",
-                  "length": 30.0,
-                  "width": 20.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Box"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "30.0000000000000000",
-          "id": "fcstd:design:parameter#Box:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Box:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Box",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [
         {
@@ -2497,7 +2390,13 @@
                   }
                 },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "drawing",
+                  "value": {
+                    "drawing": "fcstd:model:drawing#Front:entity",
+                    "part": {
+                      "kind": "unread"
+                    }
+                  }
                 }
               }
             ]
@@ -2562,14 +2461,7 @@
           }
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -2739,7 +2631,6 @@
       "attributes": {
         "application_domains": "Part,TechDraw",
         "document_kind": "drawing",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R45039 (Git)"
       },
@@ -2875,6 +2766,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b",
     "file_digests": {},
     "retained_records": {},

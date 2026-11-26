@@ -116,12 +116,31 @@ fn a_given_up_statement_names_the_records_that_need_it() {
         .expect("the set keeps its readable entry");
     assert_eq!(decoded.ir().geometry.points.len(), 1);
     let losses = given_up_losses(decoded.report());
-    let [loss] = losses.as_slice() else {
-        panic!("one record.unreadable loss");
+    assert_eq!(losses.len(), 2);
+    let part_at = |offset: usize, text: &str| {
+        let head = format!(
+            "part data_record stream=\"\" offset={offset} length={} record=",
+            text.len()
+        );
+        let parts = losses
+            .iter()
+            .filter(|loss| loss.message.starts_with(&head))
+            .collect::<Vec<_>>();
+        let [loss] = parts.as_slice() else {
+            panic!("one part for {text}");
+        };
+        loss.message.clone()
     };
-    assert!(loss.message.ends_with(&format!(
-        "; dropped=[step:file:omitted#{dependent}, step:file:omitted#{transitive}]; lost=[#6 entry #3]"
-    )));
+    let given_up = source.find("#2=").expect("given-up statement");
+    let unresolved = source.find("#5=").expect("record with a missing reference");
+    // Each dependent is named by the id of its DATA instance; the native record that
+    // keeps its source is held.
+    assert!(part_at(given_up, "#2=ITEM(%,3);")
+        .ends_with("; dropped=[step:data:instance#3, step:data:instance#4]; lost=[#6 entry #3]"));
+    assert!(part_at(unresolved, "#5=ITEM(#9);").ends_with(
+        ": malformed container: instance #5 omitted: unresolved instance reference #9; \
+         exact source retained; dropped=[]"
+    ));
     let omissions = decoded
         .report()
         .losses
@@ -165,12 +184,11 @@ fn a_set_loses_only_its_given_up_entries_and_a_positional_list_drops_its_record(
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    let offset = |name: &str| source.find(name).expect("statement");
     let mut dropped = statement.dropped.clone();
     dropped.sort_unstable();
     // #5 lists #2 in an aggregate of unknown order, and #7 nests it below
     // the set's entries; both would shift the entries that follow it.
-    assert_eq!(dropped, [offset("#3="), offset("#5="), offset("#7=")]);
+    assert_eq!(dropped, ["#3", "#5", "#7"]);
     assert_eq!(statement.lost, [(4, 3), (4, 2), (6, 5)]);
     assert_eq!(parsed.omitted_spans().len(), 3);
     assert!(!diagnostics
@@ -203,11 +221,10 @@ fn a_polyline_that_loses_a_point_is_dropped_and_named() {
     let (source, decoded, message) = decode_with_point_three_given_up(data);
     let polyline = source.find("#10=").expect("polyline");
     assert!(
-        message.ends_with(&format!(
-            "; dropped=[step:file:omitted#{polyline}]; lost=[#11 entry #10]"
-        )),
+        message.ends_with("; dropped=[step:data:instance#10]; lost=[#11 entry #10]"),
         "{message}"
     );
+    assert!(source[polyline..].starts_with("#10=POLYLINE"));
     assert!(decoded.ir().geometry.curves.is_empty());
 }
 
@@ -221,7 +238,7 @@ fn a_b_spline_that_loses_a_pole_is_dropped_and_named() {
         let (_, decoded, message) =
             decode_with_point_three_given_up(&format!("{curve}#11=GEOMETRIC_SET('',(#10));"));
         assert!(
-            message.contains("; dropped=[step:file:omitted#"),
+            message.contains("; dropped=[step:data:instance#10]"),
             "{message}"
         );
         assert!(message.ends_with("; lost=[#11 entry #10]"), "{message}");
@@ -267,6 +284,36 @@ fn a_closed_shell_that_loses_a_face_keeps_the_rest_and_the_loss_names_both() {
         "{}",
         loss.message
     );
+}
+
+#[test]
+fn a_face_that_loses_a_bound_and_a_solid_that_loses_a_void_are_dropped() {
+    let source = exchange(
+        "#9=ITEM();#20=ITEM();#21=ITEM(%,3);\
+         #30=ADVANCED_FACE('',(#20,#21),#9,.T.);#31=FACE('',(#20,#21));\
+         #32=FACE_SURFACE('',(#20,#21),#9,.T.);#33=SUBFACE('',(#20,#21),#9);\
+         #34=(FACE((#20,#21))REPRESENTATION_ITEM('')TOPOLOGICAL_REPRESENTATION_ITEM());\
+         #35=BREP_WITH_VOIDS('',#9,(#20,#21));\
+         #36=(BREP_WITH_VOIDS((#20,#21))MANIFOLD_SOLID_BREP(#9)REPRESENTATION_ITEM('')SOLID_MODEL());\
+         #40=CLOSED_SHELL('',(#30,#20));",
+    );
+    let (parsed, _) = with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [9, 20, 40]
+    );
+    assert_eq!(
+        parsed.records()[&40].partials[0].parameters[1],
+        Value::List(vec![Value::Reference(20)])
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    let mut dropped = statement.dropped.clone();
+    dropped.sort_unstable();
+    let names = (30..=36).map(|id| format!("#{id}")).collect::<Vec<_>>();
+    assert_eq!(dropped, names);
+    assert_eq!(statement.lost, [(40, 30)]);
 }
 
 #[test]
@@ -322,65 +369,121 @@ fn dangling_references_remove_transitive_dependents_without_removing_cycles() {
             .collect::<Vec<_>>(),
         [4, 5, 6]
     );
-    assert_eq!(parsed.omitted_spans().len(), 3);
+    // #1 is a part of its own; #2 and #3 are dropped with it.
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    assert_eq!(&source[statement.span.clone()], "#1=ITEM(#90);");
+    assert_eq!(statement.dropped, ["#2", "#3"]);
+    assert_eq!(parsed.omitted_spans().len(), 2);
     assert_eq!(
         diagnostics
             .iter()
             .filter(|item| item.kind == ParseDiagnosticKind::RecordOmitted)
             .count(),
-        3
+        1
     );
 }
 
 #[test]
-fn duplicate_id_removes_every_definition_and_its_users() {
+fn a_repeated_instance_name_keeps_its_first_statement() {
     let source = exchange("#1=ITEM();#2=ITEM(#1);#1=OTHER();#1=THIRD();#3=ITEM();");
-    let (parsed, _) =
+    let (parsed, diagnostics) =
         with_service_context(source.as_bytes(), parse_inner).expect("bounded duplicates");
-    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [3]);
     assert_eq!(
-        parsed
-            .records()
-            .iter()
-            .filter(|(_, record)| parsed.data()[0].span.contains(&record.span.start))
-            .map(|(&id, _)| id)
-            .collect::<Vec<_>>(),
-        [3]
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3]
     );
-    assert_eq!(parsed.omitted_spans().len(), 4);
+    assert_eq!(&source[parsed.records()[&1].span.clone()], "#1=ITEM();");
+    assert!(parsed.omitted_spans().is_empty());
+    let repeated = diagnostics
+        .iter()
+        .filter(|item| {
+            item.kind == ParseDiagnosticKind::RecordOmitted
+                && item.message.contains("repeated instance name #1")
+        })
+        .map(|item| item.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(repeated.len(), 2, "{repeated:?}");
+    for (copy, message) in ["#1=OTHER();", "#1=THIRD();"].iter().zip(&repeated) {
+        let start = source.find(copy).expect("the copy");
+        let span = format!("bytes {start}..{}", start + copy.len());
+        assert!(message.contains(&span), "{message} names {span}");
+    }
+    // Each copy that differs from the first statement is a part of its own.
+    let given_up = parsed
+        .given_up()
+        .iter()
+        .map(|statement| (statement.kind, &source[statement.span.clone()]))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        given_up,
+        [
+            ("data_record", "#1=OTHER();"),
+            ("data_record", "#1=THIRD();")
+        ]
+    );
 }
 
 #[test]
-fn malformed_definition_keeps_a_readable_instance_name_ambiguous() {
-    for definitions in [
-        "#1=ITEM();#1=ITEM(%,3);",
-        "#1=ITEM(%,3);#1=ITEM();",
-        "#1=ITEM(%,3);#1=ITEM();#1=OTHER();",
+fn a_repeated_statement_equal_to_the_first_drops_nothing() {
+    let source = exchange("#1=ITEM(2);#1=ITEM(2);#2=ITEM(#1);");
+    let (parsed, diagnostics) =
+        with_service_context(source.as_bytes(), parse_inner).expect("bounded duplicates");
+    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [1, 2]);
+    let omitted = diagnostics
+        .iter()
+        .filter(|item| item.kind == ParseDiagnosticKind::RecordOmitted)
+        .collect::<Vec<_>>();
+    let [repeated] = omitted.as_slice() else {
+        panic!("one omitted copy");
+    };
+    assert!(repeated.message.contains("repeated instance name #1"));
+    assert!(parsed.given_up().is_empty());
+}
+
+#[test]
+fn a_defective_first_statement_gives_up_its_instance_name() {
+    for (definitions, later) in [
+        ("#1=ITEM(%,3);#1=ITEM();", 1),
+        ("#1=ITEM(%,3);#1=ITEM();#1=OTHER();", 2),
     ] {
         let source = exchange(&format!("{definitions}#2=ITEM(#1);#3=ITEM();"));
         let (parsed, diagnostics) =
             with_service_context(source.as_bytes(), parse_inner).expect("bounded definitions");
         assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [3]);
-        assert_eq!(
-            parsed
-                .records()
-                .iter()
-                .filter(|(_, record)| parsed.data()[0].span.contains(&record.span.start))
-                .map(|(&id, _)| id)
-                .collect::<Vec<_>>(),
-            [3]
-        );
-        let [statement] = parsed.given_up() else {
-            panic!("one given-up definition in {definitions}");
+        let [statement, copies @ ..] = parsed.given_up() else {
+            panic!("a given-up definition in {definitions}");
         };
-        // Every readable definition of #1 and its user #2 need the given-up one.
-        let dropped = definitions.matches(';').count();
-        assert_eq!(parsed.omitted_spans().len(), dropped);
-        assert_eq!(statement.dropped.len(), dropped);
-        assert!(!diagnostics
-            .iter()
-            .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+        // The user #2 needs the given-up first statement; each later copy
+        // of #1 is read, not stated, and a part of its own.
+        assert_eq!(statement.dropped, ["#2"]);
+        assert_eq!(copies.len(), later);
+        assert_eq!(parsed.omitted_spans().len(), 1);
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.message.contains("repeated instance name #1"))
+                .count(),
+            later
+        );
     }
+}
+
+#[test]
+fn a_defective_later_statement_leaves_the_first_standing() {
+    let source = exchange("#1=ITEM();#1=ITEM(%,3);#2=ITEM(#1);#3=ITEM();");
+    let (parsed, _) =
+        with_service_context(source.as_bytes(), parse_inner).expect("bounded definitions");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("the defective copy is its own given-up part");
+    };
+    assert!(statement.dropped.is_empty());
+    assert!(parsed.omitted_spans().is_empty());
 }
 
 #[test]
@@ -490,7 +593,7 @@ fn recovery_never_turns_a_resource_refusal_into_an_omission() {
 fn strict_decode_rejects_the_reported_given_up_record() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM(#0);#2=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
-    options.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    options.strictness.pinned = true;
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
         .expect_err("strict mode rejects a completed decode with a given-up record");

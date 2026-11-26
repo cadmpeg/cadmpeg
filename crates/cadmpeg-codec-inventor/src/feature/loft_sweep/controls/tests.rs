@@ -5,6 +5,7 @@ use crate::feature::tests::{
     raw_parameter, reference, reference_list, test_feature, test_property,
 };
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 
 struct Fixture {
@@ -206,9 +207,11 @@ fn nonpositional_conditions_options_and_scalar_patterns_stay_native() {
 }
 
 fn positional_definition() -> FeatureDefinition {
-    use cadmpeg_ir::features::{
-        BooleanOp, LoftGuidance, LoftSection, PlanarProfileRef, ProfileRef, SketchProfileRegion,
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{
+        LoftSection, PlanarProfileRef, ProfileRef, SketchProfileRegion,
     };
+    use cadmpeg_ir::features::LoftGuidance;
     let profile = PlanarProfileRef::sketch_regions(
         cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#section").expect("sketch"),
         vec![SketchProfileRegion::loops(0, Vec::new()).expect("region")],
@@ -235,19 +238,19 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
     let f = Fixture::new();
     let definition = positional_definition();
     assert!(matches_definition(&definition));
-    let base = serde_json::to_value(&definition).expect("definition");
+    let base = json::to_value(&definition).expect("definition");
     for (field, value) in [
-        ("closed", serde_json::json!(true)),
-        ("solid", serde_json::json!(false)),
-        ("ruled", serde_json::json!(true)),
-        ("linearize", serde_json::json!(true)),
-        ("op", serde_json::json!("join")),
-        ("max_degree", serde_json::json!(3)),
-        ("allow_multi_profile_faces", serde_json::json!(true)),
+        ("closed", cadmpeg_core::json!(true)),
+        ("solid", cadmpeg_core::json!(false)),
+        ("ruled", cadmpeg_core::json!(true)),
+        ("linearize", cadmpeg_core::json!(true)),
+        ("op", cadmpeg_core::json!("join")),
+        ("max_degree", cadmpeg_core::json!(3)),
+        ("allow_multi_profile_faces", cadmpeg_core::json!(true)),
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
-        let changed = serde_json::from_value(changed).expect("changed loft");
+        let changed = json::from_value(changed).expect("changed loft");
         assert!(!matches_definition(&changed));
     }
     assert!(validates(
@@ -293,10 +296,31 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
             InventorLossCode::FeatureLoftControlsUnresolved.kind()
         );
     }
-    assert_eq!(
-        NativeReason::ResultTopology.note().code,
-        InventorLossCode::FeatureLoftResultOperandsNative.kind()
-    );
+    for reason in [
+        NativeReason::ResultTopology,
+        NativeReason::ResultStateFailed,
+        NativeReason::ResultStateBounded,
+    ] {
+        assert_eq!(
+            reason.note().code,
+            InventorLossCode::FeatureLoftResultOperandsNative.kind()
+        );
+    }
+    for (reason, detail) in [
+        (
+            NativeReason::ResultStateFailed,
+            "history state of the loft does not decode",
+        ),
+        (
+            NativeReason::ResultStateBounded,
+            "history state of the loft passed the local work cap of state views",
+        ),
+    ] {
+        assert_eq!(
+            reason.note().message,
+            format!("Retained Inventor solid loft natively: {detail}.")
+        );
+    }
     assert_eq!(
         NativeReason::SectionParameters.note().code,
         InventorLossCode::FeatureLoftSectionScalarsNative.kind()

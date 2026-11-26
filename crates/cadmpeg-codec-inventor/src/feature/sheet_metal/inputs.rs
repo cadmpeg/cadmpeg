@@ -5,13 +5,10 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureInputTopology,
-        FeatureOperation, HistoricalEdgeGeometry,
-    },
-    ids::{FeatureInputTopologyId, HistoricalEdgeId},
-};
+use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
 use super::operands;
 use crate::feature::{FeatureInventory, PmDcFeature};
@@ -100,6 +97,8 @@ pub(in crate::feature) fn project(
                 interior: sample.interior,
                 tangent: Some(sample.tangent),
                 faces: DistinctMembers::default(),
+                carrier: None,
+                supports: Vec::new(),
             });
             edges.push(edge);
         }
@@ -133,6 +132,9 @@ pub(in crate::feature) fn project(
                 "project Inventor historical attachment edges",
             )?;
             states.push(FeatureInputTopology {
+                face_owners: Vec::new(),
+                face_geometry: Vec::new(),
+                body_writers: Vec::new(),
                 id,
                 input_of: features[target].id.clone(),
                 bodies: DistinctMembers::default(),

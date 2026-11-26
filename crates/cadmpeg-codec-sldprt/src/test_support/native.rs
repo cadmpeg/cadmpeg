@@ -7,6 +7,7 @@ pub(crate) fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNati
         ir.native
             .namespace("sldprt")
             .expect("SLDPRT native namespace"),
+        ir.tolerances.linear,
     )
     .unwrap()
 }
@@ -19,8 +20,8 @@ pub(crate) fn update_sldprt_native<R>(
     let result = update(&mut native);
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .unwrap();
     result

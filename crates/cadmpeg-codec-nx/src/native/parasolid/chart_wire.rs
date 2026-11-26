@@ -166,11 +166,12 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
             xmt: wire.xmt,
-            preamble: ChartPreamble::new(
+            preamble: ChartPreamble::for_points(
                 wire.base_parameter,
                 wire.base_scale,
                 wire.chordal_error,
                 wire.angular_error,
+                &data.points(),
             )?,
             data,
             framing: wire.framing,
@@ -182,6 +183,7 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
 #[cfg(test)]
 mod tests {
     use super::super::ParasolidChartRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn chart_fields_keep_wire_order_and_reject_mismatched_layouts() {
@@ -194,29 +196,29 @@ mod tests {
             );
             for identity in [0, 1] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-                wire["xmt"] = serde_json::json!(identity);
-                assert!(serde_json::from_value::<ParasolidChartRecord>(wire)
+                wire["xmt"] = cadmpeg_core::json!(identity);
+                assert!(json::from_value::<ParasolidChartRecord>(wire)
                     .unwrap_err()
                     .to_string()
                     .contains("xmt"));
             }
             let chart: ParasolidChartRecord = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&chart).unwrap(), json);
+            assert_eq!(json::to_string(&chart).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&chart).unwrap(),
-                serde_json::to_vec(&super::ChartWire::from(chart.clone())).unwrap()
+                json::to_vec(&chart).unwrap(),
+                json::to_vec(&super::ChartWire::from(chart.clone())).unwrap()
             );
             for (field, invalid) in [
-                ("count", serde_json::json!(1)),
-                ("chart_count", serde_json::json!(1)),
-                ("parameter_errors", serde_json::json!([0.0, 0.0])),
-                ("base_scale", serde_json::json!(0.0)),
-                ("native_parameters", serde_json::json!([2.0])),
-                ("ext_support_uv", serde_json::json!([[[0.0, 0.0]], null])),
+                ("count", cadmpeg_core::json!(1)),
+                ("chart_count", cadmpeg_core::json!(1)),
+                ("parameter_errors", cadmpeg_core::json!([0.0, 0.0])),
+                ("base_scale", cadmpeg_core::json!(0.0)),
+                ("native_parameters", cadmpeg_core::json!([2.0])),
+                ("ext_support_uv", cadmpeg_core::json!([[[0.0, 0.0]], null])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire[field] = invalid;
-                let error = serde_json::from_value::<ParasolidChartRecord>(wire).unwrap_err();
+                let error = json::from_value::<ParasolidChartRecord>(wire).unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
         }

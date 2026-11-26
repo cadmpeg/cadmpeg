@@ -33,7 +33,7 @@ pub struct DecodeReport {
 ///
 /// The backend reports the state it delivered; the sealed decode wrapper
 /// records its [`depth`](Self::depth) on the document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
@@ -209,7 +209,7 @@ pub enum TransferDisposition {
 /// The disposition is the wire's tag, so each outcome carries exactly the
 /// fields valid for it: an emitted record has no note to state, and an omitted
 /// record has no target.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -492,7 +492,7 @@ impl DecodeReport {
     #[must_use]
     #[cfg(test)]
     pub(crate) fn unclassified(
-        format: impl Into<String>,
+        format: crate::design::names::CodecId,
         transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
@@ -506,6 +506,21 @@ impl DecodeReport {
             losses,
             notes,
             transfer_ledger,
+        }
+    }
+
+    /// The report of a CADIR read, for the sidecar of a document written
+    /// from it: its losses are the read's report, and it delivered `depth`,
+    /// the depth of the document's scope (§3.3, Reading CADIR).
+    #[must_use]
+    pub fn of_cadir_read(losses: Vec<LossNote>, depth: DecodeDepth) -> Self {
+        Self {
+            classification: FormatIdentity::unclassified(crate::codec_id!("cadir")),
+            transfer: DecodeTransfer::at(depth, true),
+            coverage: Coverage::default(),
+            losses,
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
         }
     }
 

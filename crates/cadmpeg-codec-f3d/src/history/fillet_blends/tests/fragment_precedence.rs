@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn fragment_blend_operand(
     input: &AsmHistoricalTopology,
@@ -13,7 +14,7 @@ fn fragment_blend_operand(
         0, 0, -1,
     ];
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:edge-operand#7", "scope_record_index":42,
             "scope_reference_ordinal":0, "record_index":7, "byte_offset":0, "class_tag":"297",
             "paired_byte_offset":16, "paired_class_tag":"259", "recipe_record_index":10,
@@ -21,13 +22,14 @@ fn fragment_blend_operand(
             "recipe_prefix_bytes":"", "recipe_references":[], "recipe_program_offset":0,
             "recipe_program":[], "next_record_index":11, "next_byte_offset":160,
         })).unwrap();
-    operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
-        &program,
-    )
-    .unwrap();
+    operand.recipe_structure =
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &program,
+        )
+        .unwrap();
     operand.recipe_state_id = Some(1);
-    let boundaries = crate::history::face_boundary_contexts_for_slots(
+    let boundaries = crate::history::face_boundaries::face_boundary_contexts_for_slots(
         &[10, 13, 11],
         input,
         &mut crate::history::topology_cache::TopologyQueryCache::default(),
@@ -43,7 +45,7 @@ fn fragment_blend_operand(
     )
     .collect();
     operand.recipe_reference_contexts = [vec![10,13],vec![11]].into_iter().enumerate().map(|(ordinal,faces)| {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal":ordinal,"result_faces":[],"result_shared_edge_slots":[],
             "preceding_faces":faces.iter().map(|f| format!("f3d:brep:entity#{f}")).collect::<Vec<_>>(),
             "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{f}")).collect::<Vec<_>>(),

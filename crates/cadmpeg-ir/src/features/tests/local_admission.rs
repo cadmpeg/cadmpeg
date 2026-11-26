@@ -1,11 +1,21 @@
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
+use crate::features::binders::BinderTarget;
+use crate::features::direct_edit::SplitFacePlanes;
+use crate::features::operation_settings::FuzzyTolerance;
+use crate::features::profiles::{
+    GeometryImportPath, LoftPointSection, PathRef, PlanarProfileRef, ProfileRef,
+    ThreePointSelection,
+};
+use crate::features::selections::{
+    BodyMembers, BodySelection, NonEmptyMembers, SelectionMembers, VertexSelection,
+};
+use crate::features::tree::TreeChildren;
 use crate::features::FeatureOperation;
 use crate::features::{
-    BinderTarget, BodyMembers, BodySelection, CombineOperands, Feature, FeatureDefinition,
-    FeatureId, FuzzyTolerance, GeometryImportPath, LoftPointSection, NonEmptyMembers, PathRef,
-    PlanarProfileRef, ProfileRef, SectionOperands, SelectionMembers, SewBodySelection,
-    SplitFacePlanes, ThreePointSelection, TreeChildren, TrimBodyOperands, VertexSelection,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, SectionOperands, SewBodySelection,
+    TrimBodyOperands,
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
@@ -36,17 +46,16 @@ fn split_face_planes_wire_preserves_arity_uniqueness_and_order() {
             SplitFacePlanes::try_from(planes.clone()).unwrap_err(),
             message
         );
-        let error =
-            serde_json::from_value::<SplitFacePlanes>(serde_json::to_value(planes).unwrap())
-                .unwrap_err()
-                .to_string();
+        let error = json::from_value::<SplitFacePlanes>(json::to_value(planes).unwrap())
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(message), "{error}");
     }
     let planes = vec![second, first];
-    let wire = serde_json::to_value(&planes).unwrap();
-    let reconstructed = serde_json::from_value::<SplitFacePlanes>(wire.clone()).unwrap();
+    let wire = json::to_value(&planes).unwrap();
+    let reconstructed = json::from_value::<SplitFacePlanes>(wire.clone()).unwrap();
     assert_eq!(reconstructed.as_ref(), planes.as_slice());
-    assert_eq!(serde_json::to_value(reconstructed).unwrap(), wire);
+    assert_eq!(json::to_value(reconstructed).unwrap(), wire);
 }
 
 #[test]
@@ -59,8 +68,8 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert!(SplitFacePlanes::try_from(vec![first.clone(), first.clone()]).is_err());
     let planes = SplitFacePlanes::try_from(vec![second.clone(), first.clone()]).unwrap();
     assert_eq!(
-        serde_json::to_value(&planes).unwrap(),
-        serde_json::json!([second, first])
+        json::to_value(&planes).unwrap(),
+        cadmpeg_core::json!([second, first])
     );
     assert!(TreeChildren::new(vec![first.clone(), first.clone()], None,).is_err());
     assert!(TreeChildren::new(vec![first.clone()], Some(second.clone()),).is_err());
@@ -69,7 +78,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert!({
         let active = Some(second.clone());
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::tree::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .is_err());
@@ -80,7 +89,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     {
         let active = Some(second);
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::tree::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .unwrap();
@@ -89,16 +98,19 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     let first = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("first")])
+        crate::features::selections::DistinctMembers::try_from(vec![body_id("first")])
             .expect("distinct bodies"),
     );
     let second = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("second")])
+        crate::features::selections::DistinctMembers::try_from(vec![body_id("second")])
             .expect("distinct bodies"),
     );
     let pair = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("first"), body_id("second")])
-            .expect("distinct bodies"),
+        crate::features::selections::DistinctMembers::try_from(vec![
+            body_id("first"),
+            body_id("second"),
+        ])
+        .expect("distinct bodies"),
     );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
@@ -120,16 +132,16 @@ fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
 fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
     let body = body_id("repeated");
     for wire in [
-        serde_json::json!({"kind": "bodies", "value": [body.as_str(), body.as_str()]}),
-        serde_json::json!({"kind": "resolved", "value": {
+        cadmpeg_core::json!({"kind": "bodies", "value": [body.as_str(), body.as_str()]}),
+        cadmpeg_core::json!({"kind": "resolved", "value": {
             "bodies": [body.as_str(), body.as_str()], "native": "native-selection"
         }}),
     ] {
-        let error = serde_json::from_value::<BodySelection>(wire.clone())
+        let error = json::from_value::<BodySelection>(wire.clone())
             .expect_err("repeated resolved bodies")
             .to_string();
         assert!(error.contains("members must be distinct"), "{error}");
-        let error = serde_json::from_value::<SewBodySelection>(wire)
+        let error = json::from_value::<SewBodySelection>(wire)
             .expect_err("repeated bodies do not meet sew arity")
             .to_string();
         assert!(error.contains("members must be distinct"), "{error}");
@@ -140,56 +152,41 @@ fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
 fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
     let body = body_id("output");
     let duplicate = vec![body.clone(), body.clone()];
-    assert!(crate::features::DistinctMembers::try_from(duplicate.clone(),).is_err());
+    assert!(crate::features::selections::DistinctMembers::try_from(duplicate.clone(),).is_err());
 
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
     });
-    let mut evaluation = crate::features::FeatureEvaluation::new(
+    let mut evaluation = crate::features::evaluation::FeatureEvaluation::new(
         definition.clone(),
-        crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
     );
     evaluation.edit(|_, outputs| {
         assert!(!outputs.insert(body.clone(),));
     });
     assert_eq!(evaluation.outputs(), &vec![body.clone()]);
-    evaluation.set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
+    evaluation.set_outputs(
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+    );
     let prior = evaluation.clone();
-    assert!(crate::features::DistinctMembers::try_from(duplicate,).is_err());
+    assert!(crate::features::selections::DistinctMembers::try_from(duplicate,).is_err());
     assert_eq!(evaluation, prior);
 }
 
 #[test]
-fn feature_wire_rejects_duplicate_outputs_in_standalone_and_model_routes() {
+fn feature_wire_rejects_duplicate_outputs() {
     let body = body_id("output");
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
     });
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": feature_id("wire").as_str(),
         "ordinal": 0,
         "suppressed": null,
-        "definition": serde_json::to_value(definition).unwrap(),
+        "definition": json::to_value(definition).unwrap(),
         "outputs": [body.as_str(), body.as_str()]
     });
-    let error = serde_json::from_value::<Feature>(wire)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("distinct"), "{error}");
-
-    let mut model = serde_json::to_value(crate::document::Model::default()).unwrap();
-    model["features"] = serde_json::json!([{
-        "id": feature_id("wire").as_str(),
-        "ordinal": 0,
-        "suppressed": null,
-        "definition": serde_json::to_value(FeatureDefinition::Operation(
-            FeatureOperation::BaseFeature { bodies: BodySelection::Unresolved }
-        )).unwrap(),
-        "outputs": [body.as_str(), body.as_str()]
-    }]);
-    let error = serde_json::from_value::<crate::document::Model>(model)
-        .unwrap_err()
-        .to_string();
+    let error = json::from_value::<Feature>(wire).unwrap_err().to_string();
     assert!(error.contains("distinct"), "{error}");
 }
 
@@ -208,12 +205,12 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
         members: BodyMembers::try_from_rows(vec![
-            crate::features::BodyMember::new(
+            crate::features::selections::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
                 cadmpeg_core::text::NonBlankString::new("tool-a")
                     .expect("valid historical body selection row"),
             ),
-            crate::features::BodyMember::new(
+            crate::features::selections::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
                 cadmpeg_core::text::NonBlankString::new("tool-b")
                     .expect("valid historical body selection row"),
@@ -223,7 +220,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        members: BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(
+        members: BodyMembers::try_from_rows(vec![crate::features::selections::BodyMember::new(
             HistoricalBodyId::mint("test:body:5").expect("valid identity"),
             cadmpeg_core::text::NonBlankString::new("tool")
                 .expect("valid historical body selection row"),
@@ -266,8 +263,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
     ]))
     .unwrap();
     assert_eq!(
-        serde_json::from_value::<ThreePointSelection>(serde_json::to_value(&mixed).unwrap())
-            .unwrap(),
+        json::from_value::<ThreePointSelection>(json::to_value(&mixed).unwrap()).unwrap(),
         mixed
     );
 }
@@ -276,7 +272,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
 fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
     let body = body_id("inserted");
     let definition = FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-        bodies: crate::features::InsertedBodies::Resolved {
+        bodies: crate::features::selections::InsertedBodies::Resolved {
             native: "copied".into(),
         },
     });
@@ -286,34 +282,31 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     assert!(feature.evaluation.outputs().is_empty());
-    feature
-        .evaluation
-        .set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
-    let wire = serde_json::to_value(&feature).unwrap();
+    feature.evaluation.set_outputs(
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+    );
+    let wire = json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
-    assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));
+    assert_eq!(wire["outputs"], cadmpeg_core::json!([body.as_str()]));
     assert!(wire["definition"]["bodies"]["value"]
         .get("bodies")
         .is_none());
-    assert_eq!(
-        serde_json::from_value::<Feature>(wire.clone()).unwrap(),
-        feature
-    );
+    assert_eq!(json::from_value::<Feature>(wire.clone()).unwrap(), feature);
 
     let mut restated = wire;
-    restated["definition"]["bodies"]["value"]["bodies"] = serde_json::json!([body.as_str()]);
-    assert!(serde_json::from_value::<Feature>(restated.clone()).is_err());
+    restated["definition"]["bodies"]["value"]["bodies"] = cadmpeg_core::json!([body.as_str()]);
+    assert!(json::from_value::<Feature>(restated.clone()).is_err());
     let error =
-        serde_json::from_value::<crate::features::FeatureOperation>(restated["definition"].clone())
+        json::from_value::<crate::features::FeatureOperation>(restated["definition"].clone())
             .unwrap_err()
             .to_string();
     assert!(error.contains("bodies"), "{error}");
@@ -322,36 +315,36 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
 #[test]
 fn local_feature_wire_rejects_empty_collections_and_invalid_strings() {
     for wire in [
-        serde_json::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":[]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":["same","same"]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "fillet", "value": {"groups":[]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups":[]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "full_round_fillet", "value": {"groups":[]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "composite_curve", "value": {"segments":[],"closed":false}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"","format":"step"}}}),
-        serde_json::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"a\u{0}b","format":"step"}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":[]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":["same","same"]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "fillet", "value": {"groups":[]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups":[]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "full_round_fillet", "value": {"groups":[]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "composite_curve", "value": {"segments":[],"closed":false}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"","format":"step"}}}),
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"a\u{0}b","format":"step"}}}),
     ] {
         assert!(
-            serde_json::from_value::<FeatureDefinition>(wire.clone()).is_err(),
+            json::from_value::<FeatureDefinition>(wire.clone()).is_err(),
             "{wire}"
         );
     }
-    assert!(serde_json::from_value::<LoftPointSection>(
-        serde_json::json!({"kind":"native_point","value":""})
+    assert!(json::from_value::<LoftPointSection>(
+        cadmpeg_core::json!({"kind":"native_point","value":""})
     )
     .is_err());
-    assert!(serde_json::from_value::<LoftPointSection>(
-        serde_json::json!({"kind":"native_point","value":" p "})
+    assert!(json::from_value::<LoftPointSection>(
+        cadmpeg_core::json!({"kind":"native_point","value":" p "})
     )
     .is_ok());
     assert!(GeometryImportPath::try_from(" ".to_owned()).is_ok());
     for wire in [
-        serde_json::json!({"kind":"external","document":"","object":"object"}),
-        serde_json::json!({"kind":"external","document":"document","object":""}),
-        serde_json::json!({"kind":"native","reference":""}),
+        cadmpeg_core::json!({"kind":"external","document":"","object":"object"}),
+        cadmpeg_core::json!({"kind":"external","document":"document","object":""}),
+        cadmpeg_core::json!({"kind":"native","reference":""}),
     ] {
-        assert!(serde_json::from_value::<BinderTarget>(wire).is_err());
+        assert!(json::from_value::<BinderTarget>(wire).is_err());
     }
 }
 
@@ -362,10 +355,7 @@ fn a_post_process_inside_a_post_process_is_refused_as_an_unknown_variant() {
         profiles: vec![0].try_into().unwrap(),
     };
     assert!(spatial.planar().is_none());
-    assert!(
-        serde_json::from_value::<PlanarProfileRef>(serde_json::to_value(&spatial).unwrap())
-            .is_err()
-    );
+    assert!(json::from_value::<PlanarProfileRef>(json::to_value(&spatial).unwrap()).is_err());
 
     let inner = FeatureDefinition::PostProcess {
         operation: FeatureOperation::BaseFeature {
@@ -374,17 +364,17 @@ fn a_post_process_inside_a_post_process_is_refused_as_an_unknown_variant() {
         refine: true,
         fuzzy_tolerance: FuzzyTolerance::KernelDefault,
     };
-    let wire = serde_json::to_value(&inner).unwrap();
+    let wire = json::to_value(&inner).unwrap();
     assert_eq!(wire["kind"], "post_process");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         inner
     );
 
     let mut nested = wire.clone();
     nested["value"]["operation"] = wire.clone();
-    assert!(serde_json::from_value::<FeatureDefinition>(nested).is_err());
-    let error = serde_json::from_value::<FeatureOperation>(wire)
+    assert!(json::from_value::<FeatureDefinition>(nested).is_err());
+    let error = json::from_value::<FeatureOperation>(wire)
         .expect_err("a post-processed operation carries no post-processing layer of its own");
     assert!(error.to_string().contains("unknown variant"), "{error}");
 }
@@ -394,51 +384,51 @@ fn local_wire_errors_name_the_rejected_field() {
     for (field, wire) in [
         (
             "tessellations",
-            serde_json::json!({"kind": "mesh_import", "value": {"tessellations":[]}}),
+            cadmpeg_core::json!({"kind": "mesh_import", "value": {"tessellations":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"kind": "fillet", "value": {"groups":[]}}),
+            cadmpeg_core::json!({"kind": "fillet", "value": {"groups":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"kind": "chamfer", "value": {"groups":[]}}),
+            cadmpeg_core::json!({"kind": "chamfer", "value": {"groups":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"kind": "full_round_fillet", "value": {"groups":[]}}),
+            cadmpeg_core::json!({"kind": "full_round_fillet", "value": {"groups":[]}}),
         ),
         (
             "segments",
-            serde_json::json!({"kind": "composite_curve", "value": {"segments":[],"closed":false}}),
+            cadmpeg_core::json!({"kind": "composite_curve", "value": {"segments":[],"closed":false}}),
         ),
         (
             "cells",
-            serde_json::json!({"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}),
+            cadmpeg_core::json!({"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}),
         ),
         (
             "path",
-            serde_json::json!({"kind": "imported_geometry", "value": {"path":"","format":"step"}}),
+            cadmpeg_core::json!({"kind": "imported_geometry", "value": {"path":"","format":"step"}}),
         ),
     ] {
-        let error = serde_json::from_value::<FeatureOperation>(wire).unwrap_err();
+        let error = json::from_value::<FeatureOperation>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{field}: {error}");
     }
     for (field, wire) in [
         (
             "document",
-            serde_json::json!({"kind":"external","document":"","object":"object"}),
+            cadmpeg_core::json!({"kind":"external","document":"","object":"object"}),
         ),
         (
             "object",
-            serde_json::json!({"kind":"external","document":"document","object":""}),
+            cadmpeg_core::json!({"kind":"external","document":"document","object":""}),
         ),
         (
             "reference",
-            serde_json::json!({"kind":"native","reference":""}),
+            cadmpeg_core::json!({"kind":"native","reference":""}),
         ),
     ] {
-        let error = serde_json::from_value::<BinderTarget>(wire).unwrap_err();
+        let error = json::from_value::<BinderTarget>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{field}: {error}");
     }
 }
@@ -469,15 +459,15 @@ fn selection_operand_parts_move_retained_storage() {
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
     let operands = crate::features::replace_face::ReplaceFaceOperands::new(
-        crate::features::FaceSelection::Native(targets_text),
-        crate::features::FaceSelection::Native(replacements_text),
+        crate::features::selections::FaceSelection::Native(targets_text),
+        crate::features::selections::FaceSelection::Native(replacements_text),
     )
     .unwrap();
     let (targets, replacements) = (operands.targets(), operands.replacements());
-    let crate::features::FaceSelection::Native(targets) = targets else {
+    let crate::features::selections::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
-    let crate::features::FaceSelection::Native(replacements) = replacements else {
+    let crate::features::selections::FaceSelection::Native(replacements) = replacements else {
         panic!("native replacements");
     };
     assert_eq!(targets.as_ptr(), targets_pointer);
@@ -489,7 +479,7 @@ fn tree_children_wire_and_decode_share_membership_validation() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("first");
     let second = feature_id("second");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (children, active, message) in [
         (
             vec![first.clone(), first.clone()],
@@ -507,8 +497,8 @@ fn tree_children_wire_and_decode_share_membership_validation() {
             "active_child must belong to children",
         ),
     ] {
-        let wire = serde_json::json!({"children": children, "active_child": active});
-        let error = serde_json::from_value::<TreeChildren>(wire)
+        let wire = cadmpeg_core::json!({"children": children, "active_child": active});
+        let error = json::from_value::<TreeChildren>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains(message), "{error}");
@@ -518,17 +508,16 @@ fn tree_children_wire_and_decode_share_membership_validation() {
         );
     }
     let children = TreeChildren::new(vec![second, first.clone()], Some(first)).unwrap();
-    let wire = serde_json::to_value(&children).unwrap();
-    assert_eq!(
-        serde_json::from_value::<TreeChildren>(wire).unwrap(),
-        children
-    );
+    let wire = json::to_value(&children).unwrap();
+    assert_eq!(json::from_value::<TreeChildren>(wire).unwrap(), children);
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
-    use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
+    use crate::features::evaluation::{
+        FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology,
+    };
     for lane in 0..4 {
         let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         lanes[lane] = vec![
@@ -576,7 +565,7 @@ fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
 
 #[test]
 fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
-    use crate::features::GeneratedVertexRef;
+    use crate::features::selections::GeneratedVertexRef;
     let producer = feature_id("producer");
     let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
     for kind in 0..3 {
@@ -633,9 +622,10 @@ fn tree_children_keep_source_order_and_the_active_child() {
 
 #[test]
 fn selection_reference_constructors_keep_padded_text() {
-    use crate::features::{
-        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedCurveRef,
-        GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
+    use crate::features::profiles::GeneratedCurveRef;
+    use crate::features::selections::{
+        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedEdgeRef,
+        GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
     };
 
     fn finish<T>(result: Result<T, BodySelectionError>) -> Result<(), BodySelectionError> {
@@ -700,16 +690,16 @@ fn selection_reference_constructors_keep_padded_text() {
 #[test]
 fn nonempty_members_schema_requires_a_member() {
     for (value, valid) in [
-        (serde_json::json!([]), false),
-        (serde_json::json!([7]), true),
-        (serde_json::json!([7, 7]), true),
+        (cadmpeg_core::json!([]), false),
+        (cadmpeg_core::json!([7]), true),
+        (cadmpeg_core::json!([7, 7]), true),
     ] {
         assert_eq!(
-            serde_json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
+            json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
             valid
         );
     }
-    let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
+    let schema = json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
     assert_eq!(schema["type"], "array");
     assert_eq!(schema["minItems"], 1);
 }

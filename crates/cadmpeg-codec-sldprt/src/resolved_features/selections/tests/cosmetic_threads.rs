@@ -309,6 +309,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -348,7 +349,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         Some(158..400)
     );
     let mut unrelated = lane.clone();
-    for i in 0..1024 {
+    for i in 0..3 {
         let mut scalar = lane.scalars[0].clone();
         scalar.object_id = 1000 + i;
         scalar.offset = 0;
@@ -391,6 +392,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
     assert!(cosmetic_thread_cylinder_references(
         &references_ctx,

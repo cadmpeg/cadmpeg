@@ -6,32 +6,35 @@
 //! explicit body records. It derives one body hierarchy when those records are
 //! absent. It also derives supported pcurves and periodic seams.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext};
-use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
+use cadmpeg_ir::annotations::{AnnotationBuilder, AnnotationKey, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_pcurve_uv,
     nurbs_surface_isocurve,
 };
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw, BlendSupport};
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 use cadmpeg_ir::geometry::{
-    nurbs::SurfaceParameterAxis,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -53,6 +56,9 @@ use super::typed;
 use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
+
+mod prune;
+use prune::prune_rejected_topology;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
@@ -129,8 +135,76 @@ pub(crate) struct Brep {
     /// whose lane the reader refused. The model carries the absence of each
     /// refused carrier, so the decode continues and reports the loss.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Topology records the decode drops. They stay apart from `losses`
+    /// until [`Brep::take_losses`], because [`Brep::qualify_ids`] renames
+    /// the ids they name.
+    pub(crate) dropped: Vec<DroppedRecord>,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
+}
+
+/// A topology record the decode drops (CADIR §3.3).
+#[derive(Debug, Clone)]
+pub(crate) enum DroppedRecord {
+    /// A record given up for its own content, and the records dropped with it.
+    GivenUp {
+        record: String,
+        at: Option<cadmpeg_ir::SourceProvenance>,
+        error: String,
+        dropping: Vec<String>,
+    },
+    /// A record dropped only because it needs the record `needs`.
+    With { record: String, needs: String },
+}
+
+impl DroppedRecord {
+    fn with(record: &str, needs: &str) -> Self {
+        Self::With {
+            record: record.to_owned(),
+            needs: needs.to_owned(),
+        }
+    }
+
+    fn qualify(&mut self, site: &str) {
+        match self {
+            Self::GivenUp {
+                record, dropping, ..
+            } => {
+                *record = qualified_reference(record, site);
+                for id in dropping {
+                    *id = qualified_reference(id, site);
+                }
+            }
+            Self::With { record, needs } => {
+                *record = qualified_reference(record, site);
+                *needs = qualified_reference(needs, site);
+            }
+        }
+    }
+
+    fn loss(self) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::ids::Identity;
+        Ok(match self {
+            Self::GivenUp {
+                record,
+                at,
+                error,
+                dropping,
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
+                .at(at)
+                .dropping(
+                    dropping
+                        .into_iter()
+                        .map(Identity::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .loss(),
+            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
+                Identity::new(record)?,
+                Identity::new(needs)?,
+            ),
+        })
+    }
 }
 
 /// A resolved face color retains the stream that admitted its source row.
@@ -148,6 +222,17 @@ pub(crate) struct OwnedFaceColor {
 }
 
 impl Brep {
+    /// The losses of the decode: its notes, then one loss per dropped record.
+    pub(crate) fn take_losses(
+        &mut self,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut losses = std::mem::take(&mut self.losses);
+        for dropped in std::mem::take(&mut self.dropped) {
+            losses.push(dropped.loss()?);
+        }
+        Ok(losses)
+    }
+
     pub(crate) fn neutral_entity_count(&self) -> Result<u64, cadmpeg_core::CodecError> {
         let counts = [
             self.bodies.len(),
@@ -194,7 +279,7 @@ impl Brep {
         for region in &mut self.regions {
             region.id = qualified(&region.id, &tail)?;
             region.body = qualified(&region.body, &tail)?;
-            for id in &mut region.shells {
+            for id in region.stated_shells_mut() {
                 *id = qualified(id, &tail)?;
             }
         }
@@ -205,6 +290,7 @@ impl Brep {
             let free_vertices = qualified_ids(shell.free_vertices(), &tail)?;
             *shell = Shell {
                 native_ref: shell.native_ref.take(),
+                unstated: shell.unstated,
                 ..Shell::with_members(id, region, wire_edges, free_vertices)
             };
         }
@@ -221,6 +307,20 @@ impl Brep {
                         qualified(outer, &tail)?,
                         qualified_ids(inner, &tail)?,
                     )
+                }
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } => {
+                    cadmpeg_ir::topology::FaceLoops::PartialUnspecified {
+                        loops: qualified_ids(loops, &tail)?,
+                    }
+                }
+                cadmpeg_ir::topology::FaceLoops::PartialClassified { outer, inner } => {
+                    cadmpeg_ir::topology::FaceLoops::PartialClassified {
+                        outer: outer
+                            .as_ref()
+                            .map(|outer| qualified(outer, &tail))
+                            .transpose()?,
+                        inner: qualified_ids(inner, &tail)?,
+                    }
                 }
             };
         }
@@ -306,7 +406,7 @@ impl Brep {
                                     .as_ref()
                                     .map(|support| {
                                         qualified(&support.surface, &tail).map(|surface| {
-                                            cadmpeg_ir::geometry::BlendSupport {
+                                            cadmpeg_ir::geometry::blends::BlendSupport {
                                                 surface,
                                                 reversed: support.reversed,
                                             }
@@ -394,6 +494,9 @@ impl Brep {
             if let Some(target) = &mut modifier.target {
                 *target = qualified_reference(target, site);
             }
+        }
+        for record in &mut self.dropped {
+            record.qualify(site);
         }
         self.annotations
             .map_ids(|value| Ok(qualified_reference(value, site)))?
@@ -626,6 +729,34 @@ fn qualified_reference(value: &str, site: &str) -> String {
         format!("{value}@{site}")
     } else {
         value.to_owned()
+    }
+}
+
+/// The topology record `record` that the decode gives up for `code`, at
+/// `offset` in `stream` where the record has one. `dropped` names the
+/// records the decode drops with it.
+fn topology_given_up(
+    record: impl std::fmt::Display,
+    stream: &cadmpeg_ir::StreamName,
+    offset: Option<usize>,
+    code: crate::loss::SldprtLossCode,
+    why: &str,
+    dropped: &[SurfaceId],
+) -> DroppedRecord {
+    DroppedRecord::GivenUp {
+        record: record.to_string(),
+        at: offset.map(|offset| {
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "sldprt",
+                stream.clone(),
+                u64_from_index(offset),
+            )
+        }),
+        error: format!("{}: {why}", code.kind()),
+        dropping: dropped
+            .iter()
+            .map(|surface| surface.as_str().to_owned())
+            .collect(),
     }
 }
 
@@ -956,7 +1087,7 @@ fn emit_offset_surface(
     offset: &OffsetCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(offset.offset),
         Some("00_3c"),
@@ -1039,7 +1170,7 @@ fn emit_sweep_support(
         attr,
     );
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(sweep.offset),
         Some("procedural_support"),
@@ -1116,7 +1247,7 @@ fn ensure_surface_support(
             {
                 let geometry = retain_surface_geometry(sink.ctx, &carrier.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    match annotate_surface_frame(annotations, id.as_str(), solved) {
+                    match annotate_surface_frame(annotations, &id, solved) {
                         Ok(()) => {}
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
                             return Err(error);
@@ -1125,7 +1256,7 @@ fn ensure_surface_support(
                     }
                 }
                 annotations.note(
-                    id.as_str(),
+                    &id,
                     source_stream,
                     u64_from_index(carrier.offset),
                     Some("procedural_support"),
@@ -1202,7 +1333,7 @@ fn ensure_surface_support(
                     .iter()
                     .any(|candidate| candidate.id == surface)
             {
-                annotations.exactness(surface.as_str(), Exactness::Unknown);
+                annotations.exactness(&surface, Exactness::Unknown);
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
                 sink.out.surfaces.push(Surface {
@@ -1498,11 +1629,63 @@ fn closed_edge_start(
     Ok(Some((first.get(), [low, high])))
 }
 
-/// The model positions of the vertices a walked face's coedges start at.
 /// Share of the ball radius a fitted blend cache may miss a face vertex by;
 /// a larger miss is another branch of the rolling ball.
 const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
 
+/// Least distance, besides its fit tolerance, a blend cache may pass from
+/// its face's vertices and edge samples and still bound the face: the
+/// departure a rolling-ball fit keeps at its deepest split.
+const BLEND_VERTEX_MISS_FLOOR_MM: f64 = 1.0e-3;
+
+/// How far, besides its fit tolerance, a blend cache may pass from the
+/// vertices and edge samples of `face` and still bound it: the largest
+/// tolerance the face's edges state, and no less than
+/// [`BLEND_VERTEX_MISS_FLOOR_MM`].
+fn blend_vertex_allowance(
+    t: &topology::Tables,
+    face: &WalkedFace,
+    edge_tolerances: &HashMap<EdgeId, f64>,
+) -> f64 {
+    face.loops
+        .iter()
+        .flat_map(|(_, ring)| ring)
+        .filter_map(|coedge| t.coedges().get(coedge).map(|coedge| coedge.refs[6]))
+        .filter_map(|edge| edge_tolerances.get(&id_edge(edge)).copied())
+        .fold(BLEND_VERTEX_MISS_FLOOR_MM, f64::max)
+}
+
+/// Why the rolling-ball fit of a blend has no side, by side.
+const BLEND_SIDE_UNRESOLVED: [&str; 2] = [
+    "support 0 is not an analytic surface, a pair of them or a rolling ball",
+    "support 1 is not an analytic surface, a pair of them or a rolling ball",
+];
+
+/// What one fit step did for a blend left without a cache.
+enum BlendStep {
+    /// The step did not run, for the reason given.
+    NotRun(&'static str),
+    /// The step ran and found no cache, for the reason given.
+    NoCache(String),
+    /// The step's cache missed a face vertex by `miss` millimetres, more
+    /// than the `allowed` quarter of the radius.
+    Missed { miss: f64, allowed: f64 },
+}
+
+impl std::fmt::Display for BlendStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotRun(why) => write!(f, "not run, {why}"),
+            Self::NoCache(why) => f.write_str(why),
+            Self::Missed { miss, allowed } => write!(
+                f,
+                "its cache misses a face vertex by {miss} mm, more than the {allowed} mm a quarter of the radius allows"
+            ),
+        }
+    }
+}
+
+/// The model positions of the vertices a walked face's coedges start at.
 fn face_vertex_positions(t: &topology::Tables, face: &WalkedFace) -> Vec<cadmpeg_ir::math::Point3> {
     let mut positions = Vec::new();
     for (_, ring) in &face.loops {
@@ -1988,12 +2171,12 @@ fn attach_surface_curve(
             ),
         };
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some(note),
         );
-        annotations.exactness(curve_id.as_str(), exactness);
+        annotations.exactness(&curve_id, exactness);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2023,12 +2206,12 @@ fn attach_surface_curve(
     });
     let Some(context) = context else {
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some("unknown_curve"),
         );
-        annotations.exactness(curve_id.as_str(), Exactness::Unknown);
+        annotations.exactness(&curve_id, Exactness::Unknown);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2040,12 +2223,12 @@ fn attach_surface_curve(
         return Ok(());
     };
     annotations.note(
-        curve_id.as_str(),
+        &curve_id,
         source_stream,
         u64_from_index(carrier.offset),
         Some("sp_curve"),
     );
-    annotations.exactness(curve_id.as_str(), Exactness::Derived);
+    annotations.exactness(&curve_id, Exactness::Derived);
     let support = context.sides()[0]
         .surface
         .as_ref()
@@ -2100,25 +2283,30 @@ fn attach_surface_curve(
 /// The solved-cache tail stating [`super::fit::FIT_TOLERANCE_MM`], with
 /// neutral values in its other fields.
 fn fitted_cache_tail() -> Option<
-    cadmpeg_ir::geometry::SurfaceCurveCacheFirst<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>,
+    cadmpeg_ir::geometry::surface_curves::SurfaceCurveCacheFirst<
+        cadmpeg_ir::geometry::surface_curves::ParametricSurfaceCurveFlags,
+    >,
 > {
     let fit_tolerance =
-        cadmpeg_ir::geometry::FitTolerance::try_new(super::fit::FIT_TOLERANCE_MM).ok()?;
-    let form = cadmpeg_ir::geometry::SurfaceCurveTail::try_new(
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(super::fit::FIT_TOLERANCE_MM)
+            .ok()?;
+    let form = cadmpeg_ir::geometry::surface_curves::SurfaceCurveTail::try_new(
         0,
         cadmpeg_ir::scalar::PositiveI64::new(1)?,
-        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance },
+        cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::SolvedCache { fit_tolerance },
         [[None; 4]; 2],
         [None, None],
     )
     .ok()?;
-    Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst {
-        form,
-        flags: cadmpeg_ir::geometry::ParametricSurfaceCurveFlags {
-            flag: false,
-            second_flag: None,
+    Some(
+        cadmpeg_ir::geometry::surface_curves::SurfaceCurveCacheFirst {
+            form,
+            flags: cadmpeg_ir::geometry::surface_curves::ParametricSurfaceCurveFlags {
+                flag: false,
+                second_flag: None,
+            },
         },
-    })
+    )
 }
 
 /// The boundary of a face: its vertices (the ends of its edges), and the
@@ -2160,7 +2348,7 @@ fn blend_boundary(
 
 /// Distance within which a curve end lies at a vertex without a stored
 /// tolerance: the stream's linear resolution, `1e-8` m.
-pub(super) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
+pub(crate) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 
 /// Whether an edge runs against an open NURBS curve that stores no range, from
 /// the parameters of its two vertices on the curve (spec §7.2). `None` on a
@@ -3749,13 +3937,13 @@ fn decode_graph_inner(
     for a in point_attrs {
         let rec = &t.points()[&a];
         annotations.note(
-            id_point(a).as_str(),
+            id_point(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_1d"),
         );
         let [x, y, z] = rec.xyz_m;
-        let finite_position = cadmpeg_ir::features::FinitePoint3::new(
+        let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(
             cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
         )
         .ok_or(Point::NON_FINITE_POSITION)
@@ -3771,7 +3959,7 @@ fn decode_graph_inner(
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
         annotations.note(
-            id_vertex(a).as_str(),
+            id_vertex(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_12"),
@@ -3783,7 +3971,7 @@ fn decode_graph_inner(
             tolerance: rec
                 .tolerance_m
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).ok_or_else(|| {
+                    cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "VERTEX tolerance is outside finite millimetres",
                         )
@@ -3799,6 +3987,7 @@ fn decode_graph_inner(
     let mut emitted_curves: HashSet<u32> = HashSet::new();
     let mut surface_curve_attrs = Vec::new();
     let mut edge_set: HashSet<u32> = HashSet::new();
+    let mut withheld_edges = HashSet::<u32>::new();
     let mut edge_endpoint_positions = HashMap::<u32, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
@@ -3825,6 +4014,15 @@ fn decode_graph_inner(
             )
         {
             out.stats.withheld_ring_edges += 1;
+            withheld_edges.insert(e);
+            out.dropped.push(topology_given_up(
+                id_edge(e),
+                stream,
+                t.edge_uses().get(&e).map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
+                "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
+                &[],
+            ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
@@ -3843,11 +4041,11 @@ fn decode_graph_inner(
             } else {
                 "derived_closed_curve_seam"
             };
-            annotations.note(point_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(point_id.as_str(), Exactness::Derived);
-            annotations.note(vertex_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(vertex_id.as_str(), Exactness::Derived);
-            let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+            annotations.note(&point_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&point_id, Exactness::Derived);
+            annotations.note(&vertex_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&vertex_id, Exactness::Derived);
+            let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             admit_brep_entity(ctx)?;
@@ -4016,13 +4214,12 @@ fn decode_graph_inner(
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations.note(
-                                id_curve(curve_attr).as_str(),
+                                id_curve(curve_attr),
                                 &source_stream,
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             );
-                            annotations
-                                .exactness(id_curve(curve_attr).as_str(), Exactness::Derived);
+                            annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
                     curve = Some(id_curve(curve_attr));
@@ -4038,12 +4235,12 @@ fn decode_graph_inner(
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations.note(
-                            id_curve(curve_attr).as_str(),
+                            id_curve(curve_attr),
                             &source_stream,
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         );
-                        annotations.exactness(id_curve(curve_attr).as_str(), Exactness::Unknown);
+                        annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         admit_brep_entity(ctx)?;
                         out.curves.push(Curve {
                             parameter_range: None,
@@ -4062,7 +4259,7 @@ fn decode_graph_inner(
         }
         let off = eu.map_or(0, |r| r.offset);
         annotations.note(
-            id_edge(e).as_str(),
+            id_edge(e),
             &source_stream,
             u64_from_index(off),
             Some("00_10"),
@@ -4074,7 +4271,7 @@ fn decode_graph_inner(
             || (closed_point.is_some() && !marker_conflict)
         {
             annotations
-                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .derived(id_edge(e), "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         admit_brep_entity(ctx)?;
@@ -4098,7 +4295,7 @@ fn decode_graph_inner(
             .into_iter()
             .chain(tolerant_edge_tolerance_mm.get(&e).copied())
             .reduce(f64::max)
-            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
             native_ref: None,
         });
         edge_set.insert(e);
@@ -4119,6 +4316,43 @@ fn decode_graph_inner(
             if ok {
                 kept_loops.insert(*loop_attr);
             }
+        }
+    }
+    // A ring that uses a withheld edge builds no loop. Its loop and coedges
+    // are dropped with that edge, and its other edges with those coedges.
+    let mut unbuilt_uses = Vec::<(EdgeId, CoedgeId)>::new();
+    for f in &faces {
+        for (loop_attr, ring) in &f.loops {
+            if kept_loops.contains(loop_attr) {
+                continue;
+            }
+            let Some(first) = ring.iter().find(|c| {
+                t.coedges()
+                    .get(c)
+                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
+            }) else {
+                continue;
+            };
+            let loop_id = id_loop(*loop_attr);
+            for c in ring {
+                let Some(ce) = t.coedges().get(c) else {
+                    continue;
+                };
+                let coedge = id_coedge(*c);
+                let edge = id_edge(ce.refs[6]);
+                let needs = if withheld_edges.contains(&ce.refs[6]) {
+                    edge.as_str()
+                } else {
+                    loop_id.as_str()
+                };
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), needs));
+                unbuilt_uses.push((edge, coedge));
+            }
+            out.dropped.push(DroppedRecord::with(
+                loop_id.as_str(),
+                id_coedge(*first).as_str(),
+            ));
         }
     }
     let mut emitted_coedges = HashSet::new();
@@ -4150,7 +4384,7 @@ fn decode_graph_inner(
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| id_coedge(twin));
                 annotations.note(
-                    id_coedge(ce_attr).as_str(),
+                    id_coedge(ce_attr),
                     &source_stream,
                     u64_from_index(ce.offset),
                     Some("00_11"),
@@ -4206,7 +4440,7 @@ fn decode_graph_inner(
                         };
                         let Some(Ok(fit_tolerance)) = support_data
                             .fit_tolerance_mm
-                            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new)
                         else {
                             return Ok(None);
                         };
@@ -4216,7 +4450,7 @@ fn decode_graph_inner(
                         );
                         let offset = curve_carrier.offset;
                         annotations.note(
-                            id.as_str(),
+                            &id,
                             &source_stream,
                             u64_from_index(offset),
                             Some(match source {
@@ -4229,7 +4463,7 @@ fn decode_graph_inner(
                                 }
                             }),
                         );
-                        annotations.exactness(id.as_str(), Exactness::Derived);
+                        annotations.exactness(&id, Exactness::Derived);
                         admit_brep_entity(ctx)?;
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
@@ -4242,15 +4476,16 @@ fn decode_graph_inner(
                             native_ref: None,
                         });
                         Ok(Some(
-                            cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
-                                |range| {
-                                    vec![cadmpeg_ir::topology::PcurveUse {
-                                        pcurve: id,
-                                        isoparametric: None,
-                                        parameter_range: Some(range),
-                                    }]
-                                },
-                            ),
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                                parameter_range,
+                            )
+                            .map(|range| {
+                                vec![cadmpeg_ir::topology::PcurveUse {
+                                    pcurve: id,
+                                    isoparametric: None,
+                                    parameter_range: Some(range),
+                                }]
+                            }),
                         ))
                     })()?
                 } else {
@@ -4300,7 +4535,7 @@ fn decode_graph_inner(
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
@@ -4322,7 +4557,7 @@ fn decode_graph_inner(
             }
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
@@ -4367,12 +4602,31 @@ fn decode_graph_inner(
     };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
-        out.stats.unclaimed_faces += faces
+        for face in faces
             .iter()
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
-            .count();
+        {
+            out.stats.unclaimed_faces += 1;
+            out.dropped.push(topology_given_up(
+                id_face(face.bridge_attr),
+                stream,
+                t.bridges()
+                    .get(&face.bridge_attr)
+                    .map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
+                "no body record claims the face",
+                &[id_surf(face.bridge_attr)],
+            ));
+        }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
+    // The tolerance each emitted edge states: a blend cache bounds the face
+    // the edge bounds within that distance.
+    let edge_tolerances = out
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.tolerance?.get())))
+        .collect::<HashMap<_, _>>();
     let mut face_edges_by_surface_carrier = HashMap::<u32, Vec<HashSet<u32>>>::new();
     for face in &faces {
         let mut edges = HashSet::new();
@@ -4427,14 +4681,38 @@ fn decode_graph_inner(
             FaceAdmission::Admitted => {}
             FaceAdmission::VertexLoopUnresolved => {
                 out.stats.withheld_vertex_loop_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
+                    "a vertex loop of the face names no resolved vertex",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::FinAmbiguous => {
                 out.stats.withheld_ambiguous_fin_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+                    "a loop of the face holds an ambiguous FIN",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::NoLoop => {
                 out.stats.withheld_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
+                    "no loop of the face decodes",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
         }
@@ -4454,18 +4732,14 @@ fn decode_graph_inner(
                         .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
-                    id_surf(f.bridge_attr).as_str(),
+                    id_surf(f.bridge_attr),
                     &source_stream,
                     u64_from_index(c.offset),
                     Some("compact_surface"),
                 );
                 let geometry = retain_surface_geometry(ctx, &c.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    annotate_surface_frame(
-                        &mut annotations,
-                        id_surf(f.bridge_attr).as_str(),
-                        solved,
-                    )?;
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), solved)?;
                 }
                 admit_brep_entity(ctx)?;
                 out.surfaces.push(Surface {
@@ -4615,7 +4889,7 @@ fn decode_graph_inner(
                             emit_curve(ctx, &mut out, carrier)?;
                             out.approximations.intersection(indexed);
                             annotations.note(
-                                id_curve(blend.spine).as_str(),
+                                id_curve(blend.spine),
                                 &source_stream,
                                 u64_from_index(carrier.offset),
                                 Some("blend_spine"),
@@ -4648,12 +4922,16 @@ fn decode_graph_inner(
                             attr,
                         )
                     };
+                    let mut sections = BlendStep::NotRun("the spine curve does not resolve");
                     let solved = match (
                         carriers.curve(blend.spine),
                         support_geometry(support_attrs[0])?,
                         support_geometry(support_attrs[1])?,
                     ) {
                         (Some(spine_carrier), Some(first_geometry), Some(second_geometry)) => {
+                            sections = BlendStep::NoCache(
+                                "no sections fit over the face's spine stretch".into(),
+                            );
                             blend_surface::solve(
                                 ctx,
                                 &blend_surface::BlendInputs {
@@ -4668,16 +4946,33 @@ fn decode_graph_inner(
                                 },
                             )?
                         }
-                        _ => None,
+                        (Some(_), None, _) => {
+                            sections = BlendStep::NotRun("support 0 states no solved surface");
+                            None
+                        }
+                        (Some(_), _, None) => {
+                            sections = BlendStep::NotRun("support 1 states no solved surface");
+                            None
+                        }
+                        (None, _, _) => None,
                     };
                     let (cache, off_vertex) = match solved {
                         Some(solved) if solved.holds => (Some(solved.cache), None),
-                        Some(solved) => (None, Some(solved.cache)),
+                        Some(solved) => {
+                            sections = BlendStep::NoCache(
+                                "its cache does not pass through every face vertex within its fit tolerance"
+                                    .into(),
+                            );
+                            (None, Some(solved.cache))
+                        }
                         None => (None, None),
                     };
-                    // Fallback for blends `blend_surface::solve` leaves without a cache.
+                    let mut rolling = BlendStep::NotRun("the spine curve does not resolve");
+                    // The kept cache and the fit tolerance it was fitted to,
+                    // with a fallback for blends `blend_surface::solve` leaves
+                    // without a cache.
                     let cache = match (cache, carriers.curve(blend.spine)) {
-                        (Some(cache), _) => Some(cache),
+                        (Some(cache), _) => Some((cache.fit_tolerance, cache)),
                         (None, Some(spine)) => {
                             let blend_memo: super::index::BlendMemo<'_, '_> =
                                 std::cell::RefCell::new(HashMap::new());
@@ -4701,43 +4996,111 @@ fn decode_graph_inner(
                                 };
                             }
                             let fitted = match sides {
-                                [Some(first), Some(second)] => super::blend_fit::fit(
+                                [Some(first), Some(second)] => match super::blend_fit::fit(
                                     ctx,
                                     &spine.carrier().geometry,
                                     [first, second],
                                     blend.signed_radius,
                                     &vertices,
-                                )?
-                                .map(|fit| blend_surface::BlendCache {
-                                    surface: fit.surface,
-                                    fit_tolerance: fit.fit_tolerance,
-                                }),
-                                _ => None,
+                                )? {
+                                    Ok(fit) => Some(blend_surface::BlendCache {
+                                        surface: fit.surface,
+                                        fit_tolerance: fit.fit_tolerance,
+                                    }),
+                                    Err(failure) => {
+                                        rolling = BlendStep::NoCache(failure.to_string());
+                                        None
+                                    }
+                                },
+                                [None, _] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[0]);
+                                    None
+                                }
+                                [_, None] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[1]);
+                                    None
+                                }
                             };
                             // The cache states its largest vertex miss; a miss of
                             // a sizeable share of the radius is another branch.
+                            let step = if fitted.is_some() {
+                                &mut rolling
+                            } else {
+                                &mut sections
+                            };
                             match fitted.or(off_vertex) {
-                                Some(mut cache) => match blend_surface::vertex_miss(
-                                    ctx,
-                                    &cache,
-                                    &spine.carrier().geometry,
-                                    &vertices,
-                                )? {
-                                    Some(miss)
-                                        if miss
-                                            <= blend.signed_radius.abs()
-                                                * BLEND_VERTEX_MISS_RADIUS_FRACTION =>
-                                    {
-                                        cache.fit_tolerance = cache.fit_tolerance.max(miss);
-                                        Some(cache)
+                                Some(mut cache) => {
+                                    let branch = blend.signed_radius.abs()
+                                        * BLEND_VERTEX_MISS_RADIUS_FRACTION;
+                                    match blend_surface::vertex_miss(
+                                        ctx,
+                                        &cache,
+                                        &spine.carrier().geometry,
+                                        &vertices,
+                                    )? {
+                                        Some(miss) if miss <= branch => {
+                                            let fitted = cache.fit_tolerance;
+                                            cache.fit_tolerance = fitted.max(miss);
+                                            Some((fitted, cache))
+                                        }
+                                        Some(miss) => {
+                                            *step = BlendStep::Missed {
+                                                miss,
+                                                allowed: branch,
+                                            };
+                                            None
+                                        }
+                                        None => {
+                                            *step = BlendStep::NoCache(
+                                                "the face's vertices do not invert onto the spine"
+                                                    .into(),
+                                            );
+                                            None
+                                        }
                                     }
-                                    _ => None,
-                                },
+                                }
                                 None => None,
                             }
                         }
                         (None, None) => None,
                     };
+                    match (&cache, carriers.curve(blend.spine)) {
+                        (Some((fitted, cache)), Some(spine)) => {
+                            let spine = &spine.carrier().geometry;
+                            let allowed = (blend.signed_radius.abs()
+                                * BLEND_VERTEX_MISS_RADIUS_FRACTION)
+                                .min(blend_vertex_allowance(t, f, &edge_tolerances) + fitted);
+                            if blend_surface::covers(ctx, cache, spine, &boundary, allowed)?
+                                == Some(false)
+                            {
+                                let vertex = blend_surface::vertex_miss(ctx, cache, spine, &vertices)?
+                                    .unwrap_or(0.0);
+                                let edge = blend_surface::vertex_miss(ctx, cache, spine, &boundary)?
+                                    .unwrap_or(0.0);
+                                let (miss, at) = if vertex >= edge {
+                                    (vertex, "a face vertex")
+                                } else {
+                                    (edge, "a point sampled on the face's edges")
+                                };
+                                out.losses.push(
+                                    crate::loss::SldprtLossCode::GeometryCarrierApproximated.note(format!(
+                                        "{}: the cache of the rolling-ball blend of radius {} mm misses {at} by {miss} mm, more than the {allowed} mm allowed (its edges' tolerance plus its fit tolerance, at most a quarter of the radius); the face keeps the cache.",
+                                        id_face(f.bridge_attr).as_str(),
+                                        blend.signed_radius.abs(),
+                                    )),
+                                );
+                            }
+                        }
+                        (Some(_), None) => {}
+                        (None, _) => out.losses.push(
+                            crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.note(format!(
+                                "{}: the rolling-ball blend of radius {} mm has no solved cache and keeps its construction alone; section solve: {sections}; rolling-ball fit: {rolling}",
+                                id_face(f.bridge_attr).as_str(),
+                                blend.signed_radius.abs(),
+                            )),
+                        ),
+                    }
+                    let cache = cache.map(|(_, cache)| cache);
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
                             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -4754,7 +5117,7 @@ fn decode_graph_inner(
                                 spine,
                                 radius,
                                 BlendCrossSection::Circular,
-                                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                             )
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4762,8 +5125,10 @@ fn decode_graph_inner(
                     if let Some(cache) = &cache {
                         out.approximations.blend(cache.fit_tolerance);
                         let fit_tolerance =
-                            cadmpeg_ir::geometry::FitTolerance::try_new(cache.fit_tolerance)
-                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                            cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                                cache.fit_tolerance,
+                            )
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                         definition
                             .set_cache_fit_tolerance(Some(fit_tolerance))
                             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4780,15 +5145,15 @@ fn decode_graph_inner(
                         cache: cache.map(|cache| SolvedSurfaceGeometry::Nurbs(cache.surface)),
                     };
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(blend.offset),
                         Some("00_38"),
                     );
                     if derived_cache {
                         annotations.field_exactness(
-                            id_surf(f.bridge_attr).as_str(),
-                            "geometry.cache",
+                            id_surf(f.bridge_attr),
+                            "geometry.value.cache",
                             Exactness::Derived,
                         )?;
                     }
@@ -4824,13 +5189,13 @@ fn decode_graph_inner(
                     resolved
                 } {
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(offset),
                         Some(tag),
                     );
                     if let Some(exactness) = exactness {
-                        annotations.exactness(id_surf(f.bridge_attr).as_str(), exactness);
+                        annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
@@ -4852,12 +5217,12 @@ fn decode_graph_inner(
                 {
                     out.stats.unknown_surface_faces += 1;
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     );
-                    annotations.exactness(id_surf(f.bridge_attr).as_str(), Exactness::Unknown);
+                    annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
@@ -4871,7 +5236,7 @@ fn decode_graph_inner(
             }
         }
         annotations.note(
-            id_face(f.bridge_attr).as_str(),
+            id_face(f.bridge_attr),
             &source_stream,
             u64_from_index(surf_off),
             Some("00_0e"),
@@ -4974,7 +5339,7 @@ fn decode_graph_inner(
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_spherical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &unbuilt_uses);
     out.stats.tolerant_edges_without_curve = out
         .edges
         .iter()
@@ -4985,6 +5350,7 @@ fn decode_graph_inner(
         return Ok(Brep {
             approximations: out.approximations,
             losses: out.losses,
+            dropped: out.dropped,
             stats: out.stats,
             ..Brep::default()
         });
@@ -5002,18 +5368,19 @@ fn decode_graph_inner(
             &body_namespace(),
             body_record.map_or(0_u32, |record| record.attr),
         );
-        let mut annotate_group =
-            |id: &str, source: Option<(usize, &str)>| -> Result<(), cadmpeg_core::CodecError> {
-                let (offset, tag, exactness) = source.map_or(
-                    (0, "synthetic_grouping", Exactness::Derived),
-                    |(offset, tag)| (offset, tag, Exactness::ByteExact),
-                );
-                annotations.note(id, &source_stream, u64_from_index(offset), Some(tag));
-                annotations.exactness(id, exactness);
-                Ok(())
-            };
+        let mut annotate_group = |key: AnnotationKey,
+                                  source: Option<(usize, &str)>|
+         -> Result<(), cadmpeg_core::CodecError> {
+            let (offset, tag, exactness) = source.map_or(
+                (0, "synthetic_grouping", Exactness::Derived),
+                |(offset, tag)| (offset, tag, Exactness::ByteExact),
+            );
+            annotations.note(&key, &source_stream, u64_from_index(offset), Some(tag));
+            annotations.exactness(key, exactness);
+            Ok(())
+        };
         annotate_group(
-            body_id.as_str(),
+            AnnotationKey::from(&body_id),
             body_record.map(|record| (record.offset, "00_51_body")),
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
@@ -5021,7 +5388,7 @@ fn decode_graph_inner(
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
-            annotate_group(region_id.as_str(), None)?;
+            annotate_group(AnnotationKey::from(&region_id), None)?;
             let mut region_shells = Vec::new();
             for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                 .into_iter()
@@ -5032,7 +5399,7 @@ fn decode_graph_inner(
                 } else {
                     shell_component(&native_shell_id, component)?
                 };
-                annotate_group(shell_id.as_str(), None)?;
+                annotate_group(AnnotationKey::from(&shell_id), None)?;
                 let mut face_ids = HashSet::new();
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
@@ -5049,17 +5416,19 @@ fn decode_graph_inner(
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            out.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: region_shells,
-                native_ref: None,
-            });
+            out.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                region_shells,
+            ));
             body_regions.push(region_id);
         } else {
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
-                annotate_group(region_id.as_str(), Some((region.offset, "00_51_region")))?;
+                annotate_group(
+                    AnnotationKey::from(&region_id),
+                    Some((region.offset, "00_51_region")),
+                )?;
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
@@ -5073,7 +5442,7 @@ fn decode_graph_inner(
                             shell_component(&native_shell_id, component)?
                         };
                         annotate_group(
-                            shell_id.as_str(),
+                            AnnotationKey::from(&shell_id),
                             (component == 0).then_some((shell.offset, "00_51_shell")),
                         )?;
                         let mut face_ids = HashSet::new();
@@ -5093,12 +5462,11 @@ fn decode_graph_inner(
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id.clone(),
-                    shells: region_shells,
-                    native_ref: None,
-                });
+                out.regions.push(Region::new(
+                    region_id.clone(),
+                    body_id.clone(),
+                    region_shells,
+                ));
                 body_regions.push(region_id);
             }
         }
@@ -5111,6 +5479,7 @@ fn decode_graph_inner(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -5165,7 +5534,7 @@ fn decode_graph_inner(
         if let Some(indexed) = carriers.curve(attr) {
             let carrier = indexed.carrier();
             annotations.note(
-                curve.id.as_str(),
+                &curve.id,
                 &source_stream,
                 u64_from_index(carrier.offset),
                 Some("compact_curve"),
@@ -5174,7 +5543,7 @@ fn decode_graph_inner(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
             ) {
-                annotations.exactness(curve.id.as_str(), Exactness::Unknown);
+                annotations.exactness(&curve.id, Exactness::Unknown);
             }
         }
     }
@@ -5293,154 +5662,37 @@ fn phase_full_turn_edge_ranges(
         ) {
             edge.carrier = carrier;
             annotations
-                .derived(edge.id.as_str(), "carrier.param_range")
+                .derived(&edge.id, "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
 }
 
-fn prune_rejected_topology(out: &mut Brep) {
-    let kept_loops = out
-        .faces
-        .iter()
-        .flat_map(|face| &face.loops)
-        .map(cadmpeg_ir::ids::LoopId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.loops
-        .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
-
-    let kept_coedges = out
-        .loops
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Loop::coedges)
-        .map(cadmpeg_ir::ids::CoedgeId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.coedges
-        .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
-    for coedge in &mut out.coedges {
-        if !kept_coedges.contains(coedge.radial_next.as_str()) {
-            coedge.radial_next = coedge.id.clone();
-        }
-    }
-
-    let kept_pcurves = out
-        .coedges
-        .iter()
-        .flat_map(|coedge| &coedge.pcurves)
-        .map(|use_| &use_.pcurve)
-        .map(cadmpeg_ir::ids::PcurveId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.pcurves
-        .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
-
-    let kept_edges = out
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.edges
-        .retain(|edge| kept_edges.contains(edge.id.as_str()));
-
-    let kept_vertices = out
-        .edges
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Edge::vertices)
-        .chain(
-            out.loops
-                .iter()
-                .flat_map(cadmpeg_ir::topology::Loop::vertices),
-        )
-        .map(cadmpeg_ir::ids::VertexId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.vertices
-        .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
-
-    let kept_points = out
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.points
-        .retain(|point| kept_points.contains(point.id.as_str()));
-
-    let kept_curves = out
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
-        .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-            match surface.definition() {
-                ProceduralSurfaceDefinition::Blend(definition) => definition.spine().as_ref(),
-                ProceduralSurfaceDefinition::LinearSweep(definition) => {
-                    Some(definition.directrix())
-                }
-                _ => None,
-            }
-            .map(cadmpeg_ir::ids::CurveId::as_str)
-        }))
-        .collect::<std::collections::HashSet<_>>();
-    out.curves
-        .retain(|curve| kept_curves.contains(curve.id.as_str()));
-    let kept_constructions = out
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            curve
-                .geometry
-                .procedural_construction()
-                .map(ProceduralCurveId::as_str)
-        })
-        .collect::<std::collections::HashSet<_>>();
-    out.procedural_curves
-        .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
-    let unknown_curves = out
-        .curves
-        .iter()
-        .filter(|curve| {
-            matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .map(|curve| curve.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.stats.unknown_curve_edges = out
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.curve()
-                .is_some_and(|curve_id| unknown_curves.contains(curve_id.as_str()))
-        })
-        .count();
-}
-
 fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    id: &SurfaceId,
     mut geometry: &SolvedSurfaceGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    loop {
+    let mut path = String::from("geometry.value");
+    let fields: &[&str] = loop {
         match geometry {
-            SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness(id, "geometry.u_axis", Exactness::Derived)?;
-                break;
-            }
+            SolvedSurfaceGeometry::Plane(_) => break &["u_axis"],
             SolvedSurfaceGeometry::Cylinder(_)
             | SolvedSurfaceGeometry::Cone(_)
-            | SolvedSurfaceGeometry::Torus(_) => {
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
+            | SolvedSurfaceGeometry::Torus(_) => break &["ref_direction"],
+            SolvedSurfaceGeometry::Sphere(_) => break &["axis", "ref_direction"],
+            SolvedSurfaceGeometry::Transformed(placed) => {
+                path.push_str(".basis");
+                geometry = placed.basis();
             }
-            SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness(id, "geometry.axis", Exactness::Derived)?;
-                annotations.field_exactness(id, "geometry.ref_direction", Exactness::Derived)?;
-                break;
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Unknown { .. } => break,
+            | SolvedSurfaceGeometry::Unknown { .. } => break &[],
         }
+    };
+    for field in fields {
+        annotations.field_exactness(id, format!("{path}.{field}"), Exactness::Derived)?;
     }
     Ok(())
 }
@@ -5644,8 +5896,8 @@ fn derive_planar_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(id.as_str(), source_stream, 0, Some("derived_planar_pcurve"));
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_planar_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6023,13 +6275,8 @@ fn derive_cylindrical_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_cylindrical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_cylindrical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6563,12 +6810,12 @@ fn derive_revolved_circle_pcurves(
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some("derived_revolved_circle_pcurve"),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6648,12 +6895,37 @@ fn meridian_line(
     }
 }
 
+fn has_sphere_surface(surfaces: &[Surface]) -> bool {
+    surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Sphere(_))
+        )
+    })
+}
+
+fn vertex_positions<'a>(vertices: &'a [Vertex], points: &[Point]) -> HashMap<&'a VertexId, Point3> {
+    let mut point_positions = HashMap::with_capacity(points.len());
+    for point in points {
+        point_positions
+            .entry(&point.id)
+            .or_insert(point.position().get());
+    }
+    vertices
+        .iter()
+        .filter_map(|vertex| Some((&vertex.id, *point_positions.get(&vertex.point)?)))
+        .collect()
+}
+
 fn derive_spherical_pcurves(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let loop_faces = out
         .loops
         .iter()
@@ -6679,14 +6951,7 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let point = out.points.iter().find(|point| point.id == vertex.point)?;
-            Some((&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -6909,8 +7174,9 @@ fn derive_spherical_pcurves(
     }
     for (coedge_id, id, pcurve, range) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let parameter_range = range
-                .and_then(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
+            let parameter_range = range.and_then(|range| {
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()
+            });
             out.coedges[*index]
                 .pcurves
                 .push(cadmpeg_ir::topology::PcurveUse {
@@ -6919,13 +7185,8 @@ fn derive_spherical_pcurves(
                     parameter_range,
                 });
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_spherical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_spherical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -7093,7 +7354,7 @@ fn derive_nurbs_isoparametric_pcurves(
             None => None,
         };
         let Ok(fit_tolerance) = fit_tolerance
-            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new)
             .transpose()
         else {
             continue;
@@ -7131,14 +7392,18 @@ fn derive_nurbs_isoparametric_pcurves(
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: (pcurve.parameter_range())
-                    .map(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range.get()))
+                    .map(|range| {
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                            range.get(),
+                        )
+                    })
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some(if cache {
@@ -7147,7 +7412,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 "derived_nurbs_isoparametric_pcurve"
             }),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         if let Some(tolerance) = pcurve.fit_tolerance().filter(|_| cache) {
             out.approximations.inverse_boundary(tolerance.get());
         }
@@ -8817,6 +9082,95 @@ fn ruled_surface_line_pcurve(
     }))
 }
 
+/// One closed circle of a complete cylindrical face and its vertex.
+struct SeamEnd {
+    edge: EdgeId,
+    vertex: VertexId,
+    center: Point3,
+    radius: f64,
+    /// `center - ref_direction * radius` of the cylinder (§6).
+    reference_point: Point3,
+}
+
+/// A complete cylindrical face whose two closed circles a derived seam joins.
+struct SeamCandidate {
+    face: FaceId,
+    loops: [LoopId; 2],
+    circles: [CoedgeId; 2],
+    ends: [SeamEnd; 2],
+    axis: cadmpeg_ir::math::Vector3,
+}
+
+/// The seam's two endpoints, and for each end whether its vertex keeps its
+/// position.
+///
+/// A circle vertex is fixed when the file stores its point or another edge
+/// also ends at it, and a fixed vertex keeps its position. When a fixed vertex
+/// lies off its reference point, the seam is the ruling through it; `None`
+/// when another fixed vertex lies off that ruling.
+fn seam_endpoints(
+    candidate: &SeamCandidate,
+    vertex_edges: &HashMap<VertexId, Vec<EdgeId>>,
+    vertex_position: impl Fn(&VertexId) -> Option<Point3>,
+    stored: impl Fn(&VertexId) -> bool,
+) -> Option<([Point3; 2], [bool; 2])> {
+    let fixed = candidate.ends.each_ref().map(|end| {
+        stored(&end.vertex)
+            || vertex_edges
+                .get(&end.vertex)
+                .is_some_and(|edges| edges.iter().any(|edge| *edge != end.edge))
+    });
+    let positions = candidate
+        .ends
+        .each_ref()
+        .map(|end| vertex_position(&end.vertex));
+    let anchor = candidate
+        .ends
+        .iter()
+        .zip(positions.iter().zip(fixed))
+        .find_map(|(end, (position, fixed))| {
+            let position = (*position).filter(|_| fixed)?;
+            (position.distance(end.reference_point) > LINEAR_RESOLUTION_MM)
+                .then_some((end, position))
+        });
+    let Some((anchor_end, anchor)) = anchor else {
+        return Some((
+            candidate.ends.each_ref().map(|end| end.reference_point),
+            fixed,
+        ));
+    };
+    let offset = anchor.vector_from(anchor_end.center);
+    let ruling = (offset + candidate.axis.scale(-offset.dot(candidate.axis))).unit()?;
+    let seam = candidate
+        .ends
+        .each_ref()
+        .map(|end| end.center.translated(ruling, end.radius));
+    let off_ruling =
+        positions
+            .iter()
+            .zip(seam.iter().zip(fixed))
+            .any(|(position, (point, fixed))| {
+                fixed
+                    && position
+                        .is_some_and(|position| position.distance(*point) > LINEAR_RESOLUTION_MM)
+            });
+    (!off_ruling).then_some((seam, fixed))
+}
+
+/// Whether the annotations state a point's position as read from the file.
+fn position_is_stored(annotations: &Annotations, point: &PointId) -> bool {
+    annotations
+        .exactness()
+        .get(point.as_str())
+        .is_none_or(|note| {
+            note.fields()
+                .get("position")
+                .copied()
+                .unwrap_or_else(|| note.entity())
+                == Exactness::ByteExact
+        })
+}
+
 fn synthesize_cylinder_seams(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
@@ -8858,10 +9212,10 @@ fn synthesize_cylinder_seams(
             continue;
         };
         let ref_direction = *cylinder_surface.frame().reference().as_raw();
-        if face.loops.len() != 2 {
+        let Some(face_loops) = face.loops.boundary().filter(|loops| loops.len() == 2) else {
             continue;
-        }
-        let mut members = face.loops.iter();
+        };
+        let mut members = face_loops.iter();
         let (Some(a), Some(b)) = (
             members.next().and_then(|id| loops.get(id)),
             members.next().and_then(|id| loops.get(id)),
@@ -8883,7 +9237,7 @@ fn synthesize_cylinder_seams(
         let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
-        let seam_point = |edge: &Edge| {
+        let seam_end = |edge: &Edge| {
             if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
                 return None;
             }
@@ -8893,50 +9247,91 @@ fn synthesize_cylinder_seams(
             };
             let center = circle_curve.center().get();
             let radius = circle_curve.radius().get();
-            Some(cadmpeg_ir::math::Point3::new(
-                center.x - ref_direction.x * radius,
-                center.y - ref_direction.y * radius,
-                center.z - ref_direction.z * radius,
-            ))
+            Some(SeamEnd {
+                edge: edge.id.clone(),
+                vertex: edge.start()?.clone(),
+                center,
+                radius,
+                reference_point: cadmpeg_ir::math::Point3::new(
+                    center.x - ref_direction.x * radius,
+                    center.y - ref_direction.y * radius,
+                    center.z - ref_direction.z * radius,
+                ),
+            })
         };
-        if let (Some(pa), Some(pb), Some(va), Some(vb)) =
-            (seam_point(ea), seam_point(eb), ea.start(), eb.start())
-        {
-            candidates.push((
-                face.id.clone(),
-                a.id.clone(),
-                b.id.clone(),
-                ca.id.clone(),
-                cb.id.clone(),
-                va.clone(),
-                vb.clone(),
-                pa,
-                pb,
-            ));
+        if let (Some(end_a), Some(end_b)) = (seam_end(ea), seam_end(eb)) {
+            candidates.push(SeamCandidate {
+                face: face.id.clone(),
+                loops: [a.id.clone(), b.id.clone()],
+                circles: [ca.id.clone(), cb.id.clone()],
+                ends: [end_a, end_b],
+                axis: *cylinder_surface.frame().axis().as_raw(),
+            });
         }
     }
 
+    let mut vertex_edges = HashMap::<VertexId, Vec<EdgeId>>::new();
+    for edge in &out.edges {
+        if let Some(ends) = &edge.ends {
+            for vertex in [&ends.start, &ends.end] {
+                vertex_edges
+                    .entry(vertex.clone())
+                    .or_default()
+                    .push(edge.id.clone());
+            }
+        }
+    }
+    let mut point_indices = HashMap::new();
+    for (index, point) in out.points.iter().enumerate() {
+        point_indices.entry(&point.id).or_insert(index);
+    }
+    let mut vertex_points = HashMap::<VertexId, usize>::new();
+    for vertex in &out.vertices {
+        if let Some(&index) = point_indices.get(&vertex.point) {
+            vertex_points.entry(vertex.id.clone()).or_insert(index);
+        }
+    }
     let mut removed = HashSet::new();
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
         let id = coedge.id.clone();
         coedge_indices.insert(id, index);
     }
-    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
-        for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
-            let Some(point_id) = out
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .map(|vertex| &vertex.point)
-            else {
+    for candidate in candidates {
+        let vertex_position = |vertex_id: &VertexId| {
+            vertex_points
+                .get(vertex_id)
+                .map(|&index| out.points[index].position().get())
+        };
+        let stored = |vertex_id: &VertexId| {
+            vertex_points.get(vertex_id).is_some_and(|&index| {
+                position_is_stored(annotations.annotations(), &out.points[index].id)
+            })
+        };
+        let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position, stored)
+        else {
+            continue;
+        };
+        let SeamCandidate {
+            face: face_id,
+            loops: [loop_a, loop_b],
+            circles: [circle_a, circle_b],
+            ends: [end_a, end_b],
+            ..
+        } = candidate;
+        let (vertex_a, vertex_b) = (end_a.vertex, end_b.vertex);
+        let [pa, pb] = seam;
+        for ((vertex_id, position), kept) in
+            [(&vertex_a, pa), (&vertex_b, pb)].into_iter().zip(kept)
+        {
+            if kept {
                 continue;
-            };
-            if let Some(point) = out.points.iter_mut().find(|point| point.id == *point_id) {
-                point.set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
-                    })?,
+            }
+            if let Some(&index) = vertex_points.get(vertex_id) {
+                out.points[index].set_position(
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position).ok_or_else(
+                        || cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into()),
+                    )?,
                 );
             }
         }
@@ -8962,14 +9357,14 @@ fn synthesize_cylinder_seams(
         let coedge_namespace = cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge");
         let seam_a = CoedgeId::compose(&coedge_namespace, suffix.clone().colon(0_u32));
         let seam_b = CoedgeId::compose(&coedge_namespace, suffix.colon(1_u32));
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            seam_a.as_str(),
-            seam_b.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&seam_a),
+            AnnotationKey::from(&seam_b),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_periodic_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_periodic_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -8984,6 +9379,12 @@ fn synthesize_cylinder_seams(
             )),
             native_ref: None,
         });
+        for vertex in [&vertex_a, &vertex_b] {
+            vertex_edges
+                .entry(vertex.clone())
+                .or_default()
+                .push(edge_id.clone());
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: edge_id.clone(),
@@ -9055,6 +9456,9 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let surface_geometry = out
         .surfaces
         .iter()
@@ -9081,16 +9485,7 @@ fn synthesize_sphere_seams(
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            out.points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| (&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut existing = Vec::new();
     for face in &out.faces {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) =
@@ -9101,7 +9496,9 @@ fn synthesize_sphere_seams(
         let center = sphere_surface.center().get();
         let axis = sphere_surface.frame().axis().as_raw();
         let radius = sphere_surface.radius().get();
-        let mut face_loops = face.loops.iter();
+        let Some(mut face_loops) = face.loops.boundary().map(FaceBoundary::iter) else {
+            continue;
+        };
         let (Some(loop_id), None) = (face_loops.next(), face_loops.next()) else {
             continue;
         };
@@ -9177,13 +9574,8 @@ fn synthesize_sphere_seams(
             &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
             cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
         );
-        annotations.note(
-            curve_id.as_str(),
-            source_stream,
-            0,
-            Some("derived_sphere_seam"),
-        );
-        annotations.exactness(curve_id.as_str(), Exactness::Derived);
+        annotations.note(&curve_id, source_stream, 0, Some("derived_sphere_seam"));
+        annotations.exactness(&curve_id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -9232,10 +9624,13 @@ fn synthesize_sphere_seams(
         };
         let center = sphere_surface.center().get();
         let radius = sphere_surface.radius().get();
-        if face.loops.len() != 1 {
-            continue;
-        }
-        let Some(lp) = face.loops.iter().next().and_then(|id| loops.get(id)) else {
+        let Some(lp) = face
+            .loops
+            .boundary()
+            .filter(|loops| loops.len() == 1)
+            .and_then(|face_loops| face_loops.iter().next())
+            .and_then(|id| loops.get(id))
+        else {
             continue;
         };
         if lp.coedges().len() != 3 {
@@ -9341,9 +9736,12 @@ fn synthesize_sphere_seams(
                     &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
                     seam_face_key.clone(),
                 );
-                for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-                    annotations.exactness(id, Exactness::Derived);
+                for key in [
+                    AnnotationKey::from(&point_id),
+                    AnnotationKey::from(&vertex_id),
+                ] {
+                    annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+                    annotations.exactness(key, Exactness::Derived);
                 }
                 admit_brep_entity(ctx)?;
                 out.points
@@ -9375,14 +9773,14 @@ fn synthesize_sphere_seams(
                     .unwrap_or(false)
             })
             .map_or(ring.len(), |index| index + 1);
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            coedge_id.as_str(),
-            pcurve_id.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&coedge_id),
+            AnnotationKey::from(&pcurve_id),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -9424,8 +9822,11 @@ fn synthesize_sphere_seams(
             pcurve: pcurve_id,
             isoparametric: None,
             parameter_range: Some(
-                cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                    0.0,
+                    std::f64::consts::TAU,
+                ])
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
         }];
         admit_brep_entity(ctx)?;
@@ -9712,7 +10113,7 @@ mod tests {
         ];
         assert_eq!(
             super::edge_parameter_range(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &carrier,
                 Some(endpoints),
                 [None; 2],
@@ -9751,7 +10152,7 @@ mod tests {
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.175),
         ];
         let (range, reversed) = super::edge_parameter_range(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &carrier,
             Some(endpoints),
             [None; 2],
@@ -10689,10 +11090,9 @@ mod tests {
 
     #[test]
     fn topology_pruning_retains_a_procedural_blend_spine() {
-        use cadmpeg_ir::geometry::{
-            BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
-            ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        };
+        use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry};
         use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 
         let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
@@ -10718,7 +11118,7 @@ mod tests {
                         Some(spine.clone()),
                         BlendRadiusLaw::constant(0.5).unwrap(),
                         BlendCrossSection::Circular,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
@@ -10727,7 +11127,7 @@ mod tests {
             ..Default::default()
         };
 
-        super::prune_rejected_topology(&mut brep);
+        super::prune_rejected_topology(&mut brep, &[]);
         assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 
@@ -11356,17 +11756,17 @@ mod tests {
             points: vec![
                 Point::new(
                     start_point,
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        1000.0, 0.0, 0.0,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    )
                     .expect("a finite position is a point"),
                     None,
                 ),
                 Point::new(
                     end_point,
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        1000.0, 0.0, 0.0,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    )
                     .expect("a finite position is a point"),
                     None,
                 ),

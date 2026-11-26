@@ -4,10 +4,10 @@ use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::model_surface_second_partials_by_id;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
 use crate::geometry::ProceduralSurface;
-use crate::geometry::ProceduralSurfaceDefinition;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::Surface;
 use crate::geometry::SurfaceGeometry;
@@ -104,12 +104,12 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(point)
     );
     let partials = model_surface_second_partials_by_id(
@@ -136,7 +136,7 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
                 CurveId::mint("test:model:entity#first").expect("valid identity"),
                 CurveId::mint("test:model:entity#second").expect("valid identity"),
                 Vector3::new(0.5, 1.0, 2.0),
-                crate::geometry::CacheContract::from_form(None),
+                crate::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .expect("valid sum"),
         ),
@@ -179,11 +179,13 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
         "ruled",
     );
     let index = crate::index::ModelIndex::build(&ir);
-    let reached =
-        |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
-            matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
+    let reached = |point: Result<
+        crate::features::geometry::FinitePoint3,
+        crate::eval::EvaluationFailure<Point3>,
+    >| {
+        matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
             if point.x.is_nan() && point.y.is_nan() && point.z.is_nan())
-        };
+    };
     assert!(reached(model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -193,7 +195,7 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
     )));
     assert!(reached(model_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &ir,
+        &crate::index::ModelIndex::new_model_only(&ir),
         &ir.geometry.surfaces[0].geometry,
         0.25,
         f64::MAX
@@ -208,7 +210,7 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
                 CurveId::mint("test:model:entity#first").expect("valid identity"),
                 CurveId::mint("test:model:entity#second").expect("valid identity"),
                 Vector3::new(0.5, 1.0, 2.0),
-                crate::geometry::CacheContract::from_form(None),
+                crate::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .expect("valid sum"),
         ),

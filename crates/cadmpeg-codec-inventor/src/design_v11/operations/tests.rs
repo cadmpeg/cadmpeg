@@ -1,32 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
-    shared::{Limit, PatternLayout, Spacing, Span},
+    shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
     sheet_metal::{NormalSide, SheetMetalKind},
 };
 use cadmpeg_ir::design::options::{BodyForm, Boolean, SymmetricMeasure};
-use cadmpeg_ir::features::{
-    self as old, DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId,
-};
+use cadmpeg_ir::features as old;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
+
+/// The production v11 validation of a projected part.
+fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    crate::validate::design_v11_findings_from_arenas(&ctx, ir)
+}
 
 fn legacy(kind: &str, value: Value) -> LegacyOperation {
     let fields = serde_json::Map::from_iter([
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    serde_json::from_value(Value::Object(fields)).expect("synthetic operation")
+    json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
-    let operation = typed(&legacy(kind, value), &[]).expect("typed projection");
-    let wire = serde_json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
+    let operation = typed(&legacy(kind, value), selections::SketchData::default(), &[])
+        .expect("typed projection");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }
@@ -53,7 +65,9 @@ fn extrude() -> LegacyOperation {
 
 #[test]
 fn extrude_keeps_direction_sides_and_output() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&extrude(), selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(value.output.body, Some(BodyForm::Solid));
@@ -84,15 +98,17 @@ fn symmetric_extrude_keeps_total_travel() {
     let LegacyOperation::Extrude { extent, .. } = &mut operation else {
         panic!("extrude");
     };
-    *extent = old::ExtrudeExtent::Symmetric {
-        side: old::ExtrudeSide {
-            termination: old::LinearTermination::Blind {
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::Symmetric {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("length"),
             },
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(
@@ -283,11 +299,11 @@ fn rectangular_pattern_keeps_grid_counts_spacing_and_omissions() {
     ) else {
         panic!("pattern");
     };
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second: Some(second),
         ..
-    } = &value.layout
+    }) = &value.layout
     else {
         panic!("linear");
     };
@@ -414,7 +430,7 @@ fn project_part(ir: &mut CadIr) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    super::super::project_history(&ctx, ir, &BTreeMap::default()).expect("history");
+    super::super::project_history(&ctx, ir, &BTreeMap::default(), false).expect("history");
     let original = ir.model.clone();
     let mut losses = Vec::new();
     project(&ctx, ir, &mut losses).expect("operations");
@@ -460,7 +476,7 @@ fn unsupported_operands_keep_the_full_native_operation_and_pin_loss() {
             panic!("native");
         };
         let NativeOption::Text(Dimension::Literal(text)) =
-            &native_options[&cadmpeg_core::nonblank_literal!("inventor:legacy_operation")]
+            &native_options["inventor:legacy_operation"]
         else {
             panic!("retained");
         };
@@ -607,9 +623,11 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
     let LegacyOperation::Extrude { profile, .. } = &mut operation else {
         panic!("extrude");
     };
-    *profile = old::ProfileRef::Planar(old::PlanarProfileRef::Unresolved(
-        "inventor:pmdc:profile#synthetic".into(),
-    ));
+    *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(
+            "inventor:pmdc:profile#synthetic".into(),
+        ),
+    );
     let mut ir = part(operation);
     assert_eq!(project_part(&mut ir).len(), 1);
     let hole = legacy(
@@ -624,7 +642,7 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
 fn split_face_and_surface_trim_keep_every_selection() {
     let FeatureOperation::Split(value) = project_value(
         "split_face",
-        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":serde_json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
+        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":cadmpeg_core::serde_erase::json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
     ) else {
         panic!("split face");
     };
@@ -647,11 +665,36 @@ fn split_face_and_surface_trim_keep_every_selection() {
     assert!(matches!(
         value.mode,
         body_ops::SplitMode::ByTools {
-            tools: body_ops::SplitTool::Geometry(_),
+            tools: body_ops::SplitTool::Geometry { extend: None, .. },
             kept: None,
             ..
         }
     ));
+}
+
+/// §6.5: a split body's tool extension is `extend` on its `Geometry` tool,
+/// `Extended` with no law where the source stores one Boolean.
+#[test]
+fn split_body_faces_keep_their_tool_extension() {
+    for (stored, extend) in [
+        (true, body_ops::ToolExtension::Extended { method: None }),
+        (false, body_ops::ToolExtension::Off),
+    ] {
+        let FeatureOperation::Split(value) = project_value(
+            "split_body",
+            json!({"targets":native_selection(),"tool":{"kind":"faces","value":native_selection()},"extend_tool":stored}),
+        ) else {
+            panic!("split body");
+        };
+        let body_ops::SplitMode::ByTools {
+            tools: body_ops::SplitTool::Geometry { extend: found, .. },
+            ..
+        } = value.mode
+        else {
+            panic!("geometry tool");
+        };
+        assert_eq!(found, Some(extend));
+    }
 }
 
 #[test]
@@ -727,7 +770,9 @@ fn cleanup_and_boolean_tolerance_survive_projection() {
         FeatureEvaluation::from_definition(old::FeatureDefinition::PostProcess {
             operation: extrude(),
             refine: false,
-            fuzzy_tolerance: old::FuzzyTolerance::Explicit(positive(0.2)),
+            fuzzy_tolerance: cadmpeg_ir::features::operation_settings::FuzzyTolerance::Explicit(
+                positive(0.2),
+            ),
         });
     assert!(project_part(&mut ir).is_empty());
     assert_eq!(ir.design.features[0].definition.refine, Some(false));
@@ -745,9 +790,9 @@ fn next_material_exit_stays_native_when_v11_has_a_first_face_limit() {
     let LegacyOperation::Extrude { extent, .. } = &mut operation else {
         panic!("extrude");
     };
-    *extent = old::ExtrudeExtent::OneSided {
-        side: old::ExtrudeSide {
-            termination: old::LinearTermination::ThroughNext {},
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ThroughNext {},
             draft: None,
         },
     };
@@ -760,23 +805,51 @@ fn next_material_exit_stays_native_when_v11_has_a_first_face_limit() {
 }
 
 #[test]
-fn unsupported_body_move_order_and_symmetric_indices_stay_native() {
-    let move_body = legacy(
+fn body_move_applies_rotation_before_translation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
         "move_body",
         json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
-    );
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Rotate { .. },
+            body_ops::TransformStep::Components { .. }
+        ]
+    ));
+}
+
+#[test]
+fn body_move_without_translation_keeps_one_rotation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
+        "move_body",
+        json!({"bodies":native_selection(),"translation":[0.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Components { .. },
+            body_ops::TransformStep::Rotate { .. }
+        ]
+    ));
+}
+
+#[test]
+fn unsupported_symmetric_indices_stay_native() {
     let symmetric = legacy(
         "pattern",
         json!({"seeds":[{"kind":"feature","value":"inventor:design:feature#seed"}],"pattern":{"kind":"linear","direction":[1.0,0.0,0.0],"spacing":3.0,"count":3,"omitted_instances":[],"symmetric":true}}),
     );
-    for operation in [move_body, symmetric] {
-        let mut ir = part(operation);
-        assert_eq!(project_part(&mut ir).len(), 1);
-        assert!(matches!(
-            ir.design.features[0].definition.operation,
-            FeatureOperation::Native { .. }
-        ));
-    }
+    let mut ir = part(symmetric);
+    assert_eq!(project_part(&mut ir).len(), 1);
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
 }
 
 #[test]
@@ -810,16 +883,26 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
     let LegacyOperation::Extrude { profile, .. } = &mut operation else {
         panic!("extrude");
     };
-    *profile = old::ProfileRef::Planar(
-        old::PlanarProfileRef::sketch_regions(
+    *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
             sketch.clone(),
-            vec![old::SketchProfileRegion::loops(0, vec![1]).expect("region")],
+            vec![
+                cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, vec![1])
+                    .expect("region"),
+            ],
         )
         .expect("regions"),
     );
-    let FeatureOperation::Extrude(value) =
-        typed(&operation, &[source]).expect("profile projection")
-    else {
+    let FeatureOperation::Extrude(value) = typed(
+        &operation,
+        selections::SketchData {
+            sketches: &[source],
+            entities: &[],
+            arrangements: None,
+        },
+        &[],
+    )
+    .expect("profile projection") else {
         panic!("extrude");
     };
     let cadmpeg_ir::design::selection::Picks::Named(picks) = value.profile.picks else {
@@ -845,20 +928,25 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
 fn trimmed_profile_intervals_keep_native_operation_and_loss() {
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("inventor:design:sketch#synthetic").expect("sketch");
-    let boundary = old::SketchProfileBoundaryUse {
+    let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity: cadmpeg_ir::sketches::SketchEntityId::mint("inventor:design:entity#synthetic")
             .expect("entity"),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.25, 0.75])
-            .expect("interval"),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            0.25, 0.75,
+        ])
+        .expect("interval"),
         reversed: true,
     };
-    let region = old::SketchProfileRegion::trimmed(vec![boundary], Vec::new()).expect("region");
+    let region =
+        cadmpeg_ir::features::profiles::SketchProfileRegion::trimmed(vec![boundary], Vec::new())
+            .expect("region");
     let mut operation = extrude();
     let LegacyOperation::Extrude { profile, .. } = &mut operation else {
         panic!("extrude");
     };
-    *profile = old::ProfileRef::Planar(
-        old::PlanarProfileRef::sketch_regions(sketch, vec![region]).expect("regions"),
+    *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(sketch, vec![region])
+            .expect("regions"),
     );
     let mut ir = part(operation.clone());
     assert_eq!(project_part(&mut ir).len(), 1);
@@ -873,22 +961,23 @@ fn contour_fixture(reversed: bool) -> (LegacyOperation, cadmpeg_ir::sketches::Sk
         cadmpeg_ir::sketches::SketchId::mint("inventor:design:sketch#synthetic").expect("sketch");
     let entity = cadmpeg_ir::sketches::SketchEntityId::mint("inventor:design:entity#synthetic")
         .expect("entity");
-    let profile =
-        old::PlanarProfileRef::sketch_entities(sketch.clone(), vec![entity]).expect("profile");
+    let profile = cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_entities(
+        sketch.clone(),
+        vec![entity],
+    )
+    .expect("profile");
     let operation = LegacyOperation::SheetMetalContourFlange {
         construction: old::sheet_metal::SheetMetalContourFlangeConstruction {
             profile: Some(profile),
             direction: Some(
-                old::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-                    0.0,
-                    0.0,
-                    if reversed { -1.0 } else { 1.0 },
-                ))
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, if reversed { -1.0 } else { 1.0 }),
+                )
                 .expect("direction"),
             ),
-            extent: Some(old::ExtrudeExtent::OneSided {
-                side: old::ExtrudeSide {
-                    termination: old::LinearTermination::Blind {
+            extent: Some(cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                         length: cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("length"),
                     },
                     draft: None,
@@ -974,8 +1063,10 @@ fn contour_flange_oblique_direction_and_zero_radius_stay_native() {
         };
         if oblique {
             construction.direction = Some(
-                old::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-                    .expect("direction"),
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("direction"),
             );
         } else {
             construction.inside_radius =
@@ -994,7 +1085,7 @@ fn contour_flange_oblique_direction_and_zero_radius_stay_native() {
 
 #[test]
 fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
-    let plane = old::FeatureSupportPlaneFrame::new(
+    let plane = cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1004,22 +1095,24 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
     let LegacyOperation::Extrude { start, extent, .. } = &mut operation else {
         panic!("extrude");
     };
-    *start = old::ExtrudeStart::FromPlane {
+    *start = cadmpeg_ir::features::extents::ExtrudeStart::FromPlane {
         plane,
         native: cadmpeg_core::nonblank_literal!("inventor:pmdc:plane#start"),
-        source: Some(old::PlaneTargetSource::WorkPlane),
+        source: Some(cadmpeg_ir::features::extents::PlaneTargetSource::WorkPlane),
     };
-    *extent = old::ExtrudeExtent::OneSided {
-        side: old::ExtrudeSide {
-            termination: old::LinearTermination::ToPlane {
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToPlane {
                 plane,
                 native: cadmpeg_core::nonblank_literal!("inventor:pmdc:plane#end"),
-                source: Some(old::PlaneTargetSource::FaceSurface),
+                source: Some(cadmpeg_ir::features::extents::PlaneTargetSource::FaceSurface),
             },
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeOrigin::Plane(start)) = value.origin else {
@@ -1053,8 +1146,12 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
 #[test]
 fn split_face_path_keeps_native_projection_controls() {
     let operation = LegacyOperation::SplitFace {
-        targets: old::FaceSelection::Native("inventor:pmdc:selection#synthetic".into()),
-        tool: old::SplitFaceTool::Path(old::PathRef::Native("inventor:pmdc:path#synthetic".into())),
+        targets: cadmpeg_ir::features::selections::FaceSelection::Native(
+            "inventor:pmdc:selection#synthetic".into(),
+        ),
+        tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Path(
+            cadmpeg_ir::features::profiles::PathRef::Native("inventor:pmdc:path#synthetic".into()),
+        ),
         method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
     };
     let mut ir = part(operation);

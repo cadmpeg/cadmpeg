@@ -19,20 +19,19 @@ use crate::decode::sketch_transfer::constraints::{
 use crate::decode::sketch_transfer::loci::section_skamp_active;
 use crate::decode::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::parameters::DimensionDisplay;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
     SketchId,
 };
 use cadmpeg_ir::topology::{Body, BodyKind};
-use cadmpeg_ir::{
-    features::{DimensionDisplay, ParameterId},
-    scalar::Length,
-};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn section_segment_radius_constraints(
@@ -726,6 +725,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
     ir.geometry.bodies.push(Body {
@@ -736,6 +736,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),

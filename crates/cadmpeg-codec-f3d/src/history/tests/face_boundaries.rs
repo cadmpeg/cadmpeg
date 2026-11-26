@@ -10,10 +10,10 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::{
+use crate::history::face_resolution::{
     cyclic_point_subsequence, resolve_direct_face_recipe_clauses,
-    selection::bind_edge_identity_bounded_face_rules,
 };
+use crate::history::selection::bind_edge_identity_bounded_face_rules;
 use crate::history_records::AsmHistoricalTopology;
 
 #[test]

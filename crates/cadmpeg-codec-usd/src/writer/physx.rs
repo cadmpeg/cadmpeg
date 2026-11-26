@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 
-use super::text::{quoted, real, real32};
+use super::text::{float, quoted, real};
 use crate::schema::physx::{find, holder, split, Attribute, Holder, Value};
 
 /// The solver whose settings the writer writes.
@@ -19,12 +19,19 @@ const MARK: char = '\u{1}';
 
 /// The placeholder of the prim of a target record.
 pub(super) fn placeholder(target: &SolverTarget) -> Option<String> {
-    let key = match target {
-        SolverTarget::Occurrence { occurrence } => format!("occurrence:{occurrence}"),
-        SolverTarget::Joint { joint } => format!("joint:{joint}"),
-        _ => return None,
-    };
-    Some(format!("{MARK}{key}{MARK}"))
+    match target {
+        SolverTarget::Occurrence { occurrence } => {
+            Some(format!("{MARK}occurrence:{occurrence}{MARK}"))
+        }
+        SolverTarget::Joint { joint } => Some(joint_placeholder(joint.as_str())),
+        _ => None,
+    }
+}
+
+/// The placeholder of the prim of a joint: an assembly joint, or the design
+/// joint feature that shares its id.
+pub(super) fn joint_placeholder(joint: &str) -> String {
+    format!("{MARK}joint:{joint}{MARK}")
 }
 
 /// Replaces the placeholders in `text` by the paths of `paths`, keyed by
@@ -73,6 +80,7 @@ fn real_text(
     attribute: &Attribute,
     value: f64,
     dimension: cadmpeg_ir::design::units::Quantity,
+    length: f64,
 ) -> Option<String> {
     let dim = attribute
         .unit
@@ -84,22 +92,22 @@ fn real_text(
     } else {
         1.0
     };
-    let scene = value / dimension.factor(super::MILLIMETRES_PER_UNIT, 1.0, radians, 1.0);
+    let scene = value / dimension.factor(length, 1.0, radians, 1.0);
     Some(if attribute.usd_type.starts_with("double") {
         real(scene)
     } else {
-        real32(crate::text::value::round_f32(scene))
+        float(scene)
     })
 }
 
 /// The value text of one property, or `None` when it does not fit its
 /// attribute.
-fn value_text(attribute: &Attribute, value: &SolverValue) -> Option<String> {
+fn value_text(attribute: &Attribute, value: &SolverValue, length: f64) -> Option<String> {
     Some(match (attribute.value, value) {
         (Value::Bool, SolverValue::Bool { value }) => if *value { "1" } else { "0" }.to_owned(),
         (Value::Integer, SolverValue::Integer { value }) => value.to_string(),
         (Value::Real, SolverValue::Real { value, dimension }) => {
-            real_text(attribute, value.get(), *dimension)?
+            real_text(attribute, value.get(), *dimension, length)?
         }
         (Value::Real, SolverValue::Unbounded { negative }) => {
             if *negative { "-inf" } else { "inf" }.to_owned()
@@ -107,7 +115,7 @@ fn value_text(attribute: &Attribute, value: &SolverValue) -> Option<String> {
         (Value::Reals, SolverValue::Reals { values, dimension }) => {
             let texts = values
                 .iter()
-                .map(|value| real_text(attribute, value.get(), *dimension))
+                .map(|value| real_text(attribute, value.get(), *dimension, length))
                 .collect::<Option<Vec<_>>>()?;
             if attribute.usd_type.ends_with("[]") {
                 format!("[{}]", texts.join(", "))
@@ -138,13 +146,13 @@ fn value_text(attribute: &Attribute, value: &SolverValue) -> Option<String> {
 
 /// The applied-schema metadata and the property lines of a `PhysX` settings
 /// record, and the number of its properties that were not written.
-pub(super) fn lines(settings: &SolverSettings) -> (String, Vec<String>, usize) {
+pub(super) fn lines(settings: &SolverSettings, length: f64) -> (String, Vec<String>, usize) {
     let (base, instance) = split(&settings.schema);
     let mut out = Vec::new();
     let mut unwritten = 0;
     for (name, value) in &settings.values {
         let text = find(base, instance, name).and_then(|attribute| {
-            let text = value_text(attribute, value)?;
+            let text = value_text(attribute, value, length)?;
             Some(if attribute.value == Value::Targets {
                 format!("rel {name} = {text}")
             } else {

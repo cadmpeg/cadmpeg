@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_solid_primitive;
+use crate::design::feature_project::primitives::project_solid_primitive;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::primitives::DesignCylinderPrimitive;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
 use crate::records::identity::Located;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn cylinder(transform: Option<[[f64; 4]; 4]>) -> DesignParameterScope {
@@ -67,7 +68,7 @@ fn shifted_cylinder_frame_places_the_primitive() {
 
 #[test]
 fn negative_cylinder_height_projects_along_the_reverse_axis() {
-    use cadmpeg_ir::features::PrimitiveSolidKind;
+    use cadmpeg_ir::features::primitives::PrimitiveSolidKind;
     let mut scope = cylinder(Some([
         [1.0, 0.0, 0.0, 1.0],
         [0.0, 1.0, 0.0, 2.0],
@@ -103,7 +104,7 @@ fn negative_cylinder_height_projects_along_the_reverse_axis() {
 
 #[test]
 fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
-    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#60",
         DesignFeatureKind::BoxPrimitive,
@@ -112,7 +113,7 @@ fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
     assert!(project_solid_primitive(&scope, &[], &mut Vec::new()).is_none());
     if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "length":2.0,"length_record_index":61,"length_offset":0,
                 "width":3.0,"width_record_index":62,"width_offset":0,
                 "height":4.0,"height_record_index":63,"height_offset":0,
@@ -169,7 +170,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         .unwrap();
     if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "length":1.2,"length_record_index":71,"length_offset":0,
                 "width":0.8,"width_record_index":72,"width_offset":0,
                 "height":2.5,"height_record_index":73,"height_offset":0,
@@ -196,7 +197,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
     let fixture: serde_json::Value =
         serde_json::from_str(&crate::test_support::placement_construction::frames()[2]).unwrap();
     let mut support: crate::records::placement_construction::DesignPlacementConstruction =
-        serde_json::from_value(fixture["native"].clone()).unwrap();
+        json::from_value(fixture["native"].clone()).unwrap();
     support.record_index = 41;
     support.fields.matrix.as_mut().unwrap().value =
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY;
@@ -248,7 +249,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
     let Some(FeatureDefinition::Operation(FeatureOperation::Block {
         dimensions: Some(dimensions),
         placement: Some(placement),
-        op: cadmpeg_ir::features::BooleanOp::Cut,
+        op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
     })) = project_solid_primitive(&scope, std::slice::from_ref(&support), &mut losses)
     else {
         panic!("box with planar offsets");
@@ -344,7 +345,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         let Some(FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some(dimensions),
             placement: Some(placement),
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
         })) = project_solid_primitive(&scope, &[support_with_flags], &mut losses)
         else {
             panic!("box with retained support frame");
@@ -382,7 +383,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         let Some(FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: Some(dimensions),
             placement: Some(placement),
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
         })) = project_solid_primitive(&scope, &supports, &mut losses)
         else {
             panic!("partial box with assumed support");
@@ -418,7 +419,7 @@ fn esfera_primitiva_projects_like_sphere() {
     scope.source_kind = Some("EsferaPrimitiva".to_owned());
     if let DesignScopePayloadMut::SpherePrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "transform": [
                     [1.0, 0.0, 0.0, 1.0],
                     [0.0, 1.0, 0.0, 2.0],

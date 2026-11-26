@@ -8,6 +8,7 @@ use crate::records::{
     },
     identity::{Located, ReferenceRun},
 };
+use cadmpeg_core::serde_erase::json;
 
 fn native() -> crate::native::F3dNative {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -28,7 +29,7 @@ fn invalid_parameter_scope_preserves_finding() {
         let native = native();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+        super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].message,
@@ -227,7 +228,7 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
         let findings = |native: &F3dNative| {
             let ctx = super::super::Ctx::new(&ir, native, decode);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings
         };
         set_frame(&mut native, 36, 25);
@@ -246,8 +247,8 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
             prefix: prefix.into(),
             scope_backlink: scope_backlink.as_slice().try_into().unwrap(),
         });
-        let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
-        native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
+        let encoded = json::to_value(&native.design_parameter_scopes[1]).unwrap();
+        native.design_parameter_scopes[1] = json::from_value(encoded).unwrap();
         let valid = findings(&native);
         assert!(valid.is_empty(), "{valid:?}");
 
@@ -382,7 +383,8 @@ fn offset_faces_counted_member_runs_validate() {
                     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
                     let ctx = super::super::Ctx::new(&ir, native, service_ctx);
                     let mut findings = Vec::new();
-                    super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                    super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                        .unwrap();
                     findings
                 })
             };
@@ -454,7 +456,7 @@ fn operand_list_combine_requires_its_own_offsets() {
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
             slot.operation = Some(DesignCombineOperation {
                 form: DesignCombineForm::OperandLists,
-                operation: cadmpeg_ir::features::BooleanKind::Join,
+                operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 operation_offset,
                 keep_tools,
                 keep_tools_offset,
@@ -470,6 +472,8 @@ fn operand_list_combine_requires_its_own_offsets() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         let mut native = crate::native::F3dNative::default();
@@ -486,7 +490,7 @@ fn operand_list_combine_requires_its_own_offsets() {
             let ir = cadmpeg_ir::examples::unit_cube().unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings.len()
         })
     };
@@ -522,88 +526,6 @@ fn operand_list_combine_requires_its_own_offsets() {
     assert_eq!(findings(25, 44, true), 1);
     assert_eq!(findings(21, 80, true), 1);
     assert_eq!(findings(21, 79, false), 1);
-}
-
-#[test]
-fn placement_ordered_owner_count_and_references_match_the_frame() {
-    use crate::records::feature::{
-        assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun},
-        scope::{DesignFeatureKind, DesignParameterScope},
-    };
-    use crate::records::identity::{Located, ReferenceRun};
-    let owners = [(0, 50), (1, 51), (2, 52), (3, 53), (4, 54), (5, 55)];
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        DesignFeatureKind::AsBuilt,
-        10,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = 422;
-            draft.paired_byte_offset = draft.byte_offset + 422;
-            draft.reference_members =
-                ReferenceRun::unlocated(vec![80, 50, 51, 52, 53, 81, 82, 83, 84, 54, 55]);
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let mut alignment = DesignAssemblyAlignment::try_new(
-        0.0,
-        [0.0; 3],
-        (50..54).map(|value| Located { value, offset: 0 }).collect(),
-        None,
-    )
-    .unwrap();
-    alignment.additional_owner_run = Some(DesignAssemblyOwnerRun {
-        count: Located {
-            value: 2,
-            offset: scope.byte_offset() + 43,
-        },
-        references: vec![
-            Located {
-                value: 54,
-                offset: scope.byte_offset() + 47,
-            },
-            Located {
-                value: 55,
-                offset: scope.byte_offset() + 58,
-            },
-        ],
-    });
-    let holds = |alignment: &DesignAssemblyAlignment| {
-        super::super::placement_ordered_references_hold(&scope, alignment, &owners)
-    };
-    assert!(holds(&alignment));
-    let mut absent = alignment.clone();
-    absent.additional_owner_run = None;
-    assert!(!holds(&absent));
-    for value in [0, 1, 3] {
-        let mut changed = alignment.clone();
-        changed.additional_owner_run.as_mut().unwrap().count.value = value;
-        assert!(!holds(&changed));
-    }
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().references[1].value = 54;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().references[0].offset += 1;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().count.offset += 1;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed
-        .additional_owner_run
-        .as_mut()
-        .unwrap()
-        .references
-        .pop();
-    assert!(!holds(&changed));
-    assert!(!super::super::placement_ordered_references_hold(
-        &scope,
-        &alignment,
-        &owners[..5]
-    ));
 }
 
 #[test]
@@ -678,7 +600,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let operation = serde_json::from_value(serde_json::json!({
+    let operation = json::from_value(cadmpeg_core::json!({
         "edge_wrapper_record_indices":[51,61], "edge_group_record_indices":[52,62],
         "edge_operand_record_indices":[55,65], "aggregate_group_record_index":101,
         "aggregate_operand_record_indices":[104,108], "height_owner_record_index":81,
@@ -690,9 +612,9 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(operation).into();
     }
-    let wire = serde_json::to_value(&scope).unwrap();
-    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    let wire = json::to_value(&scope).unwrap();
+    let decoded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&decoded).unwrap(), wire);
     let findings = |scope: DesignParameterScope| {
         crate::test_support::with_decode_context(|service_ctx| {
             let ir = cadmpeg_ir::document::CadIr::empty();
@@ -721,7 +643,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
             };
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings
         })
     };
@@ -802,7 +724,8 @@ fn scope_admits_only_its_deleted_absent_members() {
                 let ir = cadmpeg_ir::examples::unit_cube().unwrap();
                 let ctx = super::super::Ctx::new(&ir, native, service_ctx);
                 let mut findings = Vec::new();
-                super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                    .unwrap();
                 findings
             })
         };

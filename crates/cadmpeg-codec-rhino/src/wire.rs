@@ -5,7 +5,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -16,14 +16,15 @@ use crate::settings::MillimeterScale;
 
 /// Serializes `value` as compact JSON.
 pub(crate) fn json(value: &impl serde::Serialize) -> Result<String, CodecError> {
-    serde_json::to_string(value).map_err(|error| CodecError::malformed(error.to_string()))
+    cadmpeg_core::serde_erase::to_json_string(value)
+        .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
 /// Serializes `value` through `serde_json::Value`, which writes object keys in
 /// sorted order.
 pub(crate) fn canonical_json(value: &impl serde::Serialize) -> Result<String, CodecError> {
-    let value =
-        serde_json::to_value(value).map_err(|error| CodecError::malformed(error.to_string()))?;
+    let value = cadmpeg_core::serde_erase::to_json_value(value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
     json(&value)
 }
 
@@ -54,7 +55,6 @@ impl Uuid {
     }
 
     /// Inverse of [`Uuid::from_wire`].
-    #[cfg(test)]
     pub(crate) fn to_wire(self) -> [u8; uuid_wire::LEN] {
         let mut wire = [0; uuid_wire::LEN];
         for index in 0..4 {

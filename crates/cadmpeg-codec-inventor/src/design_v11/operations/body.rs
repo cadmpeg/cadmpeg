@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::{body as new, shared::ToolDisposition};
-use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
+use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::Length;
 
 use super::{selections, swept, Projected};
@@ -37,16 +37,22 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 keep_tools,
                 destination,
             } => {
-                if *destination != old::CombineDestination::TargetComponent {
+                if *destination
+                    != cadmpeg_ir::features::operation_settings::CombineDestination::TargetComponent
+                {
                     return Err("the combine destination has no resolved v11 component");
                 }
                 FeatureOperation::Combine(Box::new(new::Combine {
                     target: Some(selections::set(selections::bodies(operands.target())?)?),
                     tools: selections::bodies(operands.tools())?,
                     op: Some(match op {
-                        old::BooleanKind::Join => cadmpeg_ir::design::options::BooleanOp::Join,
-                        old::BooleanKind::Cut => cadmpeg_ir::design::options::BooleanOp::Cut,
-                        old::BooleanKind::Intersect => {
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Join => {
+                            cadmpeg_ir::design::options::BooleanOp::Join
+                        }
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Cut => {
+                            cadmpeg_ir::design::options::BooleanOp::Cut
+                        }
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect => {
                             cadmpeg_ir::design::options::BooleanOp::Intersect
                         }
                     }),
@@ -61,21 +67,31 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 }))
             }
             LegacyOperation::SplitBody {
-                extend_tool: Some(_),
-                ..
-            } => return Err("the split body states a tool extension"),
-            LegacyOperation::SplitBody {
                 targets,
                 tool,
-                extend_tool: None,
+                extend_tool,
             } => split(
                 selections::set(selections::bodies(targets)?)?,
                 match tool {
-                    old::SplitBodyTool::Plane { plane } => {
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { .. }
+                        if extend_tool.is_some() =>
+                    {
+                        return Err("the split body states a tool extension beside a plane")
+                    }
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane } => {
                         new::SplitTool::Plane(Box::new(swept::datum_plane(plane)?))
                     }
-                    old::SplitBodyTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(faces) => {
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: extend_tool.map(|extended| {
+                                if extended {
+                                    new::ToolExtension::Extended { method: None }
+                                } else {
+                                    new::ToolExtension::Off
+                                }
+                            }),
+                        }
                     }
                 },
                 Some(new::Kept::All {
@@ -92,19 +108,24 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             }
             LegacyOperation::SplitFace { targets, tool, .. } => {
                 let tool = match tool {
-                    old::SplitFaceTool::Plane { plane } => {
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Plane { plane } => {
                         new::SplitTool::Plane(Box::new(swept::datum_plane(plane)?))
                     }
-                    old::SplitFaceTool::Path(_) => {
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Path(_) => {
                         return Err("the split-face path has no stated projection direction")
                     }
-                    old::SplitFaceTool::Planes { .. } => {
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Planes { .. } => {
                         return Err("the split face has multiple plane tools")
                     }
-                    old::SplitFaceTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => {
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: None,
+                        }
                     }
-                    old::SplitFaceTool::Native(_) => return Err("the split-face tool is native"),
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(_) => {
+                        return Err("the split-face tool is native")
+                    }
                 };
                 split(
                     selections::face(targets)?,
@@ -116,7 +137,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             }
             LegacyOperation::TrimBodies { operands, keep } => split(
                 selections::set(selections::bodies(operands.targets())?)?,
-                new::SplitTool::Geometry(selections::set(selections::bodies(operands.tools())?)?),
+                new::SplitTool::Geometry {
+                    tools: selections::set(selections::bodies(operands.tools())?)?,
+                    extend: None,
+                },
                 kept(*keep),
             ),
             LegacyOperation::TrimBodiesAtPlane {
@@ -134,11 +158,8 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 rotation,
                 copies,
             } => {
-                if rotation.is_some() && *translation != old::FiniteVector3::ZERO {
-                    return Err("the body move has no stated order for translation and rotation");
-                }
                 let delta = translation.get();
-                let mut steps = vec![new::TransformStep::Components {
+                let components = new::TransformStep::Components {
                     frame: None,
                     delta: [delta.x, delta.y, delta.z]
                         .map(|value| {
@@ -150,13 +171,28 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                         .collect::<Projected<Vec<_>>>()?
                         .try_into()
                         .map_err(|_| "the translation has invalid arity")?,
-                }];
-                if let Some(rotation) = rotation {
-                    steps.push(new::TransformStep::Rotate {
-                        axis: swept::axis(rotation.origin, rotation.direction)?,
-                        angle: Dimension::Literal(rotation.angle),
-                    });
-                }
+                };
+                let rotate = rotation
+                    .as_ref()
+                    .map(|rotation| {
+                        Ok::<_, &'static str>(new::TransformStep::Rotate {
+                            axis: swept::axis(rotation.origin, rotation.direction)?,
+                            angle: Dimension::Literal(rotation.angle),
+                        })
+                    })
+                    .transpose()?;
+                // The stored matrix maps `p` to `R*p + t`: the rotation applies
+                // first, then the translation. A zero translation leaves the
+                // order free, and keeps the translation step first.
+                let steps = match rotate {
+                    Some(rotate)
+                        if *translation != cadmpeg_ir::features::geometry::FiniteVector3::ZERO =>
+                    {
+                        vec![rotate, components]
+                    }
+                    Some(rotate) => vec![components, rotate],
+                    None => vec![components],
+                };
                 FeatureOperation::TransformBodies(Box::new(new::TransformBodies {
                     bodies: selections::set(selections::bodies(bodies)?)?,
                     transformation: new::Transformation {
@@ -176,7 +212,7 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 }))
             }
             LegacyOperation::MoveFace { faces, motion } => {
-                if let old::FaceMotion::Offset { distance } = motion {
+                if let cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance } = motion {
                     FeatureOperation::Offset(Box::new(cadmpeg_ir::design::ops::dressup::Offset {
                         sets: vec![cadmpeg_ir::design::ops::dressup::OffsetSet {
                             faces: selections::face(faces)?,
@@ -190,14 +226,14 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                     }))
                 } else {
                     let step = match motion {
-                        old::FaceMotion::Translate {
+                        cadmpeg_ir::features::direct_edit::FaceMotion::Translate {
                             direction,
                             distance,
                         } => new::TransformStep::Translate {
                             direction: swept::direction(*direction)?,
                             distance: Dimension::Literal(*distance),
                         },
-                        old::FaceMotion::Rotate {
+                        cadmpeg_ir::features::direct_edit::FaceMotion::Rotate {
                             axis_origin,
                             axis_dir,
                             angle,
@@ -205,10 +241,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                             axis: swept::axis(*axis_origin, *axis_dir)?,
                             angle: Dimension::Literal(*angle),
                         },
-                        old::FaceMotion::Transform { transform } => {
+                        cadmpeg_ir::features::direct_edit::FaceMotion::Transform { transform } => {
                             new::TransformStep::Fixed(*transform)
                         }
-                        old::FaceMotion::Offset { .. } => {
+                        cadmpeg_ir::features::direct_edit::FaceMotion::Offset { .. } => {
                             return Err("the offset has no rigid transformation")
                         }
                     };
@@ -253,7 +289,7 @@ fn split(
 ) -> FeatureOperation {
     FeatureOperation::Split(Box::new(new::Split {
         mode: new::SplitMode::ByTools {
-            targets,
+            targets: Some(targets),
             tools,
             method: Some(new::SplitMethod::Intersect),
             kept,
@@ -263,13 +299,15 @@ fn split(
     }))
 }
 
-fn kept(side: old::BodyTrimSide) -> Option<new::Kept<Dimension<bool>>> {
+fn kept(
+    side: cadmpeg_ir::features::operation_settings::BodyTrimSide,
+) -> Option<new::Kept<Dimension<bool>>> {
     match side {
-        old::BodyTrimSide::Unresolved => None,
-        old::BodyTrimSide::Forward => Some(new::Kept::Side {
+        cadmpeg_ir::features::operation_settings::BodyTrimSide::Unresolved => None,
+        cadmpeg_ir::features::operation_settings::BodyTrimSide::Forward => Some(new::Kept::Side {
             side: Dimension::Literal(false),
         }),
-        old::BodyTrimSide::Reverse => Some(new::Kept::Side {
+        cadmpeg_ir::features::operation_settings::BodyTrimSide::Reverse => Some(new::Kept::Side {
             side: Dimension::Literal(true),
         }),
     }

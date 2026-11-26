@@ -6,10 +6,10 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
-use crate::geometry::{
-    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry,
-};
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -20,17 +20,17 @@ const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
 fn collect_law_curves<'a, R, V, P>(
-    expression: &'a crate::geometry::LawExpression<R, V, P>,
+    expression: &'a crate::geometry::laws::LawExpression<R, V, P>,
     curves: &mut BorrowedIdentities<'a>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("carrier law nesting")?;
 
     match expression {
-        crate::geometry::LawExpression::Edge { curve, .. } => {
+        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
             curves.insert_unique(curve.id.as_str(), ());
         }
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
                 collect_law_curves(operand, curves, ctx)?;
             }
@@ -40,9 +40,38 @@ fn collect_law_curves<'a, R, V, P>(
     Ok(())
 }
 
+/// The surfaces, curves, pcurves, and points of `ir`'s geometry that no
+/// record reaches, as [`check_carrier_reachability`] reaches them. A
+/// fragment states none, since its carriers may be reached from outside it.
+pub(crate) fn unreached_carriers(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
+    if ir.fragment {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let mut findings = Vec::new();
+    check_carrier_reachability(
+        ctx,
+        crate::native::view::NativeView::new(ir, None),
+        &ir.geometry,
+        &mut findings,
+    )?;
+    let orphan = crate::rule_name!("carriers_parameterization.orphan-carrier");
+    Ok(findings
+        .into_iter()
+        .filter(|finding| finding.rule == orphan)
+        .filter_map(|finding| finding.entity)
+        .collect())
+}
+
+/// Every surface, curve, pcurve, and point carrier of `geometry` is reached:
+/// by a record of `geometry`, or by an appearance binding, a presentation
+/// layer item, or a native link of `view`'s document.
 pub(super) fn check_carrier_reachability(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     view: crate::native::view::NativeView<'_>,
+    geometry: &crate::document::Topology,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ir = view.ir;
@@ -62,15 +91,15 @@ pub(super) fn check_carrier_reachability(
     let mut curves = BorrowedIdentities::new();
     let mut pcurves = BorrowedIdentities::new();
     let mut points = BorrowedIdentities::new();
-    for face in &ir.geometry.faces {
+    for face in &geometry.faces {
         surfaces.insert_unique(face.surface.as_str(), ());
     }
-    for edge in &ir.geometry.edges {
+    for edge in &geometry.edges {
         if let Some(curve) = edge.curve() {
             curves.insert_unique(curve.as_str(), ());
         }
     }
-    for coedge in &ir.geometry.coedges {
+    for coedge in &geometry.coedges {
         if let Some(use_) = &coedge.use_curve {
             curves.insert_unique(use_.curve.as_str(), ());
         }
@@ -78,22 +107,22 @@ pub(super) fn check_carrier_reachability(
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.geometry.surfaces {
+    for surface in &geometry.surfaces {
         if surface.source_object.is_some() {
             surfaces.insert_unique(surface.id.as_str(), ());
         }
     }
-    for curve in &ir.geometry.curves {
+    for curve in &geometry.curves {
         if curve.source_object.is_some() {
             curves.insert_unique(curve.id.as_str(), ());
         }
     }
-    for loop_ in &ir.geometry.loops {
+    for loop_ in &geometry.loops {
         for use_ in loop_.vertex_pcurves() {
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.geometry.procedural_surfaces {
+    for surface in &geometry.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
         } = surface.definition()
@@ -105,23 +134,23 @@ pub(super) fn check_carrier_reachability(
             );
         }
     }
-    for vertex in &ir.geometry.vertices {
+    for vertex in &geometry.vertices {
         points.insert_unique(vertex.point.as_str(), ());
     }
-    for point in &ir.geometry.points {
+    for point in &geometry.points {
         if point.source_object.is_some() {
             points.insert_unique(point.id.as_str(), ());
         }
     }
     let surface_owners = BorrowedIdentities::build(|add| {
-        for surface in &ir.geometry.surfaces {
+        for surface in &geometry.surfaces {
             if let Some(procedural) = surface.geometry.procedural_construction() {
                 add(procedural.as_str(), &surface.id);
             }
         }
     });
     let curve_owners = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
+        for curve in &geometry.curves {
             if let Some(procedural) = curve.geometry.procedural_construction() {
                 add(procedural.as_str(), &curve.id);
             }
@@ -162,7 +191,7 @@ pub(super) fn check_carrier_reachability(
         }
     }
 
-    for procedural in &ir.geometry.procedural_surfaces {
+    for procedural in &geometry.procedural_surfaces {
         if let Some(surface) = surface_owners.get_unique(procedural.id.as_str()).copied() {
             surfaces.insert_unique(surface.as_str(), ());
         }
@@ -218,11 +247,11 @@ pub(super) fn check_carrier_reachability(
 
                 let mut extra_scales = [None, None];
                 match &construction.tail {
-                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                    crate::geometry::lofts::CompoundLoftTail::Six { scale, curve, .. } => {
                         extra_scales[0] = Some(scale.as_ref());
                         curves.insert_unique(curve.as_str(), ());
                     }
-                    crate::geometry::CompoundLoftTail::Seven {
+                    crate::geometry::lofts::CompoundLoftTail::Seven {
                         first_scale,
                         second_scale,
                         ..
@@ -230,9 +259,10 @@ pub(super) fn check_carrier_reachability(
                         extra_scales[0] = first_scale.as_deref();
                         extra_scales[1] = Some(second_scale.as_ref());
                     }
-                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             curves.insert_unique(curve.as_str(), ());
                         }
@@ -262,7 +292,7 @@ pub(super) fn check_carrier_reachability(
 
                 let mut extra_scales = [None, None];
                 match &construction.branch {
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
@@ -270,7 +300,7 @@ pub(super) fn check_carrier_reachability(
                         extra_scales[0] = first_scale.as_deref();
                         extra_scales[1] = Some(second_scale.as_ref());
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
@@ -278,9 +308,12 @@ pub(super) fn check_carrier_reachability(
                         extra_scales[0] = scale.as_deref();
                         curves.insert_unique(curve.as_str(), ());
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::Direct {
+                        direction, ..
+                    } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             curves.insert_unique(curve.as_str(), ());
                         }
@@ -309,14 +342,18 @@ pub(super) fn check_carrier_reachability(
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
                 let construction = definition_payload.construction();
                 match &construction.layout {
-                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Profiles {
+                        profiles,
+                        path,
+                        ..
+                    } => {
                         curves.insert_unique(path.as_str(), ());
                         for profile in profiles {
                             curves.insert_unique(profile.curve.as_str(), ());
                             surfaces.insert_unique(profile.data.surface.as_str(), ());
                         }
                     }
-                    crate::geometry::SkinSurfaceLayout::Compact {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Compact {
                         curve,
                         secondary_curve,
                         ..
@@ -380,7 +417,7 @@ pub(super) fn check_carrier_reachability(
                 }
                 surfaces.insert_unique(construction.second_exact_surface.as_str(), ());
                 curves.insert_unique(construction.center_curve.as_str(), ());
-                if let crate::geometry::G2BlendFirstShape::Full {
+                if let crate::geometry::blends::G2BlendFirstShape::Full {
                     support: Some(support),
                 } = &construction.first_shape
                 {
@@ -439,10 +476,10 @@ pub(super) fn check_carrier_reachability(
                 curves.extend_unique(
                     [
                         match construction.direction() {
-                            crate::geometry::CompoundLoftDirection::Vector { .. } => None,
-                            crate::geometry::CompoundLoftDirection::Curve { curve, .. } => {
-                                Some(curve)
-                            }
+                            crate::geometry::lofts::CompoundLoftDirection::Vector { .. } => None,
+                            crate::geometry::lofts::CompoundLoftDirection::Curve {
+                                curve, ..
+                            } => Some(curve),
                         },
                         construction.tail().curve(),
                     ]
@@ -467,16 +504,25 @@ pub(super) fn check_carrier_reachability(
 
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
-                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
-                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Circle {
+                            curve,
+                            ..
+                        }
+                        | crate::geometry::blends::VertexBlendBoundaryGeometry::Plane {
+                            curve,
+                            ..
+                        } => {
                             curves.insert_unique(curve.as_str(), ());
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
-                            surface, ..
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Pcurve {
+                            surface,
+                            ..
                         } => {
                             surfaces.insert_unique(surface.as_str(), ());
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Degenerate {
+                            ..
+                        } => {}
                     }
                 }
             }
@@ -505,19 +551,22 @@ pub(super) fn check_carrier_reachability(
                 curves.extend_unique([profile.as_str(), spine.as_str()]);
                 if let Some(native) = native {
                     let formulas = match &native.layout {
-                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            formulas.as_slice()
-                        }
-                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                            formula, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ProfileFirst {
+                            formulas,
+                            ..
+                        } => formulas.as_slice(),
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitFormula {
+                            formula,
+                            ..
                         } => std::slice::from_ref(formula),
-                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                            guide_curve, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve,
+                            ..
                         } => {
                             curves.insert_unique(guide_curve.as_str(), ());
                             &[]
                         }
-                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
                             auxiliary_curve,
                             ..
@@ -528,7 +577,7 @@ pub(super) fn check_carrier_reachability(
                             }
                             &[]
                         }
-                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::LawDriven {
                             first_law,
                             second_law,
                             formula,
@@ -622,11 +671,16 @@ pub(super) fn check_carrier_reachability(
                 let construction = definition_payload.construction();
 
                 surfaces.insert_unique(construction.support.as_str(), ());
-                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                    surface, curve, ..
+                if let crate::geometry::deformable_surfaces::DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    curve,
+                    ..
                 }
-                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
-                    &construction.data
+                | crate::geometry::deformable_surfaces::DeformableSurfaceData::Full {
+                    surface,
+                    curve,
+                    ..
+                } = &construction.data
                 {
                     surfaces.insert_unique(surface.as_str(), ());
                     curves.insert_unique(curve.as_str(), ());
@@ -634,7 +688,7 @@ pub(super) fn check_carrier_reachability(
             }
         }
     }
-    for procedural in &ir.geometry.procedural_curves {
+    for procedural in &geometry.procedural_curves {
         if let Some(curve) = curve_owners.get_unique(procedural.id.as_str()).copied() {
             curves.insert_unique(curve.as_str(), ());
         }
@@ -721,14 +775,22 @@ pub(super) fn check_carrier_reachability(
             ProceduralCurveDefinition::Spring(definition_payload) => {
                 let layout = definition_payload.layout();
                 match layout {
-                    crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
+                    crate::geometry::surface_curves::SpringLayout::ContextFirst {
+                        supports,
+                        ..
+                    } => {
                         for support in supports {
-                            if let crate::geometry::SpringSupport::Surface(surface) = support {
+                            if let crate::geometry::surface_curves::SpringSupport::Surface(
+                                surface,
+                            ) = support
+                            {
                                 surfaces.insert_unique(surface.as_str(), ());
                             }
                         }
                     }
-                    crate::geometry::SpringLayout::CacheFirst { context, .. } => {
+                    crate::geometry::surface_curves::SpringLayout::CacheFirst {
+                        context, ..
+                    } => {
                         for side in context.sides() {
                             if let Some(surface) = &side.surface {
                                 surfaces.insert_unique(surface.as_str(), ());
@@ -741,7 +803,10 @@ pub(super) fn check_carrier_reachability(
                 let context = definition_payload.context();
                 let source = definition_payload.source();
                 {
-                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if let crate::geometry::procedural_curves::DeformableCurveSource::Curve {
+                        curve,
+                    } = source
+                    {
                         curves.insert_unique(curve.as_str(), ());
                     }
                     for side in context.sides() {
@@ -768,16 +833,19 @@ pub(super) fn check_carrier_reachability(
                 let range = definition_payload.range();
                 {
                     curves.insert_unique(source.as_str(), ());
-                    if let crate::geometry::OffsetSide::Direction {
+                    if let crate::geometry::curve_offsets::OffsetSide::Direction {
                         support: Some(support),
                         ..
                     } = side
                     {
                         surfaces.insert_unique(support.as_str(), ());
                     }
-                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    if let Some(crate::geometry::curve_offsets::CurveOffsetRange::Variable {
                         distance_law:
-                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                            crate::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
+                                function,
+                                ..
+                            },
                         ..
                     }) = range
                     {
@@ -829,7 +897,7 @@ pub(super) fn check_carrier_reachability(
         curves.insert_unique(link.as_ref(), ());
     }
     let composite_segments = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
+        for curve in &geometry.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
@@ -855,7 +923,7 @@ pub(super) fn check_carrier_reachability(
     }
     macro_rules! check_orphans {
         ($arena:ident, $reachable:ident, $kind:literal) => {
-            for entity in &ir.geometry.$arena {
+            for entity in &geometry.$arena {
                 let id = entity.id.as_str();
                 if !$reachable.contains(id) {
                     super::record_finding(
@@ -863,7 +931,11 @@ pub(super) fn check_carrier_reachability(
                         Check::CarrierReachability,
                         Severity::Error,
                         Some(id),
-                        format_args!("orphan {} carrier", $kind),
+                        crate::rule!(
+                            "carriers_parameterization.orphan-carrier",
+                            "orphan {} carrier",
+                            $kind
+                        ),
                     );
                 }
             }
@@ -889,7 +961,7 @@ pub(super) fn check_parameter_domains(
     });
     let subset_spans = crate::index::identities::BorrowedIdentities::build(|add| {
         for procedural in &ir.geometry.procedural_curves {
-            if let crate::geometry::ProceduralCurveDefinition::Subset(subset) =
+            if let crate::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
                 procedural.definition()
             {
                 add(procedural.id.as_str(), subset.parameter_range());
@@ -918,11 +990,15 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(edge.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "carriers_parameterization.edge-parameter-range-outside-local-domain",
                         "edge parameter range [{start}, {end}] is outside the local domain \
                          [0, {span}] of its subset curve"
                     ),
                 );
+                // One finding per range: the subset's local domain is the one
+                // its construction states, so its cache is not tested again.
+                continue;
             }
         }
         let mut valid = true;
@@ -948,15 +1024,14 @@ pub(super) fn check_parameter_domains(
                         <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
                         && (full_period || (0.0..tau).contains(&start));
                 }
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    valid &= nurbs_range_in_domain(
-                        nurbs,
+                _ => {
+                    valid &= curve_range_in_domain(
+                        curve,
                         start,
                         end,
                         EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12,
                     );
                 }
-                _ => {}
             }
         }
         if !valid {
@@ -965,7 +1040,10 @@ pub(super) fn check_parameter_domains(
                 Check::ParameterDomain,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!("edge parameter range is outside its canonical carrier domain"),
+                crate::rule!(
+                    "carriers_parameterization.edge-parameter-range-outside-canonical-carrier",
+                    "edge parameter range is outside its canonical carrier domain"
+                ),
             );
         }
     }
@@ -983,11 +1061,14 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge use-curve names no curve carrier"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-use-curve-names-no-curve",
+                        "coedge use-curve names no curve carrier"
+                    ),
                 ),
-                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)))
-                    if !nurbs_range_in_domain(
-                        nurbs,
+                Some(curve)
+                    if !curve_range_in_domain(
+                        curve,
                         start,
                         end,
                         EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
@@ -998,7 +1079,8 @@ pub(super) fn check_parameter_domains(
                         Check::ParameterDomain,
                         Severity::Error,
                         Some(coedge.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "carriers_parameterization.coedge-use-curve-range-outside-carrier",
                             "coedge use-curve range [{start}, {end}] is outside its carrier domain"
                         ),
                     );
@@ -1009,7 +1091,7 @@ pub(super) fn check_parameter_domains(
         for use_ in &coedge.pcurves {
             let Some([start, end]) = use_
                 .parameter_range
-                .map(crate::geometry::DirectedParameterRange::endpoints)
+                .map(crate::geometry::procedural_curves::DirectedParameterRange::endpoints)
             else {
                 continue;
             };
@@ -1040,7 +1122,10 @@ pub(super) fn check_parameter_domains(
                     Check::ParameterDomain,
                     Severity::Error,
                     Some(coedge.id.as_str()),
-                    format_args!("coedge pcurve range is outside its carrier domain"),
+                    crate::rule!(
+                        "carriers_parameterization.coedge-pcurve-range-outside-carrier-domain",
+                        "coedge pcurve range is outside its carrier domain"
+                    ),
                 );
             }
         }
@@ -1085,6 +1170,44 @@ fn periodic_pcurve_range_in_domain(start: f64, end: f64, domain: [f64; 2]) -> bo
                     ratio.get() <= 1.0 + EPS_CARRIERS_PARAMETERIZATION_PERIODIC_PCURVE_SPAN
                 })
         })
+}
+
+/// Whether a parameter range lies in the domain of the geometry that
+/// evaluates `curve`: a procedural carrier's cache, through every placement's
+/// basis. A NURBS evaluates over its knot domain and a polyline between its
+/// first and last sample parameters; the other kinds evaluate at every finite
+/// parameter.
+fn curve_range_in_domain(
+    curve: &CurveGeometry,
+    start: f64,
+    end: f64,
+    relative_tolerance: f64,
+) -> bool {
+    let mut evaluated = curve.solved();
+    while let Some(SolvedCurveGeometry::Transformed(placed)) = evaluated {
+        evaluated = Some(placed.basis());
+    }
+    match evaluated {
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            nurbs_range_in_domain(nurbs, start, end, relative_tolerance)
+        }
+        Some(SolvedCurveGeometry::Polyline(polyline)) => {
+            let (Some(first), Some(last)) = (
+                polyline.parameter_at(0),
+                polyline
+                    .point_count()
+                    .checked_sub(1)
+                    .and_then(|index| polyline.parameter_at(index)),
+            ) else {
+                return true;
+            };
+            let span = [first.get().min(last.get()), first.get().max(last.get())];
+            [start, end]
+                .into_iter()
+                .all(|value| crate::math::parameter_in_domain(value, span, relative_tolerance))
+        }
+        _ => true,
+    }
 }
 
 /// Whether a parameter range lies in a NURBS carrier's knot domain.

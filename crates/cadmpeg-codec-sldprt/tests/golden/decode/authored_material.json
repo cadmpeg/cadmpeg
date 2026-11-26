@@ -216,53 +216,38 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {},
-          "id": "sldprt:model:configuration#456:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#456:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "bom_properties": {},
+          "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -346,26 +331,10 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#456:0",
-        "sldprt_native_configuration_sha256": "206e4d8e2f96af97a902307adc18ed967fe3433106fd8955b46428628b1a54d8",
-        "sldprt_native_history_sha256": "8b570173acbc3c928c14aefee0b4bc315010f484a87a01c1603a14a016dfa746",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -438,8 +407,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -464,7 +432,7 @@
       "exactness": {
         "sldprt:brep:surf#10": {
           "fields": {
-            "geometry.u_axis": "derived"
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         }
@@ -602,7 +570,25 @@
         }
       }
     },
-    "decode_digest": "81410b91ac588c3134c80cfa86e5e65df54f99ed025b8e6e20ef86acea481290",
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "206e4d8e2f96af97a902307adc18ed967fe3433106fd8955b46428628b1a54d8",
+      "sldprt_native_history_sha256": "8b570173acbc3c928c14aefee0b4bc315010f484a87a01c1603a14a016dfa746",
+      "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
+    "decode_digest": "be3eb1effdb161eb3e71f0533b5a6524ad3410f7c3cb29ad89c44bd18a068af0",
     "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
@@ -646,7 +632,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBa2ciHFAAGAAgAQAAAAJ8/HilFAAAAQAAAAAkAAAA1dfQmplY2RzcBQAC//21vVmlzdWFsUHJvcGVydGllc19jIECAAAAAAADAwMAA//7/AP/+/wxHAG8AbABkAGUAbgAgAFMAdABlAGUAbABa2ciHFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAA09uZHVuZHN/K0Vpd39idGNwFEALv/PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz5a2ciHFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG0UrfigAABQABgAIACAAAABC5HlcFwEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uZFK34oAAAUAAYACABAAAAAnz8eKUUAAABAAAAACQAAAAAAAAABAAAAAABQAQAANXX0JqZWNkc3RSt+KAAAFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAAAAAAAAQAAAAAAvAEAADT25kdW5kc38rRWl3f2J0Y3RSt+KAAAFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAAAAAAAAQAAAAAANAIAADT25kdW5kc38mRWFkdXJ1Y3n4JeAgAAAAAEAAQA/gAAAPwCAAAAAA==",
+          "data": "AQAAAAAAAARmWn5WFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBmWn5WFAAGAAgAQAAAAJ8/HilFAAAAQAAAAAkAAAA1dfQmplY2RzcBQAC//21vVmlzdWFsUHJvcGVydGllc19jIECAAAAAAADAwMAA//7/AP/+/wxHAG8AbABkAGUAbgAgAFMAdABlAGUAbABmWn5WFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAA09uZHVuZHN/K0Vpd39idGNwFEALv/PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz5mWn5WFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG5P/rUcAABQABgAIACAAAABC5HlcFwEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaT/61HAAAUAAYACABAAAAAnz8eKUUAAABAAAAACQAAAAAAAAABAAAAAABQAQAANXX0JqZWNkc3k/+tRwAAFAAGAAgAQgAAACiHN+NJAAAARAAAABEAAAAAAAAAAQAAAAAAvAEAADT25kdW5kc38rRWl3f2J0Y3k/+tRwAAFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAAAAAAAAQAAAAAANAIAADT25kdW5kc38mRWFkdXJ1Y3LDUHMQAAAAAEAAQA/gAAAPwCAAAAAA==",
           "kind": "inline"
         },
         "offset": 0,

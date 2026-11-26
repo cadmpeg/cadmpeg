@@ -24,7 +24,8 @@ use cadmpeg_ir::features::form::{
     FormPositionEvidence, FormReferenceGroup, FormReferenceRole, FormResource,
     FormResourceAssociation, FormResourceAvailability, FormResourceStateEvidence,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
+use cadmpeg_ir::features::selections::NonEmptyMembers;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{NativeId, SubdId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::subd::SubdSurface;
@@ -34,7 +35,10 @@ pub(super) fn unresolved(
     parameters: &[(u32, &crate::records::parameters::DesignParameter)],
 ) -> Result<FeatureDefinition, CodecError> {
     let mut inputs = form_inputs(scope)?;
-    inputs.parameters = super::scope_parameter_expressions(scope, parameters)?;
+    inputs.parameters =
+        crate::design::feature_project::scope_properties::scope_parameter_expressions(
+            scope, parameters,
+        )?;
     FormConstruction::try_new(
         inputs,
         Vec::new(),
@@ -2244,7 +2248,7 @@ impl FormFacts {
                     entry.as_ref().is_some_and(|entry| {
                         scan.has_entry(entry)
                             && cage.source_object.as_ref().is_some_and(|source| {
-                                source.format == cadmpeg_ir::CodecFormat::F3d
+                                source.format == cadmpeg_ir::codec_id!("f3d")
                                     && source.object_id.as_str() == entry
                             })
                     })
@@ -2446,7 +2450,7 @@ fn retain_serializer_candidate(
             entry.as_ref().is_some_and(|entry| {
                 scan.has_entry(entry)
                     && cage.source_object.as_ref().is_some_and(|source| {
-                        source.format == cadmpeg_ir::CodecFormat::F3d
+                        source.format == cadmpeg_ir::codec_id!("f3d")
                             && source.object_id.as_str() == entry
                     })
             })

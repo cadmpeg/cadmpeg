@@ -31,6 +31,214 @@ use cadmpeg_core::decode::View;
 mod primary_edges;
 
 #[test]
+fn fin_followed_by_an_attribute_record_survives_overlapping_tag_matches() {
+    // The FIN's reference bytes also read as other record tags, so only the
+    // attribute record at its end identifies the FIN as the owner of those bytes.
+    let stream = [
+        0x00, 0x11, 0x00, 0x1e, 0x00, 0x01, 0x00, 0x6d, 0x00, 0x1d, 0x00, 0x24, 0x00, 0x0b, 0x00,
+        0x1f, 0x00, 0x18, 0x00, 0x01, 0x00, 0x23, 0x2d, 0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x52, 0x00, 0x00, 0x00, 0x55, 0x00, 0x51, 0x00, 0x4e, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4f,
+        0x00, 0x16, 0x00, 0xbd, 0x00, 0x54, 0x00, 0x00, 0x00, 0x20, 0x00, 0x69, 0x61, 0x38,
+    ];
+    let graph = Graph::parse(&stream);
+    let fin = graph
+        .get(NodeKind::Fin, 30)
+        .and_then(Node::fin_fields)
+        .expect("the FIN record is kept");
+    assert_eq!(fin.forward.map(u32::from), Some(29));
+    assert_eq!(fin.other.map(u32::from), Some(31));
+}
+
+#[test]
+fn a_tag_match_inside_an_integer_attribute_does_not_duplicate_a_real_vertex() {
+    let stream = [
+        0x00, 0x12, 0x00, 0x51, 0x00, 0x00, 0x00, 0xbc, 0x00, 0x01, 0x00, 0x53, 0x00, 0x4e, 0x00,
+        0x54, 0x00, 0x4f, 0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00, 0x00, 0x03, 0x00, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x01, 0xed, 0x00, 0x00, 0x00, 0x12, 0x00, 0x51, 0x00, 0x00, 0x00,
+        0x01, 0x01, 0xee, 0x00, 0x00, 0x01, 0xff, 0x00, 0x10, 0x01, 0x50, 0x01, 0xf0, 0x00, 0x01,
+        0x01, 0xf1, 0x01, 0x9f, 0x01, 0xf2, 0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x01, 0x83, 0x00,
+        0x00, 0x01, 0xff, 0x00, 0x10, 0x00, 0x60, 0x00, 0x61, 0x00, 0x01, 0x00, 0x62, 0x00, 0x63,
+        0x00, 0x64,
+    ];
+    let graph = Graph::parse(&stream);
+    let vertex = graph
+        .get(NodeKind::Vertex, 81)
+        .expect("the real VERTEX keeps its identity");
+    assert_eq!(vertex.pos(), 0);
+}
+
+#[test]
+fn attribute_reference_with_a_high_byte_of_one_does_not_hide_the_real_edge() {
+    let mut stream = vec![
+        0x00, 0x10, 0x01, 0x20, 0x00, 0x00, 0x01, 0x31, 0x01, 0x22, 0xc2, 0xbc, 0x92, 0x8f, 0x99,
+        0x6e, 0x00, 0x00, 0x01, 0x23, 0x01, 0x24, 0x01, 0x1c, 0x01, 0x1d, 0x00, 0x01, 0x00, 0x01,
+        0x00, 0x03,
+    ];
+    stream.extend([
+        0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x01, 0x22, 0x00, 0x00, 0x01, 0xf7, 0x00, 0x10, 0x01,
+        0x20, 0x00, 0x01, 0x00, 0x01, 0x01, 0x11, 0x01, 0x1e, 0x02, 0x4d, 0x00, 0x54, 0x00, 0x00,
+        0x00, 0x02, 0x02, 0x4c, 0x32, 0x64, 0x00, 0x00,
+    ]);
+    let graph = Graph::parse(&stream);
+    let edge = graph
+        .get(NodeKind::Edge, 288)
+        .expect("the real EDGE is kept");
+    assert_eq!(edge.pos(), 0);
+}
+
+#[test]
+fn cliff_edge_blend_and_its_zero_radius_edge_support_are_blend_records() {
+    let mut stream = crate::test_support::test_streams::blend_surface_topology_partition_stream();
+    let blend = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("blend record");
+    stream[blend + 19] = b'E';
+    let mut edge_support = record(56, 66);
+    put_ref(&mut edge_support, 2, 40);
+    edge_support[18] = b'+';
+    edge_support[19] = b'R';
+    put_ref(&mut edge_support, 20, 6);
+    put_ref(&mut edge_support, 22, 6);
+    put_ref(&mut edge_support, 24, 41);
+    put_f64(&mut edge_support, 42, 1.0);
+    put_f64(&mut edge_support, 50, 1.0);
+    for at in [58, 60, 62, 64] {
+        put_ref(&mut edge_support, at, 1);
+    }
+    stream.extend(edge_support);
+
+    let graph = Graph::parse(&stream);
+    let blends = graph.blend_surfaces();
+    assert_eq!(blends.len(), 1);
+    assert_eq!(blends[0].xmt, 12);
+    let edges = graph.zero_radius_blends();
+    assert_eq!(edges.len(), 1);
+    assert_eq!((edges[0].xmt, edges[0].spine), (40, 41));
+}
+
+#[test]
+fn intersection_record_with_five_references_keeps_its_chart_and_the_next_record() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let modern = Graph::parse(&stream).composite_curves();
+    let [curve] = modern.as_slice() else {
+        panic!("the fixture has one intersection");
+    };
+    let nodes = Graph::parse(&stream).node_count();
+    let record = curve.pos;
+    let sixth = record + 29;
+    stream.drain(sixth..sixth + 2);
+
+    let graph = Graph::parse(&stream);
+    let older = graph.composite_curves();
+    let [older_curve] = older.as_slice() else {
+        panic!("the five-reference intersection is still a record");
+    };
+    assert_eq!(older_curve.xmt, curve.xmt);
+    assert_eq!(older_curve.references[..5], curve.references[..5]);
+    assert_eq!(older_curve.references[5], None);
+    assert_eq!(graph.node_count(), nodes);
+}
+
+#[test]
+fn a_declared_intersection_keeps_a_sixth_reference_that_reads_as_a_record_tag() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let [curve] = Graph::parse(&stream).composite_curves()[..] else {
+        panic!("the fixture has one intersection");
+    };
+    let record = curve.pos;
+    // The sixth reference spells a REGION tag, and the bytes after the record start no record.
+    stream[record + 29..record + 31].copy_from_slice(&[0, NodeKind::Region.code()]);
+    stream.splice(record + 31..record + 31, [0, 0x2a]);
+    let undeclared = Graph::parse(&stream).composite_curves();
+    let [undeclared] = undeclared.as_slice() else {
+        panic!("the undeclared intersection is still a record");
+    };
+    assert_eq!(undeclared.references[5], None);
+
+    stream.splice(record..record, TYPE_38_SCHEMA_HEADER.iter().copied());
+    let declared = Graph::parse(&stream).composite_curves();
+    let [declared] = declared.as_slice() else {
+        panic!("the declared intersection is still a record");
+    };
+    assert_eq!(declared.xmt, curve.xmt);
+    assert_eq!(declared.references[..5], curve.references[..5]);
+    assert_eq!(
+        declared.references[5],
+        cadmpeg_parasolid::xmt::XmtTarget::from_wire(u32::from(NodeKind::Region.code()))
+    );
+}
+
+#[test]
+fn a_tag_match_with_the_identity_of_a_real_shell_does_not_remove_the_shell() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let shell = graph.of_kind(NodeKind::Shell).next().unwrap().xmt();
+    assert_eq!(graph.body_shape_shells().count(), 1);
+
+    stream.extend_from_slice(&[0, 13]);
+    stream.extend_from_slice(&u16::try_from(shell).unwrap().to_be_bytes());
+    stream.extend_from_slice(&[0, 1, 0x53, 0]);
+    stream.extend_from_slice(&[0x41; 24]);
+
+    assert_eq!(Graph::parse(&stream).body_shape_shells().count(), 1);
+}
+
+#[test]
+fn schema_text_read_as_an_attribute_record_does_not_hide_the_topology_after_it() {
+    let topology = topology_partition_stream();
+    let expected_faces = Graph::parse(&topology).of_kind(NodeKind::Face).count();
+    assert!(expected_faces > 0);
+
+    let count = 82_196_u32;
+    let span = usize::try_from(count).unwrap() * 4;
+    let mut stream = vec![0, 0x52];
+    stream.extend_from_slice(&count.to_be_bytes());
+    stream.extend_from_slice(b"sc");
+    stream.extend_from_slice(&topology);
+    let padding = 8 + span - stream.len();
+    stream.extend_from_slice(&vec![0; padding]);
+
+    assert_eq!(
+        Graph::parse(&stream).of_kind(NodeKind::Face).count(),
+        expected_faces
+    );
+}
+
+#[test]
+fn a_tag_match_inside_an_attribute_record_does_not_take_the_following_fin() {
+    let stream = [
+        0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x00, 0x14, 0x00, 0x00, 0x00, 0x1d, 0x00, 0x17, 0x00,
+        0x09, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x18, 0x00, 0x19, 0x00, 0x11, 0xff, 0x00,
+        0x15, 0x00, 0x01, 0x00, 0x1a, 0x00, 0x15, 0x00, 0x15, 0x00, 0x01, 0x00, 0x1b, 0x00, 0x09,
+        0x00, 0x01, 0x00, 0x01, 0x2b, 0x00, 0x10, 0x00, 0x16, 0x00, 0x00, 0x00, 0x06, 0x00, 0x18,
+        0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00, 0x00, 0x1c, 0x00, 0x09, 0x00, 0x01, 0x00,
+        0x12, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02,
+    ];
+    let graph = Graph::parse(&stream);
+    assert!(graph
+        .get(NodeKind::Fin, 21)
+        .and_then(Node::fin_fields)
+        .is_some());
+    assert!(graph.get(NodeKind::Point, 23).is_none());
+}
+
+#[test]
+fn fin_followed_by_an_attribute_name_survives_overlapping_tag_matches() {
+    let stream = [
+        0x00, 0x11, 0x00, 0x1e, 0x00, 0x01, 0x00, 0x8c, 0x00, 0x1d, 0x00, 0x24, 0x00, 0x0b, 0x00,
+        0x1f, 0x00, 0x18, 0x00, 0x01, 0x00, 0x23, 0x2d, 0x00, 0x4f, 0x00, 0x00, 0x00, 0x0f, 0x00,
+        0x67, 0x55, 0x47, 0x53, 0x2f, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74,
+        0x65, 0x00, 0x54, 0x00, 0x00, 0x00, 0x20, 0x00, 0x53, 0x32, 0x65, 0x65, 0x34, 0x63,
+    ];
+    let graph = Graph::parse(&stream);
+    assert!(graph
+        .get(NodeKind::Fin, 30)
+        .and_then(Node::fin_fields)
+        .is_some());
+}
+
+#[test]
 fn unique_candidate_filter_reuses_input_storage() {
     let candidates = [9, 7, 2, 7, 4, 7]
         .into_iter()
@@ -360,6 +568,19 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         "nx:s0:region#12"
     );
     assert_eq!(result.ir().geometry.faces.len(), 2);
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "nx:s0:face#20")
+        .expect("FACE 20 is kept");
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyFaceBoundaryUnstated.kind()));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -519,7 +740,7 @@ fn face_loop_chain_order_is_emitted() {
         .expect("face");
     let ids = face
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(ids[0].ends_with("#21") && ids[1].ends_with("#5"), "{ids:?}");
@@ -1276,7 +1497,7 @@ fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
     assert_eq!(model.faces.len(), 1);
     let loops = model.faces[0]
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(
@@ -1334,7 +1555,8 @@ fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
         .iter()
         .find(|face| face.id.as_str() == "nx:s0:face#30")
         .expect("FACE 30 is kept");
-    assert!(face.loops.is_empty(), "{:?}", face.loops);
+    assert!(face.loops.stated().next().is_none(), "{:?}", face.loops);
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
     assert!(model
         .loops
         .iter()
@@ -1368,10 +1590,12 @@ fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
     assert_eq!(model.faces.len(), 1);
     let loops = model.faces[0]
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");
+    // The face keeps the loop it read and states that one is not stated.
+    assert!(model.faces[0].loops.is_partial());
     assert!(model
         .bodies
         .iter()
@@ -1397,6 +1621,8 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
         .expect("face")
         .pos();
     put_ref(&mut stream, face + 26, 1);
+    let graph = Graph::parse(&stream);
+    let shell = graph.get(NodeKind::Shell, 3).expect("shell");
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
@@ -1423,4 +1649,64 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
     assert!(losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
     }));
+    // The shell is a part of its stream; the body, dropped only because its
+    // one shell is given up, is named in that charge and has none of its own.
+    let charges = losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let shell_charge = charges
+        .iter()
+        .find(|loss| {
+            loss.message
+                .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                && loss.message.contains(&format!(
+                    "\" offset={} length={} record=",
+                    shell.pos(),
+                    shell.end() - shell.pos()
+                ))
+        })
+        .unwrap_or_else(|| panic!("the shell is given up as a part: {losses:#?}"));
+    assert!(
+        shell_charge.message.contains("nx:s0:body#2"),
+        "{shell_charge:#?}"
+    );
+    assert_eq!(
+        charges
+            .iter()
+            .filter(|loss| loss
+                .message
+                .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | ','))
+                .any(|token| token == "nx:s0:body#2"))
+            .count(),
+        1,
+        "{charges:#?}"
+    );
+}
+
+#[test]
+fn a_withheld_face_leaves_no_loss_that_states_it_partial() {
+    // FACE 4's vertex loop names an unresolved VERTEX, and the face has no
+    // surface, so its shell and body are withheld: no loss states it partial.
+    let mut stream = vertex_loop_topology_partition_stream(99);
+    let face = Graph::parse(&stream)
+        .get(NodeKind::Face, 4)
+        .expect("face")
+        .pos();
+    put_ref(&mut stream, face + 26, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    assert!(result.ir().geometry.faces.is_empty());
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+    }));
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.message.contains("is stated partial")),
+        "{losses:#?}"
+    );
 }

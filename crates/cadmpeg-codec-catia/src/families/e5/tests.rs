@@ -502,7 +502,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet)
             if jet.degree() == 5
             && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>()
             == [2.0, 5.0]
@@ -514,7 +514,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     }));
     let point = cadmpeg_ir::eval::model_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        result.ir(),
+        &cadmpeg_ir::index::ModelIndex::new_model_only(result.ir()),
         &surface.geometry,
         2.0,
         0.5,
@@ -619,8 +619,8 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(matches!(
         result.ir().geometry.procedural_curves[0].definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { .. },
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve {
+            family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Parametric { .. },
         }
     ));
     assert!(result

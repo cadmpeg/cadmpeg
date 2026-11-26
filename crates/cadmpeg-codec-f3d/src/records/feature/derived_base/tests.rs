@@ -6,6 +6,7 @@ use super::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::Located;
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
@@ -120,12 +121,12 @@ fn feature(native_ref: &str, group: Option<&str>) -> cadmpeg_ir::features::Featu
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Derived Base Feature".into(),
@@ -178,17 +179,17 @@ fn a_projected_derive_feature_lists_its_scopes_and_orders_its_outputs_by_scope()
 #[test]
 fn a_derived_base_owner_survives_cadir_and_must_sit_in_its_frame() {
     let scope = derived(70, 62, 77, Some(50));
-    let wire = serde_json::to_value(&scope).unwrap();
-    let read = serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let read = json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
     assert_eq!(read.derived_base_owner, scope.derived_base_owner);
 
     let mut moved = wire.clone();
-    moved["derived_base_owner"]["repeat_offset"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<DesignParameterScope>(moved).is_err());
+    moved["derived_base_owner"]["repeat_offset"] = cadmpeg_core::json!(0);
+    assert!(json::from_value::<DesignParameterScope>(moved).is_err());
 
     let extrude = scope_with_owner_on_extrude();
-    let wire = serde_json::to_value(&extrude).unwrap();
-    assert!(serde_json::from_value::<DesignParameterScope>(wire).is_err());
+    let wire = json::to_value(&extrude).unwrap();
+    assert!(json::from_value::<DesignParameterScope>(wire).is_err());
 }
 
 fn scope_with_owner_on_extrude() -> DesignParameterScope {

@@ -2,6 +2,7 @@
 
 use crate::records::body_ownership::{COMPONENT_GUID, CONTAINER_BASE_GUID, CONTAINER_GUID};
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
+use cadmpeg_core::serde_erase::json;
 
 fn registration(entity: u64, guid: &str, module: &str, version: u32, offset: u64) -> SegmentType {
     SegmentType::try_new(
@@ -67,7 +68,7 @@ fn layout(bodies: &[u64], form: u8) -> Vec<u8> {
 
 #[test]
 fn validator_and_decoder_admit_the_same_component_membership_tail() {
-    let decode = cadmpeg_test_support::service_decode_context();
+    let decode = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = crate::native::F3dNative {
         design_types: vec![
             registration(60, CONTAINER_GUID, "Body", 4, 0),
@@ -94,7 +95,7 @@ fn validator_and_decoder_admit_the_same_component_membership_tail() {
             .into_iter()
             .map(move |bodies| (form, bodies))
     }) {
-        let mut binding: crate::records::bodies::DesignBodyBinding = serde_json::from_value(serde_json::json!({
+        let mut binding: crate::records::bodies::DesignBodyBinding = json::from_value(cadmpeg_core::json!({
                 "id": "f3d:Design/BulkStream.dat:design-body-binding#1000", "stream": "Design/BulkStream.dat",
                 "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 1000,
                 "entity_suffix": 900, "entity_suffix_offset": 1008, "blob_name": "BREP.synthetic.smb", "blob_name_offset": 1050,

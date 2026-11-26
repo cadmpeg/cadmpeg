@@ -13,6 +13,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
         entity_counts: std::collections::BTreeMap::default(),
         findings: vec![
             Finding {
+                rule: cadmpeg_ir::rule_name!("rhino/test.skip-warning"),
                 related: Vec::new(),
                 check: Check::Annotations,
                 severity: Severity::Warning,
@@ -20,6 +21,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
                 entity: None,
             },
             Finding {
+                rule: cadmpeg_ir::rule_name!("rhino/test.invalid-identity"),
                 related: Vec::new(),
                 check: Check::Identity,
                 severity: Severity::Error,
@@ -27,6 +29,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
                 entity: Some("rhino:test:point#1".into()),
             },
             Finding {
+                rule: cadmpeg_ir::rule_name!("rhino/test.unresolved-link"),
                 related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Blocking,
@@ -34,6 +37,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
                 entity: None,
             },
             Finding {
+                rule: cadmpeg_ir::rule_name!("rhino/test.unsorted-arena"),
                 related: Vec::new(),
                 check: Check::ArenaOrder,
                 severity: Severity::Error,
@@ -41,6 +45,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
                 entity: None,
             },
             Finding {
+                rule: cadmpeg_ir::rule_name!("rhino/test.fourth-finding"),
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -124,7 +129,10 @@ fn rejected_candidate_leaves_annotations_unchanged() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).unwrap();
         let mut annotations = AnnotationBuilder::new();
-        annotations.exactness("rhino:test:point#candidate", Exactness::Derived);
+        annotations.exactness(
+            cadmpeg_ir::ids::Identity::new("rhino:test:point#candidate").expect("identity grammar"),
+            Exactness::Derived,
+        );
         context.annotations = annotations.build();
         let original = context.annotations.clone();
         let result = context.validate_candidate_fallible(|_, annotations| {

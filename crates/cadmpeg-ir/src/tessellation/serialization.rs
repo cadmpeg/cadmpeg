@@ -2,12 +2,11 @@
 //! Borrow mesh lanes, addressing tables and channel payloads during serialization.
 
 use super::{
-    ChannelAddressing, Tessellation, TessellationChannel, TessellationId, TessellationMesh,
-    TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
+    ChannelAddressing, MeshColors, Meshed, Tessellation, TessellationChannel, TessellationId,
+    TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
 };
 use crate::design::refs::StateRef;
-use crate::features::{FinitePoint3, FiniteVector3};
-use crate::ids::{BodyId, FaceId};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::NonNegativeReal;
 use serde::{Serialize, Serializer};
@@ -17,9 +16,7 @@ impl Serialize for Tessellation {
         #[derive(Serialize)]
         struct Wire<'a> {
             id: &'a TessellationId,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            body: Option<&'a BodyId>,
-            faces: &'a Vec<FaceId>,
+            of: &'a Meshed,
             #[serde(skip_serializing_if = "Option::is_none")]
             state: Option<&'a StateRef>,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,12 +28,15 @@ impl Serialize for Tessellation {
             triangle_groups: &'a Vec<TessellationTriangleGroup>,
             texture_assignments: &'a Vec<TessellationTextureAssignment>,
             texture_coordinates: &'a Vec<TextureCoordinates>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            colors: Option<&'a MeshColors>,
             channels: &'a [TessellationChannel],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            native_ref: Option<&'a String>,
         }
         Wire {
             id: &self.id,
-            body: self.body.as_ref(),
-            faces: &self.faces,
+            of: &self.of,
             state: self.state.as_ref(),
             chordal_deflection: self.chordal_deflection.map(NonNegativeReal::get),
             source_object: self.source_object.as_ref(),
@@ -45,7 +45,9 @@ impl Serialize for Tessellation {
             triangle_groups: &self.triangle_groups,
             texture_assignments: &self.texture_assignments,
             texture_coordinates: &self.texture_coordinates,
+            colors: self.colors.as_ref(),
             channels: &self.channels,
+            native_ref: self.native_ref.as_ref(),
         }
         .serialize(serializer)
     }

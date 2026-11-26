@@ -12,11 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry as IrCurveGeometry, DirectedParameterRange, FitTolerance,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry as IrSurfaceGeometry,
+    Curve, CurveGeometry as IrCurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry as IrSurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, LoopId, PcurveId, PointId, RegionId,
@@ -24,7 +26,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
     ParameterInterval, PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -235,20 +237,23 @@ struct Writer<'w, 's, 'c, 'k> {
 }
 
 impl Writer<'_, '_, '_, '_> {
-    fn derived(&mut self, id: &impl std::fmt::Display) {
-        self.sink
-            .annotations
-            .exactness(id.to_string(), Exactness::Derived);
+    fn derived(&mut self, key: impl Into<cadmpeg_ir::annotations::AnnotationKey>) {
+        self.sink.annotations.exactness(key, Exactness::Derived);
     }
 
-    fn located(&mut self, id: &impl std::fmt::Display, offset: usize, tag: &str) {
+    fn located(
+        &mut self,
+        key: impl Into<cadmpeg_ir::annotations::AnnotationKey> + Copy,
+        offset: usize,
+        tag: &str,
+    ) {
         self.sink.annotations.note(
-            id.to_string(),
+            key,
             self.sink.stream,
             cadmpeg_core::decode::u64_from_index(offset),
             Some(tag),
         );
-        self.derived(id);
+        self.derived(key);
     }
 
     fn write(&mut self) -> Result<Vec<BodyId>, CodecError> {
@@ -294,7 +299,7 @@ impl Writer<'_, '_, '_, '_> {
                 native_ref: None,
             });
             self.sink.annotations.note(
-                id.to_string(),
+                &id,
                 self.sink.stream,
                 cadmpeg_core::decode::u64_from_index(face.offset),
                 Some("0x13"),
@@ -304,7 +309,7 @@ impl Writer<'_, '_, '_, '_> {
             } else {
                 Exactness::Unknown
             };
-            self.sink.annotations.exactness(id.to_string(), exactness);
+            self.sink.annotations.exactness(&id, exactness);
             carriers.push(Some(carrier.unwrap_or(FaceCarrier {
                 geometry: SolvedSurfaceGeometry::Unknown { record: None },
                 transfer: PcurveTransfer::Omitted,
@@ -665,7 +670,7 @@ impl Writer<'_, '_, '_, '_> {
                 )),
                 tolerance: merged
                     .then(|| {
-                        PositiveReal::new(
+                        cadmpeg_ir::scalar::PositiveLength::new(
                             ENDPOINT_TOLERANCE * SPREAD_MARGIN * MILLIMETRES_PER_METRE,
                         )
                     })
@@ -674,9 +679,7 @@ impl Writer<'_, '_, '_, '_> {
             });
             self.located(&id, record.offset, "0x14");
             if merged {
-                self.sink
-                    .annotations
-                    .exactness(id.to_string(), Exactness::Inferred);
+                self.sink.annotations.exactness(&id, Exactness::Inferred);
             }
             vertices.extend([start, end]);
         }
@@ -720,13 +723,13 @@ impl Writer<'_, '_, '_, '_> {
             self.sink.geometry.vertices.push(Vertex {
                 id: id.clone(),
                 point: point_id,
-                tolerance: PositiveReal::new(tolerance),
+                tolerance: cadmpeg_ir::scalar::PositiveLength::new(tolerance),
                 native_ref: None,
             });
             self.derived(&id);
             self.sink
                 .annotations
-                .field_exactness(id.to_string(), "tolerance", Exactness::Inferred)
+                .field_exactness(&id, "tolerance", Exactness::Inferred)
                 .map_err(annotation_error)?;
         }
         Ok(())
@@ -890,7 +893,9 @@ impl Writer<'_, '_, '_, '_> {
                 };
                 let tolerance = if residual > ENDPOINT_TOLERANCE {
                     mismatched += 1;
-                    PositiveReal::new(residual * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE)
+                    cadmpeg_ir::scalar::PositiveLength::new(
+                        residual * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE,
+                    )
                 } else {
                     None
                 };
@@ -910,13 +915,13 @@ impl Writer<'_, '_, '_, '_> {
                 if !face_topology.side_derived {
                     self.sink
                         .annotations
-                        .field_exactness(face_id.to_string(), "sense", Exactness::Inferred)
+                        .field_exactness(&face_id, "sense", Exactness::Inferred)
                         .map_err(annotation_error)?;
                 }
                 if tolerance.is_some() {
                     self.sink
                         .annotations
-                        .field_exactness(face_id.to_string(), "tolerance", Exactness::Derived)
+                        .field_exactness(&face_id, "tolerance", Exactness::Derived)
                         .map_err(annotation_error)?;
                 }
                 ids.push(face_id);
@@ -1004,7 +1009,7 @@ impl Writer<'_, '_, '_, '_> {
         if fit.is_some() {
             self.sink
                 .annotations
-                .field_exactness(id.to_string(), "metadata", Exactness::Derived)
+                .field_exactness(&id, "metadata", Exactness::Derived)
                 .map_err(annotation_error)?;
         }
         let parameter_range = interval.and_then(|[start, end]| {
@@ -1104,12 +1109,11 @@ impl Writer<'_, '_, '_, '_> {
                 .shells
                 .push(Shell::new(shell_id.clone(), region_id.clone()));
             self.derived(&shell_id);
-            self.sink.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            self.sink.geometry.regions.push(Region::new(
+                region_id.clone(),
+                body.clone(),
+                vec![shell_id],
+            ));
             self.derived(&region_id);
             regions[usize::from(!closed[shell])].push(region_id);
         }
@@ -1141,6 +1145,7 @@ impl Writer<'_, '_, '_, '_> {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             self.derived(&id);
             bodies.push(id);

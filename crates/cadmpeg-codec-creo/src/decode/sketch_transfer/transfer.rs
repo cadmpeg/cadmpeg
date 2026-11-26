@@ -521,7 +521,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                id.as_str(),
+                &id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "solver_only_section_entity",
@@ -725,7 +725,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_dimension_constraint",
@@ -741,7 +741,7 @@ pub(in super::super) fn transfer_sketches(
         )? {
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_segment_radius_constraint",
@@ -819,7 +819,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(
                     definition.body_position(offset)?.source()?.get(),
@@ -839,7 +839,7 @@ pub(in super::super) fn transfer_sketches(
         {
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(
                     definition.body_position(offset)?.source()?.get(),
@@ -864,7 +864,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_solver_constraint",
@@ -877,7 +877,7 @@ pub(in super::super) fn transfer_sketches(
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
-            sketch_id.as_str(),
+            &sketch_id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(source_offset),
             if transform.is_some() {
@@ -906,7 +906,7 @@ pub(in super::super) fn transfer_sketches(
             };
             annotate(
                 annotations,
-                feature_id.as_str(),
+                &feature_id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(source_offset),
                 "section_sketch_feature",
@@ -918,13 +918,13 @@ pub(in super::super) fn transfer_sketches(
                 ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("section".to_owned()),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                             sketch_id.clone(),
@@ -989,7 +989,7 @@ fn emit_verhor_constraint(
     };
     annotate(
         annotations,
-        id.as_str(),
+        &id,
         "FeatDefs",
         cadmpeg_core::decode::u64_from_index(offset),
         "section_verhor_constraint",

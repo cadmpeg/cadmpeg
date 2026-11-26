@@ -83,7 +83,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct FiniteBinary32(f32);
+pub struct FiniteBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl FiniteBinary32 {
     /// Zero in source precision.
@@ -109,7 +109,7 @@ impl<'de> Deserialize<'de> for FiniteBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("FiniteBinary32 must be finite"))
     }
 }
@@ -139,7 +139,7 @@ impl From<FiniteBinary32> for FiniteReal {
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct UnitBinary32(f32);
+pub struct UnitBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl UnitBinary32 {
     /// Admit a binary32 fraction in the closed unit interval.
@@ -181,7 +181,7 @@ impl<'de> Deserialize<'de> for UnitBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("UnitBinary32 must be in [0, 1]"))
     }
 }
@@ -201,7 +201,18 @@ impl From<UnitBinary32> for f32 {
 }
 
 /// A positive value in a native signed 64-bit integer lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "i64", into = "i64")]
 pub struct PositiveI64(i64);
@@ -239,10 +250,10 @@ impl From<PositiveI64> for i64 {
 macro_rules! checked_scalar {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(f64);
+        pub struct $name(#[serde(serialize_with = "crate::math::serialize_one_zero")] f64);
         rewrite_scalar!($name);
 
         impl $name {
@@ -261,7 +272,7 @@ macro_rules! checked_scalar {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where D: serde::Deserializer<'de>,
             {
-                Self::new(f64::deserialize(deserializer)?)
+                Self::new(f64::deserialize(deserializer)? + 0.0)
                     .ok_or_else(|| serde::de::Error::custom($error))
             }
         }
@@ -1079,7 +1090,7 @@ impl crate::geometry::nurbs::KnotVector {
     }
 }
 
-impl crate::geometry::DirectedParameterRange {
+impl crate::geometry::procedural_curves::DirectedParameterRange {
     /// Return the directed endpoints as finite reals. The range admits only
     /// finite endpoints, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.
@@ -1100,7 +1111,7 @@ impl crate::geometry::RecordBounds {
     }
 }
 
-impl crate::features::FinitePoint3 {
+impl crate::features::geometry::FinitePoint3 {
     /// Return the coordinates as finite reals. The point admits only finite
     /// coordinates, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.
@@ -1115,7 +1126,7 @@ impl crate::features::FinitePoint3 {
     }
 }
 
-impl crate::features::FiniteVector3 {
+impl crate::features::geometry::FiniteVector3 {
     /// Return the components as finite reals. The vector admits only finite
     /// components, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.

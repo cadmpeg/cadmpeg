@@ -27,7 +27,14 @@ pub(super) fn check_tolerances(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             | None => {}
         }
     }
-    for definition in &index.ir.model.product_definitions {
+    check_definition_general_tolerances(index.ir, findings);
+}
+
+pub(super) fn check_definition_general_tolerances(
+    ir: &crate::document::CadIr,
+    findings: &mut Vec<Finding>,
+) {
+    for definition in &ir.model.product_definitions {
         if let Some(general) = &definition.general_tolerance {
             check_general_rule(definition.id.as_str(), general, findings);
         }
@@ -42,7 +49,10 @@ fn check_general_rule(entity: &str, general: &GeneralTolerance, findings: &mut V
         super::error(
             findings,
             entity,
-            format_args!("general tolerance states neither a linear nor an angular rule"),
+            crate::rule!(
+                "design.general-tolerance-states-neither-linear-nor",
+                "general tolerance states neither a linear nor an angular rule"
+            ),
         );
     }
     let linear = match &general.linear {
@@ -62,7 +72,8 @@ fn check_general_rule(entity: &str, general: &GeneralTolerance, findings: &mut V
                     super::error(
                         findings,
                         entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.general-tolerance-decimals-rule-holds-no",
                             "general tolerance's {rule} `by_decimals` rule holds no entry"
                         ),
                     );
@@ -77,7 +88,7 @@ fn check_general_rule(entity: &str, general: &GeneralTolerance, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!("design.general-tolerance-lower-deviation-not-below", 
                         "general tolerance's {rule} lower deviation {} is not below its upper deviation {}",
                         lower.get(),
                         upper.get()
@@ -107,14 +118,20 @@ fn check_designation(
         super::error(
             findings,
             entity,
-            format_args!("parameter's {what} designation {letters:?} is not capital letters only"),
+            crate::rule!(
+                "design.parameter-designation-not-capital-letters-only",
+                "parameter's {what} designation {letters:?} is not capital letters only"
+            ),
         );
     }
     if designation.grade.is_empty() {
         super::error(
             findings,
             entity,
-            format_args!("parameter's {what} designation states an empty grade"),
+            crate::rule!(
+                "design.parameter-designation-states-empty-grade",
+                "parameter's {what} designation states an empty grade"
+            ),
         );
     }
 }
@@ -174,14 +191,14 @@ fn check_general(
         Some(false) => super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!("design.parameter-tolerance-general-general-tolerance-states", 
                 "parameter's tolerance is `general`, but the general tolerance of {scope} states no entry for it"
             ),
         ),
         None => super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!("design.parameter-tolerance-general-states-no-general", 
                 "parameter's tolerance is `general`, but {scope} states no general tolerance rule for its quantity"
             ),
         ),

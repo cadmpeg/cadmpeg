@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::{
-    features::{
-        BodySelection, BodyTrimSide, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-        FeatureResultMembers, FeatureResultTopology, TrimBodyOperands,
-    },
-    ids::FeatureResultTopologyId,
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::evaluation::{
+    FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
 };
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, TrimBodyOperands};
+use cadmpeg_ir::ids::FeatureResultTopologyId;
 
 use super::{annotation, empty_data, TestResult};
 use crate::{
@@ -135,7 +136,7 @@ fn surface_trim_validation_requires_the_bounded_operands_and_native_side() -> Te
             .map(|identity| (identity.record_ordinal, identity.type_id.as_str()))
             .chain(std::iter::once((2, "00000000000000000000000000000000")))
         {
-            data.records.push(serde_json::from_value(serde_json::json!({
+            data.records.push(json::from_value(cadmpeg_core::json!({
                 "id":format!("inventor:rse:record#generated-{ordinal}"), "token":"generated", "ordinal":ordinal, "selector":0, "type_index":0,
                 "type_id":type_id, "payload_offset":0, "payload_len":0, "payload_sha256":"", "trailing_payload_len":0, "trailer_len":0, "trailer_sha256":""
             }))?);

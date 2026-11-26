@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{HistoricalRecordArchive, Record, Token};
+use super::{FastMap, HistoricalRecordArchive, Record, Token};
 use crate::history_records::AsmHistoricalTransition;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Slot-to-revision lookup abstraction so both `BTreeMap` (tests) and
+/// `FastMap` (production binder) share one implementation.
+pub(crate) trait SlotVersions {
+    fn revision_of(&self, slot: i64) -> Option<i64>;
+}
+
+impl SlotVersions for BTreeMap<i64, i64> {
+    #[inline]
+    fn revision_of(&self, slot: i64) -> Option<i64> {
+        self.get(&slot).copied()
+    }
+}
+
+impl SlotVersions for FastMap<i64, i64> {
+    #[inline]
+    fn revision_of(&self, slot: i64) -> Option<i64> {
+        self.get(&slot).copied()
+    }
+}
 
 /// Edge record chunks: start vertex, end vertex, coedge, and curve.
 const EDGE_START_VERTEX: usize = 3;
@@ -9,10 +29,10 @@ const EDGE_END_VERTEX: usize = 5;
 const EDGE_COEDGE: usize = 7;
 const EDGE_CURVE: usize = 8;
 
-pub(crate) fn unchanged(
+pub(crate) fn unchanged<V: SlotVersions>(
     transition: &AsmHistoricalTransition,
-    older: &BTreeMap<i64, i64>,
-    newer: &BTreeMap<i64, i64>,
+    older: &V,
+    newer: &V,
     archive: &HistoricalRecordArchive,
 ) -> bool {
     let topology = &transition.topology;
@@ -30,10 +50,10 @@ pub(crate) fn unchanged(
         &topology.pcurves,
         &topology.points,
     ];
-    let record = |versions: &BTreeMap<i64, i64>, slot: &i64| {
+    let record = |versions: &V, slot: &i64| {
         versions
-            .get(slot)
-            .and_then(|revision| archive.get(revision))
+            .revision_of(*slot)
+            .and_then(|revision| archive.get(&revision))
     };
     let same = |slot: &i64| {
         record(older, slot)
@@ -73,9 +93,9 @@ pub(crate) fn unchanged(
 /// null coedge reference, so no loop, face, shell, or solid uses it. The stable
 /// topology holds each one as a wire body, region, and shell on the edge's own
 /// slot. Returns `None` when the inserted topology is not exactly such a set.
-fn inserted_saved_free_edges(
+fn inserted_saved_free_edges<V: SlotVersions>(
     transition: &AsmHistoricalTransition,
-    newer: &BTreeMap<i64, i64>,
+    newer: &V,
     archive: &HistoricalRecordArchive,
 ) -> Option<BTreeSet<i64>> {
     let topology = &transition.topology;
@@ -86,7 +106,11 @@ fn inserted_saved_free_edges(
     {
         return None;
     }
-    let record = |slot: i64| newer.get(&slot).and_then(|revision| archive.get(revision));
+    let record = |slot: i64| {
+        newer
+            .revision_of(slot)
+            .and_then(|revision| archive.get(&revision))
+    };
     let mut vertices = BTreeSet::new();
     let mut curves = BTreeSet::new();
     for &slot in edges {

@@ -17,12 +17,16 @@ use cadmpeg_ir::design::feature::{
     Feature, FeatureDefinition, FeatureOperation, Link, OperationFamily, StoredOrigin,
 };
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
+use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
+use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureOperation as LegacyOperation,
-    FeatureTreeNodeRole, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -30,7 +34,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 mod parameters;
 
 /// The root definition of an NX part that states no assembly root.
-const PART_ROOT: &str = "nx:document:product-definition#root";
+pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
 
 /// Project the decoded NX history into `ir.design` as the design of
@@ -60,6 +64,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation: operation(feature)?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -80,6 +85,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
         active_arrangements,
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(container);
     design.features.extend(features);
@@ -91,6 +97,31 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     design.features.sort_by(|a, b| a.id.cmp(&b.id));
     design.arrangements.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The model fields [`project`] reads to build each design field.
+pub(super) const RESTATEMENT: Restatement = Restatement {
+    feature: feature_inputs,
+    parameter: parameters::inputs,
+};
+
+/// The model feature fields [`project`] reads to build `field`: the
+/// operation reads the definition, the stored outputs and the source tag.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
+        FeatureField::Definition => &[
+            ModelFeatureField::Definition,
+            ModelFeatureField::Outputs,
+            ModelFeatureField::SourceTag,
+        ],
+        FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
+        FeatureField::Name
+        | FeatureField::Placement
+        | FeatureField::Component
+        | FeatureField::DrivenBy => &[],
+    }
 }
 
 /// The root definition of the document: the one the placement attachment
@@ -135,8 +166,12 @@ fn is_history(feature: &LegacyFeature) -> bool {
     }
 }
 
-/// One ordered timeline of the history in construction order, with its one
-/// current state at the end, which holds every current body.
+/// One ordered timeline of the history in construction order. The decoder
+/// reads no current feature (part 11, entry B.96), so the rollback of a
+/// timeline with members is unstated and its one current state, at
+/// `After(Container(timeline))` (§5.3), holds every current body. A timeline
+/// with no member has no member to stand before: it is built through its end,
+/// and its current state is at its start.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -146,16 +181,17 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(id.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let (rollback, at) = if members.is_empty() {
+        (Some(Rollback::End), Position::Start(id.clone()))
+    } else {
+        (None, Position::After(Member::Container(id.clone())))
+    };
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     };
     let current = vec![CurrentState {
@@ -208,7 +244,7 @@ fn arrangements(
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("nx:{kind}"))
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("nx"), kind)
             .ok_or_else(|| CodecError::malformed("NX v11 operation kind is blank"))?,
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),

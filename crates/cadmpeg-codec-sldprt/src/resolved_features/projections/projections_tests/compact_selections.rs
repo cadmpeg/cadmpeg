@@ -9,20 +9,20 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind,
 };
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, FeatureDefinition, FeatureId, FeatureOperation,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use std::collections::BTreeMap;
 
 fn parameter_scalar_binding_fixture() -> (
-    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     Vec<cadmpeg_ir::features::Feature>,
     Vec<crate::records::FeatureHistory>,
     Vec<FeatureInputLane>,
 ) {
     use crate::records::{FeatureInputName, FeatureInputScalar, FeatureInputScalarRole};
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
 
     let mut feature = compact_edge_projection_feature();
     feature.native_ref = Some("native-feature".into());
@@ -37,7 +37,7 @@ fn parameter_scalar_binding_fixture() -> (
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -101,6 +101,7 @@ fn parameter_scalar_binding_fixture() -> (
             role: FeatureInputScalarRole::Native,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -120,14 +121,14 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
     bind_parameter_scalars(&mut parameters, &features, &histories, &lanes).expect("scalar binding");
     assert_eq!(parameters[0].native_ref.as_deref(), Some("native-scalar"));
     assert!(
-        matches!(parameters[0].value, Some(cadmpeg_ir::features::ParameterValue::Real(value))
+        matches!(parameters[0].value, Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value))
         if value.get() == 2.0)
     );
 }
 
 #[test]
 fn archive_length_class_types_a_raw_scalar_value_as_a_length() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
     // With no display number the decoder writes the raw SI value (`0.00635`);
     // the archive walk read that value in a `moLengthParameter_c`, so it is
     // 6.35 mm. Without the class it stays a plain real.
@@ -179,14 +180,15 @@ fn tied_object_names_bind_unowned_scalars_to_the_later_history_feature() {
         native_ref: Some(native.into()),
         ..features[0].clone()
     });
-    let parameters = features
-        .each_ref()
-        .map(|feature| cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint(format!("{}-parameter", feature.id))
-                .expect("identity grammar"),
-            owner: Some(feature.id.clone()),
-            ..parameters[0].clone()
-        });
+    let parameters =
+        features.each_ref().map(
+            |feature| cadmpeg_ir::features::parameters::DesignParameter {
+                id: cadmpeg_ir::features::ParameterId::mint(format!("{}-parameter", feature.id))
+                    .expect("identity grammar"),
+                owner: Some(feature.id.clone()),
+                ..parameters[0].clone()
+            },
+        );
     for _ in 0..32 {
         let mut bound = parameters.clone();
         bind_parameter_scalars(&mut bound, &features, &histories, &lanes).expect("scalar binding");
@@ -200,7 +202,7 @@ fn tied_object_names_bind_unowned_scalars_to_the_later_history_feature() {
 }
 
 fn display_relation_synthesis_fixture() -> (
-    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     Vec<cadmpeg_ir::features::Feature>,
     Vec<FeatureInputLane>,
 ) {
@@ -249,7 +251,8 @@ fn display_relation_synthesis_preserves_reference_parameter() {
 
 #[test]
 fn compact_surface_projection_binds_generated_thread_face_alias() {
-    use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, GeneratedFaceRef};
+    use cadmpeg_ir::features::datums::DatumPlaneReference;
+    use cadmpeg_ir::features::selections::{FaceSelection, GeneratedFaceRef};
     use cadmpeg_ir::scalar::Length;
 
     let mut thread = compact_edge_projection_feature();
@@ -303,7 +306,7 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
 #[test]
 fn compact_generated_edges_match_the_linear_repeat_check() {
     use crate::records::FeatureInputEdgeSelection;
-    use cadmpeg_ir::features::GeneratedEdgeRef;
+    use cadmpeg_ir::features::selections::GeneratedEdgeRef;
 
     fn linear(
         selections: &[&FeatureInputEdgeSelection],
@@ -352,6 +355,7 @@ fn compact_generated_edges_match_the_linear_repeat_check() {
                 references: Vec::new(),
                 producer_feature_refs: Vec::new(),
                 terminal_feature_ref: (next(32) != 0).then(|| format!("native-{}", next(4))),
+                mark_reference: false,
             })
             .collect::<Vec<_>>();
         let selections = selections.iter().collect::<Vec<_>>();
@@ -375,12 +379,12 @@ fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Fillet,
             }),
@@ -507,9 +511,277 @@ fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
         "consumer",
         &[],
         &HashMap::new(),
-        &mut cadmpeg_ir::features::DistinctMembers::default(),
+        &mut cadmpeg_ir::features::selections::DistinctMembers::default(),
     );
-    assert_eq!(selection, cadmpeg_ir::features::FaceSelection::Native(
+    assert_eq!(selection, cadmpeg_ir::features::selections::FaceSelection::Native(
         "sldprt:feature-input:draft-surface-vectors:sldprt:feature-input:surface-component-ids:7;sldprt:feature-input:surface-component-ids:9".into()
     ));
+}
+
+/// A path of four local ids, as an edge vector of `fillet` whose terminal
+/// feature is `extrude`.
+fn blend_edge_vector(
+    ordinal: u32,
+    path: [u32; 4],
+    mark_reference: bool,
+) -> crate::records::FeatureInputEdgeSelection {
+    crate::records::FeatureInputEdgeSelection {
+        id: format!("edge-{ordinal}"),
+        parent: "lane".into(),
+        ordinal,
+        offset: u64::from(ordinal) * 100,
+        object_name_ref: "name".into(),
+        feature_ref: "fillet".into(),
+        local_edge_ids: path.to_vec(),
+        components: path
+            .iter()
+            .map(|id| FeatureInputComponentPathEntry {
+                instance: Some(0x8118),
+                type_signature: [0; 12].into(),
+                local_id: Some(*id),
+            })
+            .collect(),
+        references: Vec::new(),
+        producer_feature_refs: vec!["extrude".into()],
+        terminal_feature_ref: Some("extrude".into()),
+        mark_reference,
+    }
+}
+
+/// A fillet over an extrusion, and the lane holding `vectors`.
+fn blend_edge_fixture(
+    vectors: Vec<crate::records::FeatureInputEdgeSelection>,
+) -> (Vec<cadmpeg_ir::features::Feature>, FeatureInputLane) {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
+
+    let mut fillet = compact_edge_projection_feature();
+    fillet
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: NonEmptyMembers::one(FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            }),
+        }));
+    let mut extrude = compact_edge_projection_feature();
+    extrude.id = FeatureId::mint("synthetic:test:id#extrude").expect("identity grammar");
+    extrude.native_ref = Some("extrude".into());
+    let mut lane = compact_body_projection_fixture().1;
+    lane.edge_selections = vectors;
+    (vec![fillet, extrude], lane)
+}
+
+fn blend_generated_paths(feature: &cadmpeg_ir::features::Feature) -> Vec<String> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
+
+    match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => groups
+            .iter()
+            .flat_map(|group| match &group.edges {
+                EdgeSelection::Generated { edges, .. } => edges
+                    .iter()
+                    .map(|edge| edge.local_id.as_str().to_owned())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn a_blend_selects_the_edges_outside_its_mark_record() {
+    // The mark record lists three edge references; the feature's own edge
+    // list holds the one edge it blends, written twice.
+    let (mut features, lane) = blend_edge_fixture(vec![
+        blend_edge_vector(0, [1, 4, 2, 3], true),
+        blend_edge_vector(1, [4, 2, 1, 0], true),
+        blend_edge_vector(2, [1, 2, 1, 4], true),
+        blend_edge_vector(3, [4, 2, 1, 0], false),
+        blend_edge_vector(4, [4, 2, 1, 0], false),
+    ]);
+    super::super::project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
+    assert_eq!(blend_generated_paths(&features[0]), ["4,2,1,0"]);
+}
+
+#[test]
+fn a_blend_with_no_edge_outside_its_mark_record_keeps_the_record_edges() {
+    let (mut features, lane) = blend_edge_fixture(vec![
+        blend_edge_vector(0, [1, 4, 2, 3], true),
+        blend_edge_vector(1, [4, 2, 1, 0], true),
+    ]);
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
+    assert_eq!(blend_generated_paths(&features[0]), ["1,4,2,3", "4,2,1,0"]);
+    let mut losses = Vec::new();
+    super::super::note_blend_edge_generators(
+        &features,
+        std::slice::from_ref(&lane),
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.blend-mark-references-assumed"),
+        "the substitution of the record's references is charged"
+    );
+}
+
+#[test]
+fn a_blend_with_an_edge_outside_its_mark_record_assumes_no_references() {
+    let (mut features, lane) = blend_edge_fixture(vec![
+        blend_edge_vector(0, [1, 4, 2, 3], true),
+        blend_edge_vector(1, [4, 2, 1, 0], false),
+    ]);
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
+    let mut losses = Vec::new();
+    super::super::note_blend_edge_generators(
+        &features,
+        std::slice::from_ref(&lane),
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "feature.blend-mark-references-assumed"));
+}
+
+#[test]
+fn a_blend_naming_edges_by_paths_charges_the_unstated_generator() {
+    let (mut features, lane) = blend_edge_fixture(vec![blend_edge_vector(0, [4, 2, 1, 0], false)]);
+    let mut losses = Vec::new();
+    super::super::note_blend_edge_generators(
+        &features,
+        &[],
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert!(losses.is_empty(), "an unresolved selection names no path");
+    super::super::project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
+    super::super::note_blend_edge_generators(
+        &features,
+        &[],
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.blend-edge-generator-unstated"
+    );
+}
+
+/// The lane of a blend over extrusion source 45: an end-face class declared
+/// inline at 100 and a side-face class at 200, then tagged identities.
+fn surface_class_lane(mut lane: FeatureInputLane) -> FeatureInputLane {
+    let class = |offset: u64, name: &str| crate::records::FeatureInputClass {
+        id: format!("class-{offset}"),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        name: name.into(),
+    };
+    let identity = |offset: u64, instance: Option<u16>, local: u32| {
+        crate::records::FeatureInputGeneratedSurfaceIdentity {
+            id: format!("identity-{offset}"),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset,
+            type_prefix: [0; 4].into(),
+            feature_source_id: 45.try_into().expect("source id"),
+            local_identity: local,
+            components: vec![FeatureInputComponentPathEntry {
+                instance,
+                type_signature: [0; 12].into(),
+                local_id: Some(local),
+            }],
+        }
+    };
+    lane.classes = vec![
+        class(100, "moEndFaceSurfIdRep_c"),
+        class(200, "moFromSktEntSurfIdRep_c"),
+    ];
+    lane.generated_surface_identities = vec![
+        identity(128, None, 0),
+        identity(231, None, 6),
+        identity(300, Some(0x814e), 4),
+        identity(320, Some(0x814e), 2),
+        identity(400, Some(0x814b), 1),
+    ];
+    lane
+}
+
+fn extrusion_history() -> crate::records::FeatureHistory {
+    crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "extrude".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: crate::records::FeatureSource::from_value(45),
+            ordinal: 0,
+            name: String::new(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }
+}
+
+#[test]
+fn a_blend_whose_path_faces_all_have_generators_charges_no_loss() {
+    use crate::resolved_features::side_generators::SideGenerators;
+
+    let mut vector = blend_edge_vector(0, [4, 2, 1, 0], false);
+    for (component, instance) in vector
+        .components
+        .iter_mut()
+        .zip([0x814e, 0x814e, 0x814b, 0x814b])
+    {
+        component.instance = Some(instance);
+    }
+    let (mut features, lane) = blend_edge_fixture(vec![vector]);
+    let lane = surface_class_lane(lane);
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
+    let histories = [extrusion_history()];
+    let settled = |generators: &SideGenerators| {
+        let mut losses = Vec::new();
+        super::super::note_blend_edge_generators(
+            &features,
+            std::slice::from_ref(&lane),
+            &histories,
+            generators,
+            &mut losses,
+        );
+        losses.len()
+    };
+    let entity = |name: &str| {
+        cadmpeg_ir::sketches::SketchEntityId::mint(format!("synthetic:test:id#{name}"))
+            .expect("identity grammar")
+    };
+    let both = SideGenerators::default()
+        .with_face(45, 4, entity("four"))
+        .with_face(45, 2, entity("two"));
+    assert_eq!(settled(&both), 0);
+    let one = SideGenerators::default().with_face(45, 4, entity("four"));
+    assert_eq!(settled(&one), 1);
 }

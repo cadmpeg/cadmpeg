@@ -3,6 +3,7 @@ use crate::design::selection::{
     Anchor, DatumPart, Members, PickTarget, Picked, Picks, PrincipalEntity, Selection, Witness,
 };
 use crate::report::{check::Check, Severity};
+use cadmpeg_core::serde_erase::json;
 
 fn picked(target: PickTarget) -> Picked {
     Picked {
@@ -21,7 +22,7 @@ fn consumer(pick: Picked) -> crate::features::Feature {
             origin: Some(origin()),
             direction: Some(direction()),
             source_settings: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:selection"),
+                crate::codec_name!("test:selection"),
                 NativeOption::Selection(Selection {
                     at: Anchor::Input,
                     picks: Picks::Named(Members::new(vec![pick]).unwrap()),
@@ -46,6 +47,7 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
         let region: crate::ids::RegionId = "test:witness:region#one".try_into().unwrap();
         let shell: crate::ids::ShellId = "test:witness:shell#one".try_into().unwrap();
         body.bodies.push(crate::topology::Body {
+            unstated: None,
             id: body_id.clone(),
             kind: crate::topology::BodyKind::General,
             transform: None,
@@ -54,12 +56,11 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
             visible: None,
             native_ref: None,
         });
-        body.regions.push(crate::topology::Region {
-            id: region.clone(),
-            body: body_id,
-            shells: vec![shell.clone()],
-            native_ref: None,
-        });
+        body.regions.push(crate::topology::Region::new(
+            region.clone(),
+            body_id,
+            vec![shell.clone()],
+        ));
         body.shells.push(crate::topology::Shell::with_free_vertex(
             shell,
             region,
@@ -136,7 +137,7 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
         let mut owner = feature(
             DatumAxisDraft {
                 native_options: std::collections::BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("test:length"),
+                    crate::codec_name!("test:length"),
                     NativeOption::Length(Dimension::Parameter(parameter.clone())),
                 )]),
                 ..Default::default()
@@ -158,24 +159,27 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
             definition.kind = Some(crate::products::ProductDefinitionKind::Part);
             ir.model.product_definitions.push(definition);
         }
-        ir.model.parameters.push(crate::features::DesignParameter {
-            product_definition: parameter_scope.map(id),
-            id: parameter,
-            owner: None,
-            ordinal: 0,
-            name: "Length".into(),
-            expression: "1 mm".into(),
-            display: None,
-            value: Some(crate::features::ParameterValue::Length(
-                crate::scalar::Length::new(1.0).unwrap(),
-            )),
-            dependencies: DistinctMembers::default(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        });
+        ir.model
+            .parameters
+            .push(crate::features::parameters::DesignParameter {
+                product_definition: parameter_scope.map(id),
+                id: parameter,
+                owner: None,
+                ordinal: 0,
+                name: "Length".into(),
+                expression: "1 mm".into(),
+                display: None,
+                value: Some(crate::features::parameters::ParameterValue::Length(
+                    crate::scalar::Length::new(1.0).unwrap(),
+                )),
+                dependencies: DistinctMembers::default(),
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
         let identity = owner.id.clone();
         ir.model.features.push(owner);
+        crate::examples::add_document_root(&mut ir);
         let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
         if valid {
             assert!(
@@ -224,7 +228,7 @@ fn datum_axis_datum_parts_match_the_selected_known_family() {
     ] {
         let operation = if family == 1 {
             FeatureOperation::DatumCoordinateSystem {
-                frame: crate::features::FeatureCoordinateFrame::new(
+                frame: crate::features::geometry::FeatureCoordinateFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -303,8 +307,8 @@ fn datum_axis_unresolved_point_part_keeps_its_cardinality_uncertainty() {
 
 #[test]
 fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive() {
-    let key = cadmpeg_core::nonblank_literal!("test:model:parameter#one");
-    let other = cadmpeg_core::nonblank_literal!("test:placed:parameter#one");
+    let key = crate::codec_name!("test:model:parameter#one");
+    let other = crate::codec_name!("test:placed:parameter#one");
     for equal_values in [false, true] {
         let draft = DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(
@@ -336,13 +340,13 @@ fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive(
     .unwrap();
     assert_eq!(axis.native_options().len(), 1);
     assert_eq!(axis.source_settings().len(), 1);
-    let axis: DatumAxis = serde_json::from_str(&serde_json::to_string(&axis).unwrap()).unwrap();
+    let axis: DatumAxis = serde_json::from_str(&json::to_string(&axis).unwrap()).unwrap();
     let replacements = std::collections::BTreeMap::from([(
         "test:model:parameter#one".to_owned(),
         "test:placed:parameter#one".to_owned(),
     )]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

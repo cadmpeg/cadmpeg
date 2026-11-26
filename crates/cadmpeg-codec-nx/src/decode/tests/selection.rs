@@ -3,11 +3,21 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::patterns::PatternKind;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::SketchFeatureBinding::Unresolved;
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+};
+
 use cadmpeg_core::decode::ResourceDimension;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::decode::tests::options_in;
+use crate::decode::tests::options_at;
 use crate::test_support::extract_streams;
 use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
@@ -57,7 +67,7 @@ use std::{collections::BTreeSet, io::Cursor};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -81,8 +91,10 @@ fn decode_emits_both_intersection_support_pcurves() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -104,8 +116,10 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -146,7 +160,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization,
         ..
@@ -206,7 +220,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -251,7 +265,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -273,7 +287,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let cross_branch = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(matches!(
         cross_branch.ir().geometry.procedural_curves[0].definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
         }
@@ -307,7 +321,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -363,7 +377,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             )
             .unwrap();
         let procedural = &result.ir().geometry.procedural_curves[0];
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
         } = procedural.definition()
@@ -396,7 +410,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
 
     assert!(matches!(
         result.ir().geometry.procedural_curves[0].definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection { .. }
     ));
     assert!(matches!(
         result
@@ -548,8 +562,8 @@ fn decode_preserves_primary_bspline_surface_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -573,8 +587,8 @@ fn decode_preserves_primary_bspline_curve_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -696,7 +710,7 @@ fn decode_tracks_extended_face_reference_shift() {
     assert_eq!(
         result.ir().geometry.faces[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.2)
     );
     assert_eq!(
@@ -721,7 +735,7 @@ fn decode_tracks_extended_edge_reference_shift() {
     assert_eq!(
         result.ir().geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.3)
     );
     assert_eq!(
@@ -747,7 +761,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(
         result.ir().geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.1)
     );
     assert_eq!(result.ir().geometry.points[0].position().get().x, 10.0);
@@ -1124,10 +1138,7 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
@@ -1138,10 +1149,7 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn container_only_does_not_decode_bounded_object_model_records() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
 
     assert_eq!(result.ir().entity_count(), 0);
@@ -1324,10 +1332,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
         NxCodec
             .decode(
                 &mut Cursor::new(file),
-                &options_in(
-                    DecodeMode::Salvage,
-                    cadmpeg_core::decode::DecodeDepth::Container,
-                ),
+                &options_at(cadmpeg_core::decode::DecodeDepth::Container),
             )
             .unwrap(),
     );
@@ -1352,10 +1357,9 @@ fn container_only_retains_typed_saved_toggle_payload() {
 #[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{
-        BooleanOp, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, UnresolvedFamily,
-    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::parameters::DesignConfiguration;
+    use cadmpeg_ir::features::ConfigurationId;
 
     let mut ir = CadIr::empty();
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
@@ -1371,12 +1375,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Native {
                     kind: kind.into(),
                     parameters: Default::default(),
-                }),
-            ),
+                },
+            )),
             native_ref: None,
         });
     }
@@ -1392,11 +1396,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-            }),
-        ),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch { sketch: Unresolved },
+        )),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1411,12 +1413,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-            }),
-        ),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::DeleteBody {
+                bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
+                mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
+            },
+        )),
         native_ref: None,
     });
     for (ordinal, definition) in [
@@ -1452,7 +1454,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -1468,13 +1470,13 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Block {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Block {
                 dimensions: None,
                 placement: None,
                 op: BooleanOp::Unresolved,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1489,11 +1491,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                    cadmpeg_ir::features::SweepMode::Unresolved {},
-                    cadmpeg_ir::features::SweepSection::Unresolved(None),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sweep {
+                shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
+                    cadmpeg_ir::features::sweeps::SweepMode::Unresolved {},
+                    cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
                     Vec::new(),
                 ),
 
@@ -1510,8 +1512,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
                 twist: None,
                 scale: None,
                 allow_multi_profile_faces: None,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     });
     ir.model.configurations.extend([
@@ -1602,10 +1604,6 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
 #[test]
 fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
-    };
-
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.extend([
@@ -1621,15 +1619,13 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                    position: cadmpeg_ir::features::FinitePoint3::new(
-                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
+                    position: FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
                     construction: None,
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
+                DistinctMembers::try_from(vec![body]).unwrap(),
             ),
             native_ref: None,
         },
@@ -1645,15 +1641,13 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                    position: cadmpeg_ir::features::FinitePoint3::new(
-                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::DatumPoint {
+                    position: FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
+                        .unwrap(),
                     construction: None,
-                }),
-            ),
+                },
+            )),
             native_ref: None,
         },
         Feature {
@@ -1668,12 +1662,12 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Native {
                     kind: "DELETE".into(),
                     parameters: Default::default(),
-                }),
-            ),
+                },
+            )),
             native_ref: None,
         },
         Feature {
@@ -1688,11 +1682,11 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumCoordinateSystem,
-                }),
-            ),
+                },
+            )),
             native_ref: None,
         },
         Feature {
@@ -1707,11 +1701,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-                }),
-            ),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Sketch { sketch: Unresolved },
+            )),
             native_ref: None,
         },
     ]);
@@ -1723,9 +1715,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
 
 #[test]
 fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.geometry.bodies[0].id.clone();
@@ -1742,15 +1732,15 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                        bodies: DistinctMembers::try_from(vec![body.clone()])
                             .expect("distinct bodies"),
                         native: "nx:segment-body-bindings".into(),
                     },
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+                DistinctMembers::try_from(vec![body.clone()]).unwrap(),
             ),
             native_ref: None,
         },
@@ -1766,12 +1756,12 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Native {
                     kind: "DELETE".into(),
                     parameters: Default::default(),
-                }),
-            ),
+                },
+            )),
             native_ref: None,
         },
     ]);
@@ -1792,9 +1782,6 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
 #[test]
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{
-        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
 
     let mut ir = CadIr::empty();
     let mut source_properties = std::collections::BTreeMap::new();
@@ -1818,12 +1805,12 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     });
 
@@ -1839,10 +1826,6 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
 
 #[test]
 fn design_intent_losses_accept_pattern_construction_without_body_reference() {
-    use cadmpeg_ir::features::{
-        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
-
     let feature = Feature {
         product_definition: None,
         id: FeatureId::mint("test:test:feature#pattern-construction").expect("identity grammar"),
@@ -1855,12 +1838,12 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1889,9 +1872,9 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
 
 #[test]
 fn design_intent_losses_accept_unbound_trim_surface_construction() {
-    use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PathRef, TrimRegion,
-    };
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::TrimRegion;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
@@ -1906,8 +1889,8 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::TrimSurface {
                 faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
                     "test:model:entity#face",
                 )
@@ -1917,8 +1900,8 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
                 )
                 .expect("identity grammar")]),
                 keep: TrimRegion::Inside,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     });
 
@@ -1939,10 +1922,6 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 
 #[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
-    use cadmpeg_ir::features::{
-        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
-
     let mut source_properties = std::collections::BTreeMap::new();
     source_properties.insert(
         "primary_body_reference".to_string(),
@@ -1964,12 +1943,12 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     };
 

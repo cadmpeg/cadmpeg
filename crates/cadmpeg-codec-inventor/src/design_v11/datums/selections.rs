@@ -4,7 +4,7 @@
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::selection::{Anchor, Members, OrderedSelection, PickTarget, Picked, Picks};
-use cadmpeg_ir::features::{EdgeSelection, FaceSelection, VertexSelection};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection, VertexSelection};
 
 fn selection(target: PickTarget, native: Option<NativeName>) -> Option<OrderedSelection> {
     Some(OrderedSelection {
@@ -32,7 +32,7 @@ fn native(text: &str) -> Option<OrderedSelection> {
     selection(
         PickTarget::Native { within: None },
         Some(NativeName {
-            codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+            codec: cadmpeg_ir::codec_id!("inventor"),
             value: NativeNameValue::Text(NonBlankString::new(text)?),
         }),
     )

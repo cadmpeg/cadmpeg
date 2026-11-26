@@ -7,6 +7,7 @@ use crate::records::topology::historical_context::{
     AsmFaceBoundary, DesignEdgeRecipeReferenceContext, DesignHistoricalFaceLoopContext,
     DesignHistoricalLoopBoundary, DesignHistoricalLoopCoedge,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::FaceId;
 
 const OPERAND_MESSAGE: &str =
@@ -62,7 +63,7 @@ fn native() -> crate::native::F3dNative {
     let mut result = state(7, 20);
     let preceding = state(6, 10);
     result.0.next_ref = Some(preceding.0.node_index);
-    let scope = serde_json::from_value(serde_json::json!({
+    let scope = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:scope#1811",
         "byte_offset": 0,
         "class_tag": "272",
@@ -83,7 +84,7 @@ fn native() -> crate::native::F3dNative {
         "paired_byte_offset": 200
     }))
     .unwrap();
-    let mut operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignEdgeOperand = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:edge-operand#1",
         "scope_record_index": 1811,
         "scope_reference_ordinal": 3,
@@ -146,7 +147,7 @@ fn findings(
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        super::super::validate_face_boundaries(&ctx, &mut findings, expected);
+        super::super::edge_operands::validate_face_boundaries(&ctx, &mut findings, expected);
         findings
             .into_iter()
             .map(|finding| (finding.message, finding.entity.unwrap_or_default()))

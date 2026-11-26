@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
+use crate::features::extents::ExtrudeDirection;
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::check::Check;
+use crate::scalar::{Angle, Length};
 use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 use crate::validate::validate_neutral;
 use crate::CadIr;
-use crate::{
-    features::ExtrudeDirection,
-    scalar::{Angle, Length},
-};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
@@ -774,7 +773,7 @@ fn point_symmetry_loci_must_match_their_entities() {
 fn sketch_constraint_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // The document holds the native namespace that the links name.
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let id =
         crate::sketches::SketchConstraintId::mint("synthetic:test:sketch-constraint#native-ref")
             .unwrap();
@@ -834,10 +833,11 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-operand#0")
         }));
-    let serialized = serde_json::to_string(&ir).unwrap();
-    let round_trip = CadIr::from_json(&serialized).unwrap();
+    let serialized = json::to_string(&ir.model.sketch_constraints).unwrap();
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        serde_json::from_str(&serialized).unwrap();
     assert!(matches!(
-        round_trip.model.sketch_constraints[0].definition.kind(),
+        round_trip[0].definition.kind(),
         crate::sketches::SketchConstraintDefinitionInput::Native {
             native_flags: Some(0x4000),
             ..
@@ -845,17 +845,17 @@ fn sketch_constraint_native_ref_must_resolve() {
     ));
     let crate::sketches::SketchConstraintDefinitionInput::Native {
         native_properties, ..
-    } = round_trip.model.sketch_constraints[0].definition.kind()
+    } = round_trip[0].definition.kind()
     else {
         unreachable!("test constraint is native")
     };
     assert_eq!(native_properties.get("mode").map(String::as_str), Some("7"));
     let mut without_properties = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
-    without_properties["model"]["sketch_constraints"][0]["definition"]
+    without_properties[0]["definition"]
         .as_object_mut()
         .unwrap()
         .remove("native_properties");
-    let error = CadIr::from_json(&serde_json::to_string(&without_properties).unwrap())
+    let error = json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
         .unwrap_err()
         .to_string();
     assert!(error.contains("native_properties"), "{error}");
@@ -863,10 +863,10 @@ fn sketch_constraint_native_ref_must_resolve() {
 
 #[test]
 fn sketch_feature_ownership_and_order_are_validated() {
-    use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use crate::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{PlanarProfileRef, ProfileRef};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::sketches::{Sketch, SketchId};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -891,17 +891,17 @@ fn sketch_feature_ownership_and_order_are_validated() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id.clone())),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane {},
+                start: crate::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -928,13 +928,13 @@ fn sketch_feature_ownership_and_order_are_validated() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
                 }),
@@ -955,10 +955,10 @@ fn sketch_feature_ownership_and_order_are_validated() {
 
 #[test]
 fn sketch_profile_subselections_are_bounds_checked() {
-    use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef, SketchProfileRegion,
-    };
+    use crate::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -983,17 +983,17 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane {},
+                start: crate::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -1075,13 +1075,13 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
             }),
@@ -1089,6 +1089,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
 
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -1107,7 +1108,8 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
 
 #[test]
 fn spatial_distance_validation_rejects_overflowed_squared_norms() {
-    use crate::features::{DesignParameter, ParameterId, ParameterValue};
+    use crate::features::parameters::{DesignParameter, ParameterValue};
+    use crate::features::ParameterId;
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
@@ -1148,7 +1150,7 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
         expression: "1 mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(1.0).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -1254,7 +1256,8 @@ fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
 
 #[test]
 fn diameter_constraints_check_the_bound_circular_radius() {
-    use crate::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use crate::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+    use crate::features::ParameterId;
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
         SketchConstraintId, SketchEntity, SketchEntityId, SketchId,
@@ -1295,7 +1298,7 @@ fn diameter_constraints_check_the_bound_circular_radius() {
         expression: String::new(),
         display: Some(DimensionDisplay::Diameter),
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,

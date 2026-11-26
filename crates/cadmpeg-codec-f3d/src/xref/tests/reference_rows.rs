@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 fn row(kind: &str, target: &str) -> Value {
     json!({
@@ -13,7 +15,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: Vec<Value>) -> Vec<u8> {
-    serde_json::to_vec(&json!({
+    json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],
@@ -34,8 +36,11 @@ fn reference_rows_preserve_types_and_source_ordinals() {
         ),
     ] {
         let bytes = table(kinds.iter().map(|kind| row(kind, "part.f3d")).collect());
-        let parsed =
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+        let parsed = crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes,
+        )
+        .unwrap();
         assert_eq!(
             parsed
                 .references
@@ -74,9 +79,11 @@ fn unknown_reference_type_refuses_the_whole_table() {
         vec!["DERIVED", "UNKNOWN", "XREF"],
     ] {
         let bytes = table(kinds.iter().map(|kind| row(kind, "part.f3d")).collect());
-        assert!(
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).is_err()
-        );
+        assert!(crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes
+        )
+        .is_err());
     }
 }
 
@@ -101,8 +108,10 @@ fn malformed_derived_rows_refuse_the_table() {
     }
     for invalid in cases {
         let bytes = table(vec![row("XREF", "child.f3d"), invalid]);
-        assert!(
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).is_err()
-        );
+        assert!(crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes
+        )
+        .is_err());
     }
 }

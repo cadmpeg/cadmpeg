@@ -2,10 +2,11 @@
 
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture, Layout, SectionFrame};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn pipe_source_binds_group_with_three_byte_flag_block() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(Config {
         group_flags: &[1, 0, 0],
         ..Default::default()
@@ -25,7 +26,7 @@ fn pipe_source_binds_group_with_three_byte_flag_block() {
 
 #[test]
 fn pipe_source_uses_structural_prefixes_and_canonical_owners() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for legacy in [false, true] {
         for hollow in [false, true] {
             for renumber in [false, true] {
@@ -75,7 +76,7 @@ fn pipe_source_uses_structural_prefixes_and_canonical_owners() {
 
 #[test]
 fn pipe_source_preserves_all_control_values_and_raw_bytes() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (values, hollow, operation) in [
         ([1.0, 0.0, 3.0, 0.2], true, 4),
         ([0.0, 1.0, 1.27, 0.0889], true, 4),
@@ -112,7 +113,7 @@ fn pipe_source_preserves_all_control_values_and_raw_bytes() {
 
 #[test]
 fn pipe_source_requires_the_complete_scalar_and_owner_grammars() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (offset, byte) in [
         (11, 1),
         (19, 0),
@@ -176,7 +177,7 @@ fn pipe_source_requires_the_complete_scalar_and_owner_grammars() {
 
 #[test]
 fn pipe_source_rejects_false_operation25_and_invalid_hollow() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for hollow in [2_u8, 255] {
         let mut fixture = Fixture::new(Config::default());
         fixture.bulk[21] = hollow;
@@ -198,7 +199,7 @@ fn pipe_source_rejects_false_operation25_and_invalid_hollow() {
 
 #[test]
 fn pipe_source_preserves_optional_point_versions_and_shifted_links() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for version in [2, 3] {
         for legacy in [false, true] {
             let fixture = Fixture::new(Config {
@@ -237,7 +238,7 @@ fn pipe_source_preserves_optional_point_versions_and_shifted_links() {
 
 #[test]
 fn pipe_source_rejects_duplicate_swapped_and_unclassified_references() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (ordinal, id) in [(0, 103_u32), (0, 200), (4, 100), (6, 500)] {
         let mut fixture = Fixture::new(Config::default());
         let at = fixture.table + 5 + 11 * ordinal;
@@ -252,7 +253,7 @@ fn pipe_source_rejects_duplicate_swapped_and_unclassified_references() {
 
 #[test]
 fn pipe_source_requires_semantic_types_and_exact_indexed_boundaries() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for old in [
         super::pipe::SCALAR_GUID,
         super::pipe::SCALAR_BASE,
@@ -315,7 +316,7 @@ fn prepend_indexed(fixture: &mut Fixture, mut prefix: Vec<u8>) {
 
 #[test]
 fn pipe_source_rejects_a_second_complete_same_id_scalar() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut fixture = Fixture::new(Config::default());
     let start = fixture.lane_starts[0];
     let duplicate = fixture.bulk[start..start + 122].to_vec();
@@ -329,7 +330,7 @@ fn pipe_source_rejects_a_second_complete_same_id_scalar() {
 
 #[test]
 fn pipe_source_ignores_the_first_unreferenced_scalar_decoy() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut fixture = Fixture::new(Config::default());
     let start = fixture.lane_starts[0];
     let mut decoy = fixture.bulk[start..start + 122].to_vec();
@@ -346,7 +347,7 @@ fn pipe_source_ignores_the_first_unreferenced_scalar_decoy() {
 
 #[test]
 fn pipe_source_rejects_an_extra_indexed_unclassified_reference() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(Config {
         layout: Layout {
             extra_reference: true,
@@ -364,7 +365,7 @@ fn pipe_source_rejects_an_extra_indexed_unclassified_reference() {
 
 #[test]
 fn pipe_source_rejects_foreign_group_owner_and_nonzero_role_low_word() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for owner in [false, true] {
         let mut fixture = Fixture::new(Config::default());
         let start =
@@ -390,7 +391,7 @@ fn pipe_source_rejects_foreign_group_owner_and_nonzero_role_low_word() {
 
 #[test]
 fn pipe_source_requires_both_point_links_and_the_single_input() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for mutation in 0..4 {
         let mut fixture = Fixture::new(Config {
             point_version: Some(2),
@@ -427,7 +428,7 @@ fn pipe_source_requires_both_point_links_and_the_single_input() {
 
 #[test]
 fn pipe_source_rejects_consistent_foreign_scalar_owners_and_reversed_groups() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut fixture = Fixture::new(Config::default());
     for relative in [25, 68, 93] {
         let at = fixture.lane_starts[0] + relative;
@@ -511,7 +512,7 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
     ];
     for (encoded, hollow, operation, operation_at) in controls {
         let raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>> =
-            serde_json::from_value(serde_json::json!(encoded)).unwrap();
+            json::from_value(cadmpeg_core::json!(encoded)).unwrap();
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&raw);
         let actual = super::exact_pipe_prefix(&bytes, 17).unwrap();
@@ -555,7 +556,7 @@ fn decoded_section(
     config: Config,
 ) -> Option<crate::records::feature::path_features::DesignPipeSection> {
     let native = Fixture::new(config)
-        .decode(&cadmpeg_test_support::service_decode_context())
+        .decode(&cadmpeg_core::decode::test_support::service_decode_context())
         .unwrap();
     let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
         panic!("complete Pipe source")
@@ -647,7 +648,7 @@ fn pipe_source_needs_the_whole_section_frame_before_the_table() {
         ..Default::default()
     });
     let native = fixture
-        .decode(&cadmpeg_test_support::service_decode_context())
+        .decode(&cadmpeg_core::decode::test_support::service_decode_context())
         .unwrap();
     let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
         panic!("complete Pipe source")

@@ -1,6 +1,6 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::FeatureObjectNames;
+use super::scalars::{value_only_value_offset, FeatureObjectNames};
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
@@ -291,8 +291,11 @@ pub(crate) fn enrich_history_parameters<'a>(
 }
 
 /// Infer a length unit from the owning operation and its native display role.
-/// Move Face stores `D1` as distance. A standard fillet placeholder such as
-/// `R0` also identifies a radius; variable fillets use indexed radii instead.
+/// A dimension that its feature's role makes a length (an extrude depth, an
+/// offset plane distance, a linear pattern spacing, a Move Face distance;
+/// `native_parameter_is_length`) stores metres, as the parameter bound to it
+/// does. A standard fillet placeholder such as `R0` also identifies a
+/// radius; variable fillets use indexed radii instead.
 fn scalar_unit_from_feature_parameter(
     feature: &crate::records::Feature,
     name: &str,
@@ -302,13 +305,11 @@ fn scalar_unit_from_feature_parameter(
     {
         return Some(ScalarUnit::Length);
     }
-    if name == "D1"
-        && crate::classification::classify(feature)
-            == Some(crate::classification::FeatureClass::MoveFace)
-        && feature.properties.get("Mode").is_some_and(|mode| {
-            mode.eq_ignore_ascii_case("Offset") || mode.eq_ignore_ascii_case("Translate")
-        })
-    {
+    if crate::history::parameters::native_parameter_is_length(
+        feature,
+        name,
+        feature.parameters.get(name).map(String::as_str),
+    ) {
         return Some(ScalarUnit::Length);
     }
     let expression = feature.parameters.get(name)?;
@@ -338,9 +339,9 @@ pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) 
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
-    (payload.get(header_offset..header_offset + VALUE_ONLY_SCALAR_HEADER.len())
-        == Some(VALUE_ONLY_SCALAR_HEADER))
-    .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())
+    let header_end = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
+    (payload.get(header_offset..header_end) == Some(VALUE_ONLY_SCALAR_HEADER))
+        .then(|| value_only_value_offset(payload, header_end))
 }
 
 fn native_scalar_matches_discrete_parameter(
@@ -350,10 +351,10 @@ fn native_scalar_matches_discrete_parameter(
     value: f64,
 ) -> bool {
     match crate::history::parameters::parse_native_parameter_literal(feature, name, expression) {
-        Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(expected)) => {
             crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
         }
-        Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Boolean(expected)) => {
             value == if expected { 1.0 } else { 0.0 }
         }
         _ => true,
@@ -365,7 +366,7 @@ pub(crate) fn sync_changed_feature_scalars(
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     for lane in lanes {
         let names_by_id = lane

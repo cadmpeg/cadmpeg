@@ -12,7 +12,7 @@ publish = false
 
 [dependencies]
 cadmpeg-core = { workspace = true, features = ["test-support"] }
-cadmpeg-ir = { workspace = true, features = ["examples"] }
+cadmpeg-ir.workspace = true
 serde.workspace = true
 regex.workspace = true
 serde_json.workspace = true
@@ -21,7 +21,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 cadmpeg-derive.workspace = true
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

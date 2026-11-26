@@ -3,6 +3,7 @@
 use super::*;
 use crate::feature::coil::{definition_matches, CLASS_ID};
 use crate::feature::tests::{test_feature, test_label};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestResult {
@@ -14,16 +15,16 @@ fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestR
     )?;
     for (marker, count) in [(2, 19), (2, 20), (2, 21), (8, 20)] {
         let source = test_feature(0, count, &[]);
-        let mut wire = serde_json::to_value(&source)?;
-        wire["properties"]["marker"] = serde_json::json!(marker);
+        let mut wire = json::to_value(&source)?;
+        wire["properties"]["marker"] = cadmpeg_core::json!(marker);
         if marker == 8 {
-            wire["properties"]["metadata"]["width"] = serde_json::json!("u16");
+            wire["properties"]["metadata"]["width"] = cadmpeg_core::json!("u16");
         }
-        let source: crate::feature::PmDcFeature = serde_json::from_value(wire)?;
+        let source: crate::feature::PmDcFeature = json::from_value(wire)?;
         let label = test_label(0, 1, CLASS_ID, &[]);
         let mut data = empty_data();
         for identity in [&source.identity, &label.identity] {
-            data.records.push(serde_json::from_value(serde_json::json!({
+            data.records.push(json::from_value(cadmpeg_core::json!({
                 "id": format!("inventor:rse:record#{}-{}", identity.segment_token, identity.record_ordinal),
                 "token": identity.segment_token.as_str(), "ordinal": identity.record_ordinal,
                 "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
@@ -61,8 +62,8 @@ fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestR
         ));
         feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::History,
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             },
         ));
         ir.model.features = vec![feature];
@@ -115,9 +116,10 @@ fn coil_validation_keeps_ambiguous_labels_native_and_rejects_invented_parameters
 
 #[test]
 fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
-    use cadmpeg_ir::features::{
+    use cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame;
+    use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
+    use cadmpeg_ir::features::sweeps::{
         CoilConstruction, CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement,
-        FeatureUnitPlaneFrame, SolidFeatureResult,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength, PositiveLength, PositiveReal};

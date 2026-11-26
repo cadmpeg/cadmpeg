@@ -439,7 +439,7 @@ fn project_rows(
         let tag = format!("saved_configuration_property:{}", row.kind);
         crate::annotations::note(
             annotations,
-            id.as_str(),
+            &id,
             owner.source_stream(),
             0,
             &tag,
@@ -461,7 +461,8 @@ fn project_rows(
             id,
             target: AttributeTarget::Document.into(),
             name: ATTRIBUTE_NAME.into(),
-            values,
+            values: values.into_iter().map(Some).collect(),
+            native_ref: None,
         });
     }
     Ok(())

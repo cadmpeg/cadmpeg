@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
-use crate::design::decode::operands::bind_lost_edge_groups;
-use crate::design::decode::operands::parse_construction_operand_identity;
-use crate::design::decode::operands::parse_entity_selection_operand;
+use crate::design::decode::operands::construction_groups::bind_lost_edge_groups;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_identity;
+use crate::design::decode::operands::entity_selections::parse_entity_selection_operand;
 
-use crate::design::decode::operands::parse_sketch_profile;
-use crate::design::decode::operands::parse_sketch_profile_region_selection;
+use crate::design::decode::operands::sketch_profiles::parse_sketch_profile;
+use crate::design::decode::operands::sketch_profiles::parse_sketch_profile_region_selection;
 
 use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::DesignEntityHeader;
@@ -119,6 +120,52 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         compact.paired_byte_offset(),
         u64_from_index(compact_paired_at)
     );
+
+    let legacy_header = DesignRecordHeader {
+        class_tag: "272".to_owned().try_into().unwrap(),
+        ..compact_header.clone()
+    };
+    let mut legacy_bytes = bytes[..tail_at].to_vec();
+    legacy_bytes[4..7].copy_from_slice(b"272");
+    legacy_bytes[22..26].copy_from_slice(&102u32.to_le_bytes());
+    compact_tail[27..31].copy_from_slice(&0x41u32.to_le_bytes());
+    compact_tail[58..62].copy_from_slice(&180u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&compact_tail);
+    indexed_header(&mut legacy_bytes, *b"262", 100);
+    indexed_header(&mut legacy_bytes, *b"328", 101);
+    indexed_header(&mut legacy_bytes, *b"432", 102);
+    legacy_bytes.extend_from_slice(&[0; 10]);
+    crate::test_support::push_marked_reference(&mut legacy_bytes, 100);
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut legacy_bytes, 81, [0, 1, 1]);
+    legacy_bytes.push(1);
+    legacy_bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut legacy_bytes, *b"299", 102);
+    indexed_header(&mut legacy_bytes, *b"256", 180);
+    let marker_payload = legacy_bytes.len();
+    legacy_bytes.extend_from_slice(&[0; 18]);
+    indexed_header(&mut legacy_bytes, *b"256", 181);
+
+    let parse_legacy = |bytes: &[u8], owner| {
+        super::super::sketch_profiles::parse_sketch_profile_frame(
+            bytes,
+            "f3d:Design/BulkStream.dat",
+            1,
+            &legacy_header,
+            std::slice::from_ref(&entity),
+            Some((owner, &std::cell::OnceCell::new())),
+        )
+    };
+    let legacy = parse_legacy(&legacy_bytes, 777).expect("legacy Sketch-profile operand");
+    assert_eq!(legacy.entity_id, entity.entity_id);
+    let selection = legacy.region_selection.expect("nested selected region");
+    assert_eq!(selection.record_index, 102);
+    assert_eq!(selection.regions[0].members[0].curve_primary_id.get(), 81);
+    assert!(parse_legacy(&legacy_bytes, 778).is_none());
+    legacy_bytes[marker_payload] = 1;
+    assert!(parse_legacy(&legacy_bytes, 777).is_none());
 
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
@@ -677,15 +724,15 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = json::to_value(&operand).unwrap();
     assert!(wire.get("serialization_form").is_none());
     let mut form_one = bytes.clone();
     form_one[serialization_form_at..serialization_form_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let form_one_operand = parse_entity_selection_operand(&form_one, &group, 0, &record).unwrap();
-    let wire = serde_json::to_value(&form_one_operand).unwrap();
+    let wire = json::to_value(&form_one_operand).unwrap();
     assert_eq!(wire["serialization_form"], 1);
     let restored: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-        serde_json::from_value(wire).unwrap();
+        json::from_value(wire).unwrap();
     assert_eq!(restored, form_one_operand);
     form_one[serialization_form_at..serialization_form_at + 4].copy_from_slice(&2u32.to_le_bytes());
     assert!(parse_entity_selection_operand(&form_one, &group, 0, &record).is_none());
@@ -728,16 +775,18 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         crate::records::feature::scope::DesignFeatureKind::Fillet,
         80,
     );
-    assert!(crate::design::decode::operands::parse_edge_operand(
-        &ctx,
-        &later_recipe,
-        &crate::design::test_support::indexed_record_offsets_for_test(&later_recipe),
-        &scope,
-        (0, &record),
-        &[recipe],
-        Some(u64_from_index(later_recipe.len())),
-    )
-    .is_none());
+    assert!(
+        crate::design::decode::operands::recipe_operands::parse_edge_operand(
+            &ctx,
+            &later_recipe,
+            &crate::design::test_support::indexed_record_offsets_for_test(&later_recipe),
+            &scope,
+            (0, &record),
+            &[recipe],
+            Some(u64_from_index(later_recipe.len())),
+        )
+        .is_none()
+    );
 
     for successor in [99u32, 114, u32::MAX] {
         let mut independent_successor = bytes[..next_at].to_vec();
@@ -748,9 +797,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         assert_eq!(operand.secondary().unwrap().identity.value, 183);
         assert_eq!(operand.next_record_index(), successor);
         assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
-        let wire = serde_json::to_vec(&operand).unwrap();
+        let wire = json::to_vec(&operand).unwrap();
         let restored: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
-            serde_json::from_slice(&wire).unwrap();
+            json::from_slice(&wire).unwrap();
         assert_eq!(restored, operand);
     }
 
@@ -1102,7 +1151,7 @@ fn sketch_profile_region_member_retains_its_secondary_curve_identity() {
         Some(247)
     );
     let round_trip: crate::records::topology::sketch_profile::DesignSketchProfileRegionMember =
-        serde_json::from_value(serde_json::to_value(parsed).unwrap()).unwrap();
+        json::from_value(json::to_value(parsed).unwrap()).unwrap();
     assert_eq!(&round_trip, parsed);
     for zero in [
         member::ZERO_WORD_AFTER_PRIMARY,
@@ -1148,7 +1197,7 @@ fn compact_sketch_point_identity(sketch: u64, point: u64) -> Vec<u8> {
 
 #[test]
 fn a_nested_selection_reads_the_compact_sketch_point_identity() {
-    let frame = super::super::parse_entity_selection_frame_with(
+    let frame = super::super::entity_selections::parse_entity_selection_frame_with(
         &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
         100,
         0,
@@ -1171,14 +1220,16 @@ fn a_nested_selection_reads_the_compact_sketch_point_identity() {
     let mut short = compact_sketch_point_identity(265, 110);
     short.truncate(22);
     for identity in [nonzero_prefix, short] {
-        assert!(super::super::parse_entity_selection_frame_with(
-            &nested_selection_with_identity(&identity),
-            100,
-            0,
-            "369",
-            true,
-        )
-        .is_none());
+        assert!(
+            super::super::entity_selections::parse_entity_selection_frame_with(
+                &nested_selection_with_identity(&identity),
+                100,
+                0,
+                "369",
+                true,
+            )
+            .is_none()
+        );
     }
 }
 
@@ -1187,7 +1238,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     use crate::records::topology::entity_selection::{
         DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
     };
-    let frame = super::super::parse_entity_selection_frame_with(
+    let frame = super::super::entity_selections::parse_entity_selection_frame_with(
         &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
         100,
         0,
@@ -1224,20 +1275,22 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     assert_eq!(operand.secondary(), frame.secondary);
     assert_eq!(operand.next_record_index(), 104);
     assert_eq!(operand.next_byte_offset(), 266);
-    let wire = serde_json::to_value(&operand).unwrap();
-    let reloaded: DesignEntitySelectionOperand = serde_json::from_value(wire).unwrap();
+    let wire = json::to_value(&operand).unwrap();
+    let reloaded: DesignEntitySelectionOperand = json::from_value(wire).unwrap();
     assert_eq!(reloaded, operand);
 }
 
 #[test]
 fn only_a_loft_point_member_admits_the_compact_sketch_point_identity() {
-    assert!(super::super::parse_entity_selection_frame(
-        &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
-        100,
-        0,
-        "369",
-    )
-    .is_none());
+    assert!(
+        super::super::entity_selections::parse_entity_selection_frame(
+            &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
+            100,
+            0,
+            "369",
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -1309,10 +1362,8 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
         planar_z_noise: None,
         tail_marker: None,
     };
-    assert!(!super::super::entity_selection_matches_curve(
-        &point, &curve
-    ));
-    assert!(super::super::entity_selection_matches_curve(&pair, &curve));
+    assert!(!super::super::entity_selections::entity_selection_matches_curve(&point, &curve));
+    assert!(super::super::entity_selections::entity_selection_matches_curve(&pair, &curve));
 }
 
 #[test]
@@ -1357,11 +1408,11 @@ fn sketch_region_companion_closes_before_a_later_face_recipe() {
         record_index: None,
     };
     crate::test_support::with_decode_context(|ctx| {
-        assert!(operands::parse_face_operand(
+        assert!(operands::face_operand_frames::parse_face_operand(
             ctx,
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            operands::FaceOperandFrame {
+            operands::face_operand_frames::FaceOperandFrame {
                 scope: &scope,
                 scope_reference_ordinal: 0,
                 group_ownership: None,

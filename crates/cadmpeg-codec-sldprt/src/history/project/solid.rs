@@ -4,14 +4,13 @@
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        holes::{HoleBottom, HoleConstruction, HoleKind},
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
-    },
-    scalar::{NonZeroLength, PositiveLength},
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::holes::{HoleBottom, HoleConstruction, HoleKind};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{FaceSelection, VertexSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 use std::collections::HashMap;
 
 use crate::history::classify::{extrude_feature_op, is_legacy_history_extrusion, source_depth};
@@ -50,9 +49,8 @@ pub(super) fn project_extrude(
         .or_else(|| legacy_history_join.then_some(BooleanOp::Join))
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
-        let mut values = feature.parameters.values();
-        let sole = values.next().filter(|_| values.next().is_none())?;
-        parse_positive_length_mm(sole).or_else(|| parse_positive_dimension_length_mm(sole))
+        crate::history::literals::sole_length_parameter(&feature.parameters)
+            .map(|(_, length)| length)
     };
     let legacy_length = || {
         source_depth
@@ -182,16 +180,28 @@ pub(super) fn project_extrude(
     )?;
     let direction = match feature.properties.get("Direction") {
         Some(value) => {
-            let vector =
-                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)?;
-            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            let vector = parse_vector3(value)
+                .and_then(cadmpeg_ir::features::geometry::FeatureDirection3::new)?;
+            cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                 vector,
                 source: None,
             }
         }
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        // The end-spec reversal flag is the travel of a one-sided extrusion
+        // that adds material (sldprt.md §2). A cut keeps the normal, as the
+        // flag does not give its side, and a two-direction extrusion keeps it
+        // until its end caps confirm the reversal
+        // (`extrude_direction::retain_contradicted_directions`). An operation
+        // that binds later settles in `extrude_direction::settle_reversal`.
+        None if crate::history::extrude_direction::reversal_flag(&feature.properties)
+            && !matches!(op, BooleanOp::Cut | BooleanOp::Intersect)
+            && matches!(extent, ExtrudeExtent::OneSided { .. }) =>
+        {
+            cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+        }
+        None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
     };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
+    if matches!(direction, cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
     {
         return None;
     }
@@ -287,7 +297,7 @@ pub(super) fn project_hole(
             .and_then(|(position, direction)| {
                 Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position,
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(direction)?,
                 }])
             }),
         shape,
@@ -806,9 +816,10 @@ fn explicit_second_termination(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
 
     fn feature(second: Option<&str>) -> Feature {
-        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+        let mut feature: Feature = json::from_value(cadmpeg_core::json!({
             "id":"feature", "parent":"history", "ordinal":0,
             "name":"Extrude", "kind":"Extrude", "xml_tag":"Extrusion",
             "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm", "Draft":"1deg"},

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Established sketch relations in the v11 operand vocabulary.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::design::construction::ScalarDimension;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::ops::sketch::{
     DistanceAxis, Operand, Planar, RadialMeasure, SketchConstraint, SketchRelation,
 };
+use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::sketches::{
     SketchConstraint as LegacyConstraint, SketchConstraintDefinitionInput as Kind,
     SketchCoordinateAxis, SketchEntityId, SketchLocus,
@@ -23,24 +26,102 @@ fn locus(value: &SketchLocus) -> Option<Operand<Planar>> {
     }
 }
 
-pub(super) fn project(source: &LegacyConstraint) -> SketchConstraint<Planar> {
-    SketchConstraint {
+pub(super) fn project(
+    source: &LegacyConstraint,
+    kinds: &BTreeMap<cadmpeg_ir::features::ParameterId, cadmpeg_ir::design::units::ValueKind>,
+) -> Result<SketchConstraint<Planar>, cadmpeg_core::CodecError> {
+    let mut native_options = BTreeMap::new();
+    if let Some(value) = source.orientation {
+        native_options.insert(
+            cadmpeg_ir::codec_name!("inventor:orientation"),
+            NativeOption::Integer(Dimension::Literal(i64::from(value))),
+        );
+    }
+    if let Kind::Native {
+        native_state,
+        native_flags,
+        native_properties,
+        operands,
+        ..
+    } = source.definition.kind()
+    {
+        for (name, value) in [
+            (cadmpeg_ir::codec_name!("inventor:state"), native_state),
+            (cadmpeg_ir::codec_name!("inventor:flags"), native_flags),
+        ] {
+            if let Some(value) = value {
+                let text = cadmpeg_core::text::NonBlankString::new(value.to_string()).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("Inventor integer text is blank"),
+                )?;
+                native_options.insert(name, NativeOption::Text(Dimension::Literal(text)));
+            }
+        }
+        for (name, text) in [
+            (
+                cadmpeg_ir::codec_name!("inventor:properties"),
+                json::to_string(native_properties),
+            ),
+            (
+                cadmpeg_ir::codec_name!("inventor:operands"),
+                json::to_string(operands),
+            ),
+        ] {
+            let text =
+                text.map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let text = cadmpeg_core::text::NonBlankString::new(text).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Inventor native relation text is blank")
+            })?;
+            native_options.insert(name, NativeOption::Text(Dimension::Literal(text)));
+        }
+    }
+    if relation(source.definition.kind(), kinds).is_none() {
+        let text = cadmpeg_ir::hash::finite_json::to_canonical_json_string(&source.definition)
+            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+        native_options.insert(
+            cadmpeg_ir::codec_name!("inventor:relation"),
+            NativeOption::Text(Dimension::Literal(
+                cadmpeg_core::text::NonBlankString::new(text).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("Inventor relation text is blank")
+                })?,
+            )),
+        );
+    }
+    Ok(SketchConstraint {
         id: source.id.clone(),
         sketch: source.sketch.clone(),
-        relation: relation(source.definition.kind()).unwrap_or_else(|| SketchRelation::Native {
-            kind: cadmpeg_core::nonblank_literal!("inventor:sketch_constraint"),
-            operands: Vec::new(),
-            values: Vec::new(),
+        relation: relation(source.definition.kind(), kinds).unwrap_or_else(|| {
+            SketchRelation::Native {
+                kind: cadmpeg_core::nonblank_literal!("inventor:sketch_constraint"),
+                operands: Vec::new(),
+                values: Vec::new(),
+            }
         }),
         name: source.name.clone(),
         active: source.active.map(Dimension::Literal),
-        native_options: BTreeMap::default(),
+        native_options,
         source_settings: BTreeMap::default(),
         native_ref: source.native_ref.clone(),
-    }
+    })
 }
 
-fn relation(kind: &Kind) -> Option<SketchRelation<Planar>> {
+pub(super) fn loss(
+    source: &LegacyConstraint,
+    kinds: &BTreeMap<cadmpeg_ir::features::ParameterId, cadmpeg_ir::design::units::ValueKind>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    relation(source.definition.kind(), kinds)
+        .is_none()
+        .then(|| {
+            crate::loss::InventorLossCode::SketchDesignConstraintNative.note(format!(
+                "Sketch constraint {} retains its relation operands in native options.",
+                source.id
+            ))
+        })
+}
+
+fn relation(
+    kind: &Kind,
+    kinds: &BTreeMap<cadmpeg_ir::features::ParameterId, cadmpeg_ir::design::units::ValueKind>,
+) -> Option<SketchRelation<Planar>> {
     Some(match kind {
         Kind::Coincident { entities } if entities.len() == 2 => SketchRelation::Coincident {
             a: entity(&entities[0]),
@@ -163,11 +244,30 @@ fn relation(kind: &Kind) -> Option<SketchRelation<Planar>> {
         Kind::Native {
             native_kind,
             entities,
+            parameter,
             ..
         } => SketchRelation::Native {
             kind: native_kind.clone(),
             operands: entities.iter().map(entity).collect(),
-            values: Vec::new(),
+            values: match parameter {
+                None => Vec::new(),
+                Some(id) => {
+                    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+                    let value = match kinds.get(id)? {
+                        ValueKind::Quantity(quantity) if *quantity == Quantity::LENGTH => {
+                            ScalarDimension::Length(Dimension::Parameter(id.clone()))
+                        }
+                        ValueKind::Quantity(quantity) if *quantity == Quantity::ANGLE => {
+                            ScalarDimension::Angle(Dimension::Parameter(id.clone()))
+                        }
+                        ValueKind::Quantity(quantity) if *quantity == Quantity::REAL => {
+                            ScalarDimension::Ratio(Dimension::Parameter(id.clone()))
+                        }
+                        _ => return None,
+                    };
+                    vec![value]
+                }
+            },
         },
         _ => return None,
     })

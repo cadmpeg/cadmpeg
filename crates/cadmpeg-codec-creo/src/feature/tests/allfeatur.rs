@@ -401,7 +401,7 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+            if matches!(group.edges, cadmpeg_ir::features::selections::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
@@ -584,13 +584,13 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(records[0].fields().unwrap()["lo_subtype"], 1);
     assert_eq!(
         records[0].fields().unwrap()["operands"],
-        serde_json::json!([null, 0, 0])
+        cadmpeg_core::json!([null, 0, 0])
     );
     assert_eq!(records[0].fields().unwrap()["lo_type"], 2);
     assert_eq!(records[1].fields().unwrap()["lo_subtype"], 3);
     assert_eq!(
         records[1].fields().unwrap()["operands"],
-        serde_json::json!([4, 1, null])
+        cadmpeg_core::json!([4, 1, null])
     );
     assert_eq!(records[1].fields().unwrap()["lo_type"], 5);
     assert_annotation(
@@ -690,7 +690,7 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
+            if matches!(&group.edges, cadmpeg_ir::features::selections::EdgeSelection::Native(selection)
                 if selection == "creo:allfeatur:replay_edgs_affected#4:9")
                 && group.radius.is_unresolved())
     ));

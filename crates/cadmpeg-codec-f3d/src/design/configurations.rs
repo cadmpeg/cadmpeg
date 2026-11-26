@@ -8,7 +8,9 @@ use crate::records::configuration::table::{ConfigurationRow, ConfiguredValue};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, HashSet};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::GivenUpPart;
+use std::collections::BTreeMap;
 
 mod json;
 
@@ -29,10 +31,13 @@ pub(crate) struct DecodedConfigurations {
 }
 
 /// Decode every JSON design-configuration table and rule entry, and attach the
-/// active row of the Design root record to its table document.
+/// active row of the Design root record to its table document. An entry that
+/// does not decode is given up as an archive-entry part into `given_up`.
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
     for entry in scan
@@ -41,31 +46,18 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
-        let serde_json::Value::Object(payload) = payload else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration JSON must be an object: {}",
-                entry.name
-            )));
-        };
-        let kind = if entry.name.ends_with(".dsgcfgrule") {
-            DesignConfigurationKind::Rule
-        } else {
-            DesignConfigurationKind::Table
-        };
-        documents.push(DesignConfiguration::try_new(
-            entry.name.clone(),
-            kind,
-            payload,
-        )?);
-    }
-    let mut names = HashSet::new();
-    for document in &documents {
-        if !names.insert(document.entry_name().as_str()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D configuration identity: {}",
-                document.entry_name()
-            )));
+        match decode_configuration_document(ctx, &entry.name, bytes) {
+            Ok(document) => documents.push(document),
+            Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
+            Err(error) => {
+                losses.push(
+                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
+                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
+                        entry.name
+                    )),
+                );
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+            }
         }
     }
     let roots = crate::design::decode::configuration_root::decode_configuration_roots(scan)?;
@@ -74,6 +66,25 @@ pub(crate) fn decode_configurations(
         documents,
         unbound_roots,
     })
+}
+
+fn decode_configuration_document(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    bytes: &[u8],
+) -> Result<DesignConfiguration, CodecError> {
+    let payload = json::parse_configuration_payload(ctx, name, bytes)?;
+    let serde_json::Value::Object(payload) = payload else {
+        return Err(CodecError::malformed(
+            "F3D configuration JSON must be an object",
+        ));
+    };
+    let kind = if name.ends_with(".dsgcfgrule") {
+        DesignConfigurationKind::Rule
+    } else {
+        DesignConfigurationKind::Table
+    };
+    DesignConfiguration::try_new(name.to_owned(), kind, payload)
 }
 
 /// Attach the active row of the one root record to its table document, and
@@ -97,7 +108,7 @@ fn attach_roots(
 
 /// The table document that holds `table_id`; with no such document, the only
 /// table document.
-fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
+pub(crate) fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
     let table_documents = || {
         documents
             .iter()
@@ -120,7 +131,7 @@ pub(crate) struct ConfigurationTargets<'a> {
     pub(crate) parameters: &'a [crate::records::parameters::DesignParameter],
     pub(crate) owners: &'a [crate::records::parameters::DesignParameterOwner],
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
-    pub(crate) neutral_parameters: &'a [cadmpeg_ir::features::DesignParameter],
+    pub(crate) neutral_parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
     pub(crate) neutral_features: &'a [cadmpeg_ir::features::Feature],
 }
 
@@ -184,6 +195,33 @@ impl ConfigurationTargets<'_> {
             .iter()
             .find(|feature| feature.id == id)
     }
+
+    /// The value of neutral parameter `id` whose evaluation in database
+    /// units is `evaluated`, typed as the parameter's own value.
+    fn parameter_value(
+        &self,
+        id: &cadmpeg_ir::features::ParameterId,
+        evaluated: FiniteReal,
+    ) -> Option<cadmpeg_ir::features::parameters::ParameterValue> {
+        use cadmpeg_ir::features::parameters::ParameterValue;
+        use cadmpeg_ir::scalar::{Angle, Length};
+
+        let parameter = self
+            .neutral_parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)?;
+        match parameter.value.as_ref()? {
+            ParameterValue::Length(_) => {
+                Length::new(evaluated.get() * super::feature_project::DESIGN_LENGTH_TO_MILLIMETRE)
+                    .map(ParameterValue::Length)
+            }
+            ParameterValue::Angle(_) => Angle::new(evaluated.get()).map(ParameterValue::Angle),
+            ParameterValue::Real(_) => Some(ParameterValue::Real(evaluated)),
+            ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_) => {
+                None
+            }
+        }
+    }
 }
 
 /// Project the rows of the one populated table into the neutral configuration
@@ -192,7 +230,7 @@ impl ConfigurationTargets<'_> {
 pub(crate) fn project_configurations(
     native: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
     let mut populated = native.iter().flat_map(|document| {
         document
             .tables()
@@ -249,10 +287,10 @@ fn project_row(
     ordinal: u32,
     active: bool,
     targets: &ConfigurationTargets<'_>,
-) -> Result<cadmpeg_ir::features::DesignConfiguration, CodecError> {
-    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState};
+) -> Result<cadmpeg_ir::features::parameters::DesignConfiguration, CodecError> {
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
 
-    let mut configuration = cadmpeg_ir::features::DesignConfiguration {
+    let mut configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(document.entry_name(), &row.id),
         ordinal,
         active,
@@ -267,7 +305,7 @@ fn project_row(
         native_ref: Some(document.id()),
     };
     for cell in &row.cells {
-        let (parameter, expression) = match &cell.value {
+        let (parameter, expression, evaluated) = match &cell.value {
             ConfiguredValue::Property { key, text } => {
                 let key = configuration_property_key("property:", key)?;
                 configuration.properties.insert(key, text.clone());
@@ -281,7 +319,8 @@ fn project_row(
                     Some(feature) => {
                         let evaluation = if *computed {
                             ConfigurationEvaluation::Active {
-                                outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(
+                                ),
                             }
                         } else {
                             ConfigurationEvaluation::Suppressed {}
@@ -307,14 +346,25 @@ fn project_row(
             ConfiguredValue::Parameter {
                 record_index,
                 expression,
-            } => (targets.parameter(*record_index, None), expression),
+                value,
+            } => (targets.parameter(*record_index, None), expression, *value),
             ConfiguredValue::OwnedParameter {
                 owner_record_index,
                 expression,
-            } => (targets.owned_parameter(*owner_record_index), expression),
+                value,
+            } => (
+                targets.owned_parameter(*owner_record_index),
+                expression,
+                *value,
+            ),
         };
         match parameter {
             Some(parameter) => {
+                if let Some(value) = targets.parameter_value(&parameter, evaluated) {
+                    configuration
+                        .parameter_values
+                        .insert(parameter.clone(), value);
+                }
                 configuration
                     .parameter_overrides
                     .insert(parameter, expression.clone());
@@ -337,7 +387,7 @@ fn project_row(
 /// gained a row, so that row records the assumption in a property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
-    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -382,7 +432,7 @@ pub(crate) fn reconcile_active_configurations(
 /// Suppressed states of the active configuration inferred from the current
 /// feature state while a suppression column of that row names no feature.
 pub(crate) fn inferred_configuration_suppression_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -392,7 +442,7 @@ pub(crate) fn inferred_configuration_suppression_count(
 }
 
 pub(crate) fn unresolved_configuration_parameter_override_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -402,7 +452,7 @@ pub(crate) fn unresolved_configuration_parameter_override_count(
 }
 
 pub(crate) fn unresolved_configuration_suppressed_feature_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -413,7 +463,7 @@ pub(crate) fn unresolved_configuration_suppressed_feature_count(
 
 pub(crate) fn unresolved_configuration_rule_count(
     native: &[DesignConfiguration],
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     native
         .iter()

@@ -152,7 +152,6 @@
         "appearance_bindings": [],
         "appearances": [],
         "articulations": [],
-        "assembly_joints": [],
         "assets": [
           {
             "content": {
@@ -167,16 +166,10 @@
         ],
         "attributes": [],
         "colliders": [],
-        "configurations": [],
         "declared_measures": [],
         "drawings": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "mass_properties": [],
         "occurrences": [],
-        "parameters": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
@@ -194,24 +187,15 @@
             "kind": "part",
             "occurrences": [],
             "representations": [],
-            "sketches": [],
             "storage": {
               "document": {},
               "kind": "file"
-            },
-            "tessellations": []
+            }
           }
         ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
         "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "tessellations": [],
         "view_presentations": []
       },
@@ -347,8 +331,7 @@
             "value": {
               "code": "topology.graph-not-reconstructed",
               "kind": "topology_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Graph construction used the primary input bytes. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
@@ -360,8 +343,7 @@
             "value": {
               "code": "source.kernel-dialect-unverified",
               "kind": "source_dialect_unverified",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The Parasolid stream at stream@178 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
@@ -488,6 +470,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "cf67593c1f7f06d78a68a50988b47ecbf4efb89fcdc17ef44a57913ec868ea35",
       "file_digests": {},
       "retained_records": {
@@ -611,8 +595,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "strict_floor": "warning"
+            "namespace": "nx"
           }
         },
         "message": "The Parasolid stream at stream@178 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",

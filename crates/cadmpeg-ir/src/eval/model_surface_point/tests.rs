@@ -2,12 +2,13 @@
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::{model_surface_point_by_id, EvaluationFailure};
 use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::surface_payloads::{
     AxisRevolutionSurfaceConstruction, LinearSweepSurfaceConstruction, OffsetSurfaceConstruction,
 };
 use crate::geometry::{
-    Curve, CurveGeometry, LegacyExtensionFlags, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, LegacyExtensionFlags, ProceduralSurface, SolvedCurveGeometry, Surface,
+    SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::index::ModelIndex;
@@ -106,7 +107,7 @@ fn indexed_surface_points_preserve_cacheless_construction_geometry() {
         let geometry = &ir.geometry.surfaces[0].geometry;
         let index = ModelIndex::build(&ir);
         for (u, v) in [(0.0, 0.25), (0.25, 0.75), (0.9, 1.0)] {
-            let point = crate::eval::model_surface_point_in_index(
+            let point = crate::eval::model_surface_point(
                 EvaluationAdmission::Standard,
                 &index,
                 geometry,
@@ -131,7 +132,7 @@ fn indexed_surface_points_reject_missing_constructions() {
     ir.geometry.procedural_surfaces.remove(0);
     let index = ModelIndex::build(&ir);
     assert_eq!(
-        crate::eval::model_surface_point_in_index(
+        crate::eval::model_surface_point(
             EvaluationAdmission::Standard,
             &index,
             &ir.geometry.surfaces[0].geometry,
@@ -157,7 +158,7 @@ fn indexed_surface_points_keep_the_first_construction_with_an_identity() {
         None,
     ));
     let index = ModelIndex::build(&ir);
-    let point = crate::eval::model_surface_point_in_index(
+    let point = crate::eval::model_surface_point(
         EvaluationAdmission::Standard,
         &index,
         &ir.geometry.surfaces[0].geometry,

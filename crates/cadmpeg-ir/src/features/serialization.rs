@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Borrowed wire projections for features, their metadata and memberships,
-//! and sweep sections.
+//! Borrowed wire projections for features and their metadata and memberships.
 
 use std::collections::BTreeMap;
 
-use super::{
-    CoilPlacement, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEquationCurve, FeatureId, FeatureResultMembers, PlanarProfileRef, SelectionReference,
-    SketchFeatureBinding, SweepSection,
-};
+use super::{Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding};
+use crate::features::evaluation::FeatureResultMembers;
+use crate::features::geometry::FeatureEquationCurve;
+use crate::features::selections::{DistinctMembers, SelectionReference};
+use crate::features::sweeps::CoilPlacement;
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::math::{Point3, Vector3};
 use crate::sketches::SketchId;
@@ -19,27 +18,27 @@ use serde::{Serialize, Serializer};
 #[derive(Serialize)]
 pub(crate) struct FeatureWriteWire<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    product_definition: &'a Option<ProductDefinitionId>,
-    id: &'a FeatureId,
-    ordinal: u64,
+    pub(crate) product_definition: &'a Option<ProductDefinitionId>,
+    pub(crate) id: &'a FeatureId,
+    pub(crate) ordinal: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: &'a Option<String>,
+    pub(crate) name: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    suppressed: &'a Option<bool>,
+    pub(crate) suppressed: &'a Option<bool>,
     /// Regeneration predecessor of a feature that has no tree parent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    regeneration_parent: Option<&'a FeatureId>,
-    dependencies: &'a DistinctMembers<FeatureId>,
-    source_properties: &'a BTreeMap<NonBlankString, String>,
+    pub(crate) regeneration_parent: Option<&'a FeatureId>,
+    pub(crate) dependencies: &'a DistinctMembers<FeatureId>,
+    pub(crate) source_properties: &'a BTreeMap<NonBlankString, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source_tag: &'a Option<String>,
+    pub(crate) source_tag: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source_text: &'a Option<String>,
-    source_content: &'a FeatureContent,
-    outputs: &'a Vec<BodyId>,
-    definition: &'a FeatureDefinition,
+    pub(crate) source_text: &'a Option<String>,
+    pub(crate) source_content: &'a FeatureContent,
+    pub(crate) outputs: &'a Vec<BodyId>,
+    pub(crate) definition: &'a FeatureDefinition,
     #[serde(skip_serializing_if = "Option::is_none")]
-    native_ref: &'a Option<String>,
+    pub(crate) native_ref: &'a Option<String>,
 }
 
 impl<'a> FeatureWriteWire<'a> {
@@ -67,12 +66,23 @@ impl<'a> FeatureWriteWire<'a> {
     }
 }
 
+impl Feature {
+    fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        FeatureWriteWire::standalone(self).serialize(serializer)
+    }
+}
+
 impl Serialize for Feature {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        FeatureWriteWire::standalone(self).serialize(serializer)
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
     }
 }
 
@@ -164,27 +174,6 @@ impl Serialize for CoilPlacement {
                 radial: frame.v_axis().into(),
             },
             Self::Native { native_ref } => Wire::Native { native_ref },
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<G: Serialize> Serialize for SweepSection<G> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-        enum SectionWire<'a, G> {
-            #[serde(rename = "unresolved")]
-            Unnamed,
-            Unresolved(&'a String),
-            Profile(&'a PlanarProfileRef),
-            Generated(&'a G),
-        }
-        match self {
-            Self::Unresolved(None) => SectionWire::Unnamed,
-            Self::Unresolved(Some(native)) => SectionWire::Unresolved(native),
-            Self::Profile(profile) => SectionWire::Profile(profile),
-            Self::Generated(generated) => SectionWire::Generated(generated),
         }
         .serialize(serializer)
     }

@@ -6,7 +6,7 @@ type ScopedEdgeTableOutput = Option<(Vec<EdgeRow>, Vec<usize>, usize)>;
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
@@ -18,7 +18,7 @@ use crate::families::standard::topology::{
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
 use std::collections::{HashMap, HashSet};

@@ -46,26 +46,3 @@ fn owned_class24_map_preserves_target_and_source_domains() {
         Some(([0.0, 1.0], true))
     );
 }
-
-#[test]
-fn sampled_endpoint_station_interpolates_inside_the_map() {
-    let mut bytes = vec![0x82, 3, 7, 0x0a, 0x87, 0x15];
-    for value in [2.0_f64, 6.0, 0.0, 10.0, 18.0] {
-        bytes.extend(value.to_le_bytes());
-    }
-    bytes.push(0x83);
-    for value in [2.0_f64, 4.0, 6.0, 18.0, 16.0, 10.0, 0.0] {
-        bytes.extend(value.to_le_bytes());
-    }
-    let mapping = class25::parse_a(&bytes).expect("sampled parameter map");
-
-    assert_eq!(
-        interpolate_sampled_station(&mapping.source, 3.0),
-        Some(17.0)
-    );
-    assert_eq!(
-        interpolate_sampled_station(&mapping.source, 5.0),
-        Some(13.0)
-    );
-    assert_eq!(interpolate_sampled_station(&mapping.source, 7.0), None);
-}

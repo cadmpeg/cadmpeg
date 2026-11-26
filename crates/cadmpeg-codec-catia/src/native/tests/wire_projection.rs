@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource admission for native wire views built during binary decode.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn entity_reference_borrowed_wire_preserves_json_bytes() {
     for reference in [
@@ -14,8 +16,8 @@ fn entity_reference_borrowed_wire_preserves_json_bytes() {
     ] {
         let owned: crate::native::CatiaEntityReferenceWire = reference.clone().into();
         assert_eq!(
-            serde_json::to_vec(&reference).expect("borrowed reference JSON"),
-            serde_json::to_vec(&owned).expect("owned reference JSON")
+            json::to_vec(&reference).expect("borrowed reference JSON"),
+            json::to_vec(&owned).expect("owned reference JSON")
         );
     }
 }
@@ -39,7 +41,7 @@ fn entity_reference_retained_limit_refuses_json_record() {
         reference: &reference,
     };
     let arena_name = "entity_references";
-    let json_len = serde_json::to_vec(&record).expect("reference JSON").len();
+    let json_len = json::to_vec(&record).expect("reference JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -77,8 +79,8 @@ fn signature_cohort_borrowed_wire_preserves_json_bytes() {
     let cohort = signature_cohort();
     let owned: crate::native::CatiaReferenceSignatureCohortWire = cohort.clone().into();
     assert_eq!(
-        serde_json::to_vec(&cohort).expect("borrowed cohort JSON"),
-        serde_json::to_vec(&owned).expect("owned cohort JSON")
+        json::to_vec(&cohort).expect("borrowed cohort JSON"),
+        json::to_vec(&owned).expect("owned cohort JSON")
     );
 }
 
@@ -86,7 +88,7 @@ fn signature_cohort_borrowed_wire_preserves_json_bytes() {
 fn signature_cohort_retained_limit_refuses_json_record() {
     let cohort = signature_cohort();
     let arena_name = "reference_signature_cohorts";
-    let json_len = serde_json::to_vec(&cohort).expect("cohort JSON").len();
+    let json_len = json::to_vec(&cohort).expect("cohort JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -118,8 +120,8 @@ fn object_record_reference_borrowed_wire_preserves_json_bytes() {
     let reference = object_record_reference();
     let owned: crate::native::CatiaObjectRecordReferenceWire = reference.clone().into();
     assert_eq!(
-        serde_json::to_vec(&reference).expect("borrowed record reference JSON"),
-        serde_json::to_vec(&owned).expect("owned record reference JSON")
+        json::to_vec(&reference).expect("borrowed record reference JSON"),
+        json::to_vec(&owned).expect("owned record reference JSON")
     );
 }
 
@@ -138,9 +140,7 @@ fn object_record_reference_retained_limit_refuses_json_record() {
         reference: &reference,
     };
     let arena_name = "object_record_references";
-    let json_len = serde_json::to_vec(&record)
-        .expect("record reference JSON")
-        .len();
+    let json_len = json::to_vec(&record).expect("record reference JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -173,7 +173,10 @@ fn e5_edge_wire_views_keep_null_unresolved_and_allocation_fields() {
     let mut owned = cadmpeg_ir::NativeNamespace::default();
     native
         .clone()
-        .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+        .store_owned(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut owned,
+        )
         .expect("store owned source operands");
     assert_eq!(borrowed, owned);
     assert_eq!(
@@ -183,7 +186,7 @@ fn e5_edge_wire_views_keep_null_unresolved_and_allocation_fields() {
     let rows: Vec<serde_json::Value> = owned.arena_as("e5_edges").expect("typed wire view");
     assert_eq!(
         rows,
-        [serde_json::json!({
+        [cadmpeg_core::json!({
             "id":"catia:e5:edge-use#0", "byte_offset":0, "byte_len":20,
             "record_id":7, "object_references":[0,10,16,14,15],
             "allocation_terminal":{"raw_byte":34,"value":8,"encoding":"selector2"}

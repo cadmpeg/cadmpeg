@@ -9,9 +9,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::geometry::{
-    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -59,6 +58,7 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let scoped = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
@@ -430,7 +430,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .geometry
         .faces
         .iter()
-        .all(|face| face.loops.len() == 1));
+        .all(|face| face.loops.stated().count() == 1));
     assert!(decoded
         .ir()
         .geometry
@@ -867,8 +867,9 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                     decoded.ir().geometry.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
-            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-                construction.definition()
+            let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+                definition_payload,
+            ) = construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
@@ -914,8 +915,9 @@ fn decode_standard_transfers_exact_offset_construction() {
     let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -978,8 +980,9 @@ fn decode_standard_transfers_construction_use_offset() {
     let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -1026,7 +1029,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         &surface.geometry,
         SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");
@@ -1090,6 +1093,7 @@ fn population_scope_prefixes_rewritten_body_ids() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let admitted = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
@@ -1137,8 +1141,10 @@ fn copying_a_revolution_procedure_preserves_it() {
     let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
         crate::families::b5::transfer::ResolvedRevolutionSurface {
             directrix,
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite origin"),
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .expect("finite origin"),
             axis_direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("unit axis"),
             angular_interval: [0.0, 1.0],

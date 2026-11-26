@@ -9,9 +9,11 @@ use crate::records::identity::Located;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::{
-    AngularTermination, FaceSelection, FeatureDefinition, FeatureOperation, RevolveExtent,
-};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const SIDE_ONE: u32 = 102;
 const SIDE_TWO: u32 = 103;
@@ -53,7 +55,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -79,7 +81,7 @@ fn group(
 }
 
 fn axis() -> DesignEdgeOperand {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:edge-operand#201",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,
@@ -123,7 +125,7 @@ fn extent(
 ) -> Option<RevolveExtent> {
     let axis = axis();
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-        super::super::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             scope,
             groups,
             std::slice::from_ref(&axis),

@@ -8,7 +8,8 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use cadmpeg_ir::unknown::part::{dropped_with, record_given_up};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
@@ -17,9 +18,21 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BodyTrimSide, BooleanOp};
+use cadmpeg_ir::features::parameters::DesignConfiguration;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureSourceContent, ParameterId,
+};
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -27,16 +40,6 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{
-    features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId,
-        DesignConfiguration, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId,
-        PlanarProfileRef, ProfileRef, TreeChildren,
-    },
-    scalar::{Angle, FiniteReal, Length},
-};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod assembly_occurrences;
@@ -274,13 +277,27 @@ pub(super) fn attach(
         Ok(()) => Ok(()),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
+            let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
-            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
-                "Native object-model attachment failed: {error}. Decoded geometry and \
-                 topology are kept. None of the attachment's features, sketches, parameters, \
-                 configurations, appearances, attributes, display tessellations, native \
-                 records, or container passthrough records are kept."
-            )));
+            let attachment = cadmpeg_ir::ids::Identity::compose(
+                &cadmpeg_ir::identity_namespace!("nx", "container", "object-model"),
+                0_u64,
+            );
+            losses.extend(record_given_up(
+                attachment.clone(),
+                NxLossCode::NativeAttachmentFailed.note(format!(
+                    "Native object-model attachment failed: {error}. Decoded geometry and \
+                     topology are kept. None of the attachment's features, sketches, \
+                     parameters, configurations, appearances, attributes, display \
+                     tessellations, native records, or container passthrough records are kept."
+                )),
+            ));
+            for record in attached {
+                losses.push(dropped_with(
+                    cadmpeg_ir::ids::Identity::new(record)?,
+                    attachment.clone(),
+                ));
+            }
             Ok(())
         }
     }
@@ -376,6 +393,27 @@ impl AttachSnapshot {
         }
     }
 
+    /// The ids of the native and retained records that the attachment added
+    /// since the capture.
+    fn attached_records(&self, ir: &CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+        fn native_ids(ir: &CadIr) -> impl Iterator<Item = &str> {
+            ir.native
+                .namespace("nx")
+                .into_iter()
+                .flat_map(|namespace| namespace.arenas().values().flatten())
+                .map(cadmpeg_ir::native::NativeRecord::id)
+        }
+        let (kept, added) = unknowns.split_at(self.unknowns.min(unknowns.len()));
+        let held = native_ids(&self.document)
+            .chain(kept.iter().map(|unknown| unknown.id().as_str()))
+            .collect::<BTreeSet<_>>();
+        native_ids(ir)
+            .chain(added.iter().map(|unknown| unknown.id().as_str()))
+            .filter(|id| !held.contains(id))
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
     fn restore(
         self,
         ir: &mut CadIr,
@@ -409,13 +447,7 @@ fn attach_records(
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     assembly_occurrences::attach(ctx, ir, model, losses)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
-            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
-             {} of its object records were kept without a stable identity.",
-            section.source_entry,
-            crate::native::om::MAX_STABLE_GRAPH_WORK,
-            section.records
-        )));
+        losses.push(section.loss());
     }
     if model.display_jt.arithmetic_lane_work_bounded {
         losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
@@ -453,17 +485,26 @@ fn attach_records(
         },
         losses,
     )?;
-    for (tessellation, source_offset) in display_jt_tessellations {
+    for (tessellation, source_offset, color) in display_jt_tessellations {
         annotations.note(
-            tessellation.id.as_str(),
+            &tessellation.id,
             &annotation_stream,
             source_offset,
             Some("DISPLAY_JT_TESSELLATION"),
         );
-        annotations.exactness(tessellation.id.as_str(), Exactness::Derived);
+        annotations.exactness(&tessellation.id, Exactness::Derived);
+        if let Some(color) = color {
+            attach_display_jt_color(
+                ir,
+                annotations,
+                &annotation_stream,
+                (tessellation.id.as_str(), source_offset),
+                color,
+            )?;
+        }
         ir.model.tessellations.push(tessellation);
     }
-    NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
+    NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations)?;
     attach_material_texture_assets(
         ctx,
         ir,
@@ -523,7 +564,7 @@ fn attach_records(
         &topology_attribute_index,
         annotations,
     )?;
-    NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
+    NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations)?;
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     let attribute_uses = first_configuration_attribute_uses(
         model
@@ -563,7 +604,7 @@ fn attach_records(
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
         .map_err(CodecError::from)?;
@@ -579,38 +620,30 @@ fn attach_part_attributes<'a>(
     annotation_stream: &StreamHandle,
 ) -> Result<(), CodecError> {
     for (attribute_id, attribute_title, attribute_value, source_offset) in attributes {
-        annotations.note(
-            attribute_id,
-            annotation_stream,
-            source_offset,
-            Some("Attribute"),
-        );
-        annotations.exactness(attribute_id, Exactness::ByteExact);
+        let key = cadmpeg_ir::ids::Identity::new(attribute_id).map_err(CodecError::malformed)?;
+        annotations.note(&key, annotation_stream, source_offset, Some("Attribute"));
+        annotations.exactness(key, Exactness::ByteExact);
         let id: AttributeId = extended_id(attribute_id, &cadmpeg_ir::identity_key!("neutral"))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX part attribute id is not an identity"))
             })?;
-        annotations.note(
-            id.as_str(),
-            annotation_stream,
-            source_offset,
-            Some("Attribute"),
-        );
+        annotations.note(&id, annotation_stream, source_offset, Some("Attribute"));
         annotations
-            .derived(id.as_str(), "target")
+            .derived(&id, "target")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "name")
+            .derived(&id, "name")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "values")
+            .derived(&id, "values")
             .map_err(cadmpeg_core::CodecError::from)?;
 
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document.into(),
             name: attribute_title.to_string(),
-            values: vec![AttributeValue::String(attribute_value.to_string())],
+            values: vec![Some(AttributeValue::String(attribute_value.to_string()))],
+            native_ref: None,
         });
     }
     Ok(())
@@ -644,28 +677,23 @@ fn attach_configurations<'a>(
                 "NX configuration ordinal {ordinal} exceeds u32"
             ))
         })?;
-        annotations.note(
-            id.as_str(),
-            annotation_stream,
-            source_offset,
-            Some("Arrangement"),
-        );
+        annotations.note(&id, annotation_stream, source_offset, Some("Arrangement"));
         annotations
-            .derived(id.as_str(), "ordinal")
+            .derived(&id, "ordinal")
             .map_err(cadmpeg_core::CodecError::from)?;
         if active_attribute_use.is_some() {
             annotations
-                .derived(id.as_str(), "active")
+                .derived(&id, "active")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
         annotations
-            .derived(id.as_str(), "source_index")
+            .derived(&id, "source_index")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "name")
+            .derived(&id, "name")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "native_ref")
+            .derived(&id, "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
 
         let mut properties = BTreeMap::new();
@@ -734,30 +762,98 @@ fn attach_rm_appearances(
                 })?,
             );
         annotations.note(
-            binding_id.as_str(),
+            &binding_id,
             &annotation_stream,
             binding.source_offset,
             Some("RMFASTLOAD_COLOR_ASSIGNMENT"),
         );
         annotations
-            .derived(binding_id.as_str(), "target")
+            .derived(&binding_id, "target")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(binding_id.as_str(), "appearance")
+            .derived(&binding_id, "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
-            target: AppearanceTarget::Source {
-                source_id: binding.source_id.clone(),
-            }
-            .into(),
+            target: AppearanceTarget::Unresolved.into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
+    Ok(())
+}
+
+/// States the material colour that a Display-JT shape path gives its mesh as
+/// an appearance bound to the mesh's tessellation.
+fn attach_display_jt_color(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
+    (tessellation, source_offset): (&str, u64),
+    color: Color,
+) -> Result<(), CodecError> {
+    let key = tessellation
+        .split_once('#')
+        .map(|(_, key)| key)
+        .ok_or_else(|| CodecError::malformed("NX Display-JT tessellation id has no key"))?;
+    let id = AppearanceId::mint(format!("nx:display-jt:appearance#{key}"))
+        .map_err(|error| CodecError::malformed(format_args!("display-jt appearance: {error}")))?;
+    let binding_id = AppearanceBindingId::mint(format!("nx:display-jt:appearance_binding#{key}"))
+        .map_err(|error| {
+        CodecError::malformed(format_args!("display-jt appearance binding: {error}"))
+    })?;
+    for (record, fields) in [
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&id),
+            &["base_color"][..],
+        ),
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&binding_id),
+            &["target", "appearance"][..],
+        ),
+    ] {
+        annotations.note(
+            &record,
+            annotation_stream,
+            source_offset,
+            Some("DISPLAY_JT_MATERIAL"),
+        );
+        for field in fields {
+            annotations
+                .derived(&record, field)
+                .map_err(cadmpeg_core::CodecError::from)?;
+        }
+    }
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(color),
+        properties: BTreeMap::new(),
+        textures: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding_id,
+        target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
+        appearance: id,
+        precedence: None,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: BTreeMap::new(),
+        native_ref: None,
+    });
     Ok(())
 }
 
@@ -788,19 +884,19 @@ fn ensure_rm_color_appearance(
         })?,
     );
     annotations.note(
-        id.as_str(),
+        &id,
         annotation_stream,
         definition.source_offset,
         Some("RMFASTLOAD_COLOR_APPEARANCE"),
     );
     annotations
-        .derived(id.as_str(), "name")
+        .derived(&id, "name")
         .map_err(cadmpeg_core::CodecError::from)?;
     annotations
-        .derived(id.as_str(), "schema")
+        .derived(&id, "schema")
         .map_err(cadmpeg_core::CodecError::from)?;
     annotations
-        .derived(id.as_str(), "base_color")
+        .derived(&id, "base_color")
         .map_err(cadmpeg_core::CodecError::from)?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
@@ -814,6 +910,7 @@ fn ensure_rm_color_appearance(
         base_color: Some(color),
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
 
     let lookup_id = id.clone();
@@ -933,12 +1030,12 @@ fn attach_jpeg_preview_assets(
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations.note(
-                native_ref.as_str(),
+                &native_ref,
                 &stream,
                 source_offset,
                 Some("JPEG_PREVIEW_INVALID"),
             );
-            annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
+            annotations.exactness(&native_ref, Exactness::ByteExact);
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
                 "retain NX invalid JPEG preview",
@@ -954,24 +1051,19 @@ fn attach_jpeg_preview_assets(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX JPEG preview id is not an identity"))
             })?;
-        annotations.note(
-            id.as_str(),
-            &stream,
-            source_offset,
-            Some("JPEG_PREVIEW_ASSET"),
-        );
-        annotations.exactness(id.as_str(), Exactness::ByteExact);
+        annotations.note(&id, &stream, source_offset, Some("JPEG_PREVIEW_ASSET"));
+        annotations.exactness(&id, Exactness::ByteExact);
         annotations
-            .derived(id.as_str(), "id")
+            .derived(&id, "id")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "name")
+            .derived(&id, "name")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "media_type")
+            .derived(&id, "media_type")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(id.as_str(), "native_ref")
+            .derived(&id, "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
 
         ctx.retain_bytes(
@@ -1058,20 +1150,20 @@ fn attach_material_texture_assets(
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (texture, asset) in textures.iter().zip(&assets) {
         annotations.note(
-            asset.id.as_str(),
+            &asset.id,
             &stream,
             texture.source_offset,
             Some("MATERIAL_TEXTURE_ASSET"),
         );
-        annotations.exactness(asset.id.as_str(), Exactness::ByteExact);
+        annotations.exactness(&asset.id, Exactness::ByteExact);
         annotations
-            .derived(asset.id.as_str(), "id")
+            .derived(&asset.id, "id")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(asset.id.as_str(), "media_type")
+            .derived(&asset.id, "media_type")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(asset.id.as_str(), "native_ref")
+            .derived(&asset.id, "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
     }
 
@@ -1178,15 +1270,17 @@ fn attach_initial_segment_bodies(
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies)
-                        .map_err(cadmpeg_core::CodecError::from)?,
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                        selection_bodies,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(feature_outputs)
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
@@ -1205,7 +1299,13 @@ fn attach_feature_operations(
     let features = &model.features;
     let mut symbolic_threads =
         symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
-    let parasolid_group_members = model.parasolid.group_members.as_slice();
+    let parasolid_group_members = cadmpeg_core::decode::unique_index(
+        model
+            .parasolid
+            .group_members
+            .iter()
+            .map(|member| (member.id.as_str(), member)),
+    );
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
@@ -2084,12 +2184,12 @@ fn attach_feature_operations(
             continue;
         };
         annotations.note(
-            annotation.id.as_str(),
+            &annotation.id,
             &stream,
             label.source_offset,
             Some("TEXT_SEMANTIC_ANNOTATION"),
         );
-        annotations.exactness(annotation.id.as_str(), Exactness::Derived);
+        annotations.exactness(&annotation.id, Exactness::Derived);
 
         ir.model.semantic_annotations.push(annotation);
     }
@@ -4037,14 +4137,16 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies.into_vec())
-                .map_err(cadmpeg_core::CodecError::from)?,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                dependencies.into_vec(),
+            )
+            .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 definition,
                 DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
@@ -4067,7 +4169,7 @@ fn attach_feature_operations(
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
-                    parasolid_group_members,
+                    &parasolid_group_members,
                 )?;
                 let _body_len = BODY_PREFIX.len() + 10;
 
@@ -4166,7 +4268,10 @@ fn attach_feature_operations(
                     WITNESS_VALUE.to_owned(),
                 );
                 annotations
-                    .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+                    .derived(
+                        initial_body_id,
+                        &format!("source_properties.{NATIVE_PRIMARY_BODY_CLOSURE_WITNESS}"),
+                    )
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
         }
@@ -4252,7 +4357,7 @@ fn append_feature_result_topology(
         members,
         native_ref,
     } = pending;
-    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
         bodies,
         members.faces,
         members.edges,
@@ -4276,7 +4381,7 @@ fn operation_body_write_result_group_members(
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
@@ -4322,18 +4427,14 @@ fn operation_body_write_result_group_members(
 fn feature_result_group_members(
     partition_stream_ordinal: u32,
     member_ids: &[String],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
-        let mut matches = members.iter().filter(|member| member.id == *member_id);
-        let Some(member) = matches.next() else {
+        let Some(Some(member)) = members.get(member_id.as_str()).copied() else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
@@ -4519,16 +4620,11 @@ fn attach_sketch_graph(
                 }
                 _ => return None,
             };
-            annotations.note(entity.id().as_str(), stream, *source_offset, Some(tag));
-            annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
+            annotations.note(entity.id(), stream, *source_offset, Some(tag));
+            annotations.exactness(entity.id(), Exactness::ByteExact);
         }
-        annotations.note(
-            sketch_id.as_str(),
-            stream,
-            label.source_offset,
-            Some("SKETCH"),
-        );
-        annotations.exactness(sketch_id.as_str(), Exactness::Derived);
+        annotations.note(&sketch_id, stream, label.source_offset, Some("SKETCH"));
+        annotations.exactness(&sketch_id, Exactness::Derived);
         emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
         return Some(sketch_id);
     }
@@ -4631,32 +4727,27 @@ fn attach_sketch_graph(
         match entity.geometry.definition() {
             SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-point-group" => {
                 annotations.note(
-                    entity.id().as_str(),
+                    entity.id(),
                     stream,
                     *source_offset,
                     Some("SKETCH_NATIVE_POINT_GROUP"),
                 );
-                annotations.exactness(entity.id().as_str(), Exactness::Derived);
+                annotations.exactness(entity.id(), Exactness::Derived);
             }
             SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point" => {
                 annotations.note(
-                    entity.id().as_str(),
+                    entity.id(),
                     stream,
                     *source_offset,
                     Some("SKETCH_NATIVE_FIXED_POINT"),
                 );
-                annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
+                annotations.exactness(entity.id(), Exactness::ByteExact);
             }
             _ => return None,
         }
     }
-    annotations.note(
-        sketch_id.as_str(),
-        stream,
-        label.source_offset,
-        Some("SKETCH"),
-    );
-    annotations.exactness(sketch_id.as_str(), Exactness::Derived);
+    annotations.note(&sketch_id, stream, label.source_offset, Some("SKETCH"));
+    annotations.exactness(&sketch_id, Exactness::Derived);
     emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
     Some(sketch_id)
 }
@@ -5010,16 +5101,16 @@ fn attach_parasolid_topology_string_attributes(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
             annotations.note(
-                id.as_str(),
+                &id,
                 &source_stream,
                 string.inflated_offset,
                 Some("ENTITY_54_STRING_ATTRIBUTE"),
             );
             annotations
-                .derived(id.as_str(), "target")
+                .derived(&id, "target")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "name")
+                .derived(&id, "name")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let field_name = attribute_index
                 .attribute_names
@@ -5389,7 +5480,8 @@ fn push_topology_attribute(
         id,
         target: context.target.clone().into(),
         name,
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     });
 }
 
@@ -5474,12 +5566,12 @@ fn attach_parasolid_topology_numeric_attributes(
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
-            annotations.note(id.as_str(), &source_stream, source_offset, Some(tag));
+            annotations.note(&id, &source_stream, source_offset, Some(tag));
             annotations
-                .derived(id.as_str(), "target")
+                .derived(&id, "target")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "name")
+                .derived(&id, "name")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let field_name = attribute_index
                 .attribute_names
@@ -5628,12 +5720,12 @@ fn attach_parasolid_topology_structured_attributes(
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
-            annotations.note(id.as_str(), &source_stream, source_offset, Some(tag));
+            annotations.note(&id, &source_stream, source_offset, Some(tag));
             annotations
-                .derived(id.as_str(), "target")
+                .derived(&id, "target")
                 .map_err(cadmpeg_core::CodecError::from)?;
             annotations
-                .derived(id.as_str(), "name")
+                .derived(&id, "name")
                 .map_err(cadmpeg_core::CodecError::from)?;
             let field_name = attribute_index
                 .attribute_names
@@ -5760,8 +5852,8 @@ fn extrude_feature_definition(
     };
     FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-        start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+        direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+        start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved {},
@@ -5850,18 +5942,18 @@ pub(super) fn boolean_feature_definition(
 
         op: match operation.kind {
             crate::native::features::FeatureBooleanKind::Unite => {
-                cadmpeg_ir::features::BooleanKind::Join
+                cadmpeg_ir::features::operation_settings::BooleanKind::Join
             }
             crate::native::features::FeatureBooleanKind::Subtract => {
-                cadmpeg_ir::features::BooleanKind::Cut
+                cadmpeg_ir::features::operation_settings::BooleanKind::Cut
             }
             crate::native::features::FeatureBooleanKind::Intersect => {
-                cadmpeg_ir::features::BooleanKind::Intersect
+                cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
             }
         },
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     }))
 }
 

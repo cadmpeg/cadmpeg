@@ -195,7 +195,34 @@ fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
         panic!("one mesh\n{text}");
     };
     assert_eq!(mesh.triangles().len(), 12);
-    assert_eq!(mesh.body.as_ref(), Some(&geometry.bodies[0].id));
+    assert_eq!(mesh.of.body(), Some(&geometry.bodies[0].id));
+}
+
+#[test]
+fn a_document_root_is_the_layer_and_no_prim() {
+    let bare = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut rooted = bare.clone();
+    rooted
+        .state_root_definition(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "test:model:product-definition#root".try_into().unwrap(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+    assert_eq!(rooted.model.product_definitions[0].bodies.len(), 1);
+    let (text, report) = encode(&rooted);
+    let (bare_text, bare_report) = encode(&bare);
+    assert_eq!(text, bare_text);
+    assert_eq!(report.losses, bare_report.losses);
+    let round = decode(&text);
+    let roots = round
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .count();
+    assert_eq!((roots, round.ir().geometry.bodies.len()), (1, 1));
 }
 
 #[test]
@@ -259,5 +286,84 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
     assert_eq!(
         high.map(f32::to_bits),
         [0.0_f32, -0.0, 1.0].map(f32::to_bits)
+    );
+}
+
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
+
+fn written_empty(report: &cadmpeg_ir::report::export::ExportReport) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty")
+}
+
+/// A document that states nothing USD holds is written as the layer metadata
+/// alone, with `export:output.empty`.
+#[test]
+fn a_document_that_states_nothing_is_written_empty() {
+    let (text, report) = encode(&cadmpeg_ir::CadIr::empty());
+    assert!(text.starts_with("#usda 1.0\n("), "{text}");
+    assert!(!text.contains("def "), "{text}");
+    assert!(written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn a_document_with_a_body_is_not_empty() {
+    let (text, report) = encode(&cadmpeg_ir::examples::unit_cube().unwrap());
+    assert!(text.contains("def "), "{text}");
+    assert!(!written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn native_records_are_charged_by_id_and_given_up_stubs_are_not() {
+    let mut ir = decode(&format!(
+        "#usda 1.0\ndef Mesh \"Arm\"\n{{\n    {MESH}\n}}\n"
+    ))
+    .into_parts()
+    .0;
+    let record = |id: &str| {
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")
+    };
+    let arenas = ir
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("sat"))
+        .arenas_mut();
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("entities"),
+        vec![record("sat:test:entity#1"), record("sat:test:entity#0")],
+    );
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("unknowns"),
+        vec![record("sat:test:unknown#0")],
+    );
+    ir.finalize();
+
+    let (_, report) = encode(&ir);
+    let omitted: Vec<&str> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        omitted,
+        [
+            "the USD write omits 2 native record(s) of `sat` arena `entities` which the USD \
+             writer does not write: sat:test:entity#0, sat:test:entity#1"
+        ],
+        "{:?}",
+        report.losses
     );
 }

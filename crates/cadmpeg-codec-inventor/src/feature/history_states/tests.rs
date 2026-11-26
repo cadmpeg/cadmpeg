@@ -5,7 +5,9 @@ use std::sync::Arc;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, SplitBodyTool};
+use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use super::*;
 use crate::feature::body_selection::WrapperLink;
@@ -576,7 +578,8 @@ fn neutral(
     let mut model = crate::feature::native_feature(&ctx, &feature.identity, None, feature.id())
         .expect("feature");
     model.source_tag = Some(tag.to_owned());
-    model.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+    model.evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(definition);
     model
 }
 
@@ -613,9 +616,9 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
                 extend_tool: None,
                 targets: BodySelection::Native(wrappers[0].id()),
-                tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
-                    "tool".to_owned(),
-                )),
+                tool: SplitBodyTool::Faces(
+                    cadmpeg_ir::features::selections::FaceSelection::Native("tool".to_owned()),
+                ),
             }),
         ),
         stored(&base, BASE_TAG),
@@ -667,7 +670,7 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
     let carrier = ActiveCarrierRecord::NotApplicable {
         id: "fixture".to_owned(),
     };
-    assert!(validate(&records, &features, &carrier, &[])
+    assert!(validate(&records, &features, &carrier, Some(&[]))
         .iter()
         .all(|finding| finding.contains("active carrier")));
 
@@ -715,7 +718,7 @@ fn a_split_with_a_local_target_binds_through_its_wrapper_link() {
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
             extend_tool: None,
             targets: local,
-            tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
+            tool: SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(
                 "tool".to_owned(),
             )),
         }),
@@ -753,10 +756,10 @@ fn a_validated_arena_refuses_a_forged_record() {
         detail: "none".to_owned(),
     };
     let records = join(&index(), &inputs);
-    let ok: Vec<_> = validate(&records, &features, &carrier, &[]);
+    let ok: Vec<_> = validate(&records, &features, &carrier, Some(&[]));
     assert_eq!(ok.len(), 1, "{ok:?}");
     let selected = |records: &[FeatureHistoryState]| {
-        validate(records, &features, &carrier, &[])
+        validate(records, &features, &carrier, Some(&[]))
             .into_iter()
             .filter(|finding| !finding.contains("active carrier"))
             .collect::<Vec<_>>()
@@ -887,4 +890,41 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
         bodies: crate::feature::history_bodies::Built::default(),
     })
     .is_empty());
+}
+
+#[test]
+fn a_loft_state_is_bound_only_for_a_loft_record_of_the_feature_with_a_state_after_it() {
+    let state = StateRef {
+        ordinal: 1,
+        state_id: 12,
+    };
+    let loft = |feature: &str, kind: &str| {
+        let mut record = blank(5);
+        record.feature = feature.to_owned();
+        record.kind = kind.to_owned();
+        record.state_after = Some(state);
+        record
+    };
+    let bound = loft("a", LOFT_TAG);
+    assert!(loft_state_bound(std::slice::from_ref(&bound), "a"));
+    // Another feature, or a feature without a record.
+    assert!(!loft_state_bound(std::slice::from_ref(&bound), "b"));
+    assert!(!loft_state_bound(&[], "a"));
+    // A record of another kind under the same feature is no loft state.
+    for kind in ["sweep", BASE_TAG, ""] {
+        assert!(!loft_state_bound(&[loft("a", kind)], "a"), "{kind}");
+    }
+    // No tag lists the loft: the record is unbound and holds no state.
+    let mut unlisted = loft("a", LOFT_TAG);
+    unlisted.state_after = None;
+    unlisted.binding = unbound(UnboundReason::NoTag);
+    assert!(!loft_state_bound(&[unlisted], "a"));
+    // A state after the feature does not bind it without a bound record.
+    let mut unbound_record = loft("a", LOFT_TAG);
+    unbound_record.binding = unbound(UnboundReason::NoPredecessor);
+    assert!(!loft_state_bound(&[unbound_record], "a"));
+    // Another record of the feature can still bind it.
+    let mut stray = loft("a", "sweep");
+    stray.binding = unbound(UnboundReason::NoTag);
+    assert!(loft_state_bound(&[stray, bound], "a"));
 }

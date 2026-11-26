@@ -1004,7 +1004,7 @@ fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
     payload.extend([0xde, 0xad]);
 
     let values = crate::objects::parse_user_string_list(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &payload,
         0..payload.len(),
         archive,
@@ -1024,7 +1024,7 @@ fn user_string_list_rejects_a_negative_count() {
     let archive = ArchiveVersion::V5;
     let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
     assert!(crate::objects::parse_user_string_list(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &payload,
         0..payload.len(),
         archive,
@@ -1158,7 +1158,9 @@ pub(crate) fn malformed_bounded_object_is_retained_and_later_point_decodes() {
                 .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
-                .len(),
+                .iter()
+                .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+                .count(),
             2
         );
         assert_eq!(result.ir().geometry.points.len(), 1);

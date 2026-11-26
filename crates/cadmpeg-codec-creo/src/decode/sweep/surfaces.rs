@@ -30,21 +30,20 @@ use crate::decode::analytic::pcurves::{
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::decode::surfaces::intersection_resolve::curve_contains_points;
-use crate::decode::surfaces::prototypes::{
-    surface_prototype_frame_bounds, unique_surface_prototype_associations,
-};
+use crate::decode::surfaces::prototypes::unique_surface_prototype_associations;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::loss::CreoLossCode;
 use crate::scalar;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::RevolutionAxis;
+use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::analytic::CircleCurve;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 
 use cadmpeg_core::decode::DecodeContext;
@@ -351,14 +350,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "FeatDefs:saved_spline#{suffix}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -622,14 +617,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -689,14 +680,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -814,14 +801,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
-                            format: cadmpeg_ir::CodecFormat::Creo,
+                            format: cadmpeg_ir::codec_id!("creo"),
                             object_id: crate::identity::source_object_id_checked(format_args!(
                                 "FeatDefs:saved_spline#{internal_id}"
                             ))?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -869,14 +852,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -900,7 +879,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     Some([lower_knot, upper_knot]),
                     Vector3::from(sweep),
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
@@ -1110,7 +1089,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             continue;
         }
         let mut candidates = Vec::new();
-        for (prototype, first, section) in &associations {
+        for (prototype, first, section, (start, end)) in &associations {
             if first.feature_id != row.feature_id
                 || first.kind != row.kind
                 || first.offset >= row.offset
@@ -1118,12 +1097,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             {
                 continue;
             }
-            let Some((start, end)) =
-                surface_prototype_frame_bounds(scan, section, prototype.record().offset)?
-            else {
-                continue;
-            };
-            if !(start..end).contains(&row.offset) {
+            if !(*start..*end).contains(&row.offset) {
                 continue;
             }
             candidates.push((first, section));
@@ -1184,16 +1158,12 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "{}:{}",
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -1720,15 +1690,11 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
                 parameter_range: None,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         record.curve_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -2267,14 +2233,10 @@ pub(in crate::decode) fn transfer_hole_generators(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{curve}"
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

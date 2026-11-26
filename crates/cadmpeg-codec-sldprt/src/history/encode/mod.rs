@@ -19,9 +19,8 @@ use self::surface::ShellDefinition;
 use crate::records::Feature;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, UnresolvedFamily,
-};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Native XML kind plus parameter and property maps for a written feature.
@@ -303,7 +302,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }) => self.encode_filled_surface(
                 boundary,
                 support_faces,
-                continuity,
+                continuity.as_ref(),
                 *merge_result,
                 !interior_constraints.is_empty() || *reverse_normal == Some(true),
             ),
@@ -329,10 +328,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 let target = operands.target();
                 let tools = operands.tools();
                 match destination {
-                    cadmpeg_ir::features::CombineDestination::TargetComponent => {
+                    cadmpeg_ir::features::operation_settings::CombineDestination::TargetComponent => {
                         self.encode_combine(target, tools, *op, *keep_tools)
                     }
-                    cadmpeg_ir::features::CombineDestination::NewComponent => {
+                    cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent => {
                         self.encode_unsupported()
                     }
                 }

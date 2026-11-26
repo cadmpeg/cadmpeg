@@ -9,7 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -26,10 +26,12 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
 };
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
+use crate::container::{give_up_retained, V1_RECORD_PART};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 use crate::settings::MillimeterScale;
@@ -589,6 +591,24 @@ fn push_v1_record(
 ) -> Result<(), CodecError> {
     records.push(retain_v1_record(ctx, data, chunk, retained_bytes)?);
     Ok(())
+}
+
+/// Gives up the V1 record `chunk`, whose legacy record in the source fidelity
+/// keeps its bytes, for the codec loss `code` with `message`.
+fn v1_record_given_up(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    code: RhinoLossCode,
+    message: std::fmt::Arguments<'_>,
+) -> Result<GivenUpPart, CodecError> {
+    let why = code
+        .note(message)
+        .with_provenance(cadmpeg_ir::SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(chunk.header_start),
+        ));
+    give_up_retained(ctx, data, V1_RECORD_PART, chunk.range(), None, &why)
 }
 
 fn count_v1_omission(omitted: &mut BTreeMap<u32, usize>, typecode: u32) {
@@ -1847,7 +1867,7 @@ fn append_legacy_brep(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
             legacy_identity_key(format!("{suffix}.slot-{index}"))?,
         );
-        let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+        let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         geometry
@@ -1858,7 +1878,7 @@ fn append_legacy_brep(
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
-                    cadmpeg_ir::scalar::PositiveReal::new(tolerance)
+                    cadmpeg_ir::scalar::PositiveLength::new(tolerance)
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
@@ -1924,7 +1944,7 @@ fn append_legacy_brep(
                 .copied()
                 .filter(|value| *value > 0.0)
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value)
+                    cadmpeg_ir::scalar::PositiveLength::new(value)
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,
@@ -1957,6 +1977,9 @@ fn append_legacy_brep(
         let mut face_loops = Vec::<cadmpeg_ir::ids::LoopId>::new();
         let mut outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut classified = false;
+        // A V1 loop runs counterclockwise in its surface's parameters; on a
+        // reversed face the CADIR loop runs the other way.
+        let face_reversed = face_record.reversed;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
             let loop_id = cadmpeg_ir::ids::LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
@@ -2023,7 +2046,7 @@ fn append_legacy_brep(
                         (trim.tolerance_2d > 0.0)
                             .then_some(trim.tolerance_2d)
                             .map(|value| {
-                                cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
+                                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(value).map_err(|_| {
                                     cadmpeg_ir::geometry::pcurve::PcurveMetadata::INVALID_FIT_TOLERANCE
                                 })
                             })
@@ -2048,7 +2071,7 @@ fn append_legacy_brep(
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
                     radial_next: coedge_id,
-                    sense: if trim.reversed {
+                    sense: if trim.reversed ^ face_reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
@@ -2057,14 +2080,23 @@ fn append_legacy_brep(
                         pcurve: pcurve_id,
                         isoparametric: None,
                         parameter_range: Some(
-                            cadmpeg_ir::geometry::DirectedParameterRange::new(pcurve_domain)
-                                .map_err(CodecError::malformed)?,
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                                if face_reversed {
+                                    [pcurve_domain[1], pcurve_domain[0]]
+                                } else {
+                                    pcurve_domain
+                                },
+                            )
+                            .map_err(CodecError::malformed)?,
                         ),
                     }],
                     use_curve: None,
                     native_ref: None,
                 });
                 global_trim += 1;
+            }
+            if face_reversed {
+                coedge_ids.reverse();
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
@@ -2134,18 +2166,17 @@ fn append_legacy_brep(
     }
     if shell_faces.is_empty() {
         return Err(cadmpeg_core::CodecError::Malformed(
-            cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
         ));
     }
     geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
@@ -2154,6 +2185,7 @@ fn append_legacy_brep(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
@@ -2580,6 +2612,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut decoded_nurbs_surfaces = 0_usize;
     let mut decoded_nurbs_breps = 0_usize;
     let mut omitted = BTreeMap::<u32, usize>::new();
+    let mut given_up = Vec::<GivenUpPart>::new();
     let mut opaque_records = Vec::new();
     let mut direct_records = Vec::new();
     let mut typed_source_records = Vec::new();
@@ -2635,7 +2668,18 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
             count_v1_omission(&mut omitted, chunk.typecode);
-            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+            given_up.push(v1_record_given_up(
+                ctx,
+                data,
+                &chunk,
+                RhinoLossCode::PresentationRecordDropped,
+                format_args!(
+                    "V1 presentation typecode {:#010x} has no typed reading",
+                    chunk.typecode
+                ),
+            )?);
+            opaque_records.push(record);
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -2694,12 +2738,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 region_id.clone(),
                 vertex_id,
             ));
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            ir.geometry.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                vec![shell_id],
+            ));
             ir.geometry.bodies.push(Body {
                 id: body_id,
                 kind: BodyKind::General,
@@ -2708,6 +2751,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             push_v1_record(
                 ctx,
@@ -2765,7 +2809,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         format_args!("V1 direct record at offset {offset}: {error}"),
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
-                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+                    let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+                    given_up.push(v1_record_given_up(
+                        ctx,
+                        data,
+                        &chunk,
+                        RhinoLossCode::ObjectFamilyNotTransferred,
+                        format_args!("V1 direct record does not decode: {error}"),
+                    )?);
+                    opaque_records.push(record);
                 }
             }
         } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
@@ -2875,12 +2927,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             region_id.clone(),
                             edge_id,
                         ));
-                        ir.geometry.regions.push(Region {
-                            id: region_id.clone(),
-                            body: body_id.clone(),
-                            shells: vec![shell_id],
-                            native_ref: None,
-                        });
+                        ir.geometry.regions.push(Region::new(
+                            region_id.clone(),
+                            body_id.clone(),
+                            vec![shell_id],
+                        ));
                         ir.geometry.bodies.push(Body {
                             id: body_id,
                             kind: BodyKind::General,
@@ -2889,6 +2940,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             color: None,
                             visible: None,
                             native_ref: None,
+                            unstated: None,
                         });
                         decoded_curves += 1;
                     }
@@ -2907,7 +2959,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         format_args!("V1 curve at offset {offset}: {error}"),
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
-                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+                    let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+                    given_up.push(v1_record_given_up(
+                        ctx,
+                        data,
+                        &chunk,
+                        RhinoLossCode::ObjectFamilyNotTransferred,
+                        format_args!("V1 curve does not decode: {error}"),
+                    )?);
+                    opaque_records.push(record);
                 }
             }
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
@@ -2936,7 +2996,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         format_args!("V1 Brep at offset {offset}: {error}"),
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
-                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+                    let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+                    given_up.push(v1_record_given_up(
+                        ctx,
+                        data,
+                        &chunk,
+                        RhinoLossCode::ObjectFamilyNotTransferred,
+                        format_args!("V1 Brep does not decode: {error}"),
+                    )?);
+                    opaque_records.push(record);
                 }
             }
         } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short() {
@@ -2949,7 +3017,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 Ok(mesh) => {
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
 
-                    ir.model.tessellations.push(mesh);
+                    ir.model.tessellations.push(mesh.with_of(
+                        cadmpeg_ir::tessellation::Meshed::definition(
+                            crate::product::root_definition_id(),
+                        ),
+                    ));
                     push_v1_record(
                         ctx,
                         &mut typed_source_records,
@@ -2966,7 +3038,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         format_args!("V1 mesh at offset {offset}: {error}"),
                     );
                     count_v1_omission(&mut omitted, chunk.typecode);
-                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+                    let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
+                    given_up.push(v1_record_given_up(
+                        ctx,
+                        data,
+                        &chunk,
+                        RhinoLossCode::ObjectFamilyNotTransferred,
+                        format_args!("V1 mesh does not decode: {error}"),
+                    )?);
+                    opaque_records.push(record);
                 }
             }
         } else {
@@ -2976,11 +3056,16 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         offset = chunk.next_offset();
     }
     if !direct_records.is_empty() {
-        let namespace = ir.native.namespace_mut("rhino");
+        let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
         namespace
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
+    ir.state_root_definition(
+        ctx,
+        crate::product::root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     ir.finalize();
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
@@ -3010,7 +3095,6 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             ))
         });
     }
-
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
     notes.push(format!("decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"));
@@ -3046,6 +3130,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
+    for part in given_up {
+        losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     let untyped = opaque_records
         .iter()
         .map(|record| record.id().clone())
@@ -3100,6 +3187,7 @@ mod tests {
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -3187,13 +3275,25 @@ mod tests {
     fn v1_malformed_direct_record_adds_a_diagnostic_note() {
         let mut data = archive(&[]);
         data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
-        assert_eq!(
-            decode_v1(&data)
-                .expect("decode the version 1 archive")
-                .body
-                .notes
-                .len(),
-            3
+        let record_offset = archive(&[]).len();
+        let decoded = decode_v1(&data).expect("decode the version 1 archive");
+        assert_eq!(decoded.body.notes.len(), 3);
+        let holder = decoded
+            .source_fidelity
+            .retained_records()
+            .keys()
+            .find(|id| id.as_str().starts_with("rhino:legacy:record#"))
+            .expect("the direct record is retained")
+            .as_str()
+            .to_owned();
+        crate::container::tests::assert_part_given_up(
+            &decoded.ir,
+            &decoded.source_fidelity,
+            &decoded.body.losses,
+            "v1-record",
+            record_offset,
+            None,
+            &holder,
         );
     }
 
@@ -4000,7 +4100,15 @@ mod tests {
             false,
         ));
         assert_eq!(result.ir().tolerances.linear.get(), 10.0);
-        assert_eq!(result.source_fidelity().retained_records().len(), 3);
+        let retained = result.source_fidelity().retained_records();
+        assert_eq!(retained.len(), 6);
+        assert_eq!(
+            retained
+                .keys()
+                .filter(|id| id.as_str().starts_with("rhino:legacy:record#"))
+                .count(),
+            3
+        );
         assert_eq!(
             result
                 .report()
@@ -4010,6 +4118,16 @@ mod tests {
                 .count(),
             3
         );
+        let given_up = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .collect::<Vec<_>>();
+        assert_eq!(given_up.len(), 3, "{:?}", result.report().losses);
+        assert!(given_up.iter().all(|loss| loss
+            .message
+            .starts_with("part v1-record stream=\"\" offset=")));
         assert!(!result
             .report()
             .losses
@@ -4032,8 +4150,8 @@ mod tests {
         let retained = &result.source_fidelity().retained_records();
         // `53b52e008` retains the source boundary of a V1 record the decode
         // transfers as well as one it refuses, so the point chunk is here
-        // beside the malformed annotation record.
-        assert_eq!(retained.len(), 2);
+        // beside the malformed annotation record and the digest of its part.
+        assert_eq!(retained.len(), 3);
         let (malformed_id, malformed) = retained
             .iter()
             .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
@@ -4044,8 +4162,17 @@ mod tests {
         );
         assert!(retained
             .iter()
-            .filter(|(id, _)| *id != malformed_id)
+            .filter(|(id, _)| *id != malformed_id && !id.as_str().starts_with("rhino:source:part#"))
             .all(|(_, record)| record.untyped().is_empty()));
+        crate::container::tests::assert_part_given_up(
+            result.ir(),
+            result.source_fidelity(),
+            &result.report().losses,
+            "v1-record",
+            record_offset,
+            None,
+            malformed_id.as_str(),
+        );
         assert_eq!(
             malformed.offset(),
             cadmpeg_core::decode::u64_from_index(record_offset)
@@ -4246,7 +4373,11 @@ mod tests {
             decode_v1(&source).expect("invalid BREP remains source-retained"),
             false,
         ));
-        assert_eq!(result.ir().entity_count(), 0);
+        let [root] = result.ir().model.product_definitions.as_slice() else {
+            panic!("only the root definition is a model entity");
+        };
+        assert!(root.is_document_root() && root.bodies.is_empty());
+        assert_eq!(result.ir().entity_count(), 1);
         assert!(result
             .source_fidelity()
             .retained_records()
@@ -4351,7 +4482,7 @@ mod tests {
 
     #[test]
     fn brep_version_projection_emits_the_documented_keys_in_order() {
-        let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
+        let json = json::to_string(&BrepVersionField(3)).expect("brep version serialize");
         assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
 }

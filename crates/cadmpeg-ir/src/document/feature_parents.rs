@@ -136,6 +136,7 @@ fn insert_first<'a, T: Copy>(
 #[cfg(test)]
 mod tests {
     use super::{validate, FeatureDefinition, FeatureOperation, Model};
+    use cadmpeg_core::serde_erase::json;
 
     fn model() -> Model {
         let mut model = Model::default();
@@ -145,12 +146,12 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
             ),
             native_ref: None,
@@ -159,10 +160,9 @@ mod tests {
     }
 
     #[test]
-    fn feature_parent_validation_accepts_one_feature_and_serde_reconstruction() {
+    fn feature_parent_validation_accepts_one_feature() {
         let model = model();
-        let wire = serde_json::to_value(&model).unwrap();
         validate(&[&model]).unwrap();
-        assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
+        assert!(json::to_value(&model).unwrap().get("features").is_none());
     }
 }

@@ -2,7 +2,10 @@
 //! Surface rows: carrier parameters only, in model space, with expectations
 //! from the stored carriers and body placements.
 
-use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, SurfaceId};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -133,12 +136,9 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         .shells
         .push(Shell::new(shell.clone(), region.clone()));
     ir.geometry.faces.push(face);
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![shell],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body.clone(), vec![shell]));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Sheet,
@@ -151,6 +151,7 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     (ir, surface)
@@ -222,27 +223,30 @@ fn a_surface_no_face_uses_is_reported_as_stored() {
 /// The cylinder side moved onto the parallel offset of its cylinder by
 /// 1 mm: an unknown carrier with a construction and no solved cache.
 fn offset_side() -> (CadIr, SurfaceId, SurfaceId) {
-    let (ir, cylinder) = cylinder_side();
-    let mut wire = serde_json::to_value(&ir).expect("finite document");
-    let offset = "test:model:surface#offset";
-    wire["geometry"]["surfaces"]
-        .as_array_mut()
-        .expect("surfaces")
-        .push(serde_json::json!({"id": offset, "geometry": {"kind": "solved", "value": {"kind": "unknown"}}}));
-    wire["geometry"]["procedural_surfaces"] = serde_json::json!([{
-        "id": "test:construction:offset_surface#offset",
-        "surface": offset,
-        "definition": {
-            "kind": "parallel_offset",
-            "support": cylinder.as_str(),
-            "distance": 1.0,
-            "self_intersect": false
-        }
-    }]);
-    wire["geometry"]["faces"][0]["surface"] = serde_json::json!(offset);
-    let mut ir: CadIr = serde_json::from_value(wire).expect("admitted document");
+    let (mut ir, cylinder) = cylinder_side();
+    let offset = SurfaceId::mint("test:model:surface#offset").expect("identity");
+    ir.geometry.surfaces.push(Surface {
+        id: offset.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+        native_ref: None,
+    });
+    let definition = ParallelOffsetSurfaceConstruction::try_new(cylinder.clone(), 1.0, Some(false))
+        .expect("finite distance");
+    ir.geometry
+        .add_procedural_surface(
+            &offset,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:construction:offset_surface#offset")
+                    .expect("identity"),
+                ProceduralSurfaceDefinition::ParallelOffset(definition),
+                None,
+            ),
+        )
+        .expect("admitted construction");
+    ir.geometry.faces[0].surface = offset.clone();
     ir.finalize();
-    (ir, SurfaceId::mint(offset).expect("identity"), cylinder)
+    (ir, offset, cylinder)
 }
 
 /// The offset carrier has no evaluator result: its row has no parameters

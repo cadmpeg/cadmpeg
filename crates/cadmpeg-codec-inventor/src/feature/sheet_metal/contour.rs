@@ -6,11 +6,16 @@ use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::sheet_metal::{
+    SheetMetalContourFlangeConstruction, SheetMetalContourThicknessSide,
+};
 use cadmpeg_ir::features::{
-    sheet_metal::{SheetMetalContourFlangeConstruction, SheetMetalContourThicknessSide},
-    DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent, FeatureDefinition,
-    FeatureDirection3, FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology,
-    LinearTermination, PlanarProfileRef,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
@@ -342,10 +347,12 @@ impl ContourOperands {
 
 /// The travel length that a plate slot-3 parameter value states: a length,
 /// or a dimensionless value in internal centimetres.
-pub(crate) fn travel_length(value: &cadmpeg_ir::features::ParameterValue) -> Option<Length> {
+pub(crate) fn travel_length(
+    value: &cadmpeg_ir::features::parameters::ParameterValue,
+) -> Option<Length> {
     match value {
-        cadmpeg_ir::features::ParameterValue::Length(length) => Some(*length),
-        cadmpeg_ir::features::ParameterValue::Real(value) => {
+        cadmpeg_ir::features::parameters::ParameterValue::Length(length) => Some(*length),
+        cadmpeg_ir::features::parameters::ParameterValue::Real(value) => {
             Length::new(value.get() * INTERNAL_CM_TO_MM)
         }
         _ => None,
@@ -356,7 +363,7 @@ pub(crate) fn travel_length(value: &cadmpeg_ir::features::ParameterValue) -> Opt
 /// through [`travel_length`], every other reference through `length`.
 pub(crate) fn plate_lengths<'a>(
     plate: &PmDcFeature,
-    value: impl Fn(PmDcReference) -> Option<&'a cadmpeg_ir::features::ParameterValue>,
+    value: impl Fn(PmDcReference) -> Option<&'a cadmpeg_ir::features::parameters::ParameterValue>,
     length: impl Fn(PmDcReference) -> Option<Length>,
 ) -> impl Fn(PmDcReference) -> Option<Length> {
     let travel = plate.properties.references().get(3).copied();
@@ -925,7 +932,7 @@ impl Refusals {
                 Some(
                     crate::loss::InventorLossCode::FeatureSheetMetalContourFlangeRefused.note(
                         format!(
-                            "Retained {} and its bend and corner as native: the first refused contour-flange check is {}{}.",
+                            "The legacy feature record of {} and its bend and corner stay native: the first refused contour-flange check is {}{}.",
                             feature.id,
                             refusal.detail(),
                             attachment

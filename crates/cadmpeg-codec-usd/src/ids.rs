@@ -225,6 +225,14 @@ pub(crate) mod brep {
         )
     }
 
+    /// The pcurve of pole `pole` of loop `loop_`.
+    pub(crate) fn pole_pcurve(definition: &str, loop_: usize, pole: usize) -> PcurveId {
+        PcurveId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "pcurve"),
+            brep_key(definition, &format!("pole-{loop_}"), pole),
+        )
+    }
+
     pub(crate) fn coedge(definition: &str, oriented_edge: usize) -> CoedgeId {
         CoedgeId::compose(
             &cadmpeg_ir::identity_namespace!("usd", "stage", "coedge"),
@@ -267,6 +275,23 @@ pub(crate) fn joint(path: &str) -> cadmpeg_ir::products::JointId {
         &cadmpeg_ir::identity_namespace!("usd", "stage", "joint"),
         key(path),
     )
+}
+
+/// The design joint feature of the joint prim at `path`: it restates the
+/// joint of [`joint`] under its id.
+pub(crate) fn joint_feature(path: &str) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "joint"),
+        key(path),
+    )
+}
+
+/// The unordered group of the stage's joint features.
+pub(crate) fn joint_group() -> cadmpeg_ir::design::ids::ContainerId {
+    cadmpeg_ir::design::ids::ContainerId::from(cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "container"),
+        cadmpeg_ir::identity_key!("joints"),
+    ))
 }
 
 /// The physical material of the material prim at `path`.

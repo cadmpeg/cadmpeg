@@ -267,6 +267,7 @@ fn project_default_bindings(
             ),
             target: AppearanceTarget::Body(body.clone()).into(),
             appearance: appearance.clone(),
+            precedence: None,
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
                 style.identity.segment_token, style.identity.record_ordinal
@@ -274,6 +275,7 @@ fn project_default_bindings(
             object_type: Some("Body".into()),
             visible: None,
             channels: BTreeMap::default(),
+            native_ref: None,
         });
     }
     Ok(PresentationProjection {
@@ -408,6 +410,7 @@ fn project_face_bindings(
                 base_color: Some(color),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
             appearance_ids.insert(appearance_key, id.clone());
             id
@@ -420,6 +423,7 @@ fn project_face_bindings(
             ),
             target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
                 graphics_face.identity.segment_token, graphics_face.identity.record_ordinal
@@ -430,6 +434,7 @@ fn project_face_bindings(
                 cadmpeg_core::nonblank_literal!("precedence"),
                 "face_over_body".into(),
             )]),
+            native_ref: None,
         });
     }
     Ok(())
@@ -1242,6 +1247,7 @@ mod tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         };
         let body = BodyId::mint("inventor:test:body#1").expect("body id");
         (inventory, appearance, body)
@@ -1477,6 +1483,7 @@ mod tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         };
 
         let arena = DecodeArena::new();

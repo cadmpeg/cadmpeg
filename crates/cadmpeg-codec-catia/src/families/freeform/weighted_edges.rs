@@ -7,12 +7,13 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, SurfaceParameterAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::FitTolerance;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, IntcurveSupportContext, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::{ParameterInterval, PcurveUse};
@@ -46,15 +47,13 @@ struct Plan {
     curve_range: ParameterInterval,
     plane_pcurve: Option<(usize, PcurveGeometry, ParameterInterval, usize)>,
     plane_fit_tolerance: Option<FitTolerance>,
-    vertex_misses: [(usize, f64); 2],
+    plane_projection_gap: Option<f64>,
 }
 
 #[derive(Default)]
 pub(in crate::families) struct AttachResult {
     pub(in crate::families) edges: usize,
     pub(in crate::families) pcurves: usize,
-    pub(in crate::families) widened_vertices: usize,
-    pub(in crate::families) max_vertex_widening: f64,
 }
 
 fn rounds_to_stored(exact: cadmpeg_ir::math::Point3, stored: cadmpeg_ir::math::Point3) -> bool {
@@ -624,6 +623,7 @@ pub(in crate::families) fn attach(
             let mut curve_range = interval;
             let mut plane_pcurve = None;
             let mut plane_fit_tolerance = None;
+            let mut plane_projection_gap = None;
             for ((other, other_range), other_occurrence) in [reps.target, reps.source]
                 .into_iter()
                 .zip(ranges)
@@ -814,10 +814,22 @@ pub(in crate::families) fn attach(
                 };
                 if compatible {
                     if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
-                        plane_pcurve = pcurve.map(|pcurve| {
-                            (plane_coedges[0], pcurve, source_range, other.byte_offset())
-                        });
-                        if let class25::Class25Accuracy::Fitted { fit_tolerance, .. } = map.accuracy
+                        plane_pcurve = pcurve
+                            .map(|pcurve| {
+                                (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                            })
+                            .or_else(|| {
+                                let (projected, bound) = super::weighted_plane::project_curve(
+                                    &curve_cache,
+                                    face_plane,
+                                    refusal,
+                                )?;
+                                plane_projection_gap = Some(bound.get());
+                                plane_fit_tolerance = Some(bound);
+                                Some((plane_coedges[0], projected, curve_range, line.byte_offset()))
+                            });
+                        if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
+                            (plane_projection_gap, &map.accuracy)
                         {
                             plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
                         }
@@ -833,7 +845,7 @@ pub(in crate::families) fn attach(
                 }
                 break;
             }
-            let mut endpoint_misses = Vec::new();
+            let mut matched_ends = 0;
             for (parameter, vertex_id, stored) in [
                 (
                     curve_range.endpoints()[0],
@@ -864,11 +876,11 @@ pub(in crate::families) fn attach(
                 if miss > existing && !rounds_to_stored(point, stored) {
                     break;
                 }
-                endpoint_misses.push((vertex_index, miss));
+                matched_ends += 1;
             }
-            let Ok(vertex_misses) = <[(usize, f64); 2]>::try_from(endpoint_misses) else {
+            if matched_ends != 2 {
                 continue;
-            };
+            }
             plan = Some(Plan {
                 edge: edge_index,
                 curve: curve_index,
@@ -882,7 +894,7 @@ pub(in crate::families) fn attach(
                 curve_range,
                 plane_pcurve,
                 plane_fit_tolerance,
-                vertex_misses,
+                plane_projection_gap,
             });
         }
         if let Some(plan) = plan {
@@ -894,14 +906,7 @@ pub(in crate::families) fn attach(
         .iter()
         .map(|plan| plan.face_pcurves.len() + usize::from(plan.plane_pcurve.is_some()))
         .sum();
-    let mut vertex_misses = HashMap::<usize, f64>::new();
     for plan in plans {
-        for (vertex, miss) in plan.vertex_misses {
-            vertex_misses
-                .entry(vertex)
-                .and_modify(|old| *old = old.max(miss))
-                .or_insert(miss);
-        }
         let curve = &mut ir.geometry.curves[plan.curve];
         let CurveGeometry::Procedural { cache, .. } = &mut curve.geometry else {
             continue;
@@ -939,15 +944,25 @@ pub(in crate::families) fn attach(
                 "weighted_surface_curve",
                 Some(true),
                 None,
+                None,
             )
         });
         let plane_pcurves = plan.plane_pcurve.into_iter().map(|pcurve| {
             (
                 pcurve,
-                "consolidated_b20",
-                "weighted_plane_curve",
+                if plan.plane_projection_gap.is_some() {
+                    "consolidated_b18"
+                } else {
+                    "consolidated_b20"
+                },
+                if plan.plane_projection_gap.is_some() {
+                    "projected_plane_curve"
+                } else {
+                    "weighted_plane_curve"
+                },
                 None,
                 plan.plane_fit_tolerance,
+                plan.plane_projection_gap,
             )
         });
         for (
@@ -956,6 +971,7 @@ pub(in crate::families) fn attach(
             role,
             isoparametric,
             fit_tolerance,
+            projection_gap,
         ) in face_pcurves.chain(plane_pcurves)
         {
             let id = crate::resource::compose_index_id(
@@ -971,7 +987,9 @@ pub(in crate::families) fn attach(
                 role,
                 cadmpeg_ir::Exactness::Derived,
             )?;
-            if let Some(tolerance) = fit_tolerance {
+            if let Some(gap) = projection_gap {
+                refusal.push_plane_pcurve_projected(source_pos, gap);
+            } else if let Some(tolerance) = fit_tolerance {
                 refusal.push_parameter_map_pcurve_accuracy(source_pos, tolerance.get());
             }
             admission.charge()?;
@@ -993,29 +1011,9 @@ pub(in crate::families) fn attach(
             annotations.derived(&ir.geometry.coedges[coedge_index].id, "pcurves")?;
         }
     }
-    let mut widened_vertices = 0;
-    let mut max_vertex_widening = 0.0_f64;
-    for (index, miss) in vertex_misses {
-        let vertex = &mut ir.geometry.vertices[index];
-        let previous = vertex
-            .tolerance
-            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
-        if miss <= previous.max(ir.tolerances.linear.get()) {
-            continue;
-        }
-        let Some(tolerance) = cadmpeg_ir::scalar::PositiveReal::new(miss.next_up()) else {
-            continue;
-        };
-        vertex.tolerance = Some(tolerance);
-        annotations.derived(&vertex.id, "tolerance")?;
-        widened_vertices += 1;
-        max_vertex_widening = max_vertex_widening.max(tolerance.get() - previous);
-    }
     Ok(AttachResult {
         edges: count,
         pcurves: pcurve_count,
-        widened_vertices,
-        max_vertex_widening,
     })
 }
 

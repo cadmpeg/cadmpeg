@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
 use cadmpeg_ir::math::Point2;
@@ -48,7 +48,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -104,7 +104,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(loop_.coedges().len(), 4);
     let senses = loop_
@@ -168,25 +168,23 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .expect("bounded loop");
     assert_eq!(loop_.coedges().len(), 4);
     assert_eq!(
-        face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.001)
     );
-    assert!(result
-        .ir()
-        .geometry
-        .vertices
-        .iter()
-        .any(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)));
+    assert!(result.ir().geometry.vertices.iter().any(|vertex| vertex
+        .tolerance
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
+        == Some(0.001)));
     assert!(result
         .ir()
         .geometry
         .edges
         .iter()
-        .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)));
+        .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get) == Some(0.001)));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -250,21 +248,19 @@ fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within the unit-converted resolution");
     assert_eq!(
-        face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.01)
     );
-    assert!(result
-        .ir()
-        .geometry
-        .vertices
-        .iter()
-        .any(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.01)));
+    assert!(result.ir().geometry.vertices.iter().any(|vertex| vertex
+        .tolerance
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
+        == Some(0.01)));
     assert!(result
         .ir()
         .geometry
         .edges
         .iter()
-        .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.01)));
+        .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get) == Some(0.01)));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -292,7 +288,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within one declared coordinate quantum");
     assert_eq!(
-        face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.01)
     );
     assert!(result
@@ -336,13 +332,13 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     let loop_ = result
         .ir()
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(
         result
@@ -400,7 +396,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -472,7 +468,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -531,7 +527,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -602,7 +598,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()

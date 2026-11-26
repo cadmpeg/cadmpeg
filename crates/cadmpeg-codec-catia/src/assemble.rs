@@ -11,9 +11,11 @@ use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -46,19 +48,15 @@ pub(crate) fn cgm_source_key(
     })?;
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
 
 pub(crate) fn annotate(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    id: impl std::fmt::Display,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     stream_name: &str,
     offset: u64,
     tag: impl std::fmt::Display,
@@ -66,7 +64,7 @@ pub(crate) fn annotate(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let tag = tag.to_string();
     annotations.annotate(
-        id,
+        key,
         format_args!("catia:{stream_name}"),
         offset,
         &tag,
@@ -78,7 +76,7 @@ pub(crate) fn annotate(
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
-/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
+/// [`cadmpeg_ir::CATIA_ADMISSION`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
@@ -89,7 +87,7 @@ pub(crate) fn neutral_model_is_admissible(
         ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
-        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
+        cadmpeg_ir::CATIA_ADMISSION,
         Vec::new(),
     )?
     .is_ok())
@@ -372,6 +370,59 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     let note = CatiaLossCode::GeometryUnresolvedCarriers.note(statement);
 
     losses.insert(0, note);
+}
+
+/// A face's unclassified loops on `surface`: a face with no loop on a plane,
+/// cylinder, or cone has no extent to state, so it is stated partial.
+pub(crate) fn unspecified_loops_on(
+    ir: &CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    loops: Vec<cadmpeg_ir::ids::LoopId>,
+) -> cadmpeg_ir::topology::FaceLoops {
+    let geometry = if loops.is_empty() {
+        ir.geometry
+            .surfaces
+            .iter()
+            .find(|candidate| &candidate.id == surface)
+            .map(|candidate| &candidate.geometry)
+    } else {
+        None
+    };
+    cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, geometry).0
+}
+
+/// Charges `topology.face-boundary-unstated` for each face of the decoded
+/// model that states no loop on a plane, cylinder, or cone, and states such a
+/// face partial where a family has not already. Runs once, on the model a
+/// route returns, so every family's faces are covered and no face a family
+/// discards is charged.
+pub(crate) fn state_loopless_faces(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let unbounded: HashMap<_, _> = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            cadmpeg_ir::topology::FaceLoops::unspecified_on(Vec::new(), Some(&surface.geometry))
+                .1
+                .map(|kind| (surface.id.clone(), kind))
+        })
+        .collect();
+    for face in &mut ir.geometry.faces {
+        let loopless = matches!(
+            &face.loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops }
+                | cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+                if loops.is_empty()
+        );
+        let Some(kind) = loopless.then(|| unbounded.get(&face.surface)).flatten() else {
+            continue;
+        };
+        face.loops = cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() };
+        losses.push(CatiaLossCode::TopologyFaceBoundaryUnstated.note(format!(
+            "face {} states no loop on a {kind}, which no face covers whole, and is stated partial",
+            face.id.as_str()
+        )));
+    }
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -796,7 +847,7 @@ pub(crate) fn link_payload_carriers(
         return Ok(());
     }
     *payload.links_mut() = links;
-    annotations.derived(payload.id().as_str(), "links")?;
+    annotations.derived(payload.id(), "links")?;
     Ok(())
 }
 
@@ -969,10 +1020,12 @@ mod route_tests {
 
     use cadmpeg_ir::document::CadIr;
 
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        pcurve::PcurveGeometry, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-        Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1192,7 +1245,7 @@ mod route_tests {
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut valid,
             &[]
         )
@@ -1202,8 +1255,22 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
+            &[]
+        )
+        .expect("check that the neutral model is admissible"));
+    }
+
+    /// A finding of a check outside the admission set does not drop a
+    /// candidate.
+    #[test]
+    fn neutral_model_admissibility_ignores_findings_outside_its_checks() {
+        let mut ir = cadmpeg_test_support::admissibility::rejected_outside_admission("catia:test")
+            .expect("fixture identities are valid");
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut ir,
             &[]
         )
         .expect("check that the neutral model is admissible"));
@@ -1214,7 +1281,7 @@ mod route_tests {
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut accepted,
             &[]
         )
@@ -1223,7 +1290,7 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut rejected,
             &[]
         )
@@ -1263,7 +1330,7 @@ mod route_tests {
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
         neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[],
         )
@@ -1327,7 +1394,7 @@ mod route_tests {
         )];
 
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &unknowns
         )
@@ -1436,7 +1503,7 @@ mod route_tests {
         ir.geometry.procedural_surfaces[0].edit_definition(|definition| {
             *definition = ProceduralSurfaceDefinition::Exact(
                 cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
                         ranges: [[0.0, 1.0], [0.0, 1.0]],
                         extension: 0,
                         cache: None,
@@ -1521,7 +1588,7 @@ mod route_tests {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
             super::annotate(
                 &mut builder,
-                "catia:test:curve#0",
+                cadmpeg_ir::ids::Identity::new("catia:test:curve#0").expect("identity grammar"),
                 "CATPart",
                 17,
                 format_args!("record:{:08x}", 7),

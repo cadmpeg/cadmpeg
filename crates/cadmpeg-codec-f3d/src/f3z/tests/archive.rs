@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
 use crate::test_support::assembly_test::{
@@ -97,16 +98,12 @@ fn f3z_archive_merges_identity_occurrences() {
         decoded.ir().geometry.points.len(),
         component_alone.ir().geometry.points.len()
     );
-    let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/");
+    let prefix = "f3d:comp.f3d@";
     let body = &decoded.ir().geometry.bodies[0];
-    assert!(
-        body.id.as_str().starts_with(&prefix),
-        "{}",
-        body.id.as_str()
-    );
+    assert!(body.id.as_str().starts_with(prefix), "{}", body.id.as_str());
     for shell_owner in &decoded.ir().geometry.shells {
         assert!(
-            shell_owner.id.as_str().starts_with(&prefix),
+            shell_owner.id.as_str().starts_with(prefix),
             "occurrence graph must stay internally consistent: {}",
             shell_owner.id.as_str()
         );
@@ -128,40 +125,64 @@ fn f3z_archive_merges_identity_occurrences() {
         .annotations
         .provenance
         .keys()
-        .all(|id| id.starts_with(&prefix)));
+        .all(|id| id.as_str().starts_with(prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
-    // synthesize. `Inherit` therefore refuses by name rather than quietly
-    // handing back a single-document archive under the F3Z document's identity.
-    let error = F3dCodec
+    // synthesize. A request that names no target writes the catalog default and
+    // says so.
+    let report = crate::test_support::assert_written_with_loss(
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+        &cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("f3d"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+        )
+        .to_string(),
+        "f3d:f3z-multi-document",
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()));
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
+    );
+
+    // An explicit request for the F3Z row is written as the single-document
+    // row, with the request's displacement charged.
+    let mut displaced = Vec::new();
+    let report = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Explicit("f3d:f3z-multi-document"),
         )
-        .expect_err("the F3Z row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:f3z-multi-document")
-    );
+        .and_then(|plan| plan.write_to(&mut displaced))
+        .expect("an explicit F3Z request writes the single-document row");
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+        report.losses.iter().any(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("f3d"),
+                    cadmpeg_ir::codec::write::target::REQUEST_DISPLACED,
+                )
+                && loss.message.contains("f3d:manifest-3-2-0-0")
+        }),
+        "{:#?}",
+        report.losses
     );
+    cadmpeg_ir::codec::Codec::decode(
+        &F3dCodec,
+        &mut Cursor::new(&displaced),
+        &DecodeOptions::default(),
+    )
+    .expect("the displaced write decodes");
 
     // Naming the row is the escape, and it still regenerates the merged model
     // as a single-document archive — now with the report saying so.
@@ -216,13 +237,11 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
     assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     let first = decoded.ir().geometry.bodies[0].id.as_str();
     let second = decoded.ir().geometry.bodies[1].id.as_str();
-    assert!(first.contains(&format!("role-{XREF_ROLE}/reference-0/occurrence-0/")));
-    assert!(second.contains(&format!("role-{XREF_ROLE}/reference-1/occurrence-0/")));
+    assert!(first.starts_with("f3d:first.f3d@"), "{first}");
+    assert!(second.starts_with("f3d:second.f3d@"), "{second}");
     assert_ne!(first, second);
-    for (ordinal, expected) in [(0, first), (1, second)] {
-        let source_image = format!(
-            "f3d:xref/role-{XREF_ROLE}/reference-{ordinal}/occurrence-0/file:source-image#0"
-        );
+    for (key, expected) in [("first.f3d", first), ("second.f3d", second)] {
+        let source_image = format!("f3d:{key}@file:source-image#0");
         assert_eq!(
             decoded
                 .source_fidelity()
@@ -311,12 +330,12 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     )
     .unwrap();
 
-    let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
+    let prefix = "f3d:comp.f3d@";
     let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
         .iter()
-        .all(|record| record.id.as_str().starts_with(&prefix)));
+        .all(|record| record.id.as_str().starts_with(prefix)));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(
@@ -346,7 +365,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     let plan = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("unmerged F3Z archive remains replayable");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -374,7 +393,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
 }
 
 #[test]
-fn f3z_container_only_stamps_the_outer_document_digest() {
+fn f3z_container_only_records_the_outer_document_digest() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = crate::test_support::archive_session::decode(
@@ -386,13 +405,7 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
     )
     .unwrap();
 
-    let source = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(
-        source
-            .attributes
-            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        Some(&crate::decode::document_local_sha256(decoded.ir()).unwrap())
-    );
+    assert!(!decoded.source_fidelity().edited(decoded.ir()).unwrap());
 }
 
 #[test]
@@ -435,9 +448,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .iter()
         .any(|note| note.contains("merged 2 external occurrence")));
     let body_id = &decoded.ir().geometry.bodies[0].id.as_str();
-    assert!(body_id.contains(&format!(
-        "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
-    )));
+    assert!(body_id.starts_with("f3d:component.f3d@"), "{body_id}");
 }
 
 #[test]
@@ -628,9 +639,8 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         "{:?}",
         decoded.report().losses
     );
-    let admitted: cadmpeg_ir::CadIr =
-        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap())
-            .expect("complete merged CADIR admission");
+    let admitted: cadmpeg_ir::CadIr = json::from_slice(&json::to_vec(decoded.ir()).unwrap())
+        .expect("complete merged CADIR admission");
     for ir in [decoded.ir(), &admitted] {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =

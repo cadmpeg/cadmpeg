@@ -15,9 +15,8 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
-use cadmpeg_ir::geometry::{
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{Face, LoopBoundaryRole, Sense};
 
@@ -102,7 +101,7 @@ impl<'a> Builder<'a> {
         };
         if face
             .loops
-            .iter()
+            .stated()
             .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer)
         {
             return ImplicitOuter::Stated;
@@ -175,7 +174,7 @@ impl<'a> Builder<'a> {
         {
             let Some(point) = finite_or_refusal(model_surface_point(
                 EvaluationAdmission::Standard,
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 u,
                 v,

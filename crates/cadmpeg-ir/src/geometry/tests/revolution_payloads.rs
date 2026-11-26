@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::FinitePoint3;
-use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
+use crate::features::geometry::FinitePoint3;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::ProceduralSurface;
 use crate::ids::{CurveId, ProceduralSurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::units::UnitVector3;
+use cadmpeg_core::serde_erase::json;
 
 fn id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:procedural_surface#revolution").unwrap()
@@ -15,7 +17,7 @@ fn curve() -> CurveId {
 
 fn revolution(
     intervals: [[f64; 2]; 3],
-) -> Result<ProceduralSurfaceDefinition, crate::geometry::ProceduralGeometryError> {
+) -> Result<ProceduralSurfaceDefinition, crate::geometry::legacy_cache::ProceduralGeometryError> {
     Ok(ProceduralSurfaceDefinition::Revolution(
         crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
             curve(),
@@ -24,7 +26,7 @@ fn revolution(
             Some(intervals[1]),
             Some(intervals[2]),
             false,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )?,
     ))
 }
@@ -41,13 +43,13 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
             let mut intervals = [[0.0, 1.0]; 3];
             intervals[slot] = range;
             assert!(revolution(intervals).is_err());
-            let mut wire = serde_json::to_value(revolution([[0.0, 1.0]; 3]).unwrap()).unwrap();
+            let mut wire = json::to_value(revolution([[0.0, 1.0]; 3]).unwrap()).unwrap();
             wire[[
                 "angular_interval",
                 "angular_parameter_interval",
                 "parameter_interval",
-            ][slot]] = serde_json::json!(range);
-            assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
+            ][slot]] = cadmpeg_core::json!(range);
+            assert!(json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
         }
     }
     let definition = ProceduralSurfaceDefinition::Revolution(
@@ -58,22 +60,22 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
             None,
             None,
             false,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
         .unwrap(),
     );
     let surface = ProceduralSurface::new(id(), definition, None);
-    let wire = serde_json::to_value(&surface).unwrap();
+    let wire = json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["angular_interval"],
-        serde_json::json!([-1.0, 0.0])
+        cadmpeg_core::json!([-1.0, 0.0])
     );
     assert!(wire["definition"]
         .get("angular_parameter_interval")
         .is_none());
     assert!(wire["definition"].get("parameter_interval").is_none());
     assert_eq!(
-        serde_json::from_value::<ProceduralSurface>(wire).unwrap(),
+        json::from_value::<ProceduralSurface>(wire).unwrap(),
         surface
     );
 }
@@ -86,14 +88,12 @@ fn reject_on_serde_routes<T: serde::Serialize>(
     value: T,
 ) {
     let surface = ProceduralSurface::new(id(), valid.clone(), None);
-    let mut definition_wire = serde_json::to_value(valid).unwrap();
-    definition_wire[field] = serde_json::to_value(value).unwrap();
-    assert!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(definition_wire.clone()).is_err()
-    );
-    let mut wire = serde_json::to_value(surface).unwrap();
+    let mut definition_wire = json::to_value(valid).unwrap();
+    definition_wire[field] = json::to_value(value).unwrap();
+    assert!(json::from_value::<ProceduralSurfaceDefinition>(definition_wire.clone()).is_err());
+    let mut wire = json::to_value(surface).unwrap();
     wire["definition"] = definition_wire;
-    assert!(serde_json::from_value::<ProceduralSurface>(wire).is_err());
+    assert!(json::from_value::<ProceduralSurface>(wire).is_err());
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn axis_revolution_and_sum_reject_nonfinite_frames_and_basepoints() {
             curve(),
             curve(),
             basepoint,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
         .map(ProceduralSurfaceDefinition::Sum)
     };

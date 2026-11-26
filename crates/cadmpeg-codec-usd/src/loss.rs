@@ -80,9 +80,15 @@ pub(crate) enum UsdLossCode {
     CurvesRejected,
     /// A NURBS patch does not satisfy its counts and was not transferred.
     NurbsPatchRejected,
-    /// Trim curves of a NURBS patch were not transferred.
+    /// Trim curves of a NURBS patch were not transferred; the face is bounded
+    /// by the sides of its parameter range.
     NurbsTrimNotTransferred,
-    /// A NURBS range narrower than the knot domain was not transferred.
+    /// Trim loops of a NURBS patch run against the direction of their nesting
+    /// depth; the face keeps the region inside an odd number of loops.
+    NurbsTrimRegionAssumed,
+    /// A NURBS patch has no boundary; its face has no loop.
+    NurbsBoundaryNotTransferred,
+    /// A NURBS range outside the knot domain was not transferred.
     NurbsRangeNotTransferred,
     /// Display color or opacity with a non-constant interpolation was not
     /// transferred.
@@ -102,6 +108,10 @@ pub(crate) enum UsdLossCode {
     /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
     /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
+    /// A `BrepArray` face on a plane, cylinder, or cone has no loop that
+    /// holds an edge or a vertex, so it states no extent. The face is stated
+    /// partial.
+    TopologyFaceBoundaryUnstated,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -130,6 +140,9 @@ pub(crate) enum UsdLossCode {
     ExportBrepNotWritten,
     /// A `BrepArray` prim has no trim curves.
     ExportBrepUntrimmed,
+    /// A pole of a `BrepArray` loop has no trim curve; the pole and its
+    /// parameter-space side are not written.
+    ExportBrepPoleNotWritten,
     /// Points, curves, or surfaces that no topology uses were not written.
     ExportCarrierNotWritten,
     /// An assembly joint or a joint drive with no `UsdPhysics` form was not
@@ -137,6 +150,14 @@ pub(crate) enum UsdLossCode {
     ExportJointNotWritten,
     /// A solver property has no prim, attribute, or target to write.
     ExportSolverPropertyNotWritten,
+    /// A design feature other than a joint, or the design state of a scope,
+    /// was not written.
+    ExportDesignNotWritten,
+    /// The rigid body, mass, or velocity of a body with a transform of its
+    /// own, written as a group of prims, was not written.
+    ExportPhysicsNotWritten,
+    /// The face that a triangle group names was not written.
+    ExportGroupFaceNotWritten,
 }
 
 impl UsdLossCode {
@@ -170,6 +191,8 @@ impl UsdLossCode {
         Self::CurvesRejected,
         Self::NurbsPatchRejected,
         Self::NurbsTrimNotTransferred,
+        Self::NurbsTrimRegionAssumed,
+        Self::NurbsBoundaryNotTransferred,
         Self::NurbsRangeNotTransferred,
         Self::DisplayColorNotTransferred,
         Self::MaterialNotTransferred,
@@ -177,6 +200,7 @@ impl UsdLossCode {
         Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -190,9 +214,13 @@ impl UsdLossCode {
         Self::ExportTopologyTessellated,
         Self::ExportBrepNotWritten,
         Self::ExportBrepUntrimmed,
+        Self::ExportBrepPoleNotWritten,
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
+        Self::ExportDesignNotWritten,
+        Self::ExportPhysicsNotWritten,
+        Self::ExportGroupFaceNotWritten,
     ];
 
     /// The stable string identifier, severity, and shared category.
@@ -307,6 +335,16 @@ impl UsdLossCode {
             Self::NurbsTrimNotTransferred => {
                 ("nurbs.trim-not-transferred", Warning, T::PcurveOmitted)
             }
+            Self::NurbsTrimRegionAssumed => (
+                "nurbs.trim-region-assumed",
+                Info,
+                T::TopologyGaugeSubstituted,
+            ),
+            Self::NurbsBoundaryNotTransferred => (
+                "nurbs.boundary-not-transferred",
+                Warning,
+                T::TopologyNotTransferred,
+            ),
             Self::NurbsRangeNotTransferred => (
                 "nurbs.range-not-transferred",
                 Warning,
@@ -337,6 +375,11 @@ impl UsdLossCode {
                 "brep.subset-not-transferred",
                 Info,
                 T::MaterialNotTransferred,
+            ),
+            Self::TopologyFaceBoundaryUnstated => (
+                "topology.face-boundary-unstated",
+                Warning,
+                T::TopologyNotTransferred,
             ),
             Self::JointRejected => (
                 "physics.joint-rejected",
@@ -393,6 +436,9 @@ impl UsdLossCode {
                 T::TopologyNotTransferred,
             ),
             Self::ExportBrepUntrimmed => ("export.brep-untrimmed", Info, T::GeometryNotTransferred),
+            Self::ExportBrepPoleNotWritten => {
+                ("export.brep-pole-not-written", Info, T::PcurveOmitted)
+            }
             Self::ExportCarrierNotWritten => (
                 "export.carrier-not-written",
                 Warning,
@@ -403,10 +449,25 @@ impl UsdLossCode {
                 Warning,
                 T::AssemblyPlacementsNotTransferred,
             ),
+            Self::ExportPhysicsNotWritten => (
+                "export.physics-not-written",
+                Warning,
+                T::PhysicsNotTransferred,
+            ),
             Self::ExportSolverPropertyNotWritten => (
                 "export.solver-property-not-written",
                 Warning,
                 T::PhysicsNotTransferred,
+            ),
+            Self::ExportGroupFaceNotWritten => (
+                "export.group-face-not-written",
+                Info,
+                T::TopologyNotTransferred,
+            ),
+            Self::ExportDesignNotWritten => (
+                "export.design-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
             ),
         }
     }

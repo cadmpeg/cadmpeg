@@ -13,16 +13,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::design::units::Quantity;
+use crate::features::FeatureId;
 use crate::ids::{
     ArticulationId, BodyId, ColliderId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId,
     ProductDefinitionId, SolverSettingsId,
 };
-use crate::products::JointId;
 use crate::references::InstanceTarget;
 use crate::scalar::FiniteReal;
 
 /// The model record that solver settings apply to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SolverTarget {
@@ -51,10 +51,10 @@ pub enum SolverTarget {
         /// The collider.
         collider: ColliderId,
     },
-    /// An assembly joint.
+    /// A design feature whose operation is a joint (§6.7).
     Joint {
-        /// The joint.
-        joint: JointId,
+        /// The joint feature.
+        joint: FeatureId,
     },
     /// A physical material.
     PhysicalMaterial {
@@ -69,7 +69,7 @@ pub enum SolverTarget {
 }
 
 /// One solver property value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SolverValue {

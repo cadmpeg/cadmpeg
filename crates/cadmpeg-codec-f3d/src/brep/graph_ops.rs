@@ -261,7 +261,8 @@ impl Brep {
             face_native_keys => face, tolerant_coedge_parameters => coedge,
             tolerant_edge_tails => edge, tolerant_vertex_tails => vertex,
             mesh_surface_sentinels => surface, transform_hints => body,
-            body_native_keys => body, wire_topologies => shell);
+            body_native_keys => body, wire_topologies => shell,
+            unbounded_faces => face);
         self.asm.unknowns =
             select_rows(std::mem::take(&mut self.asm.unknowns), &reachable, |row| {
                 row.id().as_str()
@@ -283,7 +284,7 @@ impl Brep {
         );
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
-            if reachable.contains(&row.id) {
+            if reachable.contains(row.id.as_str()) {
                 annotations.push(row);
             }
         }
@@ -349,10 +350,10 @@ impl RewriteIdentities for Brep {
         self.creation_timestamps
             .visit_identity_references(ctx, visitor)
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         mut self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite F3D BREP typed fields")?;
 
@@ -373,7 +374,7 @@ mod tests {
     use cadmpeg_asm::brep::AsmBrep;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::ids::{BodyId, PointId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Body, BodyKind, Point};
@@ -390,6 +391,7 @@ mod tests {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 }],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),
@@ -469,7 +471,8 @@ mod tests {
 
     #[test]
     fn carrier_selection_keeps_its_procedure_and_support_surface() {
-        use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, Surface};
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+        use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
         let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
         let carrier = geometry.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();

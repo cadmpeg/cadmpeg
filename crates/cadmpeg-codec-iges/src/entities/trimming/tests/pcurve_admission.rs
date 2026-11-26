@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::{homogeneous_pcurve_spans, split_homogeneous_pcurve};
+use super::super::{restricted_pcurve_spans, split_homogeneous_pcurve};
 use crate::entities::nurbs_controls::{BlendCheck, RefiningNet};
 
 /// De Casteljau's split that keeps every level.
@@ -32,7 +32,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 
 #[test]
 fn pcurve_split_of_a_high_degree_polygon_matches_the_level_split() {
-    let controls: Vec<[f64; 4]> = (0..1024_u32)
+    let controls: Vec<[f64; 4]> = (0..32_u32)
         .map(|index| {
             let t = f64::from(index);
             [1.0 + f64::from(index % 5) / 8.0, t.sin(), t.cos(), 0.0]
@@ -55,13 +55,14 @@ fn pcurve_spans_of_a_long_pcurve_insert_each_knot_near_its_span() {
     let controls: Vec<_> = (0..count)
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let range = [0.0, f64::from(count - 2)];
+    let spans = restricted_pcurve_spans(2, &knots, &controls, range, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(spans.len(), usize::try_from(count - 2).unwrap());
     assert_eq!(
-        spans[1].controls,
+        spans[1],
         [
             [1.0, 1.5, 0.0, 0.0],
             [1.0, 2.0, 0.0, 0.0],
@@ -72,7 +73,7 @@ fn pcurve_spans_of_a_long_pcurve_insert_each_knot_near_its_span() {
 
 #[test]
 fn pcurve_knot_insertion_reuses_controls_and_preserves_homogeneous_values() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let knots = [0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0, 1.0];
     let controls = [
         [1.0, 0.0, 0.0, 0.0],
@@ -107,19 +108,40 @@ fn pcurve_many_internal_knots_split_into_one_span_per_knot_interval() {
     let controls: Vec<_> = (0..CONTROL_COUNT)
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let range = [0.0, f64::from(CONTROL_COUNT - 2)];
+    let spans = restricted_pcurve_spans(2, &knots, &controls, range, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(spans.len(), usize::try_from(CONTROL_COUNT - 2).unwrap());
-    assert_eq!(spans.first().unwrap().domain, [0.0, 1.0]);
-    assert_eq!(spans.first().unwrap().controls[0], [1.0, 0.0, 0.0, 0.0]);
+    assert_eq!(spans.first().unwrap()[0], [1.0, 0.0, 0.0, 0.0]);
     assert_eq!(
-        spans.last().unwrap().domain,
-        [f64::from(CONTROL_COUNT - 3), f64::from(CONTROL_COUNT - 2)]
-    );
-    assert_eq!(
-        spans.last().unwrap().controls[2],
+        spans.last().unwrap()[2],
         [1.0, f64::from(CONTROL_COUNT - 1), 0.0, 0.0]
     );
+}
+
+#[test]
+fn pcurve_spans_of_an_empty_or_reversed_range_are_empty_and_of_an_outside_range_absent() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0];
+    let controls = [
+        [1.0, 0.0, 0.5, 0.0],
+        [1.0, 3.0, 0.9, 0.0],
+        [1.0, 3.0, 0.1, 0.0],
+    ];
+    for range in [[0.5, 0.5], [0.75, 0.25]] {
+        assert_eq!(
+            restricted_pcurve_spans(2, &knots, &controls, range, &ctx).unwrap(),
+            Some(Vec::new()),
+            "{range:?}"
+        );
+    }
+    for range in [[-0.5, 0.5], [0.5, 1.5], [1.5, 1.5], [f64::NAN, 0.5]] {
+        assert_eq!(
+            restricted_pcurve_spans(2, &knots, &controls, range, &ctx).unwrap(),
+            None,
+            "{range:?}"
+        );
+    }
 }

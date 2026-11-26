@@ -2,17 +2,18 @@
 //! Every dress-up and hole type, written, read back strictly, and written
 //! again; the stated wire forms; and the schema of each type.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
-use schemars::schema_for;
+use schemars::SchemaGenerator;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -27,7 +28,8 @@ use crate::design::selection::{
 };
 use crate::design::tests::arm_failures;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::units::UnitVector3;
 
@@ -158,14 +160,14 @@ fn frame_construction() -> Construction<kinds::Frame> {
 
 fn options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:attachment_edges"),
+        crate::codec_name!("sldprt:attachment_edges"),
         NativeOption::Bool(literal(true)),
     )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("freecad:Mode"),
+        crate::codec_name!("freecad:Mode"),
         NativeOption::Text(literal(text("Skin"))),
     )])
 }
@@ -175,10 +177,10 @@ fn settings() -> NativeOptions {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -189,7 +191,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.
@@ -498,7 +500,7 @@ fn transitions() -> Vec<Transition> {
             at: Some(selection(9)),
             kind: Some(TransitionKind::Blend),
             native_options: NativeOptions::from([(
-                text("creo:transition_type"),
+                crate::codec_name!("creo:transition_type"),
                 NativeOption::Integer(literal(12)),
             )]),
         },
@@ -1406,7 +1408,7 @@ fn every_adjacent_unit_variant_refuses_a_stated_value() {
 
 #[test]
 fn a_native_option_key_stated_twice_is_refused() {
-    let wire = serde_json::to_string(&fillets().remove(0)).unwrap();
+    let wire = json::to_string(&fillets().remove(0)).unwrap();
     let entry = "\"sldprt:attachment_edges\":{\"kind\":\"bool\",\"value\":{\"kind\":\"literal\",\"value\":true}}";
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);
@@ -1414,76 +1416,77 @@ fn a_native_option_key_stated_twice_is_refused() {
 }
 
 #[cfg(feature = "schema")]
-fn generates<T: JsonSchema>() {
-    let schema = serde_json::to_value(schema_for!(T)).unwrap();
-    assert!(schema.is_object(), "{}", T::schema_name());
+fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+    let schema = T::json_schema(generator);
+    assert!(schema.as_object().is_some(), "{}", T::schema_name());
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn every_dressup_type_has_a_schema() {
-    generates::<Stations<NonNegativeLength>>();
-    generates::<Stations<SlopeAngle>>();
-    generates::<ValueStation<NonNegativeLength>>();
-    generates::<ValueStation<SlopeAngle>>();
-    generates::<StationAt>();
-    generates::<Along>();
-    generates::<Interpolation>();
-    generates::<Fillet>();
-    generates::<FilletSet>();
-    generates::<FaceSide>();
-    generates::<RoundSide>();
-    generates::<FilletSection>();
-    generates::<FilletSize>();
-    generates::<FilletProfile>();
-    generates::<ConicShape>();
-    generates::<Chamfer>();
-    generates::<ChamferSet>();
-    generates::<ChamferSize>();
-    generates::<ChamferMeasure>();
-    generates::<BlendControls>();
-    generates::<CornerStyle>();
-    generates::<Corner>();
-    generates::<Setbacks>();
-    generates::<EdgeSetback>();
-    generates::<BlendLimit>();
-    generates::<LimitAt>();
-    generates::<Transition>();
-    generates::<TransitionKind>();
-    generates::<Overflow>();
-    generates::<ShellFeature>();
-    generates::<FaceThickness>();
-    generates::<OffsetJoin>();
-    generates::<FaceMeeting>();
-    generates::<Thicken>();
-    generates::<Offset>();
-    generates::<OffsetSet>();
-    generates::<OffsetResult>();
-    generates::<Draft>();
-    generates::<DraftSet>();
-    generates::<DraftAngle>();
-    generates::<StepFaces>();
-    generates::<Hole>();
-    generates::<SeriesStage>();
-    generates::<StageHole>();
-    generates::<HolePositions>();
-    generates::<CenterSource>();
-    generates::<HoleShape>();
-    generates::<SlotLength>();
-    generates::<Bore>();
-    generates::<HoleHead>();
-    generates::<Cone>();
-    generates::<HoleBottom>();
-    generates::<DepthTo>();
-    generates::<StandardSize>();
-    generates::<Thread>();
-    generates::<ThreadSpec>();
-    generates::<ThreadLength>();
-    generates::<Emboss>();
-    generates::<EmbossEffect>();
-    generates::<EmbossMapping>();
-    generates::<Dome>();
-    generates::<DomeShape>();
-    generates::<Decal>();
-    generates::<DecalPlacement>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Stations<NonNegativeLength>>(&mut generator);
+    generates::<Stations<SlopeAngle>>(&mut generator);
+    generates::<ValueStation<NonNegativeLength>>(&mut generator);
+    generates::<ValueStation<SlopeAngle>>(&mut generator);
+    generates::<StationAt>(&mut generator);
+    generates::<Along>(&mut generator);
+    generates::<Interpolation>(&mut generator);
+    generates::<Fillet>(&mut generator);
+    generates::<FilletSet>(&mut generator);
+    generates::<FaceSide>(&mut generator);
+    generates::<RoundSide>(&mut generator);
+    generates::<FilletSection>(&mut generator);
+    generates::<FilletSize>(&mut generator);
+    generates::<FilletProfile>(&mut generator);
+    generates::<ConicShape>(&mut generator);
+    generates::<Chamfer>(&mut generator);
+    generates::<ChamferSet>(&mut generator);
+    generates::<ChamferSize>(&mut generator);
+    generates::<ChamferMeasure>(&mut generator);
+    generates::<BlendControls>(&mut generator);
+    generates::<CornerStyle>(&mut generator);
+    generates::<Corner>(&mut generator);
+    generates::<Setbacks>(&mut generator);
+    generates::<EdgeSetback>(&mut generator);
+    generates::<BlendLimit>(&mut generator);
+    generates::<LimitAt>(&mut generator);
+    generates::<Transition>(&mut generator);
+    generates::<TransitionKind>(&mut generator);
+    generates::<Overflow>(&mut generator);
+    generates::<ShellFeature>(&mut generator);
+    generates::<FaceThickness>(&mut generator);
+    generates::<OffsetJoin>(&mut generator);
+    generates::<FaceMeeting>(&mut generator);
+    generates::<Thicken>(&mut generator);
+    generates::<Offset>(&mut generator);
+    generates::<OffsetSet>(&mut generator);
+    generates::<OffsetResult>(&mut generator);
+    generates::<Draft>(&mut generator);
+    generates::<DraftSet>(&mut generator);
+    generates::<DraftAngle>(&mut generator);
+    generates::<StepFaces>(&mut generator);
+    generates::<Hole>(&mut generator);
+    generates::<SeriesStage>(&mut generator);
+    generates::<StageHole>(&mut generator);
+    generates::<HolePositions>(&mut generator);
+    generates::<CenterSource>(&mut generator);
+    generates::<HoleShape>(&mut generator);
+    generates::<SlotLength>(&mut generator);
+    generates::<Bore>(&mut generator);
+    generates::<HoleHead>(&mut generator);
+    generates::<Cone>(&mut generator);
+    generates::<HoleBottom>(&mut generator);
+    generates::<DepthTo>(&mut generator);
+    generates::<StandardSize>(&mut generator);
+    generates::<Thread>(&mut generator);
+    generates::<ThreadSpec>(&mut generator);
+    generates::<ThreadLength>(&mut generator);
+    generates::<Emboss>(&mut generator);
+    generates::<EmbossEffect>(&mut generator);
+    generates::<EmbossMapping>(&mut generator);
+    generates::<Dome>(&mut generator);
+    generates::<DomeShape>(&mut generator);
+    generates::<Decal>(&mut generator);
+    generates::<DecalPlacement>(&mut generator);
 }

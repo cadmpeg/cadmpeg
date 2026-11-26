@@ -8,8 +8,9 @@ rustdoc.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit or interpretation by measuring
-geometry. Only the `cadmpeg` command line package depends on
-`cadmpeg-measure` outside `[dev-dependencies]`.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` command line package
+and `cadmpeg-registry` depend on `cadmpeg-measure`. The source policy also
+admits `cadmpeg-codec-f3d`, for the body boxes its writer writes.
 
 ## Value object
 
@@ -54,7 +55,8 @@ angles in radians. Directions and ratios have unit `1`.
 | `boundary_quadrature` | Adaptive Gauss–Kronrod quadrature along boundary pieces. |
 | `boundary_extremum` | Extremum search along boundary pieces only. |
 | `critical_points` | Boundary extremes and the carrier's interior critical points in the region. |
-| `control_hull` | A NURBS Bézier control-net bound. |
+| `control_hull` | A NURBS control-net bound. |
+| `surface_subdivision` | A trimmed NURBS bound refined by Bézier subdivision. |
 | `divergence_quadrature` | Volume, centroid, closure and mass properties from face fluxes. |
 | `sum` | The sum of member values; errors add. |
 
@@ -100,6 +102,7 @@ cites.
 | `placement.non-similarity` | placement | The composed placement is not a similarity; radii and angles are not invariant. |
 | `placement.non-finite` | placement | Transform composition left the finite range. |
 | `boundary.unbounded-face` | undefined | The face's region is unbounded. |
+| `boundary.partial-face` | undefined | The face does not state its boundary in full (CADIR §5.6, Unstated children), so its extent is not stated. |
 | `boundary.ring-chain-failed` | input | The ring's coedges do not form one closed traversal by oriented vertex identity, or an anchored pole use is not at the end of its coedge. |
 | `boundary.ring-chain-ambiguous` | input | The ring is not continuous as listed and its coedges form more than one closed traversal. |
 | `boundary.coedge-unresolved` | input | A coedge has no pcurve, no edge curve and no use-curve, and is not degenerate. |
@@ -134,7 +137,7 @@ cites.
 | `mass.principal-axes-degenerate` | undefined | A principal moment agrees with another within their separation, so its principal axis is not determined. |
 | `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a transform that scales an axis. |
 | `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is a definition of `External` storage, or does not resolve. |
-| `placement.occurrence-chain-broken` | input | The `--occurrence` chain does not reach the root definition: a definition on the way is placed by no occurrence or by more than one, or the chain repeats. |
+| `placement.occurrence-chain-broken` | input | The `--occurrence` chain does not reach the root definition: a definition on the way is placed by no occurrence or by more than one, a listed occurrence does not place the definition that owns the next one, or the chain repeats. |
 | `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |
 | `placement.occurrence-empty` | undefined | Neither the `--occurrence` prototype nor a prototype of its subtree lists a body. |
 | `boundary.period-unresolved` | input | A loop's parameter values are so large that a shift by one period does not change them. |
@@ -159,7 +162,7 @@ one of its rows is not compared. Cause codes follow the reason discipline.
 
 | Code | When |
 | --- | --- |
-| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially. |
+| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially, and its instances do not enumerate: an occurrence chain repeats, a placement is not finite, or the instances exceed 2²⁰. |
 | `compare.unavailable` | A quantity is unavailable for a `budget`, `unsupported` or `placement` reason on at least one side and has no comparable candidates. |
 | `compare.ambiguous-class` | Bodies whose compatibility is not transitive. |
 | `compare.unmeasured-body` | A body with no comparable quantity. |
@@ -258,7 +261,8 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
-On a cylinder, cone, or extrusion with a periodic directrix, a loop with zero
+On a cylinder, cone, extrusion with a periodic directrix, or NURBS carrier
+periodic in `u` alone, a loop with zero
 net shift in `u` is contractible, and a loop that goes around the period once
 is not. With `m` loops that go around the period:
 
@@ -284,7 +288,15 @@ On a NURBS carrier's finite parameter domain:
 | `FaceLoops::Classified` | `nesting` by the planar rule in the parameter plane. |
 | `FaceLoops::Unspecified` | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. The region reaches the domain's natural edges when a point just left of a loop has a total winding number of zero. |
 
-Loops on a periodic NURBS domain are `region.domain-unsupported`.
+A NURBS parameter is periodic when the surface states it periodic, or when
+its knots are clamped and its first and last pole columns are one boundary
+curve: their corresponding weights are equal and their paired control points
+lie within `1e-6` of the control net's diagonal of each other. A periodic
+parameter repeats with the period of its knot domain, and a parameter outside
+that domain is evaluated at its value moved by whole periods into it. Loops
+on a NURBS carrier periodic in `u` alone, and not curve-bounded with an
+implicit outer boundary, follow the cylinder rule above. Loops on another
+periodic NURBS domain are `region.domain-unsupported`.
 
 On a sphere, a ring torus or a selected spindle-torus sheet both regions
 that the loops bound are bounded, so the loops do not choose a side:
@@ -480,10 +492,26 @@ model axes; on a ring torus, the points where a model coordinate is
 stationary, four per axis. A candidate at a sphere pole is a member when the
 region indicator beyond the boundary toward that pole is 1. The box of the
 complement reading joins the candidates that are not members.
-On a NURBS carrier the box is the box of the placed control net,
-`conservative` with the method `control_hull`; a weight that is not
-positive makes it `bbox.nonpositive-weights`. `bbox.boundary` is the box of
-the boundary pieces alone.
+On a positive-weight NURBS carrier, homogeneous Bézier extraction gives
+one patch per nonempty knot rectangle. A bounded reading clips these
+patches to the boundary parameter ranges, expanded by their numeric error.
+Subdivision refines the patches over the trim region. The trim region uses the loop polylines and region factors
+from region classification. A patch outside the region is removed when
+its parameter rectangle meets no trim segment. Surface points inside the
+region and boundary extrema give the inner box. Refinement stops when
+every remaining patch hull lies within the inner box plus the larger of
+the boundary model tolerance and `1e-8` times the carrier hull diagonal.
+The result is `tight`, with method `surface_subdivision` and that distance
+as its numeric error. The two declared-orientation readings have separate
+boxes.
+
+Refinement visits at most 65,536 patches and charges a local slice of at
+most 1,048,576 work units and one sixteenth of the remaining face allowance.
+A failed refinement, an evaluated offset carrier, or a trimmed periodic
+chart retains the placed control-net box as `conservative`, with method
+`control_hull`. A weight that is not positive makes the box
+`bbox.nonpositive-weights`. `bbox.boundary` of a conservative box is the
+box of the boundary pieces.
 
 A body box is the union of its face boxes, or of its edge boxes for a body
 with no faces. A document box is the union of its body boxes. A union is
@@ -549,7 +577,13 @@ occurrence chain: `T(top) ∘ … ∘ T(ID) ∘ Body.transform`. The chain climb
 from the occurrence to the definition that owns it, then to the one
 occurrence that places that definition, until it reaches the root
 definition (`docs/cadir-v11.md` §8.1); each occurrence applies inside the
-one above it. `T` is an occurrence's transform, the identity where it
+one above it. `--occurrence` is repeatable: the last value is the
+occurrence, and the values before it, outermost first, are the chain's
+occurrences above it, which select one of its instances where a definition
+above it is placed more than once. Each listed occurrence places the
+definition that owns the next one, and the chain climbs from the first one
+as from a single occurrence. Every value keeps its place, so a repeated
+value repeats the chain. `T` is an occurrence's transform, the identity where it
 states none; for an instance below the chain's top-level occurrence it is
 the transform an override of that occurrence states for the instance's
 path, where one does. The subtree of the occurrence is in the same space:
@@ -569,8 +603,9 @@ placement from the root) and
 bodies, the report has no row, every document quantity that applies to the
 selection is unavailable with the same reason, `transform` is absent, and
 `occurrence.unavailable` states why: `placement.occurrence-chain-broken`
-(a definition on the chain is placed by no occurrence or by several, or the
-chain repeats), `placement.occurrence-scale` (an occurrence of the chain or
+(a definition on the chain is placed by no occurrence or by several, a
+listed occurrence does not place the definition that owns the next one, or
+the chain repeats), `placement.occurrence-scale` (an occurrence of the chain or
 of the subtree has a transform that scales an axis; `entity` names it),
 `placement.prototype-unresolved` (a prototype of `External` storage, or a
 definition that does not resolve),
@@ -745,9 +780,34 @@ and matches bodies by their measured geometry, not by their IDs.
   identity within `1e-8` and whose translation is within
   `tolerances.linear` of zero, every product definition that lists bodies,
   other than a root definition, is the prototype of exactly one occurrence,
-  and no body is listed by two definitions. Otherwise it is `occurrences`:
-  the document row `occurrences` is not compared
-  (`compare.occurrence-placement`), and the bodies are still compared.
+  and no body is listed by two definitions. Otherwise it is `occurrences`,
+  and the comparison also compares the documents' instances. An instance is
+  a path of occurrences from a root definition, placed by
+  `T(o₁) ∘ … ∘ T(oₙ)`. `T(oⱼ)` is the transform of `oⱼ`, the identity where
+  it states none, replaced by the transform a nested override of an
+  occurrence above it states for the path from that occurrence to `oⱼ`;
+  where two occurrences above it state one, the outer one holds
+  (`docs/cadir-v11.md` §8.1). Suppression resolves the same way, and a
+  suppressed instance places nothing below it. An occurrence whose
+  prototype is of `External` storage places nothing. An instance shows its
+  prototype's bodies, or the bodies that a definition above it lists for
+  its path in `instance_bodies`, the outermost such definition first. A
+  root definition's bodies, and a body no definition lists, are placed once
+  at the identity. The row `instances` compares the number of instances of
+  the paired bodies `exact`. The row `instance_placement` (mm) matches each
+  pair's instances in one document to its instances in the other one to
+  one, each to the nearest unmatched one, and agrees when the pair's
+  instance counts are equal and every matched distance is within
+  `floor × L + tolerances.linear(a) + tolerances.linear(b)`. The distance
+  of two placements is the length of their translation difference plus
+  `L` times the largest difference of a linear coefficient; the row's
+  `difference` is the largest matched distance, absent when a count
+  differs. The `occurrences` row then states each document's class and
+  takes no part in the verdict. When an occurrence chain repeats, a
+  placement does not compose to a finite transform, or a document has more
+  than 2²⁰ instances, the `occurrences` row is not compared
+  (`compare.occurrence-placement`) and the instance rows are absent. The
+  bodies are compared in either case.
 - Tolerance. A value compares within
   `t = e_a + e_b + u_a + u_b + floor × max(|a|, |b|, L^d)`, with `e` the
   numeric error, `u` the model uncertainty, `L` the larger document box
@@ -786,7 +846,9 @@ and matches bodies by their measured geometry, not by their IDs.
   unmatched; another class is ambiguous (`compare.ambiguous-class`). A body
   with no comparable quantity is unmeasured (`compare.unmeasured-body`).
 - Document rows: `body_count` (`exact`), total `area` and `closed_volume`
-  when measured on both sides, the union box, and `occurrences`.
+  when measured on both sides, the union box, `occurrences`, and, when a
+  document's placement is `occurrences`, `instances` and
+  `instance_placement`.
 - Verdict: `disagree` when a compared row disagrees or a body is
   unmatched; else `inconclusive` when a cause applies, including
   `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`
@@ -839,9 +901,14 @@ revision.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit, or interpretation by measuring
-geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
-`[dev-dependencies]`; the source-policy rule `measurement_dependency`
-enforces this.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` CLI crate and
+`cadmpeg-registry` depend on `cadmpeg-measure`. The source-policy rule
+`measurement_dependency` admits a production dependency in those two crates
+and in `cadmpeg-codec-f3d`, whose writer may write the boxes `body_boxes`
+measures, and fails it elsewhere. The source-policy rule `measurement_use`
+fails the name `cadmpeg_measure` in production code of a codec crate outside
+`crates/cadmpeg-codec-f3d/src/writer/`. It checks direct use only: it does
+not follow a re-export, a wrapper or an included file out of the writer.
 
 A writer test compares the measures of a document and of its written and
 decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer
@@ -892,19 +959,20 @@ STEP supplies these records from geometric validation properties. CADIR keeps
 them when the model is saved.
 
 A scalar agrees when its absolute difference is at most the measured numeric
-error plus model uncertainty and the declaration's optional `source_error`.
-The source error is a nonnegative bound in the quantity's units. A centroid
-uses Euclidean distance and adds the same distance bound in millimetres. An
-absent source error contributes zero. A finding includes the declaration's
+error plus model uncertainty and the declaration's optional `precision`.
+The precision is a nonnegative bound in the quantity's units, for each
+coordinate of a centroid. A centroid uses Euclidean distance and adds the
+distance that bound allows, the precision times √3, in millimetres. An
+absent precision contributes zero. A finding includes the declaration's
 label when it has one. A part's solid quantities cover its visible solid bodies; sheet
 quantities cover its visible sheet bodies. Volumes and areas add. Centroids
 use volume or area weights. Geometry-level targets use their listed bodies,
 including hidden bodies. Each body identity is counted once. Target selection
 does not use numerical agreement with the stated value.
 
-A disagreement from a `source_declaration` or `validation_property` adds a
-`declared_measure` error and makes the check fail. A `saved_cache`
-disagreement adds a `declared_measure` warning that remains visible in the
+A disagreement from a declaration whose `basis` is `validation` or absent adds
+a `declared_measure` error and makes the check fail. A `cache` disagreement
+adds a `declared_measure` warning that remains visible in the
 report. An unresolved target, an empty geometry class, an assembly target, or
 an unavailable measurement adds a `declared_measure` warning with its reason.
 Wetted area on a body with void shells is unavailable because body area

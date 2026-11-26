@@ -2,53 +2,55 @@
 //! The physical records of a composed layer (spec §16).
 //!
 //! Masses are scaled by `kilogramsPerUnit`, lengths to millimetres, and
-//! angles from degrees to radians. A joint frame is turned so that its z
-//! axis is the joint axis.
+//! angles from degrees to radians. An assembly joint's frame is turned so
+//! that its z axis is the joint axis. At design depth each joint is also a
+//! design `Joint` feature on the joint's local frames (`crate::joint`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_ir::design::container::{Container, UnorderedKind};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::physics::{
     Articulation, Collider, ColliderShape, MassProperties, PhysicalMaterial, PhysicsTarget,
     PrincipalInertia, RigidBody,
 };
 use cadmpeg_ir::products::{
-    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointDrive, JointId,
+    self, AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointDrive, JointId,
     JointLimits, JointOperand, PairedJointKind,
 };
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
 
-use crate::schema::physics::{Drive, JointData, JointType};
+use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
 use crate::stage::Prim;
+
+/// The record whose physics a prim's physics schemas describe: the body of
+/// its definition, the mesh that is its definition's geometry, or the
+/// occurrence of the prim.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PhysicsOwner {
+    Body,
+    Mesh,
+    Occurrence,
+}
 
 /// A joint prim collected for the pass after the traversal.
 pub(super) struct PendingJoint {
     pub(super) path: String,
     pub(super) data: JointData,
-}
-
-/// The rotation that turns a joint frame so that its z axis is `axis`, by
-/// a cyclic permutation of the axes.
-fn axis_alignment(axis: char) -> Affine {
-    match axis {
-        'X' => [
-            [0.0, 0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-        ],
-        'Y' => [
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-        ],
-        _ => crate::schema::xform::IDENTITY,
-    }
 }
 
 fn frame_axis(letter: char) -> FrameAxis {
@@ -103,12 +105,12 @@ impl super::Builder<'_, '_, '_, '_> {
     }
 
     /// Reads the physics API schemas of the prim of occurrence `path`, which
-    /// defines `key` with optional body `body`.
+    /// defines `key` whose geometry is `owner`.
     pub(super) fn physics_apis(
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        body: bool,
+        owner: PhysicsOwner,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let schemas = prim.api_schemas();
         let occurrence = PhysicsTarget::Occurrence {
@@ -184,18 +186,20 @@ impl super::Builder<'_, '_, '_, '_> {
             self.admit("usd_mass")?;
         }
         if schemas.contains("PhysicsCollisionAPI") {
-            self.collider(prim, key, body)?;
+            self.collider(prim, key, owner)?;
         } else {
-            let target = if body {
-                SolverTarget::Body {
+            let target = match owner {
+                PhysicsOwner::Body => SolverTarget::Body {
                     body: crate::ids::body(key),
-                }
-            } else {
-                SolverTarget::Occurrence {
+                },
+                PhysicsOwner::Mesh => SolverTarget::Definition {
+                    definition: crate::ids::definition(key),
+                },
+                PhysicsOwner::Occurrence => SolverTarget::Occurrence {
                     occurrence: crate::ids::occurrence(&prim.path),
-                }
+                },
             };
-            self.physx(prim, &[Holder::Collision], &target, None);
+            self.physx(prim, &[Holder::Collision], Some(&target), None);
         }
         let articulation = if schemas.contains("PhysicsArticulationRootAPI") {
             SolverTarget::Articulation {
@@ -206,26 +210,26 @@ impl super::Builder<'_, '_, '_, '_> {
                 occurrence: crate::ids::occurrence(&prim.path),
             }
         };
-        self.physx(prim, &[Holder::Articulation], &articulation, None);
+        self.physx(prim, &[Holder::Articulation], Some(&articulation), None);
         self.physx(
             prim,
             &[Holder::Body],
-            &SolverTarget::Occurrence {
+            Some(&SolverTarget::Occurrence {
                 occurrence: crate::ids::occurrence(&prim.path),
-            },
+            }),
             None,
         );
         Ok(())
     }
 
-    /// Reads the collision schemas of `prim`: a collider of the body of
-    /// definition `key` when `body`, and of the occurrence of `prim`
-    /// otherwise.
+    /// Reads the collision schemas of `prim`: a collider of the body or the
+    /// mesh of definition `key` where `owner` names one, and of the occurrence
+    /// of `prim` otherwise.
     pub(super) fn collider(
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        body: bool,
+        owner: PhysicsOwner,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let occurrence = PhysicsTarget::Occurrence {
             occurrence: crate::ids::occurrence(&prim.path),
@@ -243,15 +247,20 @@ impl super::Builder<'_, '_, '_, '_> {
             },
         };
         let material = self.physics_material(prim)?;
-        let (id, target) = if body {
-            (
+        let (id, target) = match owner {
+            PhysicsOwner::Body => (
                 crate::ids::collider(key),
                 PhysicsTarget::Body {
                     body: crate::ids::body(key),
                 },
-            )
-        } else {
-            (crate::ids::collider(&prim.path), occurrence)
+            ),
+            PhysicsOwner::Mesh => (
+                crate::ids::collider(key),
+                PhysicsTarget::Definition {
+                    definition: crate::ids::definition(key),
+                },
+            ),
+            PhysicsOwner::Occurrence => (crate::ids::collider(&prim.path), occurrence),
         };
         if !self
             .ir
@@ -272,7 +281,7 @@ impl super::Builder<'_, '_, '_, '_> {
             self.physx(
                 prim,
                 &[Holder::Collision],
-                &SolverTarget::Collider { collider: id },
+                Some(&SolverTarget::Collider { collider: id }),
                 None,
             );
         }
@@ -344,9 +353,9 @@ impl super::Builder<'_, '_, '_, '_> {
             self.physx(
                 material,
                 &[Holder::Material],
-                &SolverTarget::PhysicalMaterial {
+                Some(&SolverTarget::PhysicalMaterial {
                     material: id.clone(),
-                },
+                }),
                 None,
             );
         }
@@ -432,7 +441,9 @@ impl super::Builder<'_, '_, '_, '_> {
         });
         for PendingJoint { path, data } in pending {
             let alignment = match data.kind {
-                JointType::Revolute | JointType::Prismatic => axis_alignment(data.axis),
+                JointType::Revolute | JointType::Prismatic => {
+                    crate::joint::alignment(crate::joint::source_axis(data.axis))
+                }
                 _ => crate::schema::xform::IDENTITY,
             };
             let mut connectors = Vec::new();
@@ -473,6 +484,9 @@ impl super::Builder<'_, '_, '_, '_> {
                 JointLimits::new(lower.map(factor), upper.map(factor))
             };
             let scale = self.scale;
+            let generic = (data.kind == JointType::Generic)
+                .then(|| generic_kind(&data.limits, scale))
+                .flatten();
             let id = crate::ids::joint(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
@@ -514,7 +528,7 @@ impl super::Builder<'_, '_, '_, '_> {
                                 PairedJointKind::Gears {
                                     distance: None,
                                     distance2: None,
-                                    ratio: data.ratio.and_then(PositiveReal::new),
+                                    ratio: data.ratio.and_then(|ratio| NonZeroReal::new(-ratio)),
                                     coupled_joints,
                                 }
                             } else {
@@ -522,21 +536,23 @@ impl super::Builder<'_, '_, '_, '_> {
                                     distance: None,
                                     distance2: None,
                                     ratio: data.ratio.and_then(|ratio| {
-                                        PositiveReal::new(ratio.to_radians() / scale)
+                                        NonZeroReal::new(ratio.to_radians() / scale)
                                     }),
                                     coupled_joints,
                                 }
                             }
                         }
-                        JointType::Generic => PairedJointKind::Native {
-                            name: "PhysicsJoint".to_owned(),
-                            angle: None,
-                            translation_offset: None,
-                            distance: None,
-                            distance2: None,
-                            angular_limits: None,
-                            linear_limits: None,
-                        },
+                        JointType::Generic => {
+                            generic.clone().unwrap_or_else(|| PairedJointKind::Native {
+                                name: "PhysicsJoint".to_owned(),
+                                angle: None,
+                                translation_offset: None,
+                                distance: None,
+                                distance2: None,
+                                angular_limits: None,
+                                linear_limits: None,
+                            })
+                        }
                     };
                     let mut iter = connectors.into_iter();
                     let (Some(first), Some(second)) = (iter.next(), iter.next()) else {
@@ -560,7 +576,17 @@ impl super::Builder<'_, '_, '_, '_> {
             if data.kind == JointType::Distance && data.min_distance.is_some() {
                 dropped.push("physics:minDistance".to_owned());
             }
-            if data.kind == JointType::Generic {
+            if generic.is_some() {
+                // The kind states the locked axes, and its limits the free ones.
+                dropped.retain(|name| {
+                    !["transX", "transY", "transZ", "rotX", "rotY", "rotZ"]
+                        .into_iter()
+                        .any(|dof| {
+                            name == &format!("limit:{dof}:physics:low")
+                                || name == &format!("limit:{dof}:physics:high")
+                        })
+                });
+            } else if data.kind == JointType::Generic {
                 dropped.push("the degrees of freedom of a generic joint".to_owned());
             }
             for property in dropped {
@@ -568,18 +594,226 @@ impl super::Builder<'_, '_, '_, '_> {
                     .joint_properties
                     .push(format!("{path}: {property}"));
             }
-            let id = joint.id.clone();
+            let design = self.ctx.depth() >= DecodeDepth::Design;
+            let feature = if design {
+                let feature = self.joint_feature(&path, &data, &joint);
+                if feature.is_none() {
+                    self.tallies
+                        .joint_properties
+                        .push(format!("{path}: the design joint feature"));
+                }
+                feature
+            } else {
+                self.joints_beyond_depth = true;
+                None
+            };
+            let joint_id = joint.id.clone();
             self.ir.model.assembly_joints.push(joint);
             self.admit("usd_joint")?;
-            if let Some(prim) = self.stage.find(&path) {
+            let target = feature.map(|feature| {
+                self.joint_features.insert(joint_id, feature.clone());
+                SolverTarget::Joint { joint: feature }
+            });
+            if target.is_some() {
+                self.admit("usd_joint_feature")?;
+            }
+            if let Some(prim) = self.stage.find(&path).filter(|_| design) {
                 self.physx(
                     prim,
                     &[Holder::Joint],
-                    &SolverTarget::Joint { joint: id },
+                    target.as_ref(),
                     Some(super::physx::joint_freedom(data.kind)),
                 );
             }
         }
-        Ok(())
+        self.joint_scope()
     }
+
+    /// States the design joint feature of the joint prim at `path`, which
+    /// restates `joint`, and returns its id. `None` where the joint's bodies
+    /// have no occurrence path from one definition or the joint has no
+    /// design form.
+    fn joint_feature(
+        &mut self,
+        path: &str,
+        data: &JointData,
+        joint: &AssemblyJoint,
+    ) -> Option<FeatureId> {
+        let axis = match data.kind {
+            JointType::Revolute | JointType::Prismatic => crate::joint::source_axis(data.axis),
+            _ => cadmpeg_ir::design::construction::FrameAxis::Z,
+        };
+        let (component, routes) = self.joint_component(path, &data.bodies)?;
+        let mut sides = Vec::new();
+        for (side, body) in routes.into_iter().enumerate() {
+            let frame = self.joint_frame(data, side, &crate::schema::xform::IDENTITY)?;
+            sides.push(crate::joint::Side { body, frame });
+        }
+        let sides: [crate::joint::Side; 2] = sides.try_into().ok()?;
+        let features = &self.joint_features;
+        let design = crate::joint::design(joint, axis, sides, &|id| features.get(id).cloned())?;
+        let id = crate::ids::joint_feature(path);
+        let name = self.stage.find(path).map(|prim| prim.name.clone());
+        self.ir.design.features.push(Feature {
+            id: id.clone(),
+            name,
+            suppressed: Some(Dimension::Literal(!data.enabled)),
+            definition: FeatureDefinition {
+                operation: FeatureOperation::Joint(Box::new(design)),
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: None,
+            component: Some(component),
+            driven_by: None,
+            native_ref: Some(path.to_owned()),
+        });
+        Some(id)
+    }
+
+    /// The definition a joint at `path` belongs to, with the occurrence path
+    /// from it to each body: the prototype of the nearest occurrence prim
+    /// above the joint that places both bodies, or the stage.
+    fn joint_component(
+        &self,
+        path: &str,
+        bodies: &[Option<String>; 2],
+    ) -> Option<(ProductDefinitionId, [Option<Vec<OccurrenceId>>; 2])> {
+        let model = &self.ir.model;
+        let route = |component: &ProductDefinitionId, body: &str| {
+            let mut route = vec![crate::ids::occurrence(body)];
+            for _ in 0..=model.occurrences.len() {
+                let owner = products::owner(&model.product_definitions, route.first()?)?;
+                if &owner.id == component {
+                    return Some(route);
+                }
+                let placement = products::sole_placement(&model.occurrences, &owner.id)?;
+                route.insert(0, placement.id.clone());
+            }
+            None
+        };
+        let mut candidates = Vec::new();
+        let mut prefix = path;
+        while let Some(end) = prefix.rfind('/').filter(|end| *end > 0) {
+            prefix = &prefix[..end];
+            let occurrence = crate::ids::occurrence(prefix);
+            if let Some(placed) = model
+                .occurrences
+                .iter()
+                .find(|record| record.id == occurrence)
+            {
+                candidates.push(placed.prototype.clone());
+            }
+        }
+        candidates.push(crate::ids::stage());
+        candidates.into_iter().find_map(|component| {
+            let [first, second] = bodies;
+            let first = first.as_deref().map(|body| route(&component, body));
+            let second = second.as_deref().map(|body| route(&component, body));
+            let routes = [
+                first.map_or(Some(None), |route| route.map(Some))?,
+                second.map_or(Some(None), |route| route.map(Some))?,
+            ];
+            Some((component, routes))
+        })
+    }
+
+    /// Lists the stated joint features in an unordered group that is a root
+    /// container of the stage definition's scope.
+    fn joint_scope(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        if self.joint_features.is_empty() {
+            return Ok(());
+        }
+        let group = crate::ids::joint_group();
+        self.ir.design.containers.push(Container::Unordered {
+            id: group.clone(),
+            kind: UnorderedKind::Group,
+            members: self
+                .joint_features
+                .values()
+                .cloned()
+                .map(Member::Feature)
+                .collect(),
+        });
+        self.admit("usd_joint_group")?;
+        let definition = crate::ids::stage();
+        if let Some(scope) = self
+            .ir
+            .design
+            .scopes
+            .iter_mut()
+            .find(|scope| scope.definition == definition)
+        {
+            scope.roots.push(group);
+            return Ok(());
+        }
+        let spanned = self.ir.spanned_definitions(&definition);
+        let unproduced = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|record| spanned.contains(record.id.as_str()))
+            .flat_map(|record| record.bodies.iter().cloned())
+            .collect();
+        self.ir.design.scopes.push(DesignScope {
+            definition,
+            roots: vec![group],
+            active_configuration: None,
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+            unproduced,
+        });
+        self.admit("usd_joint_scope")
+    }
+}
+
+/// The neutral kind of a generic joint whose `PhysicsLimitAPI` instances lock
+/// `transX`, `transY`, `rotX` and `rotY`: a cylindrical joint along its Z
+/// axis, or a revolute or slider joint when `transZ` or `rotZ` is locked too,
+/// with the limits of the free degrees of freedom. `None` for another
+/// generic joint.
+fn generic_kind(limits: &[Limit], scale: f64) -> Option<PairedJointKind> {
+    let limit = |instance: &str| limits.iter().find(|limit| limit.instance == instance);
+    let locked = |instance: &str| limit(instance).is_some_and(Limit::locks);
+    if !["transX", "transY", "rotX", "rotY"].into_iter().all(locked) || limit("distance").is_some()
+    {
+        return None;
+    }
+    let range = |instance: &str, factor: f64| {
+        limit(instance).and_then(|limit| {
+            JointLimits::new(
+                limit
+                    .low
+                    .filter(|value| value.is_finite())
+                    .map(|low| low * factor),
+                limit
+                    .high
+                    .filter(|value| value.is_finite())
+                    .map(|high| high * factor),
+            )
+        })
+    };
+    let angular = range("rotZ", std::f64::consts::PI / 180.0);
+    let linear = range("transZ", scale);
+    Some(match (locked("rotZ"), locked("transZ")) {
+        (false, false) => PairedJointKind::Cylindrical {
+            angle: None,
+            distance: None,
+            angular_limits: angular,
+            linear_limits: linear,
+        },
+        (false, true) => PairedJointKind::Revolute {
+            angle: None,
+            angular_limits: angular,
+        },
+        (true, false) => PairedJointKind::Slider {
+            distance: None,
+            translation_offset: None,
+            linear_limits: linear,
+        },
+        (true, true) => return None,
+    })
 }

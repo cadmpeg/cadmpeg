@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, Decode
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use serde::Deserialize;
 
 use crate::container::ContainerScan;
@@ -55,11 +56,95 @@ struct DesignObjectReference {
     ids: Vec<u64>,
 }
 
+pub(super) fn document_identities(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<BTreeMap<String, cadmpeg_ir::products::ExternalDocument>, CodecError> {
+    use cadmpeg_core::text::NonBlankString;
+    use cadmpeg_ir::products::ExternalDocument;
+
+    let bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY}: {error}"))
+    })?;
+    let description = ctx.parse_json_value(text, "read F3Z document identities")?;
+    let mut identities = BTreeMap::<String, ExternalDocument>::new();
+    let mut conflicts = std::collections::BTreeSet::new();
+    if let Some(graphs) = description
+        .pointer("/designDescription/designGraphs")
+        .and_then(serde_json::Value::as_array)
+    {
+        for graph in graphs {
+            if let Some(objects) = graph
+                .get("designObjects")
+                .and_then(serde_json::Value::as_array)
+            {
+                for object in objects {
+                    let Some(path) = object
+                        .get("relativePath")
+                        .and_then(serde_json::Value::as_str)
+                    else {
+                        continue;
+                    };
+                    let identity = ExternalDocument {
+                        document_id: object
+                            .get("lineage")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(NonBlankString::new),
+                        version: object
+                            .get("about")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(NonBlankString::new),
+                        ..ExternalDocument::default()
+                    };
+                    let previous = identities.entry(path.to_owned()).or_default();
+                    for (field, stored, incoming) in [
+                        ("lineage", &mut previous.document_id, identity.document_id),
+                        ("about", &mut previous.version, identity.version),
+                    ] {
+                        merge_identity_field(path, field, stored, incoming, &mut conflicts, losses);
+                    }
+                }
+            }
+        }
+    }
+    Ok(identities)
+}
+
+fn merge_identity_field(
+    path: &str,
+    field: &str,
+    stored: &mut Option<cadmpeg_core::text::NonBlankString>,
+    incoming: Option<cadmpeg_core::text::NonBlankString>,
+    conflicts: &mut std::collections::BTreeSet<(String, String)>,
+    losses: &mut Vec<LossNote>,
+) {
+    let key = (path.to_owned(), field.to_owned());
+    if conflicts.contains(&key) {
+        return;
+    }
+    match (stored.as_ref(), incoming) {
+        (Some(previous), Some(value)) if previous != &value => {
+            losses.push(F3dLossCode::XrefArchiveIdentityDisagrees.note(format!(
+                "{path}: conflicting {field} identities {previous:?} and {value:?}; the member supplies its own {field}"
+            )));
+            *stored = None;
+            conflicts.insert(key);
+        }
+        (None, value) => *stored = value,
+        _ => {}
+    }
+}
+
 /// Retains member classification and the checkpoints used to reopen each scan.
 pub(super) struct ArchiveSession {
     pub(super) members: BTreeMap<String, ClassifiedMember>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
+    /// Members that opened and then failed to scan, given up as archive
+    /// entries. `losses` already holds each part's loss.
+    pub(super) given_up: Vec<GivenUpPart>,
 }
 
 /// Facts read from a member's container scan during classification.
@@ -177,6 +262,7 @@ pub(super) fn classify_members<'a>(
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for member_path in scan
         .entries
         .iter()
@@ -186,6 +272,7 @@ pub(super) fn classify_members<'a>(
         super::observer::classifying(member_path, |timing| {
             let checkpoint = ctx.checkpoint();
             let arena = DecodeArena::new();
+            let mut opened = false;
             let classified = {
                 let root = super::observer::timed(&mut timing.nested_scan, || {
                     if scan.has_entry(member_path) {
@@ -197,6 +284,7 @@ pub(super) fn classify_members<'a>(
                     }
                 });
                 root.and_then(|view| {
+                    opened = true;
                     ctx.with_arena(&arena, |local| {
                         let member_scan = super::observer::timed(&mut timing.nested_scan, || {
                             crate::container::scan_member(local, view, member_path)
@@ -225,9 +313,20 @@ pub(super) fn classify_members<'a>(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let message = format!("{error}");
-                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    let note = F3dLossCode::XrefMemberUndecoded.note(format!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
+                    losses.push(note);
+                    if opened {
+                        if let Some(part) = scan.give_up_entry(ctx, member_path, error)? {
+                            let held = |kept: &GivenUpPart| kept.id() == part.id();
+                            // Two directory entries can name one stored span.
+                            if !given_up.iter().any(held) && !scan.given_up.iter().any(held) {
+                                losses.push(part.loss());
+                                given_up.push(part);
+                            }
+                        }
+                    }
                     members.insert(
                         member_path.to_owned(),
                         ClassifiedMember::Unreadable(message),
@@ -269,6 +368,7 @@ pub(super) fn classify_members<'a>(
         members,
         layers,
         losses,
+        given_up,
     })
 }
 
@@ -291,11 +391,8 @@ pub(super) fn merge_member_layers(
                 member_path,
             )
             .with_instance(instance);
-        if let Err(error) = target.insert(matched) {
-            let rejected = match &error {
-                cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)
-                | cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected) => rejected,
-            };
+        if let Err(cadmpeg_core::dialect::DuplicateDialectLayer(rejected)) = target.insert(matched)
+        {
             let format = rejected.format();
             let collision_instance = rejected.instance().unwrap_or("unidentified");
             super::push_loss(&mut losses, F3dLossCode::DialectLayerCollision, format_args!(
@@ -395,6 +492,9 @@ fn model_root_member(
 
 #[cfg(test)]
 mod tests {
+    use super::merge_identity_field;
+    use cadmpeg_core::text::NonBlankString;
+
     #[test]
     fn manifest_extensions_preserve_depth_refusal() {
         let bytes = crate::test_support::assembly_test::f3z_archive(
@@ -419,5 +519,50 @@ mod tests {
                 assert_eq!(Some(limit), ctx.resource_refusal());
             });
         });
+    }
+
+    #[test]
+    fn f3z_document_identity_blank_and_present_keep_present() {
+        for reverse in [false, true] {
+            let present = NonBlankString::new("urn:lineage:target");
+            let mut stored = if reverse { present.clone() } else { None };
+            let incoming = if reverse { None } else { present.clone() };
+            let mut conflicts = std::collections::BTreeSet::new();
+            let mut losses = Vec::new();
+            merge_identity_field(
+                "target.f3d",
+                "lineage",
+                &mut stored,
+                incoming,
+                &mut conflicts,
+                &mut losses,
+            );
+            assert_eq!(stored, present);
+            assert!(losses.is_empty());
+        }
+    }
+
+    #[test]
+    fn f3z_document_identity_conflict_defers_to_member() {
+        let mut stored = NonBlankString::new("urn:lineage:first");
+        let mut conflicts = std::collections::BTreeSet::new();
+        let mut losses = Vec::new();
+        for value in ["urn:lineage:second", "urn:lineage:first"] {
+            merge_identity_field(
+                "target.f3d",
+                "lineage",
+                &mut stored,
+                NonBlankString::new(value),
+                &mut conflicts,
+                &mut losses,
+            );
+            assert!(stored.is_none());
+        }
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "xref.archive-identity-disagrees"
+        );
+        assert!(losses[0].message.contains("target.f3d"));
     }
 }

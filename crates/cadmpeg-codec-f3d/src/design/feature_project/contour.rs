@@ -3,15 +3,14 @@ use super::{
 };
 use crate::loss::F3dLossCode;
 use crate::records::{feature::scope::DesignParameterScope, parameters::DesignParameter};
-use cadmpeg_ir::{
-    features::{
-        sheet_metal::{SheetMetalContourFlangeConstruction, SheetMetalContourThicknessSide},
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
-        PlanarProfileRef,
-    },
-    report::loss::LossNote,
-    scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength},
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::sheet_metal::{
+    SheetMetalContourFlangeConstruction, SheetMetalContourThicknessSide,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
 
 fn parameter_length(parameter: &DesignParameter) -> Option<(Length, bool)> {
     let known_unit = parameter

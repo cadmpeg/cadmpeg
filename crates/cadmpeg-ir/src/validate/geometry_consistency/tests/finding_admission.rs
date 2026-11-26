@@ -12,7 +12,7 @@ fn finds(
     checker: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
     message: &str,
 ) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     checker(&ctx, ir, &mut findings).unwrap();
     assert!(!findings.is_empty());
@@ -80,7 +80,13 @@ fn edge_endpoint_finding_is_reported() {
     ));
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "edge curve endpoints miss",
     );
 }
@@ -104,7 +110,13 @@ fn coedge_use_curve_finding_is_reported() {
     ir.geometry.curves.push(curve);
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "coedge use-curve endpoints miss",
     );
 }
@@ -141,9 +153,8 @@ fn mapped_pcurve_finding_is_reported() {
 }
 
 fn charted(with_supports: bool) -> CadIr {
-    use crate::geometry::{
-        ProceduralCurve, ProceduralCurveDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-    };
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{ProceduralCurve, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     let mut ir = CadIr::empty();
     let supports: [crate::ids::SurfaceId; 2] =
         ["test:model:surface#first", "test:model:surface#second"].map(|id| id.try_into().unwrap());
@@ -194,14 +205,14 @@ fn charted(with_supports: bool) -> CadIr {
             ProceduralCurve::new(
                 "test:model:procedural#charted".try_into().unwrap(),
                 ProceduralCurveDefinition::TolerantIntersection {
-                    construction: crate::geometry::TolerantIntersectionConstruction::try_new(
+                    construction: crate::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         supports,
                         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                         0.01,
                     )
                     .unwrap(),
                     parameterization: Some(
-                        crate::geometry::TolerantIntersectionParameterization::try_new(
+                        crate::geometry::intersection_curves::TolerantIntersectionParameterization::try_new(
                             [pcurve.clone(), pcurve],
                             [0.0, 1.0],
                         )
@@ -250,8 +261,35 @@ fn charted_intersection_witness_finding_is_reported() {
 }
 
 #[test]
+fn procedural_cache_disagreements_are_warnings() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    for ir in [
+        super::mapped_surface_curve([3.0, 2.0]),
+        charted(false),
+        charted(true),
+    ] {
+        let index = crate::index::ModelIndex::new_model_only(&ir);
+        let mut findings = Vec::new();
+        super::super::check_procedural_support_consistency(
+            &ctx,
+            &index,
+            &crate::eval::admission::ModelEvaluationPass::new(),
+            &mut findings,
+        )
+        .unwrap();
+        assert!(!findings.is_empty());
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.severity == crate::report::Severity::Warning),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
 fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (mapping, fit, expected) in [
         ([2.0, 3.0], None, Vec::new()),
         ([3.0, 2.0], None, vec![0]),
@@ -259,7 +297,7 @@ fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
     ] {
         let ir = super::mapped_surface_curve(mapping);
         let index = crate::index::ModelIndex::new_model_only(&ir);
-        let crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } =
+        let crate::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.geometry.procedural_curves[0].definition()
         else {
             panic!("surface curve");

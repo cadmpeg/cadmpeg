@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
     use crate::records::feature::scope::{
@@ -11,12 +13,12 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
         panic!("Fillet fixture");
     };
     slot.fixed = Some(
-        serde_json::from_value(serde_json::json!({"groups": [{
+        json::from_value(cadmpeg_core::json!({"groups": [{
             "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
         }]}))
         .unwrap(),
     );
-    let first: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+    let first: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#100", "record_index": 100, "scope_record_index": 10,
         "scope_reference_ordinal": 0, "byte_offset": 0, "class_tag": "277",
         "members": [101], "member_offsets": [26], "role": 0x0000_0008_0000_0000_u64,
@@ -26,7 +28,7 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
             "opaque_scalar_offset": 62, "variant": false}
     }))
     .unwrap();
-    assert!(super::super::fixed_fillet_assignment_losses(
+    assert!(super::super::fillets::fixed_fillet_assignment_losses(
         std::slice::from_ref(&scope),
         std::slice::from_ref(&first),
     )
@@ -34,7 +36,7 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
     let mut second = first.clone();
     second.record_index = 102;
     second.id = "f3d:test:group#102".into();
-    let losses = super::super::fixed_fillet_assignment_losses(&[scope], &[first, second]);
+    let losses = super::super::fillets::fixed_fillet_assignment_losses(&[scope], &[first, second]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),

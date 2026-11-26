@@ -2,22 +2,22 @@
 //! Borrowed owner serialization composes with structural decode admission.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
-    let expected = serde_value::to_value(&value).unwrap();
+    let value: T = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&value).unwrap(), *wire);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projected =
         crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap();
-    assert_eq!(*projected, expected);
+    assert_eq!(projected, *wire);
     drop(projected);
     ctx.finish_session().unwrap();
     let arena = DecodeArena::new();
@@ -56,12 +56,12 @@ wire_case!(
 );
 wire_case!(
     borrowed_feature_members_wire,
-    crate::features::FeatureResultTopology,
+    crate::features::evaluation::FeatureResultTopology,
     json!({"id":"test:model:feature-result-topology#r","output_of":"test:model:feature#f","members":[{"kind":"body","id":"local-body"},{"kind":"face","id":"local-face"},{"kind":"edge","id":"local-edge"},{"kind":"vertex","id":"local-vertex"}]})
 );
 wire_case!(
     borrowed_equation_curve_wire,
-    crate::features::FeatureEquationCurve,
+    crate::features::geometry::FeatureEquationCurve,
     json!({"parameter":" t ","x_expression":"t*t","y_expression":"0","z_expression":"-t","start":-2.0,"end":3.0})
 );
 wire_case!(
@@ -71,17 +71,17 @@ wire_case!(
 );
 wire_case!(
     borrowed_coil_placement_wire,
-    crate::features::CoilPlacement,
+    crate::features::sweeps::CoilPlacement,
     json!({"kind":"native","native_ref":"native-scope"})
 );
 wire_case!(
     borrowed_tspline_construction_wire,
-    crate::geometry::TSplineSurfaceConstruction,
+    crate::geometry::tsplines::TSplineSurfaceConstruction,
     json!({"parameter_ranges":[[0.0,1.0],[0.0,1.0]],"type_code":7,"subtransform":{"kind":"inline","program":"v 1 2","values":"e 3"},"trailing_value":4,"discontinuities":[[0.2],[0.3],[],[],[],[]],"discontinuity_flag":false,"cache":{"kind":"legacy"}})
 );
 wire_case!(
     borrowed_compound_curve_wire,
-    crate::geometry::CompoundCurveConstruction,
+    crate::geometry::procedural_curves::CompoundCurveConstruction,
     json!({"parameters":[0.5],"components":[{"parameter":1.0,"component":"test:model:curve#c"}]})
 );
 wire_case!(
@@ -137,7 +137,7 @@ wire_case!(
 wire_case!(
     borrowed_tessellation_wire,
     crate::tessellation::Tessellation,
-    json!({"id":"test:model:tessellation#t","body":"test:model:body#b","faces":["test:model:face#f"],"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
+    json!({"id":"test:model:tessellation#t","of":{"kind":"body","body":"test:model:body#b","faces":["test:model:face#f"]},"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
 );
 wire_case!(
     borrowed_exactness_field_wire,

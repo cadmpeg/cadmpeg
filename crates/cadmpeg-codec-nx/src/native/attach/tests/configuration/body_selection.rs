@@ -14,7 +14,7 @@ use crate::native::attach::FeatureId;
 use crate::native::history::BodyWriterHistory;
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::BTreeMap;
 
@@ -87,8 +87,10 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         )
         .into_selection(),
         BodySelection::Resolved {
-            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()],)
-                .expect("distinct bodies"),
+            bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                vec![first.clone()],
+            )
+            .expect("distinct bodies"),
             native: "nx:om-object-index#94".to_string(),
         }
     );
@@ -114,7 +116,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
 
 #[test]
 fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let selection = feature_body_selection_with_offset_blocks(
         &[94],
@@ -269,7 +271,8 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
 
 #[test]
 fn segment_bound_bodies_form_the_exact_retained_history_input() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -284,6 +287,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
         Body {
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
@@ -293,6 +297,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     ]);
     let binding = crate::native::segments::SegmentBodyBinding {
@@ -324,8 +329,10 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         *ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![bound.clone()],)
-                    .expect("distinct bodies"),
+                bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                    bound.clone()
+                ],)
+                .expect("distinct bodies"),
                 native: "nx:segment-body-bindings".to_string(),
             },
         })
@@ -361,6 +368,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }));
     let bindings = (0..256_u32)
         .map(|index| crate::native::segments::SegmentBodyBinding {
@@ -445,9 +453,9 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
 
 #[test]
 fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
-    use cadmpeg_ir::features::{
-        BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#0".to_string(),
@@ -473,8 +481,10 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()],)
-                        .expect("distinct bodies"),
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        body.clone()
+                    ],)
+                    .expect("distinct bodies"),
                     native: "nx:om-object-index#94".to_string(),
                 },
                 BodySelection::local(
@@ -488,7 +498,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
             op: BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
     let feature = Feature {
@@ -497,15 +507,15 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
         ),
         native_ref: None,
     };
@@ -514,7 +524,9 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#offset".to_string(),
@@ -562,16 +574,16 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
             op: BooleanKind::Join,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
 }
 
 #[test]
 fn nx_boolean_writers_follow_selected_identity_namespace() {
-    use cadmpeg_ir::features::{
-        BodySelection, BooleanKind, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
     let operation = crate::native::features::FeatureBooleanOperation {
         id: "boolean#writer-namespace".to_string(),
@@ -633,7 +645,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     });
     assert_eq!(
         boolean_target_writer(&native_definition, 401),

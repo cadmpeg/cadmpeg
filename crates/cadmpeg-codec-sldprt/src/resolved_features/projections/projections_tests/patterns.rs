@@ -5,10 +5,12 @@ use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind, FeatureSource,
 };
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
 use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed},
-    BodySelection, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureId, FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use std::collections::BTreeMap;
 
@@ -19,7 +21,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -123,7 +125,7 @@ fn pattern_surface_seed_uses_generated_face_and_dependency() {
         seeds.as_slice(),
         [PatternSeed::Faces(FaceSelection::Generated { faces, native })]
             if faces.as_slice()
-                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                == [cadmpeg_ir::features::selections::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "7".into(),
                 )
@@ -141,7 +143,7 @@ fn linear_and_mirror_provenance_does_not_resurrect_missing_seeds() {
     for class in ["moLPattern_c", "moMirrorPattern_c", "moMirrorSolid_c"] {
         let (mut features, mut history, lane) = pattern_fixture();
         history.features[1].input_class = Some(class.into());
-        let before = serde_json::to_value(&lane).unwrap();
+        let before = json::to_value(&lane).unwrap();
         crate::resolved_features::bindings::bind_pattern_inputs(
             &mut features,
             std::slice::from_ref(&history),
@@ -153,7 +155,7 @@ fn linear_and_mirror_provenance_does_not_resurrect_missing_seeds() {
         assert!(matches!(features[1].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) if seeds.is_empty()));
         assert!(features[1].dependencies.as_slice().is_empty());
-        assert_eq!(serde_json::to_value(&lane).unwrap(), before);
+        assert_eq!(json::to_value(&lane).unwrap(), before);
     }
 }
 

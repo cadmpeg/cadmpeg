@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::features::{SheetMetalFlangeWidth, TrimRegion, WrapMode};
+use crate::features::sheet_metal_forms::SheetMetalFlangeWidth;
+use crate::features::surface_inputs::{TrimRegion, WrapMode};
 
 /// Each unit arm of an enum tagged by `kind` alone reads its bare tag and
 /// refuses every key beside it, whatever the key's name or value.
@@ -11,18 +13,18 @@ fn reads_its_tag_alone<T>(kind: &str)
 where
     T: Serialize + DeserializeOwned + std::fmt::Debug,
 {
-    let bare = serde_json::json!({ "kind": kind });
-    let read: T = serde_json::from_value(bare.clone()).expect("the bare tag reads");
-    assert_eq!(serde_json::to_value(read).unwrap(), bare);
+    let bare = cadmpeg_core::json!({ "kind": kind });
+    let read: T = json::from_value(bare.clone()).expect("the bare tag reads");
+    assert_eq!(json::to_value(read).unwrap(), bare);
 
     for (key, value) in [
-        ("zz_bogus", serde_json::json!(1)),
+        ("zz_bogus", cadmpeg_core::json!(1)),
         ("value", serde_json::Value::Null),
-        ("value", serde_json::json!({})),
+        ("value", cadmpeg_core::json!({})),
     ] {
         let mut stated = bare.clone();
         stated[key] = value;
-        let error = serde_json::from_value::<T>(stated.clone())
+        let error = json::from_value::<T>(stated.clone())
             .expect_err("a key beside the tag is refused")
             .to_string();
         assert!(

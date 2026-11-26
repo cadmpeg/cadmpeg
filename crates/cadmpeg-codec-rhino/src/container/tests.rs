@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -1133,10 +1134,10 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("framed optional tables");
-            let canonical = serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model))
-                .expect("model");
-            let actual = serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model))
-                .expect("model");
+            let canonical =
+                json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+            let actual =
+                json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
             let expected_offset = expected.ir().geometry.points[0]
                 .id
                 .as_str()
@@ -1170,9 +1171,9 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("misplaced metadata is opaque");
         let canonical =
-            serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+            json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
         let actual =
-            serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
+            json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
         let expected_offset = expected.ir().geometry.points[0]
             .id
             .as_str()
@@ -1206,4 +1207,54 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         assert_eq!(scan.metadata.properties.writer_version, None);
         assert!(!scan.opaque_records.is_empty());
     }
+}
+
+/// Asserts that `losses` holds one `record.unreadable` for the given-up part
+/// of `kind` at `offset`, that `ir` holds its `unknowns` stub linked to the
+/// document record `link` (or to no record), and that `fidelity` keeps only
+/// the digest of the part, whose bytes the retained record `keeper` keeps.
+pub(crate) fn assert_part_given_up(
+    ir: &cadmpeg_ir::document::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    kind: &str,
+    offset: usize,
+    link: Option<&str>,
+    keeper: &str,
+) {
+    let head = format!("part {kind} stream=\"\" offset={offset} ");
+    let charges = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{losses:?}");
+    let stub = charges[0]
+        .message
+        .split_once(" record=")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(stub, _)| stub)
+        .expect("the charge names its stub");
+    let unknowns = &ir
+        .native
+        .namespace("rhino")
+        .expect("Rhino namespace")
+        .arenas()["unknowns"];
+    let record = unknowns
+        .iter()
+        .find(|record| record.id() == stub)
+        .expect("the document holds the stub");
+    let links = link.into_iter().collect::<Vec<_>>();
+    assert_eq!(record.field("links"), Some(cadmpeg_core::json!(links)));
+    let retained = fidelity
+        .retained_record(stub)
+        .expect("the part's digest is retained");
+    assert_eq!(
+        retained.offset(),
+        cadmpeg_core::decode::u64_from_index(offset)
+    );
+    assert!(retained.data().is_none());
+    assert!(fidelity.retained_record(keeper).is_some());
 }

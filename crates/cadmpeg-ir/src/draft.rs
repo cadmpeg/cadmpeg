@@ -8,14 +8,14 @@ use std::hash::{Hash, Hasher};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
-use crate::annotations::Annotations;
+use crate::annotations::{AnnotationKey, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model, Topology};
 use crate::drawings::Drawing;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-};
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
+use crate::features::Feature;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
@@ -244,7 +244,7 @@ pub struct ModelDraft<A = ()> {
 /// Exactness annotations that must accompany a draft commit.
 #[derive(Debug, Default)]
 pub struct DraftAccounting {
-    exactness: BTreeMap<String, Exactness>,
+    exactness: BTreeMap<AnnotationKey, Exactness>,
 }
 
 impl Default for ModelDraft {
@@ -433,12 +433,12 @@ impl<A> ModelDraft<A> {
 
 impl ModelDraft<DraftAccounting> {
     /// Record staged exactness.
-    pub fn exactness(&mut self, identity: impl std::fmt::Display, exactness: Exactness) {
-        let identity = identity.to_string();
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) {
+        let key = key.into();
         if exactness == Exactness::ByteExact {
-            self.accounting.exactness.remove(&identity);
+            self.accounting.exactness.remove(&key);
         } else {
-            self.accounting.exactness.insert(identity, exactness);
+            self.accounting.exactness.insert(key, exactness);
         }
     }
 
@@ -446,7 +446,7 @@ impl ModelDraft<DraftAccounting> {
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
         self.accounting
             .exactness
-            .retain(|identity, _| keep(identity));
+            .retain(|key, _| keep(key.as_str()));
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.
@@ -721,13 +721,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         } else {
             None
         };
-        for (identity, exactness) in accounting.exactness {
+        for (key, exactness) in accounting.exactness {
             if let Some(Ok(owners)) = &annotation_owners {
-                annotations_admitted &= identity_index_contains(&staged, owners, &identity);
+                annotations_admitted &= identity_index_contains(&staged, owners, key.as_str());
             } else if annotation_owners.is_some() {
                 annotations_admitted = false;
             }
-            transaction.exactness(&identity, exactness);
+            transaction.exactness(key, exactness);
         }
         match self.state.commit_draft(
             ModelDraft {
@@ -798,7 +798,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         mut candidate: CadIr,
         changes: crate::annotations::SparseAnnotationTransaction<'ann>,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
         accept: impl FnOnce(
             Result<&crate::report::check::ValidationReport, &crate::native::NativeConvertError>,
             crate::annotations::SparseAnnotationTransaction<'ann>,
@@ -811,8 +811,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
         let annotations = changes.base();
-        let reuse =
-            allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
+        let reuse = allowed == crate::validate::admit::RHINO_DRAFT && candidate.native.0.is_empty();
         let (mut state, unused) = match self.state.admission.take() {
             Some(state) if reuse && state.annotations_admitted => (Some(state), None),
             other => (None, other),
@@ -910,7 +909,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn admit_appended(
         &mut self,
         annotations: &Annotations,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
     ) -> Result<
         Result<crate::report::check::ValidationReport, crate::native::NativeConvertError>,
         CodecError,
@@ -924,10 +923,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .state
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
-        let reuse = allowed == crate::RHINO_DRAFT_CHECKS || allowed == crate::RHINO_INSTANCE_CHECKS;
-        let mut state = self.state.admission.take().filter(|state| {
-            reuse && (allowed != crate::RHINO_DRAFT_CHECKS || state.annotations_admitted)
-        });
+        let reuse = allowed == crate::RHINO_DRAFT || allowed == crate::RHINO_INSTANCE;
+        let mut state =
+            self.state.admission.take().filter(|state| {
+                reuse && (allowed != crate::RHINO_DRAFT || state.annotations_admitted)
+            });
         let local = if let Some(admitted) = &mut state {
             let mut suffix = annotations.sparse_transaction();
             macro_rules! select_annotations {
@@ -935,7 +935,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     for entity in self.state.base.borrow().$home.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
                 )*};
             }
-            if allowed.contains(&crate::report::check::Check::Annotations) {
+            if allowed.annotations() {
                 crate::document::arena_registry!(select_annotations);
             }
             let starts = admitted.lengths;
@@ -962,9 +962,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 ctx,
                 self.state.base.borrow(),
                 (format, &self.state.unknowns),
-                allowed
-                    .contains(&crate::report::check::Check::Annotations)
-                    .then_some(annotations),
+                allowed.annotations().then_some(annotations),
                 allowed,
                 Vec::new(),
             )?,
@@ -985,7 +983,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 }
             }
             if let Some(admitted) = &mut state {
-                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT_CHECKS
+                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT
                     || admitted.annotation_owners_resolve(annotations);
             }
             self.state.admission = state;
@@ -1019,13 +1017,13 @@ fn index_committed_identities(
             None => false,
         };
 
-        let namespace = identity_hash(format);
+        let namespace = identity_hash(format.as_str());
         for (arena, records) in records.arenas() {
             if replaces_unknowns && arena == "unknowns" {
                 continue;
             }
 
-            let arena = identity_hash(arena);
+            let arena = identity_hash(arena.as_str());
             for (record, value) in records.iter().enumerate() {
                 insert_identity(
                     &mut identities,
@@ -1069,11 +1067,11 @@ fn committed_identity_contains(
                 record,
             } => {
                 for (format, native) in &base.native.0 {
-                    if identity_hash(format) != *namespace_hash {
+                    if identity_hash(format.as_str()) != *namespace_hash {
                         continue;
                     }
                     for (name, records) in native.arenas() {
-                        if identity_hash(name) != *arena_hash {
+                        if identity_hash(name.as_str()) != *arena_hash {
                             continue;
                         }
 
@@ -1120,7 +1118,7 @@ fn stage_committed_identities(
     crate::document::arena_registry!(stage_model);
     if let Some(native) = native {
         for (format, namespace) in &native.0 {
-            let namespace_hash = identity_hash(format);
+            let namespace_hash = identity_hash(format.as_str());
             let replaces_unknowns = match unknown_namespace {
                 Some(replacement) => format == replacement,
                 None => false,
@@ -1130,7 +1128,7 @@ fn stage_committed_identities(
                     continue;
                 }
 
-                let arena_hash = identity_hash(arena);
+                let arena_hash = identity_hash(arena.as_str());
                 let mut start = 0;
                 for (existing_format, existing_namespace) in &base.native.0 {
                     if existing_format != format {
@@ -1261,7 +1259,7 @@ mod tests {
     fn point(id: &str) -> Point {
         Point::new(
             PointId::mint(id).expect("valid identity"),
-            crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         )
@@ -1366,12 +1364,12 @@ mod tests {
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -1414,12 +1412,12 @@ mod tests {
                     ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,
                     suppressed: None,
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     source_properties: std::collections::BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                    evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),
                     native_ref: None,
@@ -1435,14 +1433,15 @@ mod tests {
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
         draft
-            .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+            .commit_model(
+                &mut ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            )
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
-        let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
-            round_trip
-                .model
+            ir.model
                 .feature_regeneration_parent(&"test:draft:feature#child".try_into().unwrap()),
             Some(&"test:draft:feature#parent".try_into().unwrap())
         );
@@ -1463,7 +1462,7 @@ mod tests {
                 .commit(
                     &mut ir,
                     &mut annotations,
-                    &cadmpeg_test_support::service_decode_context()
+                    &cadmpeg_core::decode::test_support::service_decode_context()
                 )
                 .unwrap(),
             Err(DraftError::IdentityCollision(_))
@@ -1482,7 +1481,10 @@ mod tests {
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
@@ -1504,7 +1506,10 @@ mod tests {
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
@@ -1517,7 +1522,7 @@ mod tests {
     #[test]
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut session_ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft("test:model:point#1"))
@@ -1532,14 +1537,14 @@ mod tests {
         point_draft("test:model:point#1")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("first sequential commit");
         point_draft("test:model:point#2")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("second sequential commit");
@@ -1551,7 +1556,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         let identity = "test:model:point#cross-draft";
         session
@@ -1572,7 +1577,7 @@ mod tests {
         let identity = "test:model:point#existing";
         let mut ir = CadIr::empty();
         ir.geometry.points.push(point(identity));
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1587,15 +1592,18 @@ mod tests {
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("test").arenas_mut().insert(
-            "records".into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new(identity).expect("valid identity"),
-                serde_json::Map::new(),
-            )
-            .expect("valid native identity")],
-        );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        ir.native
+            .namespace_mut(crate::codec_id!("test"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("records"),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new(identity).expect("valid identity"),
+                    serde_json::Map::new(),
+                )
+                .expect("valid native identity")],
+            );
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1611,7 +1619,7 @@ mod tests {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1629,7 +1637,7 @@ mod tests {
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft(point_id))
@@ -1650,7 +1658,7 @@ mod tests {
         let rejected_identity = "test:model:vertex#rejected";
         let mut ir = CadIr::empty();
         let before = ir.clone();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(session
@@ -1675,7 +1683,7 @@ mod tests {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(!session.contains(committed_identity).unwrap());

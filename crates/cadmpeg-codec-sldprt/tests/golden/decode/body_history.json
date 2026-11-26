@@ -2,7 +2,22 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#247:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#247:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [
         {
           "kind": "ordered",
@@ -19,10 +34,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -106,12 +118,14 @@
       "scopes": [
         {
           "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#247:0",
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -146,128 +160,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": false,
-          "feature_states": {},
-          "id": "sldprt:model:configuration#247:0",
-          "material": "Steel",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#247:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {
-            "DisplayState": "Shaded"
-          }
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "extrude",
-              "value": {
-                "direction": {
-                  "kind": "profile_normal"
-                },
-                "extent": {
-                  "kind": "one_sided",
-                  "side": {
-                    "termination": {
-                      "kind": "blind",
-                      "length": 12.5
-                    }
-                  }
-                },
-                "op": "join",
-                "profile": {
-                  "kind": "planar",
-                  "value": {
-                    "kind": "unresolved",
-                    "value": "sldprt:history:feature#247:0"
-                  }
-                },
-                "solid": true,
-                "start": {
-                  "kind": "profile_plane"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#247:0",
-          "name": "Boss",
-          "native_ref": "sldprt:history:feature#247:0",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "sldprt:model:parameter#247:0:0"
-            },
-            {
-              "kind": "feature",
-              "value": "sldprt:model:feature#247:1"
-            }
-          ],
-          "source_properties": {
-            "Scope": "Body1"
-          },
-          "source_tag": "Extrusion",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "EquationDrivenCurve",
-                "parameters": {}
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#247:1",
-          "name": "Profile",
-          "native_ref": "sldprt:history:feature#247:1",
-          "ordinal": 1,
-          "outputs": [],
-          "regeneration_parent": "sldprt:model:feature#247:0",
-          "source_content": [],
-          "source_properties": {},
-          "source_tag": "EquationDrivenCurve",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "12.5mm",
-          "id": "sldprt:model:parameter#247:0:0",
-          "name": "Depth",
-          "ordinal": 0,
-          "owner": "sldprt:model:feature#247:0",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 12.5
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -283,24 +182,15 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -420,21 +310,9 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "a6a9e3af32106ac486286c5b0526863edbbfe38f7659acb8e5325933fd8e4e66",
-        "sldprt_native_history_sha256": "4813e18a77f366ff5f17995bb17623fb92d2d53e66d6c33f119b4bfef16588b1",
-        "sldprt_native_parameter_sha256": "1269173203e9b534703f9d9bdd7ab433dbd9e1ebe660d240782ee509b6ec3898",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#247:0"
       },
       "identity": {
         "dialects": {
@@ -505,8 +383,7 @@
           "value": {
             "code": "geometry.parasolid-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 2 payload source(s) were enumerated, 1 carrying Parasolid streams.",
@@ -518,8 +395,7 @@
           "value": {
             "code": "topology.graph-not-transferred",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
@@ -543,8 +419,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
@@ -554,10 +429,27 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 91,
+          "stream": "Contents/Config-0-Partition"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "topology.vertex-record-unresolved",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
@@ -569,8 +461,7 @@
           "value": {
             "code": "topology.face-withheld",
             "kind": "topology_not_transferred",
-            "namespace": "sldprt",
-            "strict_floor": "warning"
+            "namespace": "sldprt"
           }
         },
         "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
@@ -580,12 +471,24 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "config.active-identity-unresolved",
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "0 sketch, 1 extrude and 0 revolve features state their family without operands: the extrude's profile is no whole sketch (1: sldprt:model:feature#247:0)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
           }
         },
-        "message": "active configuration identity is unresolved; 0 of 1 configuration records are active.",
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
         "severity": "warning"
       },
       {
@@ -598,18 +501,6 @@
           }
         },
         "message": "1 configuration record(s) have unresolved body membership; 0 configuration record(s) contain missing or repeated body references.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "config.incomplete-snapshot",
-            "kind": "feature_history_retained",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {
@@ -692,6 +583,21 @@
         }
       }
     },
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "a6a9e3af32106ac486286c5b0526863edbbfe38f7659acb8e5325933fd8e4e66",
+      "sldprt_native_history_sha256": "4813e18a77f366ff5f17995bb17623fb92d2d53e66d6c33f119b4bfef16588b1",
+      "sldprt_native_parameter_sha256": "1269173203e9b534703f9d9bdd7ab433dbd9e1ebe660d240782ee509b6ec3898",
+      "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "52a19bd6256b0ea4031bc5e68a18d071fac1b3a555fe33b2f475b2e1d11b5dd5",
     "file_digests": {},
     "retained_records": {

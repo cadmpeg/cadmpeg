@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Which ACT component link names the document root.
 
-use super::super::act_link_is_document_root;
+use super::super::parameter_scopes::act_link_is_document_root;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::identity::ReferenceRun;
 
@@ -82,9 +82,9 @@ fn component_types_of_another_asset_folder_do_not_count() {
 #[test]
 fn inserted_document_roots_use_their_complete_asset_scope() {
     let folders = [
-        "xref/role-a/reference-1/occurrence-0/Asset[Active]",
-        "xref/role-b/reference-2/occurrence-0/instance-parent/Asset[Active]",
-        "xref/role-b/reference-2/occurrence-0/instance-sibling/Asset[Active]",
+        "role-a/reference-1/occurrence-0@Asset[Active]",
+        "role-b/reference-2/occurrence-0/instance-parent@Asset[Active]",
+        "role-b/reference-2/occurrence-0/instance-sibling@Asset[Active]",
     ];
     for folder in folders {
         let stream = format!("f3d:{folder}/FusionACTSegmentType1/BulkStream.dat");

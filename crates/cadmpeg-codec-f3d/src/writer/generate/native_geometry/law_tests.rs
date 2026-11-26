@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Law-slot grammar at the source-less writer boundary.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+use cadmpeg_ir::geometry::lofts::LoftPathCurve;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
-use cadmpeg_ir::geometry::{
-    LawExpression, LawFormula, LoftPathCurve, ProceduralSurfaceDefinition, SweepSurfaceLayout,
-};
+use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
 use crate::test_support::smbh_surfaces_test::{
     synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
@@ -32,8 +34,12 @@ fn document(revision: bool) -> CadIr {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
     ir
 }
 
@@ -54,7 +60,7 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     let mut native = payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw)
         .unwrap();
     edit(&mut native.layout);
     let replacement = SweepSurfacePayload::try_new(
@@ -66,8 +72,8 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     procedural.edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Sweep(replacement);
     });
-    let json = serde_json::to_value(&*ir).unwrap();
-    let decoded: CadIr = serde_json::from_value(json).expect("document serde admission");
+    let json = json::to_value(&*ir).unwrap();
+    let decoded: CadIr = json::from_value(json).expect("document serde admission");
     assert_eq!(layout(&decoded), layout(ir));
 }
 
@@ -80,7 +86,7 @@ fn text(value: &str) -> LawExpression {
 fn assert_round_trip(ir: &CadIr) {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("representable law construction writes");
     let decoded = F3dCodec
@@ -89,23 +95,22 @@ fn assert_round_trip(ir: &CadIr) {
     assert_eq!(layout(decoded.ir()), layout(ir));
 }
 
-fn assert_refused(ir: &CadIr) {
-    let sentinel = b"existing output".to_vec();
-    let mut output = sentinel.clone();
-    let result = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut output));
-    assert!(
-        result.is_err(),
-        "unrepresentable law was written: {:?}",
-        layout(ir)
+/// An unrepresentable law is reduced to its carrier's solved cache.
+fn assert_reduced(ir: &CadIr) {
+    crate::test_support::assert_written_with_loss(
+        ir,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "",
     );
-    assert_eq!(output, sentinel, "refusal must precede output mutation");
 }
 
 #[test]
 fn sweep_string_laws_preserve_reserved_operator_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in [
             "null_law",
             "TRANS",
@@ -114,7 +119,7 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
             "COS",
             "arbitrary text",
         ] {
-            let mut ir = document(revision);
+            let mut ir = source.clone();
             edit_layout(&mut ir, |layout| {
                 let SweepSurfaceLayout::LawDriven {
                     first_law,
@@ -135,9 +140,10 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
 #[test]
 fn formula_variables_refuse_text_including_nested_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in ["arbitrary text", "COS", "TRANS", "null_law"] {
             for nested in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 let expression = if nested {
                     LawExpression::Algebraic {
                         operator: "COS".into(),
@@ -155,7 +161,7 @@ fn formula_variables_refuse_text_including_nested_text() {
                         variables: vec![expression],
                     };
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -220,7 +226,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
                         **second_law = expression.clone();
                     }
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -229,6 +235,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
 #[test]
 fn sweep_primitive_laws_follow_layout_discriminators() {
     for revision in [false, true] {
+        let source = document(revision);
         for expression in [
             LawExpression::Integer { value: 2 },
             LawExpression::Double { value: 2.0 },
@@ -240,7 +247,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
             },
         ] {
             for first in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 edit_layout(&mut ir, |layout| {
                     let SweepSurfaceLayout::LawDriven {
                         first_law,
@@ -257,7 +264,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
                     }
                 });
                 if first && (revision || matches!(expression, LawExpression::Integer { .. })) {
-                    assert_refused(&ir);
+                    assert_reduced(&ir);
                 } else {
                     assert_round_trip(&ir);
                 }

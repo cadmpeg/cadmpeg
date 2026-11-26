@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information independent of design history.
 
+use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use cadmpeg_derive::DeserializeName;
@@ -23,7 +24,7 @@ pub mod zones;
 use zones::ToleranceZone;
 
 /// A model object qualified by an annotation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -155,7 +156,7 @@ pub enum PmiQuantity {
 }
 
 /// Semantic dimensional characteristic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -213,7 +214,9 @@ impl PmiDimensionKind {
 }
 
 /// A qualifier of a dimension, as ASME Y14.5 defines it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -228,11 +231,61 @@ pub enum DimensionModifier {
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ControlledRadius,
     /// The source's text of another modifier.
+    Other(cadmpeg_core::text::NonBlankString),
+}
+
+impl DimensionModifier {
+    /// Whether an `Other` text names one of the typed modifiers, compared
+    /// without regard to ASCII case (part 10).
+    #[must_use]
+    pub fn other_names_a_typed_modifier(&self) -> bool {
+        match self {
+            Self::Other(text) => ["reference", "auxiliary", "statistical", "controlled radius"]
+                .iter()
+                .any(|name| text.as_str().eq_ignore_ascii_case(name)),
+            _ => false,
+        }
+    }
+}
+
+/// The wire form of a [`DimensionModifier`] as read: an `Other` text may be
+/// blank.
+#[derive(cadmpeg_derive::DeserializeTagged)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum DimensionModifierRead {
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Reference,
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Statistical,
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    ControlledRadius,
     Other(String),
 }
 
+/// Reads a dimension's modifiers into their set. A modifier stated twice is
+/// one modifier, the stated order is not kept, and an `Other` with a blank
+/// text qualifies nothing and is dropped, so the set (§2.5, §8) is built from
+/// any list of modifiers.
+fn deserialize_modifiers<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeSet<DimensionModifier>, D::Error> {
+    let modifiers = Vec::<DimensionModifierRead>::deserialize(deserializer)?;
+    Ok(modifiers
+        .into_iter()
+        .filter_map(|modifier| match modifier {
+            DimensionModifierRead::Reference => Some(DimensionModifier::Reference),
+            DimensionModifierRead::Statistical => Some(DimensionModifier::Statistical),
+            DimensionModifierRead::ControlledRadius => Some(DimensionModifier::ControlledRadius),
+            DimensionModifierRead::Other(text) => {
+                cadmpeg_core::text::NonBlankString::new(text).map(DimensionModifier::Other)
+            }
+        })
+        .collect())
+}
+
 /// Geometric form of a datum target feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -263,7 +316,7 @@ pub enum DatumTargetForm {
 }
 
 /// Semantic geometric-tolerance characteristic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -426,7 +479,7 @@ pub enum FitZone {
 }
 
 /// The standard whose table defines a limits-and-fits designation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -476,8 +529,14 @@ pub struct PmiDimension {
         deserialize_with = "deserialize_decimals"
     )]
     pub decimals: Option<u8>,
-    /// Qualifiers in source order, each once.
-    pub modifiers: Vec<DimensionModifier>,
+    /// The qualifiers, a set: each is stated once and their order carries no
+    /// meaning.
+    #[serde(
+        serialize_with = "cadmpeg_core::distinct_keys::set::serialize",
+        deserialize_with = "deserialize_modifiers"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<DimensionModifier>"))]
+    pub modifiers: BTreeSet<DimensionModifier>,
 }
 
 impl PmiDimension {
@@ -490,7 +549,7 @@ impl PmiDimension {
             nominal: None,
             tolerance: None,
             decimals: None,
-            modifiers: Vec::new(),
+            modifiers: BTreeSet::new(),
         }
     }
 
@@ -526,7 +585,7 @@ impl PmiDimension {
 }
 
 /// Semantic or presentation PMI payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PmiDefinition {

@@ -5,14 +5,14 @@ use super::geometry::{
     resolve_transform, source_object, ProjectionOutcome, TransformResolutionError,
 };
 use super::pointer;
-use super::push_entity_loss;
+use super::{push_entity_loss, push_entity_loss_needing};
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -109,6 +109,19 @@ enum AnalyticDirectionError {
     },
     Collapse(&'static str),
     SphereAxisCollapse,
+}
+
+impl AnalyticDirectionError {
+    /// The direction entity that has no Directory Entry in the projection.
+    fn needs(&self) -> Option<u32> {
+        match self {
+            Self::Pointed {
+                reason: DirectionError::MissingEntry(sequence),
+                ..
+            } => Some(*sequence),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for AnalyticDirectionError {
@@ -297,15 +310,21 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                push_entity_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
         let location_index = pointer(record, 1);
         let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
-            push_entity_loss(
+            push_entity_loss_needing(
                 &mut losses,
                 entry,
+                location_index,
                 format_args!("analytic surface location point is missing"),
             );
             continue;
@@ -330,7 +349,12 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -345,7 +369,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -375,7 +404,12 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -398,7 +432,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -437,7 +476,12 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -473,7 +517,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -530,7 +579,12 @@ pub(super) fn project(
                 let axis = match axis {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -545,7 +599,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -579,7 +638,12 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };
@@ -612,7 +676,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                        push_entity_loss_needing(
+                            &mut losses,
+                            entry,
+                            message.needs(),
+                            format_args!("{message}"),
+                        );
                         continue;
                     }
                 };

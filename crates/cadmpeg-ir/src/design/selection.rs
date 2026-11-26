@@ -17,15 +17,17 @@ use serde::{Deserialize, Serialize, Serializer};
 use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
-use super::names::{NameKind, NativeName, TopoName};
-use super::read::{self, Ceiling};
+use super::names::{CodecName, NameKind, NativeName, TopoName};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
-use crate::features::{FeatureId, FinitePoint3, NativeSelections};
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::features::geometry::FinitePoint3;
+use crate::features::selections::NativeSelections;
+use crate::features::FeatureId;
+use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
+use crate::structural_order::StructuralOrd;
 use crate::units::UnitVector3;
 
 /// The order marker of a [`Members`] list.
@@ -69,7 +71,7 @@ pub trait Keyed {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
+    bound(deserialize = "T: ::serde::de::DeserializeOwned + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,
@@ -139,7 +141,13 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     /// Reads a list of members that are distinct by identity. An `Unordered`
     /// list states its members in identity-key order, its one spelling.
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
-        if O::SORTED && items.windows(2).any(|pair| pair[0].key() > pair[1].key()) {
+        if O::SORTED
+            && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
+            && !cadmpeg_core::read_session::repair(
+                cadmpeg_core::read_session::Repair::Spelling,
+                &|| "an unordered member list states its members out of identity-key order".into(),
+            )
+        {
             return Err("an unordered member list states its members out of identity-key order");
         }
         Self::new(items)
@@ -187,7 +195,7 @@ pub type OrderedSelection = Selection<Ordered>;
 pub type SetSelection = Selection<Unordered>;
 
 /// The state a selection's picks resolve in.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -212,7 +220,7 @@ pub enum Anchor {
 }
 
 /// The members of a selection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -245,11 +253,11 @@ pub enum Picks<O: MemberOrder> {
 }
 
 /// One pick of a selection. Its identity key is
-/// `(target, context, native, domain)`; neither the witness nor `resolved`
-/// is part of it.
+/// `(target, context, native, domain)`, and a `Native` pick that carries no
+/// native name adds its witness. `resolved` is never part of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields, try_from = "PickedWire")]
+#[serde(deny_unknown_fields, from = "PickedWire")]
 pub struct Picked {
     /// What the pick picks.
     pub target: PickTarget,
@@ -273,31 +281,62 @@ pub struct Picked {
 }
 
 /// The identity key of a [`Picked`], `(target, context, native, domain)`, in
-/// the order of §2.5. Neither the witness nor `resolved` is part of it.
+/// the order of §2.5. A `Native` pick that carries no native name adds its
+/// witness, which is then the one statement of what it picks; the witness of
+/// any other pick, and `resolved`, are not part of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PickKey<'a> {
     target: &'a PickTarget,
     context: Option<&'a PickContext>,
     native: Option<&'a NativeName>,
     domain: Option<PickDomainKey<'a>>,
+    witness: Option<WitnessKey<'a>>,
 }
 
 impl Keyed for Picked {
     type Key<'a> = PickKey<'a>;
 
     fn key(&self) -> PickKey<'_> {
+        let witness = match (&self.target, &self.native) {
+            (PickTarget::Native { .. }, None) => self.witness.as_ref().map(WitnessKey),
+            _ => None,
+        };
         PickKey {
             target: &self.target,
             context: self.context.as_ref(),
             native: self.native.as_ref(),
             domain: self.domain.as_ref().map(PickDomainKey),
+            witness,
         }
     }
 }
 
-/// The reading form of [`Picked`]. Each pick nested in its domain has
-/// passed the pick ceiling; the conversion admits this one level above the
-/// deepest of them.
+/// A witness in a pick's identity key, compared in the derived structural
+/// order of §2.5.
+#[derive(Debug, Clone, Copy)]
+pub struct WitnessKey<'a>(&'a Witness);
+
+impl PartialEq for WitnessKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for WitnessKey<'_> {}
+
+impl PartialOrd for WitnessKey<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WitnessKey<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.structural_cmp(other.0)
+    }
+}
+
+/// The reading form of [`Picked`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -323,11 +362,8 @@ struct PickedWire {
     resolved: Option<Vec<EntityRef>>,
 }
 
-impl TryFrom<PickedWire> for Picked {
-    type Error = String;
-
-    /// Admits a pick nested no deeper than the pick ceiling.
-    fn try_from(wire: PickedWire) -> Result<Self, Self::Error> {
+impl From<PickedWire> for Picked {
+    fn from(wire: PickedWire) -> Self {
         let PickedWire {
             target,
             context,
@@ -336,40 +372,21 @@ impl TryFrom<PickedWire> for Picked {
             witness,
             resolved,
         } = wire;
-        let pick = Self {
+        Self {
             target,
             context,
             native,
             domain,
             witness,
             resolved,
-        };
-        read::within(Ceiling::Pick, pick.depth())?;
-        Ok(pick)
-    }
-}
-
-impl Picked {
-    /// The levels of this pick and the picks nested in its domain.
-    fn depth(&self) -> u64 {
-        let below = match &self.domain {
-            Some(PickDomain::Limits { start, end }) => {
-                let depth = |pick: &Option<Box<Self>>| pick.as_ref().map_or(0, |pick| pick.depth());
-                depth(start).max(depth(end))
-            }
-            Some(
-                PickDomain::EdgeInterval { .. }
-                | PickDomain::Fragment(_)
-                | PickDomain::Containing(_),
-            )
-            | None => 0,
-        };
-        below + 1
+        }
     }
 }
 
 /// What a pick picks.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -455,7 +472,9 @@ pub enum PickTarget {
 }
 
 /// The sketch or feature a native pick lies in.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -473,7 +492,9 @@ pub enum NativeOwner {
 }
 
 /// Where a pick resolves.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -548,7 +569,9 @@ pub struct PathStep {
 }
 
 /// The occurrence of a path step.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -588,7 +611,9 @@ pub enum PrincipalEntity {
 }
 
 /// A part of a datum feature.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -605,7 +630,7 @@ pub enum DatumPart {
 
 /// A pick's evaluated geometry as the source cached it: a cache of the pick
 /// in its anchored state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Witness {
@@ -638,14 +663,14 @@ pub struct Witness {
     )]
     pub frame: Option<FrameValue>,
     /// The chain curves.
-    pub curves: Vec<SolvedCurveGeometry>,
+    pub curves: Vec<InlineCurve>,
     /// A surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface"
     )]
-    pub surface: Option<SolvedSurfaceGeometry>,
+    pub surface: Option<InlineSurface>,
     /// The face group or body that the source backs up for the pick.
     #[serde(
         default,
@@ -656,7 +681,7 @@ pub struct Witness {
 }
 
 /// The part of an entity that a pick is restricted to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -787,7 +812,7 @@ pub struct RuleTerm<O: MemberOrder> {
 
 /// The rule of a rule term. The kind of a seed decides what a rule reads
 /// from it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -838,13 +863,20 @@ pub enum SelectionRule {
         /// The faces the seeds' faces meet.
         with: Members<Picked, Unordered>,
     },
+    /// Every component instance below the owner's definition that exists in
+    /// the anchored state and whose bodies differ when the operation of the
+    /// selection's feature is applied to that instance alone. It takes no
+    /// seeds and no propagation, and occurs only as a term of an assembly
+    /// feature's participants.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Affected,
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
-    Native(NonBlankString),
+    Native(CodecName),
 }
 
 /// How a rule term extends its result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -884,12 +916,13 @@ pub enum Propagation {
         )]
         gap: Option<Dimension<Length>>,
     },
-    /// A source propagation whose meaning is not established.
-    Native(NonBlankString),
+    /// A source propagation whose meaning is not established, written
+    /// `codec:propagation`.
+    Native(CodecName),
 }
 
 /// The continuity of a connection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -974,7 +1007,7 @@ cadmpeg_core::named_optional_field!(deserialize_propagation, Propagation, "propa
 cadmpeg_core::named_optional_field!(deserialize_resolved_members<O>, Members<Picked, O>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_resolved_entities, Vec<EntityRef>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_start, Box<Picked>, "start");
-cadmpeg_core::named_optional_field!(deserialize_surface, SolvedSurfaceGeometry, "surface");
+cadmpeg_core::named_optional_field!(deserialize_surface, InlineSurface, "surface");
 cadmpeg_core::named_optional_field!(deserialize_target, OccurrencePath, "target");
 cadmpeg_core::named_optional_field!(deserialize_within, NativeOwner, "within");
 cadmpeg_core::named_optional_field!(deserialize_witness, Witness, "witness");

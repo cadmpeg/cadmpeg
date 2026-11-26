@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::features::ParameterId;
 use crate::math::portable::Portable;
 use crate::math::{Point2, Point3, Vector3};
+use crate::scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::transform::Transform;
-use crate::{
-    features::{FinitePoint3, FiniteVector3, ParameterId},
-    scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal},
-    units::{FinitePoint2, UnitVector2, UnitVector3},
-};
+use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -121,7 +120,7 @@ impl JsonSchema for SketchFontWeight {
 }
 
 /// Horizontal placement of sketch text about its text anchor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -140,7 +139,7 @@ pub enum SketchTextHorizontalAlignment {
 }
 
 /// Vertical placement of sketch text about its text anchor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -212,7 +211,7 @@ pub struct Sketch {
 }
 
 /// Placement of a planar sketch's local coordinates in model space.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1049,12 +1048,12 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 }
 
 /// Definition admitted by a solved two-dimensional sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 #[serde(bound(
-    deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>, D: Deserialize<'de>, M: Deserialize<'de>"
+    deserialize = "P: ::serde::de::DeserializeOwned, L: ::serde::de::DeserializeOwned, R: ::serde::de::DeserializeOwned, W: ::serde::de::DeserializeOwned, D: ::serde::de::DeserializeOwned, M: ::serde::de::DeserializeOwned"
 ))]
 pub enum SketchGeometryDefinition<
     P = Point2,
@@ -1648,7 +1647,7 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
 }
 
 /// Neutral geometric relations between model-space sketch entities.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2157,7 +2156,7 @@ impl SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> 
 }
 
 /// Definition admitted by model-space spatial-sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2302,7 +2301,7 @@ pub struct SketchConstraint {
 }
 
 /// A geometric locus on a sketch entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2446,7 +2445,7 @@ impl SketchPatternDirection {
 }
 
 /// Distance form controlled by a rectangular-pattern parameter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2871,7 +2870,7 @@ impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
 }
 
 /// One independently measured pair within a repeated linear dimension.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2943,7 +2942,7 @@ pub enum SketchInternalAlignment {
     ParabolaFocalAxis,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum SketchInternalAlignmentWire {
@@ -3358,7 +3357,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
 }
 
 /// Candidate geometric and dimensional sketch relations for checked admission.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

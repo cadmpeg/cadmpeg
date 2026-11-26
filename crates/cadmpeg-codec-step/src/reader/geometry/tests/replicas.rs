@@ -5,18 +5,22 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::ids::kind;
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+use cadmpeg_ir::bounds::MAX_DOCUMENT_DEPTH;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_curve_point_by_id, model_surface_point_by_id};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    MAX_GEOMETRY_NESTING,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_ir::CadIr;
 
 use crate::export::write_step;
@@ -140,7 +144,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .geometry
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -312,14 +316,14 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
         assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
-                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
+                && match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
     assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                 if result.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#8")
                     && source.as_str() == "step:data:curve#6"
@@ -333,7 +337,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -343,7 +347,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             2.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(12.0, 0.0, 0.0))
     );
 
@@ -369,7 +373,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         .any(|curve| {
             matches!(
                 curve.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:curve#")
             )
         }));
@@ -491,7 +495,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
+                && match surface.definition() { cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss
@@ -507,7 +511,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#8")
                         && source.as_str() == "step:data:surface#9"
@@ -522,7 +526,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -533,7 +537,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             1.0,
             1.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.0, 0.0))
     );
 
@@ -559,7 +563,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:surface#")
             )
         }));
@@ -780,14 +784,16 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    // The head replica carries exactly MAX_GEOMETRY_NESTING placements over the
-    // line, the deepest chain the IR admits.
-    for id in 9..=263 {
+    // The head replica carries the deepest chain a document holds: its curve
+    // record nests to MAX_DOCUMENT_DEPTH levels.
+    let last = 8 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 9..last {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#264=CURVE_REPLICA('',#6,#8);");
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
 
     let decoded = decode_inline(&records);
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && matches!(
@@ -854,7 +860,7 @@ fn replicas_retain_bounded_parent_relations() {
     assert!(decoded.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                 if decoded.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#9")
                     && source.as_str() == "step:data:curve#7"
@@ -868,7 +874,7 @@ fn replicas_retain_bounded_parent_relations() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#13")
                         && source.as_str() == "step:data:surface#12"
@@ -882,7 +888,7 @@ fn replicas_retain_bounded_parent_relations() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -893,7 +899,7 @@ fn replicas_retain_bounded_parent_relations() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 9.0, 0.0))
     );
 
@@ -963,8 +969,33 @@ fn mapped_representation_dag_is_memoized() {
     );
 }
 
+/// The most placements over a line or a plane that a geometry record holds
+/// within a document's [`MAX_DOCUMENT_DEPTH`] levels (§2.5). The root, the
+/// `geometry` home, its arena, the record, and its `geometry` object take five
+/// levels, each placement one, and the leaf's object and its point or vector
+/// two.
+const DEEPEST_DOCUMENT_REPLICA_CHAIN: usize = MAX_DOCUMENT_DEPTH - 7;
+
+/// The JSON depth of `ir` (§2.5): a scalar is no level, and an array or
+/// object is one more than its deepest member.
+fn document_depth(ir: &CadIr) -> usize {
+    let value = json::to_value(ir).expect("document to JSON");
+    let mut deepest = 0;
+    let mut work = vec![(&value, 0)];
+    while let Some((value, above)) = work.pop() {
+        let members: Vec<&serde_json::Value> = match value {
+            serde_json::Value::Array(items) => items.iter().collect(),
+            serde_json::Value::Object(fields) => fields.values().collect(),
+            _ => continue,
+        };
+        deepest = deepest.max(above + 1);
+        work.extend(members.into_iter().map(|member| (member, above + 1)));
+    }
+    deepest
+}
+
 #[test]
-fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+fn a_curve_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     let mut records = String::from(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=DIRECTION('',(1.,0.,0.));
@@ -976,25 +1007,34 @@ fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    // #9 carries one placement more than the IR admits; #10 carries exactly the
-    // admitted depth.
-    for id in 9..=264 {
+    // #9 carries one placement more than a document holds; #10 carries the
+    // deepest chain a document holds.
+    let last = 9 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 9..last {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
 
     let decoded = decode_inline(&records);
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("CURVE_REPLICA #9 nests past the admitted inline basis depth")
-    }));
-    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
-        curve.id.as_str() == "step:data:curve#9"
-            && matches!(
-                curve.geometry.solved(),
-                Some(SolvedCurveGeometry::Unknown { .. })
-            )
-    }));
+    let unreadable: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("step:data:curve#9"));
+    assert!(unreadable[0]
+        .message
+        .contains("dropped=[step:construction:curve_replica#9, step:data:curve#9]"));
+    assert!(unreadable[0].message.contains("geometry.curves"));
+    assert!(!decoded
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"));
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#10"
             && matches!(
@@ -1005,7 +1045,7 @@ fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 }
 
 #[test]
-fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
     let mut records = String::from(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=DIRECTION('',(1.,0.,0.));
@@ -1016,26 +1056,40 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 #7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
 ",
     );
-    // #8 carries one placement more than the IR admits; #9 carries exactly the
-    // admitted depth.
-    for id in 8..=263 {
+    // #8 carries one placement more than a document holds; #9 carries the
+    // deepest chain a document holds.
+    let last = 8 + DEEPEST_DOCUMENT_REPLICA_CHAIN;
+    for id in 8..last {
         writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
             .expect("append surface replica");
     }
-    records.push_str("#264=SURFACE_REPLICA('',#6,#7);\n#265=GEOMETRIC_SET('',(#8));");
+    write!(
+        records,
+        "#{last}=SURFACE_REPLICA('',#6,#7);\n#{}=GEOMETRIC_SET('',(#8));",
+        last + 1
+    )
+    .expect("append surface replica");
 
     let decoded = decode_inline(&records);
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("SURFACE_REPLICA #8 nests past the admitted inline basis depth")
-    }));
-    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
-        surface.id.as_str() == "step:data:surface#8"
-            && matches!(
-                surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Unknown { .. })
-            )
-    }));
+    let unreadable: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0].message.contains("step:data:surface#8"));
+    assert!(unreadable[0]
+        .message
+        .contains("dropped=[step:construction:surface_replica#8, step:data:surface#8]"));
+    assert!(unreadable[0].message.contains("geometry.surfaces"));
+    assert!(!decoded
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#8"));
+    assert_eq!(document_depth(decoded.ir()), MAX_DOCUMENT_DEPTH);
     assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#9"
             && matches!(
@@ -1043,6 +1097,101 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
                 Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
+}
+
+/// Whether `message` names STEP record `#step`: no letter or digit follows
+/// the number, as one does in a longer record number or a stub's digest.
+fn names_record(message: &str, step: usize) -> bool {
+    let token = format!("#{step}");
+    message.match_indices(&token).any(|(at, _)| {
+        !message[at + token.len()..].starts_with(|next: char| next.is_ascii_alphanumeric())
+    })
+}
+
+/// A replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its record with
+/// unknown geometry, and one loss names it. The records of its chain past the
+/// document depth are given up whole.
+#[test]
+fn a_curve_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+",
+    );
+    // #9 carries one placement more than the IR admits.
+    let last = 9 + MAX_GEOMETRY_NESTING;
+    for id in 9..last {
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
+    }
+    writeln!(records, "#{last}=CURVE_REPLICA('',#6,#8);").expect("append curve replica");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#9"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+    }));
+    let naming: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| names_record(&loss.message, 9))
+        .collect();
+    assert_eq!(naming.len(), 1, "{naming:?}");
+    assert_ne!(naming[0].code, record_unreadable_kind());
+}
+
+/// A surface replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its
+/// record with unknown geometry, and one loss names it.
+#[test]
+fn a_surface_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
+",
+    );
+    // #8 carries one placement more than the IR admits.
+    let last = 8 + MAX_GEOMETRY_NESTING;
+    for id in 8..last {
+        writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
+            .expect("append surface replica");
+    }
+    write!(
+        records,
+        "#{last}=SURFACE_REPLICA('',#6,#7);\n#{}=GEOMETRIC_SET('',(#8));",
+        last + 1
+    )
+    .expect("append surface replica");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#8"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+    }));
+    let naming: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| names_record(&loss.message, 8))
+        .collect();
+    assert_eq!(naming.len(), 1, "{naming:?}");
+    assert_ne!(naming[0].code, record_unreadable_kind());
 }
 
 #[test]

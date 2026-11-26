@@ -37,10 +37,10 @@ use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{analytic_surface_parameters, finite_or_refusal};
-use cadmpeg_ir::geometry::{
-    pcurve::{Pcurve, PcurveGeometry},
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::units::FinitePoint2;
@@ -881,8 +881,10 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     // earlier wave. Keep those dependencies as the direct and coupled retry
     // keys; unrelated progress must not repeat the same inverse problems.
     let mut failed_attempts = BTreeMap::<(ProceduralCurveId, usize), Option<PcurveGeometry>>::new();
-    let mut failed_coupled_attempts =
-        BTreeMap::<ProceduralCurveId, [Option<cadmpeg_ir::geometry::SupportPcurve>; 2]>::new();
+    let mut failed_coupled_attempts = BTreeMap::<
+        ProceduralCurveId,
+        [Option<cadmpeg_ir::geometry::procedural_curves::SupportPcurve>; 2],
+    >::new();
     let mut lane_geometry_exhausted = false;
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
@@ -1146,8 +1148,10 @@ fn pending_support_lanes_requiring_completion(
 struct SupportUvAttempts<'inputs> {
     pending: &'inputs [PendingExt11SupportUv],
     failed_attempts: &'inputs mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
-    failed_coupled_attempts:
-        &'inputs mut BTreeMap<ProceduralCurveId, [Option<cadmpeg_ir::geometry::SupportPcurve>; 2]>,
+    failed_coupled_attempts: &'inputs mut BTreeMap<
+        ProceduralCurveId,
+        [Option<cadmpeg_ir::geometry::procedural_curves::SupportPcurve>; 2],
+    >,
     endpoint_witnesses: &'inputs mut EndpointWitnesses,
 }
 
@@ -1592,7 +1596,10 @@ fn complete_support_uv_wave(
                     reproduces
                 };
                 let admitted_fit_tolerance =
-                    cadmpeg_ir::geometry::FitTolerance::try_new(effective_fit_tolerance).ok();
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                        effective_fit_tolerance,
+                    )
+                    .ok();
                 if let Some(admitted_fit_tolerance) =
                     admitted_fit_tolerance.filter(|_| reproduces_chart)
                 {
@@ -1821,7 +1828,7 @@ fn complete_coupled_support_uv(
     geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<
         ProceduralCurveId,
-        [Option<cadmpeg_ir::geometry::SupportPcurve>; 2],
+        [Option<cadmpeg_ir::geometry::procedural_curves::SupportPcurve>; 2],
     >,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -1855,10 +1862,12 @@ fn complete_coupled_support_uv(
             side.pcurve
                 .as_ref()
                 .map(|pcurve| {
-                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::SupportPcurve::new(
-                        pcurve.geometry.clone(),
-                        pcurve.parameter_range,
-                    ))
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        cadmpeg_ir::geometry::procedural_curves::SupportPcurve::new(
+                            pcurve.geometry.clone(),
+                            pcurve.parameter_range,
+                        ),
+                    )
                 })
                 .transpose()
         });
@@ -2474,7 +2483,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 context.parameter_range().endpoints(),
                 procedural
                     .cache_fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             );
             if !values.contains(&candidate) {
                 values.push(candidate);
@@ -2622,7 +2631,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
                     fit_tolerance
-                        .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                        .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new)
                         .transpose()
                         .ok()?,
                 ))
@@ -2668,11 +2677,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .derived(&pcurve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::from)?;
         annotations
-            .derived(&pcurve_id, "parameter_range")
+            .derived(&pcurve_id, "metadata.form.parameter_range")
             .map_err(cadmpeg_core::CodecError::from)?;
         if metadata.fit_tolerance().is_some() {
             annotations
-                .derived(&pcurve_id, "fit_tolerance")
+                .derived(&pcurve_id, "metadata.form.fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
@@ -2700,6 +2709,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     use super::super::geometry_work::GeometryWorkBudget;
@@ -3133,11 +3143,13 @@ mod tests {
         for i in 0..1000 {
             ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{i}")).expect("identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0., 0., 0.)).expect("point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0., 0., 0.))
+                    .expect("point"),
                 None,
             ));
         }
-        let before = serde_json::to_value(&ir).expect("model serialization");
+        ir.finalize();
+        let before = json::to_value(&ir).expect("model serialization");
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
@@ -3168,10 +3180,7 @@ mod tests {
             assert!(validation.endpoint_witnesses.is_empty());
             assert!(ctx.resource_refusal().is_none());
         });
-        assert_eq!(
-            serde_json::to_value(&ir).expect("model serialization"),
-            before
-        );
+        assert_eq!(json::to_value(&ir).expect("model serialization"), before);
     }
 
     #[test]

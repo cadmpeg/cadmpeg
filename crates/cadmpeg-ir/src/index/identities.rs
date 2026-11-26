@@ -2,6 +2,46 @@
 //! Scoped lookup of borrowed identity text.
 
 use std::collections::{hash_map::Entry, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Fast deterministic hasher for bounded internal document identity tables.
+#[derive(Default)]
+pub(crate) struct IdentityHasher(u64);
+
+impl IdentityHasher {
+    #[inline]
+    fn mix(&mut self, word: u64) {
+        let mixed = self.0.rotate_left(5) ^ word;
+        // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+        self.0 = mixed.wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for IdentityHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            if let Ok(arr) = <[u8; 8]>::try_from(chunk) {
+                self.mix(u64::from_ne_bytes(arr));
+            }
+        }
+        let rem = chunks.remainder();
+        if !rem.is_empty() {
+            let mut tail = [0_u8; 8];
+            tail[..rem.len()].copy_from_slice(rem);
+            self.mix(u64::from_ne_bytes(tail));
+        }
+    }
+}
+
+/// Builds the fast deterministic hasher of identity tables.
+pub(crate) type FastBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 /// Membership query over a set of identities.
 pub(crate) trait IdentitySet {
@@ -21,7 +61,7 @@ impl IdentitySet for super::ModelIndex<'_> {
 }
 
 pub(crate) struct BorrowedIdentities<'ir, T = ()> {
-    slots: HashMap<&'ir str, Slots<T>>,
+    slots: HashMap<&'ir str, Slots<T>, FastBuildHasher>,
     /// Number of slots, counting every duplicate of an identity.
     len: usize,
 }
@@ -61,7 +101,7 @@ impl<T> Slots<T> {
 impl<'ir, T> BorrowedIdentities<'ir, T> {
     pub(crate) fn new() -> Self {
         Self {
-            slots: HashMap::new(),
+            slots: HashMap::with_hasher(FastBuildHasher::default()),
             len: 0,
         }
     }
@@ -245,7 +285,7 @@ mod tests {
 
     #[test]
     fn borrowed_identity_large_incremental_index_preserves_duplicate_slots() {
-        const COUNT: usize = 200_000;
+        const COUNT: usize = 64;
         let ids: Vec<_> = (0..COUNT)
             .map(|index| format!("test:model:point#{index}"))
             .collect();

@@ -2,9 +2,11 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DesignParameter, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation, ParameterId, ParameterValue,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     SketchFeatureBinding,
 };
 use cadmpeg_ir::math::Point2;
@@ -102,6 +104,7 @@ impl Fixture {
                 role: FeatureInputScalarRole::Driving,
                 operands: operands.clone(),
                 archive_class: None,
+                archive_object_id: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: vec![FeatureInputRelationInstance {
@@ -204,7 +207,7 @@ impl Fixture {
         )
         .unwrap();
         assert_eq!(constraints.len(), 1);
-        assert_ne!(constraints[0].active, Some(false));
+        assert_eq!(constraints[0].active, None);
         constraints.remove(0).definition.kind().clone()
     }
 }
@@ -240,6 +243,16 @@ fn disagreeing_driving_value_keeps_the_relation_native() {
         fixture.parameter.value,
         Some(ParameterValue::Length(Length::new(30.0).unwrap()))
     );
+    assert!(matches!(
+        fixture.constraint_kind(),
+        SketchConstraintDefinitionInput::Native { .. }
+    ));
+}
+
+#[test]
+fn a_stored_length_its_resolved_points_contradict_keeps_the_relation_native() {
+    let mut fixture = Fixture::new(0.03);
+    fixture.parameter.value = Some(ParameterValue::Length(Length::new(30.0).unwrap()));
     assert!(matches!(
         fixture.constraint_kind(),
         SketchConstraintDefinitionInput::Native { .. }

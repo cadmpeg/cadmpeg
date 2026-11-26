@@ -5,6 +5,7 @@ use super::{
 };
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -68,7 +69,7 @@ fn record(
     type_id: [u8; 16],
     payload: Vec<u8>,
 ) -> Result<Record, cadmpeg_core::CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let fields = parse(&ctx, family, 19, type_id, View::over_retained(&payload))?;
     let token = cadmpeg_ir::identity_key!("generated");
     Ok(Record {
@@ -85,7 +86,7 @@ fn record(
 
 #[test]
 fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let record = record(Family::Sheet, SHEET, sheet(6))?;
     let Fields::Sheet {
         properties,
@@ -106,7 +107,7 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
         .all(|reference| reference.qualified()));
     assert_eq!(tail.len, 46);
     assert!(record.valid(&ctx)?);
-    let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+    let restored: Record = json::from_value(json::to_value(&record)?)?;
     assert_eq!(restored, record);
     assert!(restored.valid(&ctx)?);
     Ok(())
@@ -114,7 +115,7 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
 
 #[test]
 fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for type_id in [VIEW, ALTERNATE_VIEW] {
         let record = record(Family::Sheet, type_id, view(type_id, 19))?;
         let Fields::View {
@@ -132,7 +133,7 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
         assert_eq!(text, "Generated view");
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert_eq!(restored, record);
         assert!(restored.valid(&ctx)?);
     }
@@ -141,7 +142,7 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
 
 #[test]
 fn modeled_document_reference_keeps_each_path_form() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for path in ["generated.ipt", "generated.iam", "C:\\generated\\part.ipt"] {
         let record = record(Family::Browser, MODEL_REFERENCE, model_reference(path))?;
         let Fields::ModelReference {
@@ -153,7 +154,7 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
         assert_eq!(stored, path);
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert!(restored.valid(&ctx)?);
     }
     for path in [
@@ -171,7 +172,7 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
 
 #[test]
 fn decoder_and_validator_refuse_adjacent_counts_families_and_versions() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (type_id, count) in [
         (VIEW, 18),
         (VIEW, 20),
@@ -245,7 +246,7 @@ fn decoder_and_validator_refuse_adjacent_counts_families_and_versions() -> TestR
 
 #[test]
 fn short_prefixes_and_impossible_counts_are_located_refusals() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (family, type_id, bytes, prefix_len) in [
         (Family::Sheet, SHEET, sheet(6), 30),
         (Family::Sheet, VIEW, view(VIEW, 19), 30),
@@ -276,7 +277,7 @@ fn short_prefixes_and_impossible_counts_are_located_refusals() {
 
 #[test]
 fn cached_view_requires_a_nonnull_external_reference() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let valid = record(Family::SheetCache, CACHED_VIEW, cached_view())?;
     assert!(valid.valid(&ctx)?);
     let Fields::CachedView { view, tail, .. } = &valid.fields else {
@@ -298,7 +299,7 @@ fn cached_view_requires_a_nonnull_external_reference() -> TestResult {
 
 #[test]
 fn sheet_form_requires_segment_major_version_nineteen() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut record = record(Family::Sheet, SHEET, sheet(6))?;
     assert!(record.valid(&ctx)?);
     for version in [18, 20, 23] {
@@ -395,5 +396,60 @@ fn short_prefix_error_keeps_the_input_space_and_offset() -> TestResult {
         return Err("located truncation".into());
     };
     assert_eq!(location, expected);
+    Ok(())
+}
+
+#[test]
+fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let Fields::Sheet { views, .. } = &sheet.fields else {
+        return Err("sheet fields".into());
+    };
+    let ordinal = views.references()[0]
+        .record_ordinal()
+        .ok_or("sheet view ordinal")?;
+    let given_up = "inventor:drawing:record#generated-given-up";
+    let mut inventory = crate::drawing::Inventory::default();
+    inventory
+        .refused
+        .insert(("generated".to_owned(), ordinal), given_up.to_owned());
+    inventory.refuse_references(&ctx, &sheet, true)?;
+    let losses = inventory.losses();
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    assert!(losses.iter().all(|loss| loss.code != unreadable));
+    assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
+        cadmpeg_ir::ids::Identity::new(&sheet.id)?,
+        cadmpeg_ir::ids::Identity::new(given_up)?,
+    )));
+    Ok(())
+}
+
+#[test]
+fn a_record_refused_for_its_own_references_is_given_up_by_its_own_id() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    for links in [false, true] {
+        let mut inventory = crate::drawing::Inventory::default();
+        inventory.refuse_references(&ctx, &sheet, links)?;
+        let charges = inventory
+            .losses()
+            .into_iter()
+            .filter(|loss| loss.code == unreadable)
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 1);
+        assert!(charges[0]
+            .message
+            .split_whitespace()
+            .any(|token| token == sheet.id));
+        assert!(!charges[0].message.contains("record-issue#"));
+        assert_eq!(
+            inventory
+                .refused
+                .get(&("generated".to_owned(), sheet.ordinal)),
+            (!links).then_some(&sheet.id)
+        );
+    }
     Ok(())
 }

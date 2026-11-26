@@ -3,15 +3,16 @@
 //! written, read back strictly, and written again; the stated wire forms; and
 //! the schema of each type.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 #[cfg(feature = "schema")]
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -19,7 +20,7 @@ use crate::design::construction::{
     InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
 use crate::design::dimension::Dimension;
-use crate::design::feature::OperationFamily;
+use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::shared::{
     Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
@@ -28,16 +29,22 @@ use crate::design::ops::shared::{
     PathAxisControl, PathPosition, PathReference, PathRollControl, PatternRun, RunSides,
     SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
 };
+use crate::design::ops::shared::{
+    CircularLayout, CompositeStage, LinearLayout, MirrorLayout, ScaleLayout,
+};
 use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PathStep, PickTarget, Picked, Picks, Selection, StepRef,
+    Unordered,
 };
 use crate::design::tests::unit_variants::{self, assert_units_refuse_value, Reader};
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{
-    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
+    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, NonZeroReal,
+    PositiveReal,
 };
 use crate::units::UnitVector3;
 
@@ -183,14 +190,14 @@ fn frame_construction() -> Construction<kinds::Frame> {
 
 fn options() -> NativeOptions {
     NativeOptions::from([(
-        text("f3d:joint_mode"),
+        crate::codec_name!("f3d:joint_mode"),
         NativeOption::Text(literal(text("as_built"))),
     )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("f3d:item_kind"),
+        crate::codec_name!("f3d:item_kind"),
         NativeOption::Text(literal(text("insert"))),
     )])
 }
@@ -200,10 +207,10 @@ fn settings() -> NativeOptions {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -214,7 +221,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 fn reads<T: DeserializeOwned + Debug>(text: &str) -> T {
@@ -477,28 +484,28 @@ fn pattern_layouts() -> Vec<PatternLayout> {
     let second = runs.pop();
     let first = runs.remove(0);
     vec![
-        PatternLayout::Linear {
+        PatternLayout::Linear(LinearLayout {
             first: first.clone(),
             second,
             seed_only: Some(literal(true)),
-        },
-        PatternLayout::Linear {
+        }),
+        PatternLayout::Linear(LinearLayout {
             first,
             second: None,
             seed_only: None,
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.5)).remove(0),
             radial: pattern_runs(length(4.0)).pop(),
             orientation: Some(InstanceOrientation::Follow),
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.25)).remove(1),
             radial: None,
             orientation: None,
-        },
+        }),
         PatternLayout::Path {
             path: selection(6),
             run: pattern_runs(length(3.0)).remove(0),
@@ -514,26 +521,26 @@ fn pattern_layouts() -> Vec<PatternLayout> {
         },
         PatternLayout::Dimensions(dimension_runs()),
         PatternLayout::Table(dimension_tables().remove(0)),
-        PatternLayout::Mirror {
+        PatternLayout::Mirror(MirrorLayout {
             plane: plane_construction(),
             stitch_tolerance: Some(literal(length(0.01))),
-        },
+        }),
         PatternLayout::Composite(vec![
-            PatternLayout::Mirror {
+            CompositeStage::Mirror(MirrorLayout {
                 plane: plane_construction(),
                 stitch_tolerance: None,
-            },
-            PatternLayout::Scale {
+            }),
+            CompositeStage::Scale(ScaleLayout {
                 factor: literal(positive_real(2.0)),
                 count: literal(3),
                 center: Locus::Centroid,
-            },
+            }),
         ]),
-        PatternLayout::Scale {
+        PatternLayout::Scale(ScaleLayout {
             factor: parameter(3),
             count: literal(2),
             center: Locus::Point(Box::new(point_construction())),
-        },
+        }),
         PatternLayout::Follow(selection(8)),
         PatternLayout::Chain(chain_layouts().remove(0)),
         PatternLayout::Native(text("nx:spiral")),
@@ -911,6 +918,7 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(1),
             placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::Uniform(parameter(9))),
             base: Some(PlacementBase::OwnOccurrence),
             constraints: joints(),
             packaged: Some(false),
@@ -920,13 +928,50 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(2),
             placement: None,
+            scale: None,
             base: None,
             constraints: Vec::new(),
             packaged: None,
             native_options: NativeOptions::new(),
             source_settings: NativeOptions::new(),
         },
+        Place {
+            occurrence: occurrence(5),
+            placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::PerAxis {
+                factors: [2.0, -1.0, 0.5].map(|factor| literal(NonZeroReal::new(factor).unwrap())),
+                frame: None,
+            }),
+            base: Some(PlacementBase::Parent),
+            constraints: Vec::new(),
+            packaged: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        },
     ]
+}
+
+/// §6.7: `Place.scale` is written after `placement`, a per-axis one with no
+/// frame is its factors alone, and `null` is refused.
+#[test]
+fn a_place_states_the_scale_composed_with_its_placement() {
+    let place = places().remove(2);
+    let value = to_value(&place);
+    let text = json::to_string(&place).unwrap();
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+    assert!(at("placement") < at("scale") && at("scale") < at("base"));
+    assert_eq!(
+        value["scale"],
+        json!({"kind": "per_axis", "value": {"factors": [
+            {"kind": "literal", "value": 2.0},
+            {"kind": "literal", "value": -1.0},
+            {"kind": "literal", "value": 0.5},
+        ]}})
+    );
+    assert!(to_value(&places().remove(1)).get("scale").is_none());
+    let mut text = value.clone();
+    text["scale"] = serde_json::Value::Null;
+    assert!(refuses::<Place>(&text.to_string()).contains("scale"));
 }
 
 fn place_sets() -> Vec<PlaceSet> {
@@ -1077,23 +1122,23 @@ fn context_effects() -> Vec<ContextEffect> {
     ]
 }
 
-fn assembly_features() -> Vec<AssemblyFeature> {
+fn assembly_contexts() -> Vec<AssemblyContext> {
     vec![
-        AssemblyFeature {
-            participants: selection(17),
-            effect: Some(ContextEffect::Instances),
-            operation: Box::new(FeatureOperation::Unresolved {
-                family: OperationFamily::Hole,
-            }),
+        AssemblyContext {
+            participants: BTreeMap::from([
+                (None, selection(16)),
+                (Some(ContextEffect::Instances), selection(17)),
+                (
+                    Some(ContextEffect::Native(text("creo:visibility_level:2"))),
+                    selection(18),
+                ),
+            ]),
         },
-        AssemblyFeature {
-            participants: unread(),
-            effect: None,
-            operation: Box::new(FeatureOperation::Native {
-                kind: text("creo:assem_cut"),
-                native_options: options(),
-                source_settings: NativeOptions::new(),
-            }),
+        AssemblyContext {
+            participants: BTreeMap::from([(Some(ContextEffect::Definitions), unread())]),
+        },
+        AssemblyContext {
+            participants: BTreeMap::new(),
         },
     ]
 }
@@ -1107,16 +1152,15 @@ fn assembly_operations() -> Vec<FeatureOperation> {
         FeatureOperation::RigidGroup(Box::new(rigid_groups().remove(0))),
         FeatureOperation::ComponentPattern(Box::new(component_patterns().remove(0))),
         FeatureOperation::MirrorComponents(Box::new(mirror_components().remove(0))),
-        FeatureOperation::AssemblyFeature(Box::new(assembly_features().remove(0))),
     ]
 }
 
 #[test]
 fn every_assembly_operation_round_trips() {
     let mut report = Report::default();
-    report.check("AssemblyFeature", assembly_features());
+    report.check("AssemblyContext", assembly_contexts());
     report.check("FeatureOperation", assembly_operations());
-    report.variants("FeatureOperation", &assembly_operations(), 7);
+    report.variants("FeatureOperation", &assembly_operations(), 6);
     assert!(report.failures.is_empty(), "{:#?}", report.failures);
 }
 
@@ -1134,8 +1178,7 @@ fn an_assembly_operation_takes_the_adjacent_tag() {
             "joint",
             "rigid_group",
             "component_pattern",
-            "mirror_components",
-            "assembly_feature"
+            "mirror_components"
         ]
     );
     let place = places().remove(1);
@@ -1143,84 +1186,34 @@ fn an_assembly_operation_takes_the_adjacent_tag() {
         to_value(&FeatureOperation::Place(Box::new(place.clone()))),
         json!({"kind": "place", "value": to_value(&place)})
     );
-    let feature = assembly_features().remove(0);
-    assert_eq!(
-        to_value(&feature),
-        json!({
-            "participants": to_value(&feature.participants),
-            "effect": {"kind": "instances"},
-            "operation": {"kind": "unresolved", "value": {"family": "hole"}},
-        })
-    );
-    let mut bare = to_value(&assembly_features().remove(1));
-    assert!(bare.get("effect").is_none());
-    bare["effect"] = json!(null);
-    assert!(refuses::<AssemblyFeature>(&bare.to_string()).contains("effect"));
-    bare.as_object_mut().unwrap().remove("effect");
-    bare.as_object_mut().unwrap().remove("operation");
-    refuses::<AssemblyFeature>(&bare.to_string());
 }
 
-/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
-/// thread.
-fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    std::thread::Builder::new()
-        .stack_size(2 << 20)
-        .spawn(work)
-        .unwrap()
-        .join()
-        .unwrap()
-}
-
-/// An assembly feature's operation can itself be an assembly feature, and
-/// the spec gives that nesting no ceiling; the JSON depth limit bounds it.
-/// One level past the deepest nesting the reader admits is refused by that
-/// limit, and the deepest reads, prints the same bytes, clones, compares, and
-/// drops on a default thread.
+/// §6.7: the participants are `[effect, selection]` pairs in key order, an
+/// unstated effect first as `null`, and an empty map is written `[]`.
 #[test]
-fn assembly_features_nest_to_the_json_depth_limit_on_a_default_thread() {
-    fn nested(depth: usize) -> String {
-        let leaf = FeatureOperation::Unresolved {
-            family: OperationFamily::Hole,
-        };
-        let operation = (0..depth).fold(leaf, |operation, _| {
-            FeatureOperation::AssemblyFeature(Box::new(AssemblyFeature {
-                participants: unread(),
-                effect: None,
-                operation: Box::new(operation),
-            }))
-        });
-        serde_json::to_string(&operation).unwrap()
-    }
-    let past = (1..128)
-        .find(|&depth| {
-            read::from_str::<FeatureOperation>(&nested(depth), &ResourceLimits::desktop()).is_err()
-        })
-        .expect("the reader refuses some depth below the JSON limit");
-    assert!(past > 1, "a single assembly feature is refused");
-    let refusal = on_a_default_thread({
-        let text = nested(past);
-        move || read::from_str::<FeatureOperation>(&text, &ResourceLimits::desktop()).err()
-    });
-    assert!(
-        matches!(&refusal, Some(cadmpeg_core::CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
-        "depth {past}: {refusal:?}"
+fn an_assembly_context_writes_its_participants_as_pairs_in_key_order() {
+    let context = assembly_contexts().remove(0);
+    assert_eq!(
+        to_value(&context),
+        json!({"participants": [
+            [null, to_value(&selection::<Unordered>(16))],
+            [{"kind": "instances"}, to_value(&selection::<Unordered>(17))],
+            [
+                {"kind": "native", "value": "creo:visibility_level:2"},
+                to_value(&selection::<Unordered>(18))
+            ],
+        ]})
     );
-    let deepest = nested(past - 1);
-    let printed = on_a_default_thread({
-        let deepest = deepest.clone();
-        move || {
-            let read: FeatureOperation =
-                read::from_str(&deepest, &ResourceLimits::desktop()).unwrap();
-            let printed = serde_json::to_string(&read).unwrap();
-            let cloned = read.clone();
-            assert_eq!(cloned, read);
-            drop(cloned);
-            drop(read);
-            printed
-        }
-    });
-    assert_eq!(printed, deepest);
+    assert_eq!(
+        to_value(&assembly_contexts().remove(2)),
+        json!({"participants": []})
+    );
+    refuses::<AssemblyContext>("{}");
+    let swapped = json!({"participants": [
+        [{"kind": "instances"}, to_value(&selection::<Unordered>(17))],
+        [null, to_value(&selection::<Unordered>(16))],
+    ]});
+    assert!(refuses::<AssemblyContext>(&swapped.to_string()).contains("out of key order"));
 }
 
 #[test]
@@ -1429,7 +1422,7 @@ fn rigid_group_members_are_a_sorted_set_that_refuses_repeats() {
 
 #[test]
 fn a_native_option_key_stated_twice_is_refused() {
-    let wire = serde_json::to_string(&places().remove(0)).unwrap();
+    let wire = json::to_string(&places().remove(0)).unwrap();
     let entry = "\"f3d:item_kind\":{\"kind\":\"text\",\"value\":{\"kind\":\"literal\",\"value\":\"insert\"}}";
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);
@@ -1437,62 +1430,63 @@ fn a_native_option_key_stated_twice_is_refused() {
 }
 
 #[cfg(feature = "schema")]
-fn generates<T: JsonSchema>() {
-    let schema = serde_json::to_value(schema_for!(T)).unwrap();
-    assert!(schema.is_object(), "{}", T::schema_name());
+fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+    let schema = T::json_schema(generator);
+    assert!(schema.as_object().is_some(), "{}", T::schema_name());
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn every_assembly_and_shared_layout_type_has_a_schema() {
-    generates::<Place>();
-    generates::<PlacementBase>();
-    generates::<PlaceSet>();
-    generates::<Joint>();
-    generates::<JointConnector>();
-    generates::<Alignment>();
-    generates::<JointKind>();
-    generates::<JointMotion>();
-    generates::<JointOffset>();
-    generates::<AxisLimits>();
-    generates::<Bounds<Length>>();
-    generates::<Bounds<Angle>>();
-    generates::<Coupling>();
-    generates::<JointDrive>();
-    generates::<DriveAxis>();
-    generates::<DriveMode>();
-    generates::<TangentContact>();
-    generates::<WidthMode>();
-    generates::<SlotPosition>();
-    generates::<PathPosition>();
-    generates::<PathAxisControl>();
-    generates::<PathRollControl>();
-    generates::<RigidGroup>();
-    generates::<ComponentPattern>();
-    generates::<ComponentInstance>();
-    generates::<MirrorComponents>();
-    generates::<MirrorResult>();
-    generates::<MirrorOrientation>();
-    generates::<MirrorReversal>();
-    generates::<MirrorPivot>();
-    generates::<AssemblyFeature>();
-    generates::<ContextEffect>();
-    generates::<PairElement>();
-    generates::<PatternLayout>();
-    generates::<ChainLayout>();
-    generates::<ChainLinks>();
-    generates::<ChainLink>();
-    generates::<LinearRun>();
-    generates::<PatternRun<Length>>();
-    generates::<PatternRun<Angle>>();
-    generates::<RunSides<Length>>();
-    generates::<Spacing<Angle>>();
-    generates::<UpToFill<Length>>();
-    generates::<Locus>();
-    generates::<InstanceOrientation>();
-    generates::<PathReference>();
-    generates::<Increment>();
-    generates::<DimensionRun>();
-    generates::<DimensionTable>();
-    generates::<TableRow>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Place>(&mut generator);
+    generates::<PlacementBase>(&mut generator);
+    generates::<PlaceSet>(&mut generator);
+    generates::<Joint>(&mut generator);
+    generates::<JointConnector>(&mut generator);
+    generates::<Alignment>(&mut generator);
+    generates::<JointKind>(&mut generator);
+    generates::<JointMotion>(&mut generator);
+    generates::<JointOffset>(&mut generator);
+    generates::<AxisLimits>(&mut generator);
+    generates::<Bounds<Length>>(&mut generator);
+    generates::<Bounds<Angle>>(&mut generator);
+    generates::<Coupling>(&mut generator);
+    generates::<JointDrive>(&mut generator);
+    generates::<DriveAxis>(&mut generator);
+    generates::<DriveMode>(&mut generator);
+    generates::<TangentContact>(&mut generator);
+    generates::<WidthMode>(&mut generator);
+    generates::<SlotPosition>(&mut generator);
+    generates::<PathPosition>(&mut generator);
+    generates::<PathAxisControl>(&mut generator);
+    generates::<PathRollControl>(&mut generator);
+    generates::<RigidGroup>(&mut generator);
+    generates::<ComponentPattern>(&mut generator);
+    generates::<ComponentInstance>(&mut generator);
+    generates::<MirrorComponents>(&mut generator);
+    generates::<MirrorResult>(&mut generator);
+    generates::<MirrorOrientation>(&mut generator);
+    generates::<MirrorReversal>(&mut generator);
+    generates::<MirrorPivot>(&mut generator);
+    generates::<AssemblyContext>(&mut generator);
+    generates::<ContextEffect>(&mut generator);
+    generates::<PairElement>(&mut generator);
+    generates::<PatternLayout>(&mut generator);
+    generates::<ChainLayout>(&mut generator);
+    generates::<ChainLinks>(&mut generator);
+    generates::<ChainLink>(&mut generator);
+    generates::<LinearRun>(&mut generator);
+    generates::<PatternRun<Length>>(&mut generator);
+    generates::<PatternRun<Angle>>(&mut generator);
+    generates::<RunSides<Length>>(&mut generator);
+    generates::<Spacing<Angle>>(&mut generator);
+    generates::<UpToFill<Length>>(&mut generator);
+    generates::<Locus>(&mut generator);
+    generates::<InstanceOrientation>(&mut generator);
+    generates::<PathReference>(&mut generator);
+    generates::<Increment>(&mut generator);
+    generates::<DimensionRun>(&mut generator);
+    generates::<DimensionTable>(&mut generator);
+    generates::<TableRow>(&mut generator);
 }

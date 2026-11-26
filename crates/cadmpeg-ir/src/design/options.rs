@@ -11,16 +11,17 @@ use serde::{Deserialize, Serialize};
 
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
+use super::names::CodecName;
 use super::selection::{OrderedSelection, SetSelection};
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 
 /// Source options that Rule N leaves native, by key. A key is `codec:name`.
-pub type NativeOptions = BTreeMap<NonBlankString, NativeOption>;
+pub type NativeOptions = BTreeMap<CodecName, NativeOption>;
 
-pub(crate) fn rewrite_options<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+pub(crate) fn rewrite_options(
     options: NativeOptions,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<NativeOptions, cadmpeg_core::CodecError> {
     use crate::schema::rewrite::typed::RewriteIdentities;
     let _depth = ctx.enter_nested("native option values")?;
@@ -32,7 +33,7 @@ pub(crate) fn rewrite_options<F: FnMut(&str) -> Result<String, cadmpeg_core::Cod
 
 /// The value of a native option or a source setting. A value that a
 /// parameter can drive keeps its binding.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -118,7 +119,7 @@ pub struct SolidOutput {
 }
 
 /// The form of an operation's result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BodyForm {
@@ -156,7 +157,7 @@ pub struct ThinWall {
 }
 
 /// The corners of a thin wall.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -173,7 +174,7 @@ pub enum CornerRound {
 }
 
 /// A wall's thickness and where it lies.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -208,7 +209,7 @@ pub enum Thickness {
 }
 
 /// The side a wall lies on.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -238,7 +239,7 @@ pub enum WallSide {
 }
 
 /// How a thin wall ends where the profile is open.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -255,7 +256,7 @@ pub enum ThinEnds {
 }
 
 /// How an operation's result combines with existing bodies.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Boolean {
@@ -278,7 +279,7 @@ pub enum Boolean {
 }
 
 /// A Boolean combination.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -316,7 +317,7 @@ pub enum BooleanOp {
 }
 
 /// The bodies an operation combines with.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Targets {
@@ -375,7 +376,7 @@ pub enum SymmetricMeasure {
 
 /// The offset of a limit from its target. A positive value moves the limit
 /// further in the direction the limit is measured.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -394,7 +395,7 @@ pub enum LimitOffset {
 
 /// How a generated surface meets a loft section, a loft guide, or a patch
 /// boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -505,7 +506,7 @@ pub enum SectionCondition {
 }
 
 /// The faces a section condition refers to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Support {
@@ -517,7 +518,7 @@ pub enum Support {
 }
 
 /// How a curve reaches a face.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

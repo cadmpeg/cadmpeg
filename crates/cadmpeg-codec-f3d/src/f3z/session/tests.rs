@@ -4,6 +4,88 @@ use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROL
 use crate::{F3dCodec, F3zDecodedMember, F3zMemberKind, F3zSession};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+const GENERATED_CUBE: &[u8] =
+    include_bytes!("../../../tests/golden/fixtures/generated_unit_cube.f3d");
+
+fn assert_cube_document(ir: &cadmpeg_ir::CadIr) {
+    assert_eq!(
+        ir.model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.is_root())
+            .count(),
+        1
+    );
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn independent_archive_members_state_one_document_root() {
+    let bytes = f3z_archive(
+        "Alpha.f3d",
+        &[("Alpha.f3d", GENERATED_CUBE), ("Beta.f3d", GENERATED_CUBE)],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let session = F3dCodec.open_archive(&ctx, view).unwrap();
+    for id in ["Alpha.f3d", "Beta.f3d"] {
+        let decoded = session.decode_member(id).unwrap();
+        assert_cube_document(&decoded.decoded().unwrap().unwrap().ir);
+    }
+    let composed = session
+        .compose(
+            session
+                .members()
+                .iter()
+                .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        )
+        .unwrap();
+    assert_cube_document(composed.ir());
+}
+
+#[test]
+fn referenced_archive_member_keeps_root_body_ownership_after_merge() {
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("cube.f3d", XREF_ROLE)]);
+    let bytes = f3z_archive(
+        "root.f3d",
+        &[("root.f3d", &root), ("cube.f3d", GENERATED_CUBE)],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let session = F3dCodec.open_archive(&ctx, view).unwrap();
+    let member = session.decode_member("cube.f3d").unwrap();
+    assert_cube_document(&member.decoded().unwrap().unwrap().ir);
+    let composed = session
+        .compose(
+            session
+                .members()
+                .iter()
+                .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        )
+        .unwrap();
+    assert_cube_document(composed.ir());
+    let body = &composed.ir().geometry.bodies[0].id;
+    assert_eq!(
+        composed
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| { !definition.is_root() && definition.bodies.contains(body) })
+            .count(),
+        1
+    );
+    let traversed = session.compose_in_traversal_for_test(&ctx).unwrap();
+    assert_cube_document(&traversed.ir);
+}
+
 #[test]
 fn archive_session_and_member_results_are_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
@@ -111,6 +193,7 @@ fn archive_session_expanded_member_traces_avoid_reexecution() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
     };
     session
@@ -139,7 +222,6 @@ fn archive_session_changed_allowance_decision_reexecutes_member() {
             max_retained_bytes: 100,
             ..cadmpeg_core::decode::ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let (ctx, view) =
@@ -253,13 +335,19 @@ fn archive_session_public_archive_trace_counts() {
     session
         .require_original_spaces
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    let original = session.compose(decode());
+    let original = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     assert!(original.is_ok());
     let before = session.composition_reexecutions();
     session
         .require_original_spaces
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let composed = session.compose(decode());
+    let composed = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let after = session.composition_reexecutions() - before;
     crate::test_support::archive_session::assert_equal(&original, &composed);
     println!("public archive: members={}, original-space reexecutions={before}, relocated reexecutions={after}", session.members().len());

@@ -10,8 +10,8 @@ use cadmpeg_ir::design::ops::dressup as new;
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::sketches::Sketch;
 
+use super::selections::SketchData;
 use super::{selections, swept, Projected};
 
 fn controls() -> new::BlendControls {
@@ -80,7 +80,8 @@ fn thickness(value: cadmpeg_ir::scalar::PositiveLength, outward: Option<bool>) -
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
+    inputs: &[old::evaluation::FeatureInputTopology],
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
         value,
@@ -102,7 +103,7 @@ pub(super) fn operation(
                     .iter()
                     .map(|group| {
                         Ok(new::FilletSet::Edges {
-                            edges: selections::edge(&group.edges)?,
+                            edges: selections::edge(&group.edges, inputs)?,
                             section: new::FilletSection {
                                 size: Some(radius(&group.radius)?),
                                 profile: None,
@@ -186,7 +187,7 @@ pub(super) fn operation(
                     .iter()
                     .map(|group| {
                         Ok(new::ChamferSet {
-                            edges: selections::set(selections::edge(&group.edges)?)?,
+                            edges: selections::set(selections::edge(&group.edges, inputs)?)?,
                             size: Some(match group.spec {
                                 old::edge_treatments::ChamferSpec::Distance { distance } => {
                                     new::ChamferSize::Distance(Dimension::Literal(distance))
@@ -264,13 +265,15 @@ pub(super) fn operation(
                 let wall = match (wall, side) {
                     (None, None) => None,
                     (Some(value), None) => Some(thickness(*value, None)),
-                    (Some(value), Some(old::ThickenSide::Forward)) => {
-                        Some(thickness(*value, Some(true)))
-                    }
-                    (Some(value), Some(old::ThickenSide::Reverse)) => {
-                        Some(thickness(*value, Some(false)))
-                    }
-                    (Some(value), Some(old::ThickenSide::Both)) => {
+                    (
+                        Some(value),
+                        Some(cadmpeg_ir::features::direct_edit::ThickenSide::Forward),
+                    ) => Some(thickness(*value, Some(true))),
+                    (
+                        Some(value),
+                        Some(cadmpeg_ir::features::direct_edit::ThickenSide::Reverse),
+                    ) => Some(thickness(*value, Some(false))),
+                    (Some(value), Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)) => {
                         Some(Thickness::Symmetric(Dimension::Literal(*value)))
                     }
                     _ => return Err("the thicken side has no thickness"),
@@ -279,19 +282,19 @@ pub(super) fn operation(
                     .as_ref()
                     .map(|value| -> Projected<_> {
                         Ok(match value {
-                            old::SolidFeatureResult::NewBody {} => {
+                            cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {} => {
                                 cadmpeg_ir::design::options::Boolean::NewBody
                             }
-                            old::SolidFeatureResult::Boolean { operation, targets } => {
+                            cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { operation, targets } => {
                                 cadmpeg_ir::design::options::Boolean::Apply {
                                     op: match operation {
-                                        old::BooleanKind::Join => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Join => {
                                             cadmpeg_ir::design::options::BooleanOp::Join
                                         }
-                                        old::BooleanKind::Cut => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Cut => {
                                             cadmpeg_ir::design::options::BooleanOp::Cut
                                         }
-                                        old::BooleanKind::Intersect => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect => {
                                             cadmpeg_ir::design::options::BooleanOp::Intersect
                                         }
                                     },
@@ -347,7 +350,11 @@ pub(super) fn operation(
                         drilling = Some(candidate);
                         points.push(Construction::<kinds::Point> {
                             resolved: Some(*position),
-                            ..Construction::default()
+                            inputs: Vec::new(),
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved_in: BTreeMap::default(),
                         });
                     }
                     (new::HolePositions::Placed(points), drilling)
@@ -407,7 +414,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 swept::setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Hole(Box::new(new::Hole {

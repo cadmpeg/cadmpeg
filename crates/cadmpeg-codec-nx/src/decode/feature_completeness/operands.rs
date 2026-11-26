@@ -2,17 +2,24 @@
 //! Operand and selection completeness predicates.
 
 use super::positive_feature_length;
-use cadmpeg_ir::{
-    features::{
-        holes::HoleKind,
-        patterns::{PatternKind, PatternTransform},
-        AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
-        FaceSelection, FeatureId, LinearTermination, LoftPointSection, LoftSection, PathRef,
-        PlanarProfileRef, ProfileRef, RevolveConstruction, RevolveExtent, RibConstruction,
-        RibDraft, SweepMode, SweepOrientation, VertexSelection,
-    },
-    scalar::Length,
+use cadmpeg_ir::features::extents::{
+    AngularTermination, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::holes::HoleKind;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+use cadmpeg_ir::features::profiles::{
+    LoftPointSection, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
+};
+use cadmpeg_ir::features::revolve::{
+    RevolveConstruction, RevolveExtent, RibConstruction, RibDraft,
+};
+use cadmpeg_ir::features::selections::{
+    BodySelection, EdgeSelection, FaceSelection, VertexSelection,
+};
+use cadmpeg_ir::features::sweeps::{SweepMode, SweepOrientation};
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::scalar::Length;
 
 pub(super) fn hole_feature_is_incomplete(
     profile: Option<&PlanarProfileRef>,
@@ -83,7 +90,7 @@ pub(super) fn extrude_extent_is_incomplete(
     extent: &ExtrudeExtent,
     dependencies: &[FeatureId],
 ) -> bool {
-    let side_is_incomplete = |side: &cadmpeg_ir::features::ExtrudeSide| {
+    let side_is_incomplete = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
         termination_is_incomplete(&side.termination)
             || termination_dependency_is_incomplete(&side.termination, dependencies)
     };
@@ -237,7 +244,7 @@ pub(super) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     match mode {
         SweepMode::Unresolved {} => true,
         SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
         }
         | SweepMode::Solid { .. }
         | SweepMode::Surface {} => false,
@@ -335,6 +342,7 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => true,
     }

@@ -1,11 +1,11 @@
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::*;
-use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallJetStation, RollingBallJetStations,
+use cadmpeg_ir::geometry::blends::{
+    RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation, RollingBallJetStations,
 };
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Vector3;
 
 fn cylinder_section() -> ProceduralSurfaceDefinition {
@@ -87,6 +87,7 @@ fn transfer(patch: Patch) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
     })
     .expect("transfer recovered patch");
     ir.finalize();
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate cylinder patch");
     assert!(validation.is_ok(), "{:?}", validation.findings);
     (ir, notes.take_notes())
@@ -476,7 +477,7 @@ fn world_join_keeps_distinct_spatial_solutions_ambiguous() {
 fn cropped_rolling_results_keep_the_native_transverse_parameterization() {
     use crate::test_support::test_a5a8::a5_freeform_curve_stream;
     use crate::wire::records::consolidated_records;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
 
     let bytes = a5_freeform_curve_stream();
     let records = consolidated_records(&bytes);

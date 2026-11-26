@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The resolvers and edit helpers on small documents.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
-use serde_json::json;
 
 use super::eval::{check_types, ExpressionSite, Type};
-use super::wire::{clear_transformations, exchange_constructions, positions, re_anchor, retarget};
+use super::wire::{positions, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, FeatureStateOverride,
@@ -36,12 +37,17 @@ use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Positi
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::pmi::LimitsAndFits;
 use crate::scalar::{FiniteReal, Length};
 use crate::topology::{Body, BodyKind, Region};
 use crate::CadIr;
+
+mod configurations;
+mod held_errors;
+mod rollback;
 
 fn id<T>(kind: &str, key: u32) -> T
 where
@@ -108,6 +114,7 @@ fn operation(key: u32, operation: FeatureOperation) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -132,9 +139,9 @@ fn bound(key: u32, parameter: u32) -> Feature {
     operation(
         key,
         FeatureOperation::Native {
-            kind: NonBlankString::new("test:op").unwrap(),
+            kind: crate::codec_name!("test:op"),
             native_options: NativeOptions::from([(
-                NonBlankString::new("test:depth").unwrap(),
+                crate::codec_name!("test:depth"),
                 NativeOption::Length(Dimension::Parameter(parameter_id(parameter))),
             )]),
             source_settings: NativeOptions::new(),
@@ -215,6 +222,7 @@ fn evaluation(
 
 fn body(key: u32) -> Body {
     Body {
+        unstated: None,
         id: id("body", key),
         kind: BodyKind::Solid,
         transform: None,
@@ -258,7 +266,7 @@ fn timeline() -> CadIr {
             first: 1,
             last: 2,
         }],
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     document.design.scopes.push(DesignScope {
@@ -274,6 +282,7 @@ fn timeline() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     document.design.features = vec![
         operation(1, FeatureOperation::Spreadsheet(id("spreadsheet", 1))),
@@ -589,24 +598,39 @@ fn set_dimension_refuses_a_driven_parameter() {
     ));
 }
 
+/// §5.12: an `Unset` parameter has no value, a parameter that reads it has
+/// none, and `set_dimension` gives it a literal.
+#[test]
+fn set_dimension_gives_an_unset_parameter_a_literal() {
+    let mut document = timeline();
+    document.design.parameters[0].definition = ParameterDefinition::Unset;
+    document.design.parameters[0].value = None;
+    document.design.parameters[1].value = None;
+    document
+        .set_dimension(
+            &parameter_id(1),
+            Literal::Number {
+                value: real(5.0),
+                unit: mm(),
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        document.design.parameters[0].definition,
+        ParameterDefinition::Expression(_)
+    ));
+    assert_eq!(cache(&document, 1), Some(ParameterValue::Number(real(5.0))));
+    assert_eq!(
+        cache(&document, 2),
+        Some(ParameterValue::Number(real(10.0)))
+    );
+}
+
 fn errors_only(findings: &[crate::report::check::Finding]) -> bool {
     !findings.is_empty()
         && findings
             .iter()
             .all(|finding| finding.severity == crate::report::Severity::Error)
-}
-
-#[test]
-fn an_editor_is_only_had_over_a_valid_document() {
-    let mut document = timeline();
-    let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
-        panic!("ordered");
-    };
-    *rollback = Rollback::Before(Member::Feature(feature(2)));
-    match document.edit() {
-        Err(EditError::Invalid(findings)) => assert!(errors_only(&findings), "{findings:?}"),
-        other => panic!("a current state off the rollback is an Error: {other:?}"),
-    }
 }
 
 #[test]
@@ -678,9 +702,9 @@ fn an_integer_expression_whose_value_is_not_whole_has_no_cache() {
 #[test]
 fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
     let mut document = timeline();
-    let identity = serde_json::to_value(crate::transform::Transform::identity()).unwrap();
+    let identity = json::to_value(crate::transform::Transform::identity()).unwrap();
     let moved = |parameter: u32| -> FeatureOperation {
-        serde_json::from_value(json!({
+        json::from_value(json!({
             "kind": "transform_bodies",
             "value": {
                 "bodies": {"at": {"kind": "input"}, "picks": {"kind": "unread"}},
@@ -699,6 +723,10 @@ fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
         .unwrap()
     };
     document.design.features[2] = operation(3, moved(1));
+    document
+        .design
+        .evaluations
+        .retain(|evaluation| evaluation.of != Evaluated::Tool(feature(3)));
     document
         .edit()
         .unwrap()
@@ -757,7 +785,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
         Some(11.0),
     ));
     document.design.parameters[1].tolerance = Some(Tolerance::Fit {
-        fit: serde_json::from_value::<LimitsAndFits>(json!({
+        fit: json::from_value::<LimitsAndFits>(json!({
             "form_variance": "H", "zone": "shaft", "grade": "7", "source": {"kind": "iso286"}
         }))
         .unwrap(),
@@ -982,6 +1010,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     });
     document.design.scopes[1].occurrences = BTreeMap::from([
         (
@@ -1033,7 +1062,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
 fn set_parameter_expression_refuses_an_ill_typed_tree() {
     let mut document = timeline();
     document.design.parameters[1].value = None;
-    let before = serde_json::to_value(&document.design).unwrap();
+    let before = json::to_value(&document.design).unwrap();
     for (text, refs) in [
         ("if(true, 2[mm], 1[deg])", &[][..]),
         ("if(false, 1[deg], 2[mm])", &[]),
@@ -1054,7 +1083,7 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
             .set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
         assert!(refused.is_err(), "{text} is refused");
         assert_eq!(
-            serde_json::to_value(&document.design).unwrap(),
+            json::to_value(&document.design).unwrap(),
             before,
             "refusing {text} changes nothing"
         );
@@ -1212,7 +1241,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
         kind: OrderedKind::Body,
         members: vec![Member::Feature(feature(4))],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     assert_eq!(document, before, "a refused insertion changes nothing");
@@ -1233,7 +1262,7 @@ fn rolled_back(document: &mut CadIr) {
     let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
         panic!("ordered");
     };
-    *rollback = Rollback::Before(Member::Feature(feature(2)));
+    *rollback = Some(Rollback::Before(Member::Feature(feature(2))));
     document.design.scopes[0].current[0].at = after(1);
 }
 
@@ -1324,11 +1353,11 @@ fn removing_a_member_rebases_and_retargets() {
     let Container::Ordered {
         members,
         folders,
-        rollback,
+        rollback: Some(rollback),
         ..
     } = &document.design.containers[0]
     else {
-        panic!("ordered");
+        panic!("ordered with a stated rollback");
     };
     assert_eq!(
         members,
@@ -1336,8 +1365,8 @@ fn removing_a_member_rebases_and_retargets() {
     );
     assert_eq!(rollback, &Rollback::Before(Member::Feature(feature(3))));
     assert_eq!((folders[0].first, folders[0].last), (1, 1));
-    let anchor = serde_json::to_value(&document.design.parameters[2].definition).unwrap();
-    let retargeted = serde_json::to_value(Anchor::Pinned(after(1))).unwrap();
+    let anchor = json::to_value(&document.design.parameters[2].definition).unwrap();
+    let retargeted = json::to_value(Anchor::Pinned(after(1))).unwrap();
     assert!(
         anchor.to_string().contains(&retargeted.to_string()),
         "{anchor}"
@@ -1377,10 +1406,8 @@ fn removal_refuses_while_a_kept_record_names_a_deleted_one() {
 }
 
 fn native_name(text: &str) -> NameEntry {
-    serde_json::from_value(
-        json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
-    )
-    .unwrap()
+    json::from_value(json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}))
+        .unwrap()
 }
 
 fn generated_by(key: u32) -> TopoName {
@@ -1508,12 +1535,10 @@ fn grouped() -> CadIr {
         .collect();
     document.geometry = crate::document::Topology::default();
     document.geometry.bodies = (1..=3).map(body).collect();
-    document.geometry.regions.push(Region {
-        id: id("region", 2),
-        body: id("body", 2),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    document
+        .geometry
+        .regions
+        .push(Region::new(id("region", 2), id("body", 2), Vec::new()));
     document.model.product_definitions = vec![product_definition(&[1, 2, 3])];
     document.design.names =
         BTreeMap::from([(EntityRef::Body(id("body", 2)), native_name("two"))]).into();
@@ -1545,10 +1570,12 @@ fn removing_an_unordered_member_removes_its_own_result() {
         target: body_target(2),
         name: "on two".to_owned(),
         values: Vec::new(),
+        native_ref: None,
     }];
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
         name: "Layer".to_owned(),
+        parent: None,
         description: None,
         visible: None,
         items: [1, 2]
@@ -1561,6 +1588,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
                 )
             })
             .collect(),
+        native_ref: None,
     }];
     let resolved = document.resolved(&id("evaluation", 5)).unwrap();
 
@@ -1593,8 +1621,8 @@ fn removing_an_unordered_member_removes_its_own_result() {
     let rebased = &document.design.evaluations[0];
     assert_eq!(rebased.content.as_ref().unwrap().base, StateBase::Empty);
     assert_eq!(document.resolved(&id("evaluation", 5)).unwrap(), resolved);
-    let anchor = serde_json::to_value(&document.design.parameters[0].definition).unwrap();
-    let current = serde_json::to_value(Anchor::Current).unwrap();
+    let anchor = json::to_value(&document.design.parameters[0].definition).unwrap();
+    let current = json::to_value(Anchor::Current).unwrap();
     assert!(
         anchor.to_string().contains(&current.to_string()),
         "{anchor}"
@@ -1658,18 +1686,16 @@ fn configured() -> CadIr {
     scope.current[0].bodies = vec![id("body", 1)];
     document.geometry.bodies.push(body(1));
     document.geometry.bodies.push(body(9));
-    document.geometry.regions.push(Region {
-        id: id("region", 1),
-        body: id("body", 1),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    document
+        .geometry
+        .regions
+        .push(Region::new(id("region", 1), id("body", 1), Vec::new()));
     document
         .model
         .product_definitions
         .push(product_definition(&[1]));
     let name = |text: &str| -> NameEntry {
-        serde_json::from_value(
+        json::from_value(
             json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
         )
         .unwrap()
@@ -1796,7 +1822,7 @@ fn switching_exchanges_every_current_state_of_the_scope() {
         kind: OrderedKind::Body,
         members: vec![Member::Feature(feature(4))],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     document.design.scopes[0].roots.push(id("container", 2));
@@ -1875,122 +1901,6 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
     );
 }
 
-/// A point datum on one coincident input, at (1, 0, 0) in the active
-/// configuration and at (2, 0, 0) in configuration 2.
-fn point_datum(key: u32) -> Feature {
-    let point = |x: f64| FinitePoint3::from_coordinates(real(x), real(0.0), real(0.0));
-    operation(
-        key,
-        FeatureOperation::Datum(Box::new(Datum {
-            element: DatumElement::Points(vec![Construction {
-                inputs: vec![ConstructionInput {
-                    role: Some(InputRole {
-                        subject: Subject::Whole,
-                        relation: Relation::Coincident,
-                    }),
-                    reference: None,
-                    value: None,
-                    reversed: None,
-                }],
-                after: Vec::new(),
-                solution: None,
-                mode: None,
-                resolved: Some(point(1.0)),
-                resolved_in: BTreeMap::from([(configuration(2), point(2.0))]),
-            }]),
-            link: None,
-            native_options: NativeOptions::new(),
-            source_settings: NativeOptions::new(),
-        })),
-    )
-}
-
-#[test]
-fn switching_exchanges_the_constructions_of_feature_overrides() {
-    let mut document = configured();
-    document.design.features[0] = point_datum(1);
-    document.design.spreadsheets.clear();
-    let state = FeatureStateOverride {
-        suppressed: None,
-        definition: Some(document.design.features[0].definition.clone()),
-    };
-    document.design.configurations[1].overrides.features =
-        BTreeMap::from([(feature(1), state.clone())]);
-    let mut arranged = arrangement(1, BTreeMap::new());
-    arranged.overrides.features = BTreeMap::from([(feature(1), state)]);
-    document.design.arrangements.push(arranged);
-
-    document
-        .edit()
-        .unwrap()
-        .set_active_configuration(&definition(), &configuration(2))
-        .unwrap();
-
-    let construction = |definition: &FeatureDefinition| {
-        let FeatureOperation::Datum(datum) = &definition.operation else {
-            panic!("{definition:?} is a datum");
-        };
-        let DatumElement::Points(points) = &datum.element else {
-            panic!("{datum:?} holds points");
-        };
-        (
-            points[0].resolved.map(|point| point.get().x),
-            points[0].resolved_in.keys().cloned().collect::<Vec<_>>(),
-        )
-    };
-    let expected = (Some(2.0), vec![configuration(1)]);
-    assert_eq!(
-        construction(&document.design.features[0].definition),
-        expected
-    );
-    let overridden = |overrides: &Overrides| {
-        construction(overrides.features[&feature(1)].definition.as_ref().unwrap())
-    };
-    assert_eq!(
-        overridden(&document.design.configurations[1].overrides),
-        expected,
-        "a configuration's feature override"
-    );
-    assert_eq!(
-        overridden(&document.design.arrangements[0].overrides),
-        expected,
-        "an arrangement's feature override"
-    );
-}
-
-#[test]
-fn positions_and_constructions_rewrite_in_the_wire_form() {
-    let from = positions(&[after(2)]).unwrap();
-    let to = serde_json::to_value(after(1)).unwrap();
-    let mut value = json!({"at": {"kind": "pinned", "value": {"kind": "after", "value": {"kind": "feature", "value": feature(2).as_str()}}}, "picks": {"kind": "unread"}});
-    let mut anchored = value.clone();
-    assert!(retarget(&mut value, &from, &to));
-    assert_eq!(
-        value["at"]["value"]["value"]["value"],
-        json!(feature(1).as_str())
-    );
-    assert!(re_anchor(&mut anchored, &from));
-    assert_eq!(anchored["at"], json!({"kind": "current"}));
-
-    let mut moved = json!({"steps": [{"kind": "translate", "value": {"kind": "parameter", "value": parameter_id(1).as_str()}}], "resolved": [1.0]});
-    let mut unbound = moved.clone();
-    unbound["steps"][0]["value"]["value"] = json!(parameter_id(2).as_str());
-    let bound = BTreeSet::from([parameter_id(1).as_str().to_owned()]);
-    assert!(clear_transformations(&mut moved, &bound));
-    assert!(moved.get("resolved").is_none());
-    assert!(!clear_transformations(&mut unbound, &bound));
-
-    let mut construction = json!({
-        "inputs": [{"kind": "x"}], "after": [],
-        "resolved": [1.0], "resolved_in": {"c2": [2.0]},
-        "nested": {"inputs": [], "after": [], "resolved": [3.0], "resolved_in": {}},
-    });
-    assert!(exchange_constructions(&mut construction, "c1", "c2"));
-    assert_eq!(construction["resolved"], json!([2.0]));
-    assert_eq!(construction["resolved_in"], json!({"c1": [1.0]}));
-    assert_eq!(
-        construction["nested"]["resolved"],
-        json!([3.0]),
-        "a construction with no inputs or steps keeps its value"
-    );
-}
+mod feature_overrides;
+mod unproduced;
+mod wire_form;

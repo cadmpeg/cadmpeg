@@ -2,6 +2,7 @@
 //! Leaf sample values and the strict round trip that the operation tests
 //! share.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
@@ -23,7 +24,8 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, NonZeroLength,
@@ -178,7 +180,10 @@ pub(in crate::design::ops) fn curve() -> Construction<kinds::Curve> {
 }
 
 pub(in crate::design::ops) fn native_options() -> NativeOptions {
-    NativeOptions::from([(text("codec:option"), NativeOption::Bool(lit(true)))])
+    NativeOptions::from([(
+        crate::codec_name!("codec:option"),
+        NativeOption::Bool(lit(true)),
+    )])
 }
 
 pub(in crate::design::ops) fn sheet_output() -> SheetOutput {
@@ -210,10 +215,10 @@ pub(in crate::design::ops) fn expression() -> Expression {
 pub(in crate::design::ops) fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -224,7 +229,7 @@ pub(in crate::design::ops) fn round_trip<T: Serialize + DeserializeOwned + Parti
 }
 
 pub(in crate::design::ops) fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.

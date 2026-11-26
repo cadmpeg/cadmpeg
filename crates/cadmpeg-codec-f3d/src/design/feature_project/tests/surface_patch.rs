@@ -15,11 +15,11 @@ use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft;
 use crate::records::topology::construction::DesignConstructionOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::SurfaceBoundary;
 use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:test/Design/BulkStream.dat";
@@ -166,7 +166,7 @@ fn interior_group_form_projects_boundary_continuity_and_interior_constraints() {
         interior_constraints,
         vec![PathRef::Native(groups[0].id.clone())]
     );
-    let conditions = continuity.resolved().unwrap().conditions.as_slice();
+    let conditions = continuity.as_ref().unwrap().conditions.as_slice();
     let [FilledSurfaceBoundaryCondition::Tangent {
         weight: Some(weight),
     }] = conditions
@@ -258,7 +258,7 @@ fn sketch_profile_patch_accepts_a_leading_tool_and_consecutive_profile_pairs() {
                     boundary: SurfaceBoundary::Path(PathRef::Native(ref boundary)),
                     ref continuity,
                     ..
-                })) if boundary == &scope.id && continuity.resolved().is_none()
+                })) if boundary == &scope.id && continuity.is_none()
             ));
         } else {
             assert_eq!(definition, None);

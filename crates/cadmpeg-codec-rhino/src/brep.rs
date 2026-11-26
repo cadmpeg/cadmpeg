@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -72,11 +73,11 @@ impl BrepTolerance {
         }
     }
 
-    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::FitTolerance> {
+    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance> {
         match self {
             Self::NonNegative(value) => value
                 .positive()
-                .map(|_| cadmpeg_ir::geometry::FitTolerance::from(value)),
+                .map(|_| cadmpeg_ir::geometry::legacy_cache::FitTolerance::from(value)),
             Self::Unset => None,
         }
     }
@@ -1560,7 +1561,7 @@ fn parse_legacy_major2(
                 vertex.point[1] - expected[1],
                 vertex.point[2] - expected[2],
             ];
-            tolerance = tolerance.max(delta[0].hypot(delta[1]).hypot(delta[2]));
+            tolerance = tolerance.max(delta[0].portable_hypot(delta[1]).portable_hypot(delta[2]));
         }
         vertex.tolerance = tolerance;
     }
@@ -3711,6 +3712,7 @@ mod tests {
         let polycurve = crate::curves::DecodedCurve::Compound {
             children: vec![(finite(-1.5), point(1.0)), (finite(2.0), point(2.0))],
             end_parameter: finite(6.25),
+            scale: crate::settings::MillimeterScale::IDENTITY,
             warnings: Diagnostics::new(),
         };
         let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };

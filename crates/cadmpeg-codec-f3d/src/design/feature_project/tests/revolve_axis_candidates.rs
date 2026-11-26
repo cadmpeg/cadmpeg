@@ -11,6 +11,7 @@ use crate::records::topology::entity_selection::{
     DesignEntitySelectionOperand,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 
 const PRECEDING_STATE: i64 = 2;
 
@@ -51,7 +52,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -83,7 +84,7 @@ fn axis_selection(
     face_states: &[i64],
     edge: bool,
 ) -> DesignEntitySelectionOperand {
-    let mut selection = serde_json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
+    let mut selection = json::from_value::<DesignEntitySelectionOperand>(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
         "group_record_index": 101, "group_member_ordinal": 0,
         "record_index": 201, "byte_offset": 100, "class_tag": "307",
@@ -120,14 +121,14 @@ fn axis_selection(
 fn construction_with(
     selection: &DesignEntitySelectionOperand,
     placements: &[crate::records::sketch_placement::DesignSketchPlacement],
-) -> Option<cadmpeg_ir::features::RevolveConstruction> {
+) -> Option<cadmpeg_ir::features::revolve::RevolveConstruction> {
     let groups = [
         group(100, 200, DesignOperandRole::PROFILE),
         group(101, 201, DesignOperandRole::ROLE_0X21),
     ];
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
-    ) = super::super::project_fixed_revolve_with_entities(
+    ) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope(),
         &groups,
         &[],
@@ -147,18 +148,18 @@ fn construction_with(
 
 fn construction(
     selection: &DesignEntitySelectionOperand,
-) -> Option<cadmpeg_ir::features::RevolveConstruction> {
+) -> Option<cadmpeg_ir::features::revolve::RevolveConstruction> {
     construction_with(selection, &[])
 }
 
 #[test]
 fn an_origin_axis_identity_keeps_its_axis_when_an_asm_entity_shares_it() {
-    let y_axis = cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(
+    let y_axis = cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::Y_AXIS,
         ),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
             "f3d:Design/BulkStream.dat:entity-selection#201".into(),
         )),
     };
@@ -225,7 +226,7 @@ fn the_type_table_gives_each_origin_axis_its_direction() {
             .expect("an origin axis");
         assert_eq!(
             axis.direction,
-            cadmpeg_ir::features::FeatureDirection3::from(direction)
+            cadmpeg_ir::features::geometry::FeatureDirection3::from(direction)
         );
     }
 }

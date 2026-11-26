@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
-use cadmpeg_ir::features::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
+use cadmpeg_ir::features::geometry::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;
@@ -723,7 +723,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
         let origin = frame.origin().get();
         let u_axis = frame.u_axis();
         let v_axis = frame.v_axis();
-        if wire.opacity.to_bits() != opacity.to_bits() {
+        if wire.opacity != opacity {
             return Err("opacity must match geometry_payload".into());
         }
         for (name, declared, decoded) in [
@@ -746,7 +746,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             if declared
                 .into_iter()
                 .zip(decoded)
-                .any(|(left, right)| left.to_bits() != right.to_bits())
+                .any(|(left, right)| left != right)
             {
                 return Err(format!("{name} must match geometry_payload"));
             }

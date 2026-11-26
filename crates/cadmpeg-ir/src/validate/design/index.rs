@@ -7,7 +7,9 @@
 //! features its definition, its sketches, and its parameters pick, and the
 //! features the names it picks by mention.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::design::container::{Container, Rollback};
 use crate::design::feature::FeatureOperation;
@@ -18,7 +20,7 @@ use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 
 use super::names::mentioned_features;
-use super::records::{by_id, members, DesignRecords, MemberKey, PositionKey};
+use super::records::{by_id, entering_at, members, DesignRecords, MemberKey, PositionKey};
 use super::Held;
 
 /// A state whose dependencies a rule reads.
@@ -30,8 +32,24 @@ pub(super) enum StateAt<'a> {
     Position(&'a Position),
 }
 
+/// Cache key for [`DesignIndex::state_features`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum StateKey<'a> {
+    Entering(&'a str),
+    Position(PositionKey<'a>),
+}
+
+impl<'a> StateKey<'a> {
+    fn of(at: StateAt<'a>) -> Self {
+        match at {
+            StateAt::Entering(feature) => Self::Entering(feature),
+            StateAt::Position(position) => Self::Position(PositionKey::of(position)),
+        }
+    }
+}
+
 /// The design records by identity, container membership, and dependencies.
-pub(super) struct DesignIndex<'a> {
+pub(in crate::validate) struct DesignIndex<'a> {
     pub(super) records: DesignRecords<'a>,
     /// The container holding each member, and the member's index in an
     /// ordered container's list.
@@ -43,10 +61,14 @@ pub(super) struct DesignIndex<'a> {
     pub(super) publications: BTreeSet<&'a str>,
     /// The features each feature's references name.
     dependencies: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// Memoized [`Self::state_features`] results, keyed by state.
+    state_cache: RefCell<HashMap<StateKey<'a>, Option<Rc<HashSet<&'a str>>>>>,
+    /// Memoized [`Self::current_features`] results, keyed by scope id.
+    current_cache: RefCell<HashMap<&'a str, Option<Rc<HashSet<&'a str>>>>>,
 }
 
 impl<'a> DesignIndex<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
         let design = &ir.design;
         let mut places = BTreeMap::new();
         for container in &design.containers {
@@ -77,12 +99,16 @@ impl<'a> DesignIndex<'a> {
                 .map(|publication| publication.id.as_str())
                 .collect(),
             dependencies: BTreeMap::new(),
+            state_cache: RefCell::new(HashMap::new()),
+            current_cache: RefCell::new(HashMap::new()),
         }
     }
 
     /// Records the references of every feature: the features its held
     /// records pick, and the features the names they pick by mention.
     pub(super) fn add_dependencies(&mut self, held: &[Held<'a>]) {
+        self.state_cache.borrow_mut().clear();
+        self.current_cache.borrow_mut().clear();
         for record in held {
             let Some(feature) = record.holder.feature() else {
                 continue;
@@ -182,8 +208,18 @@ impl<'a> DesignIndex<'a> {
 
     /// The features a state depends on (§5.3), or `None` where a member the
     /// state names is in no container.
-    pub(super) fn state_features(&self, at: StateAt<'a>) -> Option<BTreeSet<&'a str>> {
-        let mut found = BTreeSet::new();
+    pub(super) fn state_features(&self, at: StateAt<'a>) -> Option<Rc<HashSet<&'a str>>> {
+        let key = StateKey::of(at);
+        if let Some(cached) = self.state_cache.borrow().get(&key) {
+            return cached.clone();
+        }
+        let computed = self.compute_state_features(at).map(Rc::new);
+        self.state_cache.borrow_mut().insert(key, computed.clone());
+        computed
+    }
+
+    fn compute_state_features(&self, at: StateAt<'a>) -> Option<HashSet<&'a str>> {
+        let mut found = HashSet::new();
         let (container, upto) = match at {
             StateAt::Entering(feature) => {
                 let (container, index) = self.place(MemberKey::Feature(feature))?;
@@ -199,7 +235,10 @@ impl<'a> DesignIndex<'a> {
                     let inner = self.records.containers.get(id).copied()?;
                     self.add_subtree(inner, &mut found);
                 }
-                let (container, index) = self.place(key)?;
+                let Some((container, index)) = self.place(key) else {
+                    let root = matches!(key, MemberKey::Container(id) if self.records.roots.contains_key(id));
+                    return root.then(|| self.closure(found));
+                };
                 if let (Container::Unordered { .. }, MemberKey::Feature(feature)) = (container, key)
                 {
                     found.insert(feature);
@@ -212,23 +251,21 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// The one spelling of the state entering a feature of an ordered
-    /// container (§5.3): `Start` of the container before its first member,
-    /// else the position after the member before it.
+    /// container (§5.3): the position after the nearest feature before it,
+    /// else `Start` of the container.
     pub(super) fn entering(&self, feature: &str) -> Option<PositionKey<'a>> {
         let (container, index) = self.place(MemberKey::Feature(feature))?;
         let Container::Ordered { id, members, .. } = container else {
             return None;
         };
-        Some(match index.checked_sub(1) {
-            None => PositionKey::Start(id.as_str()),
-            Some(before) => PositionKey::After(MemberKey::of(members.get(before)?)),
-        })
+        Some(entering_at(id.as_str(), members.get(..index)?))
     }
 
     /// The position whose state a position names (§5.3): for
     /// `After(Container(c))` of an ordered container `c`, the position at
-    /// `c`'s rollback, which has no state of its own; any other position is
-    /// itself. `None` where a rollback names no member of its container.
+    /// `c`'s rollback, which has no state of its own, and the position itself
+    /// where that rollback is unstated; any other position is itself. `None`
+    /// where a rollback names no member of its container.
     pub(super) fn rollback_position<'p>(
         &self,
         mut position: PositionKey<'p>,
@@ -245,21 +282,40 @@ impl<'a> DesignIndex<'a> {
             else {
                 return Some(position);
             };
-            position = DesignRecords::rollback_position(container)?;
+            let at = DesignRecords::rollback_position(container)?;
+            if at == position {
+                return Some(at);
+            }
+            position = at;
         }
         None
     }
 
     /// The features the current geometry of a scope depends on: the union
     /// over its current states, or `None` where it lists none.
-    pub(super) fn current_features(&self, scope: &str) -> Option<BTreeSet<&'a str>> {
+    pub(super) fn current_features(&self, scope: &'a str) -> Option<Rc<HashSet<&'a str>>> {
+        if let Some(cached) = self.current_cache.borrow().get(scope) {
+            return cached.clone();
+        }
+        let computed = self.compute_current_features(scope).map(Rc::new);
+        self.current_cache
+            .borrow_mut()
+            .insert(scope, computed.clone());
+        computed
+    }
+
+    fn compute_current_features(&self, scope: &str) -> Option<HashSet<&'a str>> {
         let scope = self.records.scopes.get(scope)?;
         if scope.current.is_empty() {
             return None;
         }
-        let mut found = BTreeSet::new();
+        let mut found = HashSet::new();
         for current in &scope.current {
-            found.extend(self.state_features(StateAt::Position(&current.at))?);
+            found.extend(
+                self.state_features(StateAt::Position(&current.at))?
+                    .iter()
+                    .copied(),
+            );
         }
         Some(found)
     }
@@ -270,7 +326,7 @@ impl<'a> DesignIndex<'a> {
         &self,
         mut container: &'a Container,
         mut upto: Option<usize>,
-        found: &mut BTreeSet<&'a str>,
+        found: &mut HashSet<&'a str>,
     ) {
         for _ in 0..=self.records.containers.len() {
             if let (Container::Ordered { members, .. }, Some(upto)) = (container, upto) {
@@ -287,7 +343,7 @@ impl<'a> DesignIndex<'a> {
         }
     }
 
-    fn add_member(&self, member: &'a Member, found: &mut BTreeSet<&'a str>) {
+    fn add_member(&self, member: &'a Member, found: &mut HashSet<&'a str>) {
         match member {
             Member::Feature(feature) => {
                 found.insert(feature.as_str());
@@ -301,36 +357,47 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// Adds every feature of a container's tree, up to each ordered
-    /// container's rollback position.
-    fn add_subtree(&self, container: &'a Container, found: &mut BTreeSet<&'a str>) {
+    /// container's rollback position: every member where it is unstated,
+    /// which reads every member as before it (part 10).
+    fn add_subtree(&self, container: &'a Container, found: &mut HashSet<&'a str>) {
         let mut stack = vec![container];
-        let mut seen = BTreeSet::new();
+        let mut seen = HashSet::new();
         while let Some(container) = stack.pop() {
             if !seen.insert(container.id().as_str()) {
                 continue;
             }
-            let members: Vec<&'a Member> = match container {
+            match container {
                 Container::Ordered {
                     members, rollback, ..
                 } => {
                     let end = match rollback {
-                        Rollback::End => members.len(),
-                        Rollback::Before(at) => members
+                        None | Some(Rollback::End) => members.len(),
+                        Some(Rollback::Before(at)) => members
                             .iter()
                             .position(|member| member == at)
                             .unwrap_or(members.len()),
                     };
-                    members.iter().take(end).collect()
-                }
-                Container::Unordered { members, .. } => members.iter().collect(),
-            };
-            for member in members {
-                match member {
-                    Member::Feature(feature) => {
-                        found.insert(feature.as_str());
+                    for member in &members[..end] {
+                        match member {
+                            Member::Feature(feature) => {
+                                found.insert(feature.as_str());
+                            }
+                            Member::Container(inner) => {
+                                stack.extend(self.records.containers.get(inner.as_str()).copied());
+                            }
+                        }
                     }
-                    Member::Container(inner) => {
-                        stack.extend(self.records.containers.get(inner.as_str()).copied());
+                }
+                Container::Unordered { members, .. } => {
+                    for member in members {
+                        match member {
+                            Member::Feature(feature) => {
+                                found.insert(feature.as_str());
+                            }
+                            Member::Container(inner) => {
+                                stack.extend(self.records.containers.get(inner.as_str()).copied());
+                            }
+                        }
                     }
                 }
             }
@@ -338,7 +405,7 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// The features `start` holds and every feature they depend on.
-    fn closure(&self, start: BTreeSet<&'a str>) -> BTreeSet<&'a str> {
+    fn closure(&self, start: HashSet<&'a str>) -> HashSet<&'a str> {
         let mut found = start;
         let mut stack: Vec<&'a str> = found.iter().copied().collect();
         while let Some(feature) = stack.pop() {
@@ -354,9 +421,9 @@ impl<'a> DesignIndex<'a> {
     /// The features a `Tool(feature)` state depends on: the feature and what
     /// its definition depends on (§5.3). `None` where the feature does not
     /// exist.
-    pub(super) fn tool_features(&self, feature: &str) -> Option<BTreeSet<&'a str>> {
+    pub(super) fn tool_features(&self, feature: &str) -> Option<HashSet<&'a str>> {
         let (&feature, _) = self.records.features.get_key_value(feature)?;
-        Some(self.closure(BTreeSet::from([feature])))
+        Some(self.closure(HashSet::from([feature])))
     }
 
     /// The prototype definitions the occurrences of a path place.
@@ -386,7 +453,13 @@ impl<'a> DesignIndex<'a> {
     /// Whether `from` depends on `on` through references, directly or
     /// transitively.
     pub(super) fn depends_on(&self, from: &str, on: &str) -> bool {
-        let direct = self.dependencies.get(from).cloned().unwrap_or_default();
+        let direct: HashSet<&'a str> = self
+            .dependencies
+            .get(from)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
         self.closure(direct).contains(on)
     }
 

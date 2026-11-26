@@ -2,14 +2,14 @@
 //! Fillet, chamfer, and body/face-edit projection.
 
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius},
-        AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
-        FeatureDefinition, FeatureOperation, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
-    },
-    scalar::{Fraction, NonNegativeLength},
+use cadmpeg_ir::features::direct_edit::{
+    AxisAngle, FaceMotion, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
 };
+use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::scalar::{Fraction, NonNegativeLength};
 
 use crate::history::classify::{indexed_name, is_fillet};
 use crate::history::literals::{
@@ -109,7 +109,7 @@ pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
         )
     };
     FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges: property_text(feature, "Edges")
                     .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
@@ -174,7 +174,7 @@ pub(super) fn project_shell(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(super) fn project_thicken(feature: &Feature) -> FeatureDefinition {
-    use cadmpeg_ir::features::ThickenSide;
+    use cadmpeg_ir::features::direct_edit::ThickenSide;
 
     let thickness = feature
         .parameters
@@ -213,12 +213,12 @@ pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Direction")
         .and_then(|value| parse_vector3(value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+        .and_then(cadmpeg_ir::features::geometry::FeatureDirection3::new);
     let neutral_plane = property_text(feature, "NeutralPlane")
         .map_or(FaceSelection::Unresolved, FaceSelection::Native);
-    let pull =
-        pull_direction.map(|direction| cadmpeg_ir::features::DraftPull::new(direction, None));
-    let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+    let pull = pull_direction
+        .map(|direction| cadmpeg_ir::features::direct_edit::DraftPull::new(direction, None));
+    let anchor = cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
         plane: neutral_plane,
         pull,
     };
@@ -256,7 +256,7 @@ pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         op,
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     }))
 }
 
@@ -604,7 +604,7 @@ pub(super) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         }
     });
     FeatureDefinition::Operation(FeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::ChamferGroup {
                 edges: property_text(feature, "Edges")
                     .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),

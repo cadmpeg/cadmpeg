@@ -4,7 +4,7 @@
 //! Native enum tokens are single static tables. The read path parses them
 //! case-insensitively; the write path formats the canonical spelling.
 
-use cadmpeg_ir::features::{SurfaceContinuity, SurfaceExtension, TrimRegion};
+use cadmpeg_ir::features::surface_inputs::{SurfaceContinuity, SurfaceExtension, TrimRegion};
 
 /// Native spellings for [`SurfaceContinuity`], in write-canonical form. The
 /// read path matched these case-insensitively (`contact`/`tangent`/`curvature`).
@@ -79,7 +79,7 @@ pub(crate) fn surface_extension_token(value: SurfaceExtension) -> Option<&'stati
 #[cfg(test)]
 mod tests {
     use super::surface_extension_token;
-    use cadmpeg_ir::features::SurfaceExtension;
+    use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
 
     #[test]
     fn surface_extension_token_rejects_unrepresented_method() {

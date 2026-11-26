@@ -128,7 +128,7 @@ fn fillet_operands_and_validator_keep_each_constant_radius_edge_set() {
     let mut groups = expected
         .iter()
         .map(|operand| FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(operand.collection.id()),
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Native(operand.collection.id()),
             radius: RadiusSpec::Constant {
                 radius: operand.radius,
             },
@@ -373,7 +373,7 @@ fn fillet_operands_omit_an_edge_set_whose_items_are_all_empty() {
     assert_eq!(read[0].radius.get(), 2.0);
     assert_eq!(empty_sets(&source, property_at(&properties)), 1);
     let groups = [FilletGroup {
-        edges: cadmpeg_ir::features::EdgeSelection::Native(read[0].collection.id()),
+        edges: cadmpeg_ir::features::selections::EdgeSelection::Native(read[0].collection.id()),
         radius: RadiusSpec::Constant {
             radius: read[0].radius,
         },
@@ -443,10 +443,10 @@ fn change(property: &mut PmDcFeatureProperty, edit: impl FnOnce(&mut PmDcFeature
 
 pub(crate) fn parameter(
     ordinal: u32,
-    value: cadmpeg_ir::features::ParameterValue,
+    value: cadmpeg_ir::features::parameters::ParameterValue,
 ) -> (
     crate::design::PmDcParameter,
-    cadmpeg_ir::features::DesignParameter,
+    cadmpeg_ir::features::parameters::DesignParameter,
 ) {
     let raw = crate::feature::tests::raw_parameter(ordinal);
     let neutral = crate::feature::tests::neutral_parameter(&raw, value);
@@ -497,7 +497,7 @@ pub(crate) fn project_native_fixture(
 pub(crate) fn project_inventory_fixture(
     mut inventory: crate::feature::FeatureInventory,
     raw_parameters: Vec<crate::design::PmDcParameter>,
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> crate::feature::FeatureProjection {
     let source = inventory.features[0].clone();
     let root = crate::record_identity::Located::new(
@@ -567,6 +567,7 @@ pub(crate) fn project_inventory_fixture(
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("native feature projection")

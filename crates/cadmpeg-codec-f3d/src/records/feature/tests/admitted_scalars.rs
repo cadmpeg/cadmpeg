@@ -10,6 +10,7 @@ use crate::records::feature::{
     surface_ops::{DesignSurfaceExtendOperation, DesignSurfaceOffsetSupport},
 };
 use crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{PositiveAngle, PositiveReal};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -24,14 +25,14 @@ fn refuses_zero<T>(record: &T, field: &str, refusal: &str)
 where
     T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
 {
-    let wire = serde_json::to_value(record).expect("serialize record");
+    let wire = json::to_value(record).expect("serialize record");
     assert_eq!(
-        &serde_json::from_value::<T>(wire.clone()).expect("round trip"),
+        &json::from_value::<T>(wire.clone()).expect("round trip"),
         record
     );
     let mut invalid = wire;
-    invalid[field] = serde_json::json!(0.0);
-    let error = serde_json::from_value::<T>(invalid)
+    invalid[field] = cadmpeg_core::json!(0.0);
+    let error = json::from_value::<T>(invalid)
         .expect_err("zero is refused")
         .to_string();
     assert!(error.contains(refusal), "{error}");
@@ -130,14 +131,14 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
         tolerance: positive(1.0e-6),
         tolerance_offset: 57,
     };
-    let wire = serde_json::to_value(&support).expect("serialize support");
+    let wire = json::to_value(&support).expect("serialize support");
     assert_eq!(
-        serde_json::from_value::<DesignSurfaceOffsetSupport>(wire.clone()).expect("round trip"),
+        json::from_value::<DesignSurfaceOffsetSupport>(wire.clone()).expect("round trip"),
         support
     );
     let mut invalid = wire;
-    invalid["value"]["tolerance"] = serde_json::json!(0.0);
-    let error = serde_json::from_value::<DesignSurfaceOffsetSupport>(invalid)
+    invalid["value"]["tolerance"] = cadmpeg_core::json!(0.0);
+    let error = json::from_value::<DesignSurfaceOffsetSupport>(invalid)
         .expect_err("zero is refused")
         .to_string();
     assert!(error.contains("PositiveReal"), "{error}");
@@ -149,6 +150,7 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
         &DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
             symmetric: None,
+            suppressed: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,
@@ -186,14 +188,14 @@ fn edge_treatment_radius_candidate_refuses_a_nonpositive_radius() {
 
 #[test]
 fn circular_pattern_construction_refuses_zero_count() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "count": 0, "count_record_index": 1, "count_offset": 2,
         "angle": 1.0, "angle_record_index": 3, "angle_offset": 4,
         "axis": {"kind":"inline", "origin":[0.0,0.0,0.0], "origin_offset":5,
             "direction":[0.0,0.0,1.0], "direction_offset":6},
         "axis_record_index":7, "selection_record_index":8
     });
-    let error = serde_json::from_value::<DesignCircularPatternConstruction>(wire).unwrap_err();
+    let error = json::from_value::<DesignCircularPatternConstruction>(wire).unwrap_err();
     assert!(error.to_string().contains("nonzero"), "{error}");
 }
 
@@ -202,48 +204,50 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
     let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
     let mut value: serde_json::Value = serde_json::from_str(wire).unwrap();
     for normal in [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]] {
-        value["plane_normal"] = serde_json::json!(normal);
-        let error = serde_json::from_value::<DesignMirrorConstruction>(value.clone()).unwrap_err();
+        value["plane_normal"] = cadmpeg_core::json!(normal);
+        let error = json::from_value::<DesignMirrorConstruction>(value.clone()).unwrap_err();
         assert!(error
             .to_string()
             .contains("plane_normal must be a unit vector"));
     }
-    value["plane_origin"] = serde_json::to_value(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-            .unwrap(),
+    value["plane_origin"] = json::to_value(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 0.0,
+        ))
+        .unwrap(),
     )
     .unwrap();
-    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(
+    value["plane_normal"] = json::to_value(cadmpeg_ir::features::geometry::FiniteVector3::from(
         cadmpeg_ir::units::UnitVector3::Z_AXIS,
     ))
     .unwrap();
-    let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(plane).unwrap(), value);
+    let plane: DesignMirrorConstruction = json::from_value(value.clone()).unwrap();
+    assert_eq!(json::to_value(plane).unwrap(), value);
 }
 
 #[test]
 fn scale_axis_factors_round_trip_and_reject_partial_or_mixed_forms() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "body_group_record_index": 102,
         "center_record_index": 105,
         "axis_factors": [1.0, 2.0, 3.0],
         "axis_factor_offsets": [60, 100, 140],
         "matrix_offset": 60
     });
-    let value: DesignScaleOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    let value: DesignScaleOperation = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(value).unwrap(), wire);
     for field in ["axis_factors", "axis_factor_offsets"] {
         let mut invalid = wire.clone();
         invalid.as_object_mut().unwrap().remove(field);
-        assert!(serde_json::from_value::<DesignScaleOperation>(invalid).is_err());
+        assert!(json::from_value::<DesignScaleOperation>(invalid).is_err());
     }
     for factors in [[0.0, 2.0, 3.0], [1.0, -2.0, 3.0]] {
         let mut invalid = wire.clone();
-        invalid["axis_factors"] = serde_json::json!(factors);
-        assert!(serde_json::from_value::<DesignScaleOperation>(invalid).is_err());
+        invalid["axis_factors"] = cadmpeg_core::json!(factors);
+        assert!(json::from_value::<DesignScaleOperation>(invalid).is_err());
     }
     let mut mixed = wire;
-    mixed["uniform_factor"] = serde_json::json!(2.0);
-    mixed["uniform_factor_offset"] = serde_json::json!(25);
-    assert!(serde_json::from_value::<DesignScaleOperation>(mixed).is_err());
+    mixed["uniform_factor"] = cadmpeg_core::json!(2.0);
+    mixed["uniform_factor_offset"] = cadmpeg_core::json!(25);
+    assert!(json::from_value::<DesignScaleOperation>(mixed).is_err());
 }

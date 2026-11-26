@@ -80,6 +80,10 @@ GENERATED_ID_OWNERS = {
     "parasolid": GeneratedIdOwner(
         Path("crates/cadmpeg-parasolid/src/registry_ids.rs"), "pub(crate)", "pub"
     ),
+    "edrawings": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-edrawings/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "onshape": GeneratedIdOwner(Path("crates/cadmpeg-codec-onshape/src/dialect/registry_ids.rs"), "pub(crate)"),
     "pvz": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-pvz/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
@@ -89,6 +93,12 @@ GENERATED_ID_OWNERS = {
     "sat": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-sat/src/dialect/registry_ids.rs"),
         "pub(crate)",
+    ),
+    "ironcad": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-ironcad/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
+    "solidedge": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-solidedge/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
     "sldprt": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-sldprt/src/dialect/registry_ids.rs"), "pub(crate)"

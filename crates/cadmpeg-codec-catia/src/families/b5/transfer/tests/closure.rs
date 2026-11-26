@@ -18,11 +18,11 @@ use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
 use crate::families::b5::transfer::{curve_on_parameter_range, transfer, SurfacePlan};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -30,16 +30,16 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-fn transfer_vertex_tolerances(
+fn endpoint_gate_residuals(
     graph: &B5Graph,
     supports: &super::super::B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
 ) -> BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports, surfaces, pcurves)
+        super::super::vertices::endpoint_gate_residuals(ctx, graph, supports, surfaces, pcurves)
     })
-    .expect("transfer vertex tolerances")
+    .expect("endpoint gate residuals")
 }
 
 use super::super::referenced_surface_ids;
@@ -439,7 +439,7 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
 
@@ -625,7 +625,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
@@ -689,7 +689,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             .iter()
             .map(|coedge| coedge.pcurves[0]
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints))
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints))
             .collect::<Vec<_>>(),
         [None, Some([1.0, 0.5]), None]
     );
@@ -842,8 +842,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range().endpoints() == [0.0, 1.0]
-            && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
-            && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
+            && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
+            && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(
@@ -860,7 +860,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
             if family.context().parameter_range().endpoints() == [0.0, 8.0]
-            && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
+            && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
     ));
 }
 
@@ -1148,7 +1148,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
 
@@ -1279,7 +1279,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
@@ -1347,7 +1347,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
 }
 
 #[test]
-fn emitted_carriers_determine_logical_vertex_tolerance() {
+fn lifted_support_ends_set_the_endpoint_gate_residual() {
     let graph = B5Graph {
         complete: true,
         faces: Vec::new(),
@@ -1411,7 +1411,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     let pcurves = BTreeMap::from([(
@@ -1454,7 +1454,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         )],
     )]);
 
-    let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
+    let tolerances = endpoint_gate_residuals(&graph, &supports, &surfaces, &pcurves);
     assert!((tolerances[&0].get() - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
     assert!(!tolerances.contains_key(&1));
 }

@@ -91,7 +91,7 @@ fn named_constraint_recipe_bindings() {
                 );
                 assert_eq!(
                     label_cell.value,
-                    Some(cadmpeg_ir::features::ParameterValue::String(
+                    Some(cadmpeg_ir::features::parameters::ParameterValue::String(
                         label.to_owned()
                     )),
                     "{version} {recipe}"
@@ -111,7 +111,8 @@ fn named_constraint_recipe_bindings() {
                     Some(alias)
                 );
                 assert_eq!(dependency.expression, format!("={width} mm"));
-                let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &dependency.value
+                let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+                    &dependency.value
                 else {
                     panic!("{version} {recipe}: authored spreadsheet value")
                 };
@@ -259,11 +260,14 @@ fn named_constraint_path_grammar_and_ambiguity() {
 }
 #[test]
 fn named_constraint_recipe_profiles_constraints_and_body_measures() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
-        FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, LinearTermination,
-        ParameterValue, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
     };
@@ -513,7 +517,7 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 direction,
                 start,
                 extent: ExtrudeExtent::OneSided { side },
-                op: BooleanOp::Join,
+                op: BooleanOp::NewBody,
                 solid,
                 length_along_profile_normal,
                 allow_multi_profile_faces,
@@ -663,10 +667,11 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 );
                 assert!(pad_length.dependencies.is_empty(), "{label}");
             }
-            let [body_id] = pad.evaluation.outputs().as_slice() else {
+            let (state, bodies) = crate::test_support::result_of(decoded.ir(), pad);
+            let [body_id] = bodies.as_slice() else {
                 panic!("{label}: expected one pad result")
             };
-            let report = measured(&label, decoded.ir()).unwrap();
+            let report = measured(&label, &state).unwrap();
             let body = report
                 .bodies()
                 .iter()

@@ -432,6 +432,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let assignment = crate::records::references::DesignMaterialAssignment {
         id: owner,
@@ -483,6 +484,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let mut assignment = crate::records::references::DesignMaterialAssignment {
         id: "f3d:design:material-assignment#1".into(),
@@ -549,6 +551,7 @@ fn complete_visual_token_selects_one_revision_record() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let appearances = [
         appearance("f3d:test:appearance#base", base_token),
@@ -593,6 +596,7 @@ fn visual_preset_fallback_requires_one_record() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let appearances = [
         appearance("f3d:test:appearance#first"),
@@ -876,9 +880,10 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             target: AttributeTarget::Face(face.try_into().expect("valid identity")).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
+            native_ref: None,
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
@@ -893,6 +898,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
@@ -950,9 +956,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
 
-    ir.model.attributes[0].values.push(AttributeValue::String(
-        "cccccccc-1111-2222-3333-dddddddddddd".into(),
-    ));
+    ir.model.attributes[0]
+        .values
+        .push(Some(AttributeValue::String(
+            "cccccccc-1111-2222-3333-dddddddddddd".into(),
+        )));
     let error = crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
@@ -990,9 +998,10 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             target: AttributeTarget::Face(face).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
+            native_ref: None,
         });
         ir.model.appearances.push(Appearance {
             id: "test:model:appearance#face"
@@ -1008,6 +1017,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             base_color: Some(Color::new(0.0, 0.0, 1.0, 1.0).expect("valid color")),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
         ir
     };
@@ -1155,7 +1165,7 @@ fn decode_transfers_generated_custom_attribute() {
             attribute.values.iter().any(|value| {
                 matches!(
                     value,
-                    cadmpeg_ir::attributes::AttributeValue::String(text)
+                    Some(cadmpeg_ir::attributes::AttributeValue::String(text))
                         if text == "generic_tag_attrib_def"
                 )
             })
@@ -1168,7 +1178,7 @@ fn decode_transfers_generated_custom_attribute() {
     ));
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "322"
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
@@ -1194,7 +1204,7 @@ fn decode_transfers_generated_custom_attribute() {
     );
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "900"
     )));
     assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(
@@ -1212,11 +1222,15 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source.source = None;
     source
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let vertex = source.geometry.vertices[0].id.clone();
     source.geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("positive finite tolerance"));
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
             id: "f3d:asm:creation-timestamp#generated".into(),
@@ -1228,7 +1242,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1240,7 +1254,12 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.025))
+        .find(|vertex| {
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get)
+                == Some(0.025)
+        })
         .expect("tolerant vertex");
     let attribute = round_trip
         .ir()
@@ -1631,6 +1650,7 @@ fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 
@@ -1716,6 +1736,8 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
 }
 
 mod assignment_losses;
+
+mod body_override_binding;
 
 mod appearance_assignments;
 

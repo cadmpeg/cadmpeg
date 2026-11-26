@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The USDA 1.0 writer.
 //!
-//! The layer has millimetre units. A document with one root occurrence that
+//! The layer is in metres, or in the units that the scene options select,
+//! and turned to the up axis that they select. A document with one root occurrence that
 //! holds child occurrences or several bodies, and nothing outside it, uses
 //! that occurrence as the one root prim; otherwise each root occurrence and
 //! each body no definition owns is a root prim. Each occurrence becomes an
@@ -11,10 +12,12 @@
 //! it. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
-//! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim is
-//! written as that prim. Appearances become materials with a
+//! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim of a
+//! body with no name or the placement's name is written as that prim; a body
+//! of another name keeps its name on its own prim under the placement. Appearances become materials with a
 //! `UsdPreviewSurface` shader and a `MaterialX` surface shader in a `Looks`
-//! scope under the one root prim, or at the layer root.
+//! scope under the one root prim, or at the layer root. The scene options
+//! can leave out the `BrepArray` prims and the `MaterialX` shaders.
 
 mod brep;
 mod brep_array;
@@ -22,16 +25,16 @@ mod physics;
 mod physx;
 mod records;
 mod shading;
-mod text;
+pub(crate) mod text;
 mod texture;
+mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -40,13 +43,15 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TextureCoordinateAddressing};
-use cadmpeg_ir::topology::{Body, Sense};
+use cadmpeg_ir::tessellation::{
+    Meshed, Tessellation, TessellationMesh, TextureCoordinateAddressing,
+};
+use cadmpeg_ir::topology::{Body, Color, FaceBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::UsdLossCode;
-use text::{asset, quoted, real, real32, tuple, tuple32, Emitter, Names};
+use text::{asset, float, floats, point32, quoted, real, tuple, tuple32, Emitter, Names};
 
 /// Name of the root prim.
 const ROOT: &str = "World";
@@ -54,12 +59,12 @@ const ROOT: &str = "World";
 const PROTOTYPES: &str = "Prototypes";
 /// Name of the scope that holds materials.
 const LOOKS: &str = "Looks";
-/// Metres per scene unit of the written layer.
-const METERS_PER_UNIT: &str = "1";
-/// Millimetres per scene unit: the layer is in metres. Lengths are divided
-/// by it, the inverse of the reader's product, so that a second round trip
+/// Millimetres per metre. Lengths are divided by the millimetres per scene
+/// unit, the inverse of the reader's product, so that a second round trip
 /// writes the same values.
-pub(super) const MILLIMETRES_PER_UNIT: f64 = 1000.0;
+pub(super) const MILLIMETRES_PER_METRE: f64 = 1000.0;
+/// Name of the transform op that turns a root prim to the selected up axis.
+const UP_AXIS_OP: &str = "xformOp:rotateX:upAxis";
 /// Up axis of a layer whose source states none.
 const DEFAULT_UP_AXIS: &str = "Z";
 /// Family name of the subsets that carry tessellation triangle groups.
@@ -125,10 +130,66 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
-        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions {
+            scopes: Reported,
+            containers: Reported,
+            features: Reported,
+            ..cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
+        },
         process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
+
+/// The loss of the design records the writer does not write: design
+/// features other than joints, except those that restate a model feature,
+/// whose arena the write omits, and the design state of scopes. A
+/// container only groups features, so its features account for it.
+fn design_losses(ir: &CadIr) -> Option<LossNote> {
+    let restated: BTreeSet<&str> = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect();
+    let features = ir
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            !matches!(
+                feature.definition.operation,
+                cadmpeg_ir::design::feature::FeatureOperation::Joint(_)
+            ) && !restated.contains(feature.id.as_str())
+        })
+        .count();
+    let scopes = ir
+        .design
+        .scopes
+        .iter()
+        .filter(|scope| {
+            scope.active_configuration.is_some()
+                || !scope.active_arrangements.is_empty()
+                || !scope.occurrences.is_empty()
+        })
+        .count();
+    let parts: Vec<String> = [
+        (features > 0).then(|| format!("{features} design feature(s) other than joints")),
+        (scopes > 0).then(|| {
+            format!(
+                "the configuration, arrangement, and occurrence state of {scopes} design scope(s)"
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| {
+        UsdLossCode::ExportDesignNotWritten.note(format!(
+            "{} have no UsdPhysics or PhysX form and were not written",
+            parts.join(" and ")
+        ))
+    })
+}
 
 /// A package member: its name and its content.
 pub(crate) type Member = (String, Vec<u8>);
@@ -139,48 +200,90 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), CodecError> {
-    let Some(version) = target
-        .index()
-        .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
-    else {
-        return Err(target.unavailable(
-            "the source text version is one this writer cannot synthesize, and a USD layer \
-             has no byte-replay path",
-        ));
-    };
-    let mut writer = Writer::new(input.ir, version);
+) -> (ExportBody, Vec<Member>) {
+    let version = target
+        .synthesized_row()
+        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the USD catalog declares a default and is projected from TARGET_VERSIONS"
+    );
+    let version = version.unwrap_or("1.0");
+    let metres = input
+        .scene
+        .meters_per_unit
+        .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
+    // USD holds no cage, so a cage body is not written either (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let written = cageless.as_ref().unwrap_or(input.ir);
+    let mut writer = Writer::new(written, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
     }
-    let text = writer.layer();
-    let losses = writer.losses();
+    let (text, holds_prims) = writer.layer();
+    let mut losses = writer.losses();
+    if !holds_prims {
+        losses.push(cadmpeg_ir::codec::write::output_empty(
+            "the written USD layer holds no prim: the document states no occurrence, body, \
+             mesh, curve, point, material, or physics record this writer encodes",
+        ));
+    }
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: written.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        // A USD layer holds no native record of any format.
+        native: NativeDispositions::dropped("which the USD writer does not write"),
         losses,
-        notes: vec![format!("USDA {version} text layer, metre units")],
+        notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
+        written_row: None,
+        annotations: None,
     };
-    Ok((body, members))
+    (body, members)
+}
+
+/// The note text of a layer of `metres` metres per unit.
+pub(crate) fn units_note(metres: f64) -> String {
+    if metres == 1.0 {
+        "metre units".to_owned()
+    } else {
+        format!("{} metres per unit", real(metres))
+    }
+}
+
+/// `vector` turned by the up-axis turn `turn` (degrees about X): a quarter
+/// turn about X.
+fn turned(turn: Option<f64>, vector: [f64; 3]) -> [f64; 3] {
+    let [x, y, z] = vector;
+    match turn {
+        Some(angle) if angle < 0.0 => [x, z, 0.0 - y],
+        Some(_) => [x, 0.0 - z, y],
+        None => vector,
+    }
 }
 
 /// Counts of records no prim carries.
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Bodies with a transform of their own and physics, written as a group of
+    /// prims: their physics was not written.
+    body_physics: Vec<String>,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
     untrimmed_breps: Vec<String>,
+    /// Bodies whose `BrepArray` prim leaves out poles that have no trim curve.
+    pole_breps: Vec<String>,
     curves: usize,
     channels: usize,
     reduced_appearances: BTreeSet<String>,
@@ -200,12 +303,26 @@ struct Unwritten {
     /// Faces of bodies with no tessellation that do not mesh, with the
     /// reason.
     unmeshed: Vec<String>,
+    /// Triangle groups that name the face whose triangles they hold. No
+    /// `GeomSubset` property states the face.
+    group_faces: usize,
+    /// Prims left out because their geometry holds a point past the
+    /// binary32 range.
+    past_range_prims: Vec<String>,
+    /// Attributes left out because their value is past the binary32 range.
+    past_range_values: Vec<String>,
+    /// Link targets left out because they name a prim left out, and prims
+    /// left out because they need one.
+    cut_links: Vec<String>,
 }
 
-/// The placement of a prim: its transform, per-axis scale, visibility, and
-/// prim metadata.
+/// The placement of a prim: its up-axis turn, transform, per-axis scale,
+/// visibility, and prim metadata.
 #[derive(Debug, Clone)]
 struct Placement<'a> {
+    /// The angle in degrees of a turn about the X axis, applied after the
+    /// transform.
+    turn: Option<f64>,
     transform: Option<&'a Transform>,
     scale: [f64; 3],
     hidden: bool,
@@ -217,6 +334,7 @@ struct Placement<'a> {
 impl Default for Placement<'_> {
     fn default() -> Self {
         Self {
+            turn: None,
             transform: None,
             scale: [1.0; 3],
             hidden: false,
@@ -231,8 +349,9 @@ enum Geometry<'ir> {
     /// The exact B-rep of a body.
     Brep(Box<brep_array::BrepPrim>),
     Mesh(&'ir Tessellation),
-    /// The mesh of faces of a body with no tessellation.
-    Meshed(Box<Tessellation>),
+    /// The mesh of faces of a body with no tessellation, and the triangles
+    /// of each face.
+    Meshed(Box<Tessellation>, Vec<brep::FaceTriangles>),
     Patch(&'ir cadmpeg_ir::topology::Face, &'ir NurbsSurface),
     Wires(Vec<WireCurve>),
 }
@@ -289,6 +408,8 @@ struct Writer<'ir> {
     materials: BTreeMap<String, String>,
     /// Appearance ids bound to each tessellation or body id.
     bindings: BTreeMap<String, String>,
+    /// Faces whose bound material a written prim carries.
+    face_bindings: BTreeSet<String>,
     /// Definitions placed more than once, with their prototype prim names.
     shared: BTreeMap<ProductDefinitionId, String>,
     /// Bodies some definition owns.
@@ -309,6 +430,9 @@ struct Writer<'ir> {
     positions: BTreeMap<&'ir str, usize>,
     /// The tessellations of each body, in arena order.
     body_tessellations: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>>,
+    /// The mesh bodies of each definition that states product structure, in
+    /// arena order.
+    definition_meshes: BTreeMap<&'ir ProductDefinitionId, Vec<&'ir Tessellation>>,
     /// Definitions that place a part, directly or through other definitions.
     above_parts: BTreeSet<ProductDefinitionId>,
     /// The members a package holds beside the root layer, or `None` for a
@@ -316,10 +440,41 @@ struct Writer<'ir> {
     package: Option<Vec<Member>>,
     /// The source of the files that external assets name.
     assets: Option<&'ir dyn cadmpeg_core::decode::Companions>,
+    /// Millimetres per scene unit.
+    millimetres_per_unit: f64,
+    /// Metres per scene unit.
+    metres_per_unit: f64,
+    /// The up axis of the layer.
+    up_axis: &'static str,
+    /// The turn in degrees about the X axis from the up axis of the model
+    /// to that of the layer.
+    turn: Option<f64>,
+    /// Whether bodies with faces get a `BrepArray` prim.
+    exact_brep: bool,
+    /// Whether materials get a `MaterialX` shader.
+    pub(super) materialx: bool,
 }
 
 impl<'ir> Writer<'ir> {
-    fn new(ir: &'ir CadIr, version: &'static str) -> Self {
+    fn new(
+        ir: &'ir CadIr,
+        version: &'static str,
+        scene: cadmpeg_ir::codec::write::SceneOptions,
+        metres: f64,
+    ) -> Self {
+        use cadmpeg_ir::codec::write::UpAxis;
+        let millimetres_per_unit = metres * MILLIMETRES_PER_METRE;
+        let model_axis = source_up_axis(ir);
+        let up_axis = match scene.up_axis {
+            None => model_axis,
+            Some(UpAxis::Y) => "Y",
+            Some(UpAxis::Z) => "Z",
+        };
+        let turn = match (model_axis, up_axis) {
+            ("Z", "Y") => Some(-90.0),
+            ("Y", "Z") => Some(90.0),
+            _ => None,
+        };
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
             let key = match &binding.target.entity {
@@ -336,6 +491,22 @@ impl<'ir> Writer<'ir> {
                 .entry(key)
                 .or_insert_with(|| binding.appearance.to_string());
         }
+        let mut definition_meshes: BTreeMap<&'ir ProductDefinitionId, Vec<&'ir Tessellation>> =
+            BTreeMap::new();
+        let stated: BTreeSet<&ProductDefinitionId> =
+            cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
+                .map(|definition| &definition.id)
+                .collect();
+        for tessellation in &ir.model.tessellations {
+            if let Meshed::Definition { definition, .. } = &tessellation.of {
+                if stated.contains(definition) {
+                    definition_meshes
+                        .entry(definition)
+                        .or_default()
+                        .push(tessellation);
+                }
+            }
+        }
         let mut uses: BTreeMap<&ProductDefinitionId, usize> = BTreeMap::new();
         for occurrence in &ir.model.occurrences {
             *uses.entry(&occurrence.prototype).or_default() += 1;
@@ -347,17 +518,17 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|definition| {
                 uses.get(&definition.id).copied().unwrap_or_default() > 1
-                    && (!definition.bodies.is_empty() || !definition.occurrences.is_empty())
+                    && (!definition.bodies.is_empty()
+                        || !definition.occurrences.is_empty()
+                        || definition_meshes.contains_key(&definition.id))
             })
             .map(|definition| {
                 let name = names.unique(definition.source_name.as_deref().unwrap_or("Prototype"));
                 (definition.id.clone(), name)
             })
             .collect();
-        let owned = ir
-            .model
-            .product_definitions
-            .iter()
+        // The document root's bodies are the layer's own.
+        let owned = cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
             .flat_map(|definition| definition.bodies.iter().cloned())
             .collect();
         // A definition is above parts when an occurrence it owns places a
@@ -393,23 +564,25 @@ impl<'ir> Writer<'ir> {
             unwritten: Unwritten::default(),
             materials: BTreeMap::new(),
             bindings,
+            face_bindings: BTreeSet::new(),
             shared,
             owned,
             stack: Vec::new(),
             paths: BTreeMap::new(),
             target_paths: BTreeMap::new(),
-            physics: physics::Plan::new(ir),
+            physics: physics::Plan::new(ir, millimetres_per_unit),
             index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
             positions: positions(ir),
             body_tessellations: {
                 let mut out: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>> = BTreeMap::new();
                 for tessellation in &ir.model.tessellations {
-                    if let Some(body) = &tessellation.body {
+                    if let Some(body) = tessellation.of.body() {
                         out.entry(body).or_default().push(tessellation);
                     }
                 }
                 out
             },
+            definition_meshes,
             tessellator: cadmpeg_tessellate::Tessellator::new(
                 ir,
                 cadmpeg_tessellate::Options::default(),
@@ -417,6 +590,20 @@ impl<'ir> Writer<'ir> {
             above_parts,
             package: None,
             assets: None,
+            millimetres_per_unit,
+            metres_per_unit: metres,
+            up_axis,
+            turn,
+            exact_brep: scene.exact_brep,
+            materialx: scene.materialx,
+        }
+    }
+
+    /// The placement of a root prim: the turn to the layer's up axis.
+    fn root_placement(&self) -> Placement<'static> {
+        Placement {
+            turn: self.turn,
+            ..Placement::default()
         }
     }
 
@@ -433,26 +620,12 @@ impl<'ir> Writer<'ir> {
         }
     }
 
-    fn up_axis(&self) -> String {
-        self.ir
-            .source
-            .as_ref()
-            .filter(|source| source.format() == crate::dialect::FORMAT)
-            .and_then(|source| {
-                source
-                    .attributes
-                    .iter()
-                    .find(|(key, _)| key.as_str() == SOURCE_UP_AXIS)
-                    .map(|(_, value)| value.clone())
-            })
-            .filter(|axis| axis == "Y" || axis == "Z")
-            .unwrap_or_else(|| DEFAULT_UP_AXIS.to_owned())
-    }
-
-    fn layer(&mut self) -> String {
-        // A root definition the source names, or one that owns bodies, is
-        // written as the root prim; an unnamed one is the layer itself, and
-        // its occurrences are the root prims.
+    /// The layer text, and whether it holds a prim. Every prim writes a
+    /// record of the document; the layer metadata is the writer's own.
+    fn layer(&mut self) -> (String, bool) {
+        // A root definition the source names, or one that owns bodies beside
+        // stating structure, is written as the root prim; an unnamed one is
+        // the layer itself, and its occurrences are the root prims.
         let root_definition = self
             .ir
             .model
@@ -461,9 +634,10 @@ impl<'ir> Writer<'ir> {
             .find(|definition| definition.is_root());
         let root_prim = root_definition
             .filter(|definition| {
-                definition.source_name.is_some()
-                    || definition.label.is_some()
-                    || !definition.bodies.is_empty()
+                !definition.is_document_root()
+                    && (definition.source_name.is_some()
+                        || definition.label.is_some()
+                        || !definition.bodies.is_empty())
             })
             .and_then(|definition| {
                 let id = cadmpeg_ir::ids::OccurrenceId::mint(format!(
@@ -495,11 +669,11 @@ impl<'ir> Writer<'ir> {
                 .model
                 .tessellations
                 .iter()
-                .any(|tessellation| tessellation.body.is_none())
+                .any(|tessellation| self.is_free_mesh(tessellation))
             || !free_curves.is_empty()
             || !free_points.is_empty();
         let mut names = Names::default();
-        let physics = !self.ir.model.assembly_joints.is_empty()
+        let physics = !self.physics.joints.is_empty()
             || !self.ir.model.physical_materials.is_empty()
             || !self.ir.model.physics_scenes.is_empty();
         let default_prim = match roots.as_slice() {
@@ -520,15 +694,16 @@ impl<'ir> Writer<'ir> {
                 for occurrence in roots {
                     self.occurrence(occurrence, &mut names, None);
                 }
+                let root = self.root_placement();
                 for body in &self.ir.geometry.bodies {
                     if !self.owned.contains(&body.id) {
-                        self.body(body, &mut names, &Placement::default(), None);
+                        self.body(body, &mut names, &root, None);
                     }
                 }
                 for tessellation in &self.ir.model.tessellations {
-                    if tessellation.body.is_none() {
-                        let name = names.unique("Mesh");
-                        self.mesh(tessellation, &name, None, &Placement::default());
+                    if self.is_free_mesh(tessellation) {
+                        let name = names.unique(&mesh_name(tessellation));
+                        self.mesh(tessellation, &name, None, &root, &[]);
                     }
                 }
                 self.free_geometry(&mut names);
@@ -539,7 +714,10 @@ impl<'ir> Writer<'ir> {
         if !self.shared.is_empty() {
             self.prototypes();
         }
-        let prims = std::mem::take(&mut self.out).finish();
+        let finished = std::mem::take(&mut self.out).finish();
+        self.unwritten.rounded_points = finished.rounded;
+        self.unwritten.past_range_values = finished.values;
+        let prims = finished.text;
         for (occurrence, path) in &self.paths {
             if let Some(key) =
                 physx::placeholder(&cadmpeg_ir::physics::solver::SolverTarget::Occurrence {
@@ -550,21 +728,38 @@ impl<'ir> Writer<'ir> {
             }
         }
         let (prims, unresolved) = physx::resolve(&prims, &self.target_paths);
+        let cut = text::cut_links(&prims, &finished.prims);
+        let prims = cut.text;
+        self.unwritten.past_range_prims = finished.prims;
+        self.unwritten.cut_links = cut.links;
+        self.unwritten.cut_links.extend(cut.needing.iter().cloned());
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
+        self.unwritten.joints += self.physics.unwritten_joints;
+        self.unwritten.joint_properties += self.physics.unwritten_joint_properties;
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
         header.line("(");
-        if let Some(name) = default_prim {
+        // A default prim left out is not named.
+        if let Some(name) = default_prim.filter(|name| {
+            let path = format!("/{name}");
+            !self.unwritten.past_range_prims.contains(&path) && !cut.needing.contains(&path)
+        }) {
             header.line(&format!("    defaultPrim = {}", quoted(&name)));
         }
-        header.line(&format!("    metersPerUnit = {METERS_PER_UNIT}"));
+        header.line(&format!(
+            "    metersPerUnit = {}",
+            real(self.metres_per_unit)
+        ));
         if physics || !self.physics.is_empty() {
             header.line("    kilogramsPerUnit = 1");
         }
-        header.line(&format!("    upAxis = {}", quoted(&self.up_axis())));
+        header.line(&format!("    upAxis = {}", quoted(self.up_axis)));
         header.line(")");
         header.blank();
-        header.finish() + &prims
+        let header = header.finish();
+        self.unwritten.past_range_values.extend(header.values);
+        let holds_prims = !prims.trim().is_empty();
+        (header.text + &prims, holds_prims)
     }
 
     /// The `Looks` scope with one material per appearance, under the root
@@ -577,6 +772,7 @@ impl<'ir> Writer<'ir> {
             Some(root) => format!("/{root}/{LOOKS}"),
             None => format!("/{LOOKS}"),
         };
+        self.out.name_next(LOOKS);
         self.out.line(&format!("def Scope {}", quoted(LOOKS)));
         self.out.open();
         let mut names = Names::default();
@@ -594,6 +790,14 @@ impl<'ir> Writer<'ir> {
     /// `tessellation`.
     fn group_binding_path(&self, tessellation: &str, group: &str) -> Option<String> {
         self.binding_path(&group_key(tessellation, group))
+    }
+
+    /// The material path bound to `face`, which the caller writes.
+    fn face_binding_path(&mut self, face: &cadmpeg_ir::ids::FaceId) -> Option<String> {
+        let key = face.to_string();
+        let path = self.binding_path(&key)?;
+        self.face_bindings.insert(key);
+        Some(path)
     }
 
     fn binding_path(&self, key: &str) -> Option<String> {
@@ -616,8 +820,10 @@ impl<'ir> Writer<'ir> {
         self.stack.push(name.clone());
         self.paths
             .insert(occurrence.id.clone(), format!("/{}", self.stack.join("/")));
-        let (schemas, properties) = self.physics.occurrence(&occurrence.id);
+        let turn = self.turn.filter(|_| self.stack.len() == 1);
+        let (schemas, properties) = self.physics.occurrence(&occurrence.id, turn);
         let mut placement = Placement {
+            turn,
             transform: occurrence.transform.as_ref(),
             scale: [1.0; 3],
             hidden: occurrence.visible == Some(false),
@@ -702,11 +908,28 @@ impl<'ir> Writer<'ir> {
                     .collect()
             })
             .unwrap_or_default();
+        let meshes: Vec<&'ir Tessellation> = if shared {
+            Vec::new()
+        } else {
+            self.definition_meshes(&occurrence.prototype)
+        };
         if root.is_none() && children.is_empty() && !shared {
-            if let [body] = bodies.as_slice() {
-                self.body(body, names, &placement, Some(&name));
-                self.stack.pop();
-                return;
+            match (bodies.as_slice(), meshes.as_slice()) {
+                ([body], []) => {
+                    if named_as(body, occurrence.name.as_deref().unwrap_or("Occurrence")) {
+                        self.body(body, names, &placement, Some(&name));
+                        self.stack.pop();
+                        return;
+                    }
+                }
+                ([], [mesh])
+                    if mesh_named_as(mesh, occurrence.name.as_deref().unwrap_or("Occurrence")) =>
+                {
+                    self.mesh(mesh, &name, None, &placement, &[]);
+                    self.stack.pop();
+                    return;
+                }
+                _ => {}
             }
         }
         if let Some(kind) = self.model_kind(occurrence) {
@@ -742,6 +965,7 @@ impl<'ir> Writer<'ir> {
         for body in bodies {
             self.body(body, &mut child_names, &Placement::default(), None);
         }
+        self.definition_mesh_prims(&meshes, &mut child_names);
         for child in children {
             self.occurrence(child, &mut child_names, None);
         }
@@ -753,7 +977,8 @@ impl<'ir> Writer<'ir> {
     }
 
     /// Whether `occurrence` has no child occurrences and places a definition
-    /// of one unshared body: it is written as that body's prim.
+    /// of one unshared body that its name names: it is written as that
+    /// body's prim.
     fn is_leaf(&self, occurrence: &Occurrence) -> bool {
         self.children(occurrence).is_empty()
             && !self.shared.contains_key(&occurrence.prototype)
@@ -765,8 +990,66 @@ impl<'ir> Writer<'ir> {
                 .find(|candidate| candidate.id == occurrence.prototype)
                 .is_some_and(|definition| {
                     !matches!(definition.storage, Storage::External(_))
-                        && definition.bodies.len() == 1
+                        && match (
+                            definition.bodies.as_slice(),
+                            self.definition_meshes(&definition.id).as_slice(),
+                        ) {
+                            ([body], []) => self
+                                .index
+                                .bodies(body.as_str(), cadmpeg_ir::index::StandardIndex)
+                                .is_some_and(|body| {
+                                    named_as(
+                                        body,
+                                        occurrence.name.as_deref().unwrap_or("Occurrence"),
+                                    )
+                                }),
+                            ([], [mesh]) => mesh_named_as(
+                                mesh,
+                                occurrence.name.as_deref().unwrap_or("Occurrence"),
+                            ),
+                            _ => false,
+                        }
                 })
+    }
+
+    /// The mesh bodies of `definition`, in arena order.
+    fn definition_meshes(&self, definition: &ProductDefinitionId) -> Vec<&'ir Tessellation> {
+        self.definition_meshes
+            .get(definition)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Whether `tessellation` is written at the top of the layer: it displays
+    /// no body, and is no mesh body of a definition that states product
+    /// structure.
+    fn is_free_mesh(&self, tessellation: &Tessellation) -> bool {
+        match &tessellation.of {
+            Meshed::Body { .. } => false,
+            Meshed::Definition { definition, .. } => {
+                !self.definition_meshes.contains_key(definition)
+            }
+            Meshed::Display { .. } | Meshed::Pmi { .. } | Meshed::Unresolved => true,
+        }
+    }
+
+    /// Writes each of `meshes`, mesh bodies of one definition, as a `Mesh` prim
+    /// in the definition's prim.
+    fn definition_mesh_prims(&mut self, meshes: &[&'ir Tessellation], names: &mut Names) {
+        for mesh in meshes {
+            let name = names.unique(&mesh_name(mesh));
+            let placement = Placement {
+                hidden: matches!(
+                    mesh.of,
+                    Meshed::Definition {
+                        visible: Some(false),
+                        ..
+                    }
+                ),
+                ..Placement::default()
+            };
+            self.mesh(mesh, &name, None, &placement, &[]);
+        }
     }
 
     /// The occurrences `definition` owns, in its order.
@@ -846,6 +1129,11 @@ impl<'ir> Writer<'ir> {
             self.out.line("token visibility = \"invisible\"");
         }
         let mut order = Vec::new();
+        if let Some(angle) = placement.turn {
+            self.out
+                .line(&format!("double {UP_AXIS_OP} = {}", real(angle)));
+            order.push(format!("\"{UP_AXIS_OP}\""));
+        }
         if let Some(transform) = placement.transform {
             let rows = transform.affine_rows();
             if rows != Transform::identity().affine_rows() {
@@ -856,15 +1144,15 @@ impl<'ir> Writer<'ir> {
                     tuple(&[r0[1], r1[1], r2[1], 0.0]),
                     tuple(&[r0[2], r1[2], r2[2], 0.0]),
                     tuple(&[
-                        r0[3] / MILLIMETRES_PER_UNIT,
-                        r1[3] / MILLIMETRES_PER_UNIT,
-                        r2[3] / MILLIMETRES_PER_UNIT,
+                        r0[3] / self.millimetres_per_unit,
+                        r1[3] / self.millimetres_per_unit,
+                        r2[3] / self.millimetres_per_unit,
                         1.0
                     ]),
                 );
                 self.out
                     .line(&format!("matrix4d xformOp:transform = {matrix}"));
-                order.push("\"xformOp:transform\"");
+                order.push("\"xformOp:transform\"".to_owned());
             }
         }
         if placement.scale != [1.0; 3] {
@@ -872,7 +1160,7 @@ impl<'ir> Writer<'ir> {
                 "double3 xformOp:scale = {}",
                 tuple(&placement.scale)
             ));
-            order.push("\"xformOp:scale\"");
+            order.push("\"xformOp:scale\"".to_owned());
         }
         if !order.is_empty() {
             self.out.line(&format!(
@@ -906,8 +1194,11 @@ impl<'ir> Writer<'ir> {
         let mut prims = Vec::new();
         let tessellations = self.tessellations(&body.id);
         let faces = self.body_faces(body);
-        if !faces.is_empty() {
-            if let Some(packed) = self.brep_packed(body) {
+        let mut meshed_faces = brep::FaceMeshes::new();
+        if !faces.is_empty() && self.exact_brep {
+            let (packed, meshes) = self.brep_packed(body);
+            meshed_faces = meshes;
+            if let Some(packed) = packed {
                 prims.push(Geometry::Brep(packed));
             }
         }
@@ -921,7 +1212,11 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
+                    Some(nurbs)
+                        if face.loops.boundary().is_some_and(FaceBoundary::is_empty)
+                            || self.whole_domain(face, nurbs)
+                            || (!exact && self.trim_loops(face).is_some()) =>
+                    {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -930,13 +1225,14 @@ impl<'ir> Writer<'ir> {
             if !meshed.is_empty() {
                 self.tessellator
                     .set_options(brep::mesh_options(&self.index, body));
-                let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
+                let (mesh, unmeshed) =
+                    brep::mesh(body, &meshed, &mut self.tessellator, meshed_faces);
                 self.unwritten.unmeshed.extend(unmeshed);
-                if let Some(mesh) = mesh {
+                if let Some((mesh, faces)) = mesh {
                     if !exact {
                         self.unwritten.tessellated_bodies += 1;
                     }
-                    prims.push(Geometry::Meshed(Box::new(mesh)));
+                    prims.push(Geometry::Meshed(Box::new(mesh), faces));
                 }
             }
         }
@@ -950,7 +1246,14 @@ impl<'ir> Writer<'ir> {
     /// Whether the one loop of `face` runs along the boundary of the domain
     /// of its surface `nurbs`: each pcurve is a segment on one side.
     fn whole_domain(&self, face: &cadmpeg_ir::topology::Face, nurbs: &NurbsSurface) -> bool {
-        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+        let Some(
+            FaceBoundary::Unspecified([loop_id])
+            | FaceBoundary::Classified {
+                outer: loop_id,
+                inner: [],
+            },
+        ) = face.loops.boundary()
+        else {
             return false;
         };
         let Some(loop_) = self
@@ -1027,7 +1330,7 @@ impl<'ir> Writer<'ir> {
         let hidden = placement.hidden || body.visible == Some(false);
         let collider = self.physics.collider(&body.id);
         if body.transform.is_none() && prims.len() == 1 {
-            let (schemas, properties) = self.physics.body(&body.id);
+            let (schemas, properties) = self.physics.body(&body.id, placement.turn);
             let mut placement = Placement {
                 hidden,
                 ..placement.clone()
@@ -1039,11 +1342,23 @@ impl<'ir> Writer<'ir> {
             }
             return;
         }
-        self.prim_head("def Xform", &name, &placement.metadata);
+        // The body's own physics goes on the group prim, whose space is the
+        // body's when the body has no transform of its own.
+        let (schemas, physics) = self.physics.body(&body.id, placement.turn);
+        let mut metadata = placement.metadata.clone();
+        let mut properties = placement.properties.clone();
+        if body.transform.is_none() {
+            metadata.extend(schemas);
+            properties.extend(physics);
+        } else if !schemas.is_empty() || !physics.is_empty() {
+            self.unwritten.body_physics.push(name.clone());
+        }
+        self.prim_head("def Xform", &name, &metadata);
         self.out.open();
         self.placement(&Placement {
             hidden,
             metadata: Vec::new(),
+            properties,
             ..placement.clone()
         });
         let inner = Placement {
@@ -1062,7 +1377,7 @@ impl<'ir> Writer<'ir> {
                     self.geometry_prim(prim, &name, body, &inner, &collider);
                     continue;
                 }
-                Geometry::Mesh(_) | Geometry::Meshed(_) => "Mesh",
+                Geometry::Mesh(_) | Geometry::Meshed(..) => "Mesh",
                 Geometry::Patch(..) => "Patch",
                 Geometry::Wires(_) => "Curves",
             };
@@ -1095,13 +1410,13 @@ impl<'ir> Writer<'ir> {
                 let mut placement = placement.clone();
                 placement.metadata.extend(collider.0.iter().cloned());
                 placement.properties.extend(collider.1.iter().cloned());
-                self.mesh(tessellation, name, Some(body), &placement);
+                self.mesh(tessellation, name, Some(body), &placement, &[]);
             }
-            Geometry::Meshed(tessellation) => {
+            Geometry::Meshed(tessellation, faces) => {
                 let mut placement = placement.clone();
                 placement.metadata.extend(collider.0.iter().cloned());
                 placement.properties.extend(collider.1.iter().cloned());
-                self.mesh(&tessellation, name, Some(body), &placement);
+                self.mesh(&tessellation, name, Some(body), &placement, &faces);
             }
             Geometry::Patch(face, nurbs) => {
                 let mut placement = placement.clone();
@@ -1123,19 +1438,20 @@ impl<'ir> Writer<'ir> {
     )> {
         let query = cadmpeg_ir::index::StandardIndex;
         let mut out = Vec::new();
-        for region in self.ordered(self.index.ir().geometry.body_regions(&body.id), |region| {
-            region.id.as_str()
-        }) {
+        for region in self.ordered(
+            self.index.ir().geometry.stated_body_regions(&body.id),
+            |region| region.id.as_str(),
+        ) {
             for shell in self.ordered(
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .filter_map(|shell| self.index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
-                for face in self.ordered(self.index.ir().geometry.shell_faces(&shell.id), |face| {
-                    face.id.as_str()
-                }) {
+                for face in self.ordered(
+                    self.index.ir().geometry.stated_shell_faces(&shell.id),
+                    |face| face.id.as_str(),
+                ) {
                     let surface = self.index.surfaces(face.surface.as_str(), query);
                     out.push((face, surface));
                 }
@@ -1159,37 +1475,40 @@ impl<'ir> Writer<'ir> {
         out.into_iter().map(|(_, record)| record).collect()
     }
 
-    fn color_primvars(&mut self, body: Option<&Body>) {
-        let Some(color) = body.and_then(|body| body.color) else {
+    fn color_primvars(&mut self, color: Option<Color>) {
+        let Some(color) = color else {
             return;
         };
         self.out.line(&format!(
             "color3f[] primvars:displayColor = [{}] (",
-            tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32))
+            floats(&[color.r(), color.g(), color.b()])
         ));
         self.out.line("    interpolation = \"constant\"");
         self.out.line(")");
         if color.a() < 1.0 {
             self.out.line(&format!(
                 "float[] primvars:displayOpacity = [{}] (",
-                real32(crate::text::value::round_f32(color.a()))
+                float(color.a())
             ));
             self.out.line("    interpolation = \"constant\"");
             self.out.line(")");
         }
     }
 
+    /// The text of a point of the geometry of the innermost open prim, and
+    /// its binary32 coordinates. A point that binary32 rounds is counted in
+    /// that prim, and a point past the binary32 range leaves the prim out.
     fn point_text(&mut self, point: cadmpeg_ir::math::Point3) -> (String, [f32; 3]) {
-        let scene = [point.x, point.y, point.z].map(|value| value / MILLIMETRES_PER_UNIT);
+        let scene = [point.x, point.y, point.z].map(|value| value / self.millimetres_per_unit);
         let values = scene.map(crate::text::value::round_f32);
-        if values
-            .iter()
-            .zip(scene)
-            .any(|(rounded, original)| f64::from(*rounded) != original)
+        let pairs = || values.iter().zip(scene);
+        if pairs().all(|(rounded, original)| rounded.is_finite() || !original.is_finite())
+            && pairs()
+                .any(|(rounded, original)| original.is_finite() && f64::from(*rounded) != original)
         {
-            self.unwritten.rounded_points += 1;
+            self.out.rounded_point();
         }
-        (tuple32(&values), values)
+        (point32(&scene), values)
     }
 
     fn extent(&mut self, bounds: Option<([f32; 3], [f32; 3])>) {
@@ -1229,6 +1548,7 @@ impl<'ir> Writer<'ir> {
         name: &str,
         body: Option<&Body>,
         placement: &Placement<'_>,
+        faces: &[brep::FaceTriangles],
     ) {
         let binding = self
             .binding_path(&tessellation.id.to_string())
@@ -1271,7 +1591,7 @@ impl<'ir> Writer<'ir> {
                 .iter()
                 .map(|normal| {
                     let normal = normal.get();
-                    tuple32(&[normal.x, normal.y, normal.z].map(crate::text::value::round_f32))
+                    floats(&[normal.x, normal.y, normal.z])
                 })
                 .collect();
             self.out.array("normal3f[] normals", &normals, " (");
@@ -1280,14 +1600,17 @@ impl<'ir> Writer<'ir> {
             self.out.line(")");
         }
         self.out.array("point3f[] points", &points, "");
-        self.color_primvars(body);
+        self.color_primvars(body.and_then(|body| body.color).or(match &tessellation.of {
+            Meshed::Definition { color, .. } => *color,
+            _ => None,
+        }));
         for set in tessellation.texture_coordinates() {
             let values: Vec<String> = set
                 .values
                 .iter()
                 .map(|value| {
                     let point = value.get();
-                    tuple32(&[point.u, point.v].map(crate::text::value::round_f32))
+                    floats(&[point.u, point.v])
                 })
                 .collect();
             let interpolation = match set.addressing {
@@ -1321,12 +1644,44 @@ impl<'ir> Writer<'ir> {
                     .and_then(|id| self.group_binding_path(&tessellation_id, id))
             })
             .collect();
-        if bound.iter().any(Option::is_some) {
+        // The triangles of the faces that each material binds: the faces of a
+        // mesh the writer made, and the faces that triangle groups name. A
+        // group bound itself keeps its own material.
+        let mut face_materials: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (face, triangles) in faces {
+            if let Some(path) = self.face_binding_path(face) {
+                face_materials
+                    .entry(path)
+                    .or_default()
+                    .extend(triangles.clone());
+            }
+        }
+        for (group, own) in tessellation.triangle_groups().iter().zip(&bound) {
+            let Some(face) = group.face.as_ref().filter(|_| own.is_none()) else {
+                continue;
+            };
+            if let Some(path) = self.binding_path(&face.to_string()) {
+                face_materials.entry(path).or_default().extend(
+                    group
+                        .triangles
+                        .iter()
+                        .filter_map(|triangle| usize::try_from(*triangle).ok()),
+                );
+            }
+        }
+        for triangles in face_materials.values_mut() {
+            triangles.sort_unstable();
+            triangles.dedup();
+        }
+        if bound.iter().any(Option::is_some) || !face_materials.is_empty() {
             self.out
                 .line("uniform token subsetFamily:materialBind:familyType = \"nonOverlapping\"");
         }
         let mut subsets = Names::default();
         for (group, binding) in tessellation.triangle_groups().iter().zip(bound) {
+            if group.face.is_some() {
+                self.unwritten.group_faces += 1;
+            }
             // A group with no source identity holds the triangles that the
             // named groups do not; it needs no subset.
             let Some(source) = group.source_id.as_deref() else {
@@ -1362,6 +1717,27 @@ impl<'ir> Writer<'ir> {
             }
             self.out.close();
         }
+        for (path, triangles) in face_materials {
+            let name = subsets.unique(path.rsplit('/').next().unwrap_or("Faces"));
+            self.prim_head(
+                "def GeomSubset",
+                &name,
+                &["prepend apiSchemas = [\"MaterialBindingAPI\"]".to_owned()],
+            );
+            self.out.open();
+            self.out.line("uniform token elementType = \"face\"");
+            self.out.line("uniform token familyName = \"materialBind\"");
+            self.out.array(
+                "int[] indices",
+                &triangles
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                "",
+            );
+            self.out.line(&format!("rel material:binding = <{path}>"));
+            self.out.close();
+        }
         self.out.close();
     }
 
@@ -1374,7 +1750,9 @@ impl<'ir> Writer<'ir> {
         name: &str,
         placement: &Placement<'_>,
     ) {
-        let binding = self.binding_path(&body.id.to_string());
+        let binding = self
+            .face_binding_path(&face.id)
+            .or_else(|| self.binding_path(&body.id.to_string()));
         self.geometry_head("NurbsPatch", name, placement, binding.as_deref());
         let grid = nurbs.control_grid();
         let (u_count, v_count) = (nurbs.u_count(), nurbs.v_count());
@@ -1417,7 +1795,14 @@ impl<'ir> Writer<'ir> {
         if reversed {
             self.out.line("uniform token orientation = \"leftHanded\"");
         }
-        self.color_primvars(Some(body));
+        if face.loops.boundary().is_none_or(|loops| !loops.is_empty())
+            && !self.whole_domain(face, nurbs)
+        {
+            if let Some(loops) = self.trim_loops(face) {
+                self.trim_attributes(&loops);
+            }
+        }
+        self.color_primvars(body.color);
         self.out.close();
     }
 
@@ -1427,13 +1812,13 @@ impl<'ir> Writer<'ir> {
         let query = cadmpeg_ir::index::StandardIndex;
         let index = &self.index;
         let mut edges = Vec::new();
-        for region in self.ordered(index.ir().geometry.body_regions(&body.id), |region| {
-            region.id.as_str()
-        }) {
+        for region in self.ordered(
+            index.ir().geometry.stated_body_regions(&body.id),
+            |region| region.id.as_str(),
+        ) {
             for shell in self.ordered(
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .filter_map(|shell| index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
@@ -1480,13 +1865,13 @@ impl<'ir> Writer<'ir> {
             ranges.push(tuple(&curve.range));
             rational |= curve.weights.iter().any(|weight| *weight != 1.0);
             weights.extend(curve.weights.iter().map(|weight| real(*weight)));
-            for point in &curve.points {
-                let (text, values) = self.point_text(*point);
-                points.push(text);
-                bounds = Some(grow(bounds, values));
-            }
         }
         self.geometry_head("NurbsCurves", name, placement, None);
+        for point in curves.iter().flat_map(|curve| &curve.points) {
+            let (text, values) = self.point_text(*point);
+            points.push(text);
+            bounds = Some(grow(bounds, values));
+        }
         self.extent(bounds);
         self.out.array("int[] curveVertexCounts", &counts, "");
         self.out.array("int[] order", &orders, "");
@@ -1496,7 +1881,7 @@ impl<'ir> Writer<'ir> {
             self.out.array("double[] pointWeights", &weights, "");
         }
         self.out.array("point3f[] points", &points, "");
-        self.color_primvars(body);
+        self.color_primvars(body.and_then(|body| body.color));
         self.out.close();
     }
 
@@ -1585,11 +1970,11 @@ impl<'ir> Writer<'ir> {
         }
         if !written.is_empty() {
             let name = names.unique("Curves");
-            self.wire_prim(&written, None, &name, &Placement::default());
+            self.wire_prim(&written, None, &name, &self.root_placement());
         }
         if !points.is_empty() {
             let name = names.unique("Points");
-            self.geometry_head("Points", &name, &Placement::default(), None);
+            self.geometry_head("Points", &name, &self.root_placement(), None);
             let mut texts = Vec::new();
             let mut bounds = None;
             for point in points {
@@ -1606,8 +1991,8 @@ impl<'ir> Writer<'ir> {
     /// The abstract `Prototypes` prim with the shared definitions.
     fn prototypes(&mut self) {
         self.out.blank();
-        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.name_next(PROTOTYPES);
+        self.out.line(&format!("class {}", quoted(PROTOTYPES)));
         self.out.open();
         let shared: Vec<(ProductDefinitionId, String)> = self
             .shared
@@ -1633,18 +2018,29 @@ impl<'ir> Writer<'ir> {
                 })
                 .collect();
             let occurrences = self.owned_occurrences(definition);
+            let meshes = self.definition_meshes(&definition.id);
             let mut names = Names::default();
-            if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
-                self.body(body, &mut names, &Placement::default(), Some(&name));
-                continue;
+            // A body named other than its prototype keeps its name on its
+            // own prim inside the prototype prim.
+            match (bodies.as_slice(), occurrences.as_slice(), meshes.as_slice()) {
+                ([body], [], []) if named_as(body, &name) => {
+                    self.body(body, &mut names, &Placement::default(), Some(&name));
+                    continue;
+                }
+                ([], [], [mesh]) if mesh_named_as(mesh, &name) => {
+                    self.mesh(mesh, &name, None, &Placement::default(), &[]);
+                    continue;
+                }
+                _ => {}
             }
-            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
+            self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.open();
             self.stack.extend([PROTOTYPES.to_owned(), name.clone()]);
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
+            self.definition_mesh_prims(&meshes, &mut names);
             for occurrence in occurrences {
                 self.occurrence(occurrence, &mut names, None);
             }
@@ -1657,10 +2053,22 @@ impl<'ir> Writer<'ir> {
 
     /// The losses of the write.
     fn losses(&self) -> Vec<LossNote> {
+        let mut losses = cadmpeg_ir::codec::write::partial_topology_omitted(
+            "USD",
+            &self.index.ir().geometry,
+            "it is written as its complete faces, with no B-rep solid",
+        );
+        if !self.unwritten.body_physics.is_empty() {
+            losses.push(UsdLossCode::ExportPhysicsNotWritten.note(format!(
+                "the rigid body, mass, or velocities of {} bodies with a transform of their own \
+                 were not written: {}",
+                self.unwritten.body_physics.len(),
+                self.unwritten.body_physics.join(", ")
+            )));
+        }
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
-        let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
                 "{} solver properties have no PhysX attribute, prim, or relationship target to \
@@ -1688,6 +2096,9 @@ impl<'ir> Writer<'ir> {
                  does not name and were not written",
                 unwritten.joint_drives
             )));
+        }
+        if let Some(note) = design_losses(self.ir) {
+            losses.push(note);
         }
         if !unwritten.unmeshed.is_empty() {
             losses.push(UsdLossCode::ExportFaceNotWritten.note(format!(
@@ -1718,6 +2129,14 @@ impl<'ir> Writer<'ir> {
                 unwritten.untrimmed_breps.join(", ")
             )));
         }
+        if !unwritten.pole_breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepPoleNotWritten.note(format!(
+                "the BrepArray prims of {} bodies leave out the poles of their edge loops \
+                 that have no trim curve: {}",
+                unwritten.pole_breps.len(),
+                unwritten.pole_breps.join(", ")
+            )));
+        }
         if unwritten.curves > 0 {
             losses.push(UsdLossCode::ExportCurveNotWritten.note(format!(
                 "{} wire edges have no line or NURBS curve and were not written",
@@ -1735,6 +2154,12 @@ impl<'ir> Writer<'ir> {
                 "{} curves with no line or NURBS form and {free_surfaces} surfaces that no face \
                  uses were not written",
                 unwritten.free_carriers
+            )));
+        }
+        if unwritten.group_faces > 0 {
+            losses.push(UsdLossCode::ExportGroupFaceNotWritten.note(format!(
+                "{} triangle group faces were not written",
+                unwritten.group_faces
             )));
         }
         if unwritten.channels > 0 {
@@ -1765,13 +2190,16 @@ impl<'ir> Writer<'ir> {
         let unbound = model
             .appearance_bindings
             .iter()
-            .filter(|binding| {
-                !matches!(
-                    binding.target.entity,
-                    AppearanceTarget::Tessellation(_)
-                        | AppearanceTarget::Body(_)
-                        | AppearanceTarget::TriangleGroup { .. }
-                )
+            .filter(|binding| match &binding.target.entity {
+                AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Body(_)
+                | AppearanceTarget::TriangleGroup { .. } => false,
+                AppearanceTarget::Face(face) => {
+                    let key = face.to_string();
+                    !self.face_bindings.contains(&key)
+                        || self.bindings.get(&key) != Some(&binding.appearance.to_string())
+                }
+                _ => true,
             })
             .count();
         if unbound > 0 {
@@ -1785,6 +2213,24 @@ impl<'ir> Writer<'ir> {
                 unwritten.rounded_points
             )));
         }
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the prims whose geometry holds a point past the binary32 range of its \
+             `point3f` coordinates",
+            unwritten.past_range_prims.iter().cloned(),
+        ));
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the attribute values past the binary32 range of their `float` type; \
+             each attribute takes its fallback value",
+            unwritten.past_range_values.iter().cloned(),
+        ));
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "USD",
+            "leaves out the relationship targets and connections that name a prim left out, \
+             the joints that name one, and the prims whose references or inherits reach one",
+            unwritten.cut_links.iter().cloned(),
+        ));
         losses
     }
 }
@@ -1908,7 +2354,56 @@ fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f3
 #[cfg(test)]
 mod tests;
 
+/// The prim name of a mesh: a mesh body's name, else `Mesh`.
+fn mesh_name(tessellation: &Tessellation) -> String {
+    match &tessellation.of {
+        Meshed::Definition {
+            name: Some(name), ..
+        } => name.as_str().to_owned(),
+        _ => "Mesh".to_owned(),
+    }
+}
+
+/// Whether the prim named after `name` can carry `mesh`, a mesh body, under
+/// its own name: the mesh has no name, or the same prim name.
+fn mesh_named_as(mesh: &Tessellation, name: &str) -> bool {
+    match &mesh.of {
+        Meshed::Definition {
+            name: Some(own), ..
+        } => text::identifier(own.as_str()) == text::identifier(name),
+        _ => true,
+    }
+}
+
 /// The arena position of each region, shell, face, and edge of `ir`.
+/// Whether the prim named after `name` can carry `body` under its own
+/// name: the body has no name, or the same prim name.
+fn named_as(body: &Body, name: &str) -> bool {
+    body.name
+        .as_deref()
+        .is_none_or(|own| text::identifier(own) == text::identifier(name))
+}
+
+/// The up axis of the model: that of a USD source, or Z.
+fn source_up_axis(ir: &CadIr) -> &'static str {
+    let axis = ir
+        .source
+        .as_ref()
+        .filter(|source| source.format() == crate::dialect::FORMAT)
+        .and_then(|source| {
+            source
+                .attributes
+                .iter()
+                .find(|(key, _)| key.as_str() == SOURCE_UP_AXIS)
+                .map(|(_, value)| value.as_str())
+        });
+    match axis {
+        Some("Y") => "Y",
+        Some("Z") => "Z",
+        _ => DEFAULT_UP_AXIS,
+    }
+}
+
 fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
     let geometry = &ir.geometry;
     let mut out = BTreeMap::new();

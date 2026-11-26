@@ -47,6 +47,8 @@ pub(crate) enum CreoLossCode {
     CompressedSectionUnexpanded,
     /// Geometry-looking bytes in a physical section have no visible-namespace ownership.
     PhysicalGeometryOwnerUnresolved,
+    /// A surface row restates the id of an earlier row and is not stated.
+    SurfaceRowRepeated,
     /// A positional ellipse flip is not a complete compact integer.
     ReferenceConicPrefixUnresolved,
     /// No persistence-layout discriminant matched, so no layout-specific
@@ -173,6 +175,9 @@ pub(crate) enum CreoLossCode {
     CrossSectionCurveBodyOpaque,
     /// A generated round entry has no independently owned surface carrier.
     RoundCarrierOwnerUnresolved,
+    /// A surface carrier of the non-visible geometry namespace states no
+    /// visibility: it has no color for an appearance binding to hold it.
+    NonVisibleCarrierVisibilityNotStated,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -181,6 +186,12 @@ pub(crate) enum CreoLossCode {
     NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
+    /// The packed `c0..df XX YY` reading of surface rows replaces rows that
+    /// the one- and two-byte reading keeps.
+    SurfaceRowPackedReading,
+    /// The one- and two-byte reading of surface rows replaces rows that the
+    /// packed `c0..df XX YY` reading keeps.
+    SurfaceRowCompactReading,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
     /// Decoded section segments retain source-native geometry.
@@ -235,6 +246,8 @@ pub(crate) enum CreoLossCode {
     TopologyExplicitUnownedSurface,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
+    /// A face states no loop on a plane, cylinder, or cone and is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Neutral feature, configuration, graph, material, and display data remain open.
     FeatureNeutralSemanticsIncomplete,
     /// Profile sweep history features retain incomplete required operands.
@@ -256,6 +269,9 @@ pub(crate) enum CreoLossCode {
     FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
+    /// Parameters that hold a parameter the decoder resolved as their
+    /// dependency as text, or omit it, and state no dependency on it.
+    DesignParameterReferenceAsText,
     /// Declared section segment rows did not decode.
     SectionSegmentMissing,
     /// Declared section relation rows did not decode.
@@ -318,6 +334,7 @@ impl CreoLossCode {
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
             Self::PhysicalGeometryOwnerUnresolved => "container.physical-geometry-owner-unresolved",
+            Self::SurfaceRowRepeated => "container.surface-row-repeated",
             Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
@@ -403,9 +420,14 @@ impl CreoLossCode {
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
             Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
             Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
+            Self::NonVisibleCarrierVisibilityNotStated => {
+                "presentation.non-visible-carrier-visibility-not-stated"
+            }
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
+            Self::SurfaceRowPackedReading => "geometry.surface-row-packed-reading",
+            Self::SurfaceRowCompactReading => "geometry.surface-row-compact-reading",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
             Self::CarrierVisibGeomPlanes => "carrier.visibgeom-planes",
@@ -434,6 +456,7 @@ impl CreoLossCode {
             Self::TopologyUnownedComponent => "topology.unowned-component",
             Self::TopologyExplicitUnownedSurface => "topology.explicit-unowned-surface",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
             Self::FeatureSurfaceOperationIncomplete => "feature.surface-operation-incomplete",
@@ -443,6 +466,7 @@ impl CreoLossCode {
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureRegenerationParentDropped => "feature.regeneration-parent-dropped",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
             Self::SectionRelationTableMalformed => "section.relation-table-malformed",
@@ -479,6 +503,8 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
+            | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading
             | Self::VisibGeomCurveAmbiguous
             | Self::CarrierVisibGeomPlanes
             | Self::CarrierTopologyBoundPlanes
@@ -535,6 +561,7 @@ impl CreoLossCode {
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
+            | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::SweepEnvelopeReplayUnresolved
@@ -613,7 +640,10 @@ impl CreoLossCode {
             | Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
-            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
+            | Self::AssemblyConstraintsNotTransferred
+            | Self::DesignParameterReferenceAsText
+            | Self::TopologyFaceBoundaryUnstated
+            | Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
         }
     }
 
@@ -662,10 +692,13 @@ impl CreoLossCode {
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
-            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiAngularUnitAssumed
+            | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
+            | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
@@ -724,6 +757,7 @@ impl CreoLossCode {
             | Self::TopologyUnownedComponent
             | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
+            | Self::TopologyFaceBoundaryUnstated
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
@@ -755,6 +789,8 @@ impl CreoLossCode {
             Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
                 LossTaxonomy::AssemblyComponentsExternal
             }
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyConstraintsNotTransferred => {
@@ -781,12 +817,15 @@ impl CreoLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `creo/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
+
+/// Instances an aggregated loss note names before it only counts the rest.
+pub(crate) const NAMED_INSTANCES_PER_NOTE: usize = 8;
 
 #[cfg(test)]
 mod tests {
@@ -803,6 +842,7 @@ mod tests {
                 "container.census",
                 "container.compressed-section-unexpanded",
                 "container.physical-geometry-owner-unresolved",
+                "container.surface-row-repeated",
                 "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
@@ -872,9 +912,12 @@ mod tests {
                 "geometry.visibgeom-curve-untransferred",
                 "curve.cross-section-body-opaque",
                 "geometry.round-carrier-owner-unresolved",
+                "presentation.non-visible-carrier-visibility-not-stated",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
+                "geometry.surface-row-packed-reading",
+                "geometry.surface-row-compact-reading",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",
                 "carrier.visibgeom-planes",
@@ -903,6 +946,7 @@ mod tests {
                 "topology.unowned-component",
                 "topology.explicit-unowned-surface",
                 "topology.vertex-identifier-unstatable",
+                "topology.face-boundary-unstated",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
                 "feature.surface-operation-incomplete",
@@ -912,6 +956,7 @@ mod tests {
                 "feature.state-selection-unresolved",
                 "feature.regeneration-parent-dropped",
                 "feature.construction-unresolved",
+                "design.parameter-reference-as-text",
                 "section.segment-missing",
                 "section.relation-missing",
                 "section.relation-table-malformed",

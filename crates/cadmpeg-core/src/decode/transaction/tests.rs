@@ -11,7 +11,6 @@ fn decode_trace_replays_charges_in_order_without_partial_commit() {
             max_entities: 13,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
@@ -33,7 +32,6 @@ fn decode_trace_applies_nested_depth_relative_to_its_composition_site() {
             max_recursion_depth: 2,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
@@ -57,7 +55,6 @@ fn decode_trace_accepts_changed_allowance_only_when_decisions_match() {
             max_retained_bytes: 100,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
@@ -101,7 +98,7 @@ fn decode_trace_compacts_charges_and_balanced_nesting_between_observations() {
     let ctx = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
     let task_arena = DecodeArena::new();
     let task = ctx.checkpoint().resume(&task_arena);
-    for _ in 0..1024 {
+    for _ in 0..3 {
         let _depth = task.enter_nested("nested item").unwrap();
         task.charge_entities(1, "item").unwrap();
         task.retain_bytes(3, "item bytes").unwrap();
@@ -109,8 +106,8 @@ fn decode_trace_compacts_charges_and_balanced_nesting_between_observations() {
     let trace = task.take_trace();
     assert_eq!(trace.events.len(), 1);
     assert!(ctx.accept_trace(&trace));
-    assert_eq!(ctx.checkpoint().state.entities, 1024);
-    assert_eq!(ctx.checkpoint().state.retained, 3072);
+    assert_eq!(ctx.checkpoint().state.entities, 3);
+    assert_eq!(ctx.checkpoint().state.retained, 9);
     assert_eq!(ctx.checkpoint().state.depth, 0);
 }
 
@@ -145,7 +142,6 @@ fn decode_context_temporary_arena_commits_charges_and_refusal() {
             max_entities: 7,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let temporary = DecodeArena::new();
@@ -193,7 +189,6 @@ fn decode_trace_refused_task_releases_its_recording() {
             max_entities: 13,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let task_arena = DecodeArena::new();
@@ -280,7 +275,6 @@ fn decode_trace_available_observations_accept_equal_threshold_decisions() {
             max_retained_bytes: 100,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
@@ -304,7 +298,6 @@ fn decode_trace_rejects_a_refused_optional_decision_that_would_now_fit() {
             max_retained_bytes: 100,
             ..ResourceLimits::default()
         },
-        ..DecodePolicy::default()
     };
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);

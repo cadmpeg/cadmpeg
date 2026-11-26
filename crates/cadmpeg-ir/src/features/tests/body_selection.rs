@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::features::{BodyMember, BodyMembers, BodySelection};
+use crate::features::selections::{BodyMember, BodyMembers, BodySelection};
 use crate::ids::{BodyId, HistoricalBodyId};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn ordered_members_reject_empty_sets_and_duplicates() {
@@ -16,7 +17,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
         let json_rows = bodies
             .iter()
             .zip(&native)
-            .map(|(body, native)| serde_json::json!({"body": body, "native": native}))
+            .map(|(body, native)| cadmpeg_core::json!({"body": body, "native": native}))
             .collect::<Vec<_>>();
         let rows = bodies
             .into_iter()
@@ -30,9 +31,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
             })
             .collect::<Vec<_>>();
         assert!(BodyMembers::try_from_rows(rows).is_err());
-        assert!(
-            serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!(json_rows)).is_err()
-        );
+        assert!(json::from_value::<BodyMembers<BodyId>>(cadmpeg_core::json!(json_rows)).is_err());
     }
 }
 
@@ -86,22 +85,64 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
             .unwrap(),
         members,
     };
-    let wire = serde_json::to_value(&selection).unwrap();
+    let wire = json::to_value(&selection).unwrap();
     assert!(wire["value"].get("bodies").is_none());
     assert_eq!(
-        serde_json::from_value::<BodySelection>(wire.clone()).unwrap(),
+        json::from_value::<BodySelection>(wire.clone()).unwrap(),
         selection
     );
 
     let mut restated = wire;
     let value = restated["value"].as_object_mut().unwrap();
-    value.insert("bodies".into(), serde_json::json!(["b", "a"]));
+    value.insert("bodies".into(), cadmpeg_core::json!(["b", "a"]));
     value.insert(
         "native".into(),
-        serde_json::json!(["native-first", "native-second"]),
+        cadmpeg_core::json!(["native-first", "native-second"]),
     );
-    let error = serde_json::from_value::<BodySelection>(restated)
+    let error = json::from_value::<BodySelection>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `bodies`"), "{error}");
+}
+
+#[test]
+fn generated_body_members_keep_one_native_per_row() {
+    use crate::features::selections::GeneratedBodyRef;
+    use crate::features::FeatureId;
+
+    let feature = FeatureId::mint("test:selection:feature#producer").unwrap();
+    let first = GeneratedBodyRef::new(feature.clone(), "1".into()).unwrap();
+    let second = GeneratedBodyRef::new(feature, "2".into()).unwrap();
+    let row = |body: &GeneratedBodyRef, native: &str| {
+        BodyMember::new(
+            body.clone(),
+            cadmpeg_core::text::NonBlankString::new(native.to_owned())
+                .expect("non-blank native fixture"),
+        )
+    };
+    assert!(BodyMembers::try_from_rows(vec![row(&first, "a"), row(&first, "b")]).is_err());
+    assert!(BodyMembers::try_from_rows(vec![row(&first, "a"), row(&second, "a")]).is_err());
+
+    let selection = BodySelection::GeneratedSet {
+        members: BodyMembers::try_from_rows(vec![row(&first, "a"), row(&second, "b")]).unwrap(),
+    };
+    let wire = json::to_value(&selection).unwrap();
+    assert_eq!(wire["kind"], "generated_set");
+    assert_eq!(wire["value"]["members"][1]["body"]["local_id"], "2");
+    assert_eq!(wire["value"]["members"][1]["native"], "b");
+    assert_eq!(
+        json::from_value::<BodySelection>(wire.clone()).unwrap(),
+        selection
+    );
+    assert!(crate::features::SewBodySelection::try_from(selection).is_ok());
+
+    let mut restated = wire;
+    restated["value"]
+        .as_object_mut()
+        .unwrap()
+        .insert("native".into(), cadmpeg_core::json!("a"));
+    let error = json::from_value::<BodySelection>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `native`"), "{error}");
 }

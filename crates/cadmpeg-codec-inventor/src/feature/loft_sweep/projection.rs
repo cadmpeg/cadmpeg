@@ -2,19 +2,19 @@
 //! Loft and circular sweep construction from typed operands and owned result faces.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{
-    features::{
-        BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureOperation,
-        FeatureResultTopology, ProfileRef,
-    },
-    sketches::Sketch,
-};
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::sketches::Sketch;
 
 use super::super::{
     boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
     PmDcFeatureLabel, ProjectionIndex,
 };
-use cadmpeg_ir::features::{LoftGuidance, LoftSection};
+use cadmpeg_ir::features::profiles::LoftSection;
+use cadmpeg_ir::features::LoftGuidance;
 
 pub(super) mod evidence;
 
@@ -36,12 +36,13 @@ pub(in crate::feature) fn project(
                 return None;
             }
         },
-        FeatureFamily::Loft => match loft(source, label, index) {
+        FeatureFamily::Loft => match loft(ctx, source, label, index) {
             Ok(operation) => operation,
-            Err(reason) => {
+            Err(Refusal::Native(reason)) => {
                 losses.push(reason.note());
                 return None;
             }
+            Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
         _ => return None,
     };
@@ -73,13 +74,13 @@ pub(in crate::feature) fn project(
                 if matches!(family, FeatureFamily::Sweep) {
                     "sweep"
                 } else {
-                    "loft"
+                    crate::feature::history_states::LOFT_TAG
                 }
                 .into(),
             ),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(operation),
             ),
             native_ref: Some(source.id()),
@@ -88,11 +89,26 @@ pub(in crate::feature) fn project(
     )))
 }
 
+/// Why a loft is not typed.
+enum Refusal {
+    /// The loft stays native.
+    Native(NativeReason),
+    /// The decode fails.
+    Codec(CodecError),
+}
+
+impl From<NativeReason> for Refusal {
+    fn from(reason: NativeReason) -> Self {
+        Self::Native(reason)
+    }
+}
+
 fn loft(
+    ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
-) -> Result<FeatureOperation, NativeReason> {
+) -> Result<FeatureOperation, Refusal> {
     let token = source.identity.segment_token.as_str();
     let links = controls::sections(
         source,
@@ -131,7 +147,7 @@ fn loft(
             })
             .collect::<Vec<_>>();
         let [(ordinal, sketch, profile)] = profiles.as_slice() else {
-            return Err(NativeReason::Profile);
+            return Err(NativeReason::Profile.into());
         };
         section_sources.push(
             index
@@ -144,12 +160,13 @@ fn loft(
         );
         selected.push((*ordinal, *sketch, profile.clone()));
     }
-    let result_model = index.result_model.ok_or(NativeReason::ResultTopology)?;
     let section_sources: [u32; 2] = section_sources
         .try_into()
         .map_err(|_| NativeReason::ResultTopology)?;
-    evidence::loft_result(
-        result_model,
+    evidence::loft_proof(
+        ctx,
+        index.result_model,
+        index.result_states,
         source.header.source_index,
         section_sources,
         |section| {
@@ -160,7 +177,12 @@ fn loft(
                 })
         },
     )
-    .ok_or(NativeReason::ResultTopology)?;
+    .map_err(|failure| match failure {
+        evidence::Unproved::Result => Refusal::Native(NativeReason::ResultTopology),
+        evidence::Unproved::StateFailed => Refusal::Native(NativeReason::ResultStateFailed),
+        evidence::Unproved::Bounded => Refusal::Native(NativeReason::ResultStateBounded),
+        evidence::Unproved::Codec(error) => Refusal::Codec(error),
+    })?;
     let sections = selected
         .into_iter()
         .map(|entry| LoftSection::Profile(ProfileRef::Planar(entry.2)))

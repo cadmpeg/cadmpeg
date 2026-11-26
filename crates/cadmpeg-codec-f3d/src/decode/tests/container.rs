@@ -477,15 +477,16 @@ fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
         .unwrap();
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.ir().geometry.curves.is_empty());
-    let geometry = decoded
+    assert!(decoded
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::GeometryNotTransferred.kind())
-        .unwrap();
-    assert!(geometry
-        .message
-        .contains("No physical model BREP was selected"));
+        .any(|loss| loss.code == F3dLossCode::EmptyDesign.kind()));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::GeometryNotTransferred.kind()));
     assert!(decoded
         .report()
         .losses
@@ -559,7 +560,6 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         bom_properties: std::collections::BTreeMap::new(),
         bodies: Vec::new(),
         sketches: Vec::new(),
-        tessellations: Vec::new(),
         native_ref: None,
         generated_from: None,
         storage: cadmpeg_ir::products::Storage::Embedded,
@@ -583,7 +583,7 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     };
     let root = "f3d:model:component#root";
     let child = "f3d:model:component#child";
-    let member = "f3d:xref/role-a/reference-0/occurrence-0/archive:product-definition#0";
+    let member = "f3d:xref:product-definition#role-a/reference-0/occurrence-0";
     let file_definition = |model: &cadmpeg_ir::document::Model| {
         super::super::file_definition(model).map(|id| id.as_str().to_owned())
     };

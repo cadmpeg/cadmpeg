@@ -52,7 +52,7 @@ use crate::records::mesh::{
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -207,6 +207,16 @@ pub(crate) enum MeshContainerOutcome {
         /// Exact read or parse failure.
         error: CodecError,
     },
+    /// The container decoded, but placing it through one joined Design body
+    /// record failed, so that mesh body is dropped.
+    Unplaced {
+        /// Native archive entry name.
+        entry_name: String,
+        /// Id of the dropped mesh body.
+        body_id: String,
+        /// Exact placement failure.
+        error: CodecError,
+    },
     /// A complete Design mesh body names no archive entry.
     Missing {
         /// Entry basename stored by the Design record.
@@ -237,7 +247,7 @@ struct MeshBodyRecord {
     placement: DesignMeshPlacement,
     words: DesignMeshBodyWords,
     guid_record_index: u32,
-    scope_record_index: u32,
+    scope_record_index: Option<u32>,
     wrapper_record_index: u32,
     owner_record_index: u32,
     scene_node_record_index: u32,
@@ -299,6 +309,13 @@ struct MeshCollectionOwnerRecord {
     collection_record_index: u32,
 }
 
+fn mesh_body_id(entry_name: &str, body_byte_offset: u64) -> String {
+    format!(
+        "{}:mesh-body#{body_byte_offset}",
+        crate::ids::native_scope(entry_name)
+    )
+}
+
 impl MeshBody {
     /// Project one decoded container through its joined Design body record.
     fn from_container(
@@ -311,7 +328,6 @@ impl MeshBody {
             fusion_uuid: _,
             mesh_uuid: _,
             split_streams: _,
-            history_streams: _,
             face_group_metadata: _,
             vertices,
             triangles,
@@ -321,10 +337,7 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = container;
-        let id = format!(
-            "{}:mesh-body#{body_byte_offset}",
-            crate::ids::native_scope(entry_name)
-        );
+        let id = mesh_body_id(entry_name, body_byte_offset);
         let mut placed_vertices = Vec::new();
         for point in vertices {
             placed_vertices.push(transform.transform_point(point)?);
@@ -679,7 +692,7 @@ fn parse_mesh_body_record(
             placement,
             words,
             guid_record_index,
-            scope_record_index,
+            scope_record_index: Some(scope_record_index),
             wrapper_record_index,
             owner_record_index,
             scene_node_record_index,
@@ -804,14 +817,18 @@ fn parse_variable_mesh_body_at(
             lp_utf16_bounded(record, after_library.checked_add(4)?, 0..=record.len())?;
         let mut reference_at = after_preset;
         let mut offsets = [0_u64; 5];
-        let mut ids = [0_u32; 5];
+        let mut ids = [None; 5];
         for ordinal in 0..5 {
             if ordinal == 4 {
                 (byte_at(reference_at)? == 0).then_some(())?;
                 reference_at = reference_at.checked_add(1)?;
             }
-            ids[ordinal] = exact_local_record_index(record, reference_at)?;
             offsets[ordinal] = u64_from_index(reference_at);
+            if ordinal == 0 && byte_at(reference_at)? == 0 {
+                reference_at = reference_at.checked_add(1)?;
+                continue;
+            }
+            ids[ordinal] = Some(exact_local_record_index(record, reference_at)?);
             reference_at = reference_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
         }
         let (name, end) = lp_utf16_bounded(record, reference_at, 0..=record.len())?;
@@ -841,10 +858,10 @@ fn parse_variable_mesh_body_at(
             placement,
             words,
             scope_record_index: ids[0],
-            wrapper_record_index: ids[1],
-            owner_record_index: ids[2],
-            guid_record_index: ids[3],
-            scene_node_record_index: ids[4],
+            wrapper_record_index: ids[1]?,
+            owner_record_index: ids[2]?,
+            guid_record_index: ids[3]?,
+            scene_node_record_index: ids[4]?,
             collection_record_index,
         }))
     })();
@@ -917,7 +934,12 @@ fn parse_mesh_collection_record(
         ) == Some(&[0; 9]))
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
-        (first_count == if flagged { 0 } else { body_records.len() }).then_some(())?;
+        (if flagged {
+            first_count == 0
+        } else {
+            first_count >= body_records.len()
+        })
+        .then_some(())?;
         let mut flagged_entries = Vec::new();
         let owner_at = if flagged
             && !body_records.is_empty()
@@ -957,22 +979,30 @@ fn parse_mesh_collection_record(
         if body_records.is_empty() {
             return Some(None);
         }
+        let collection = DesignMeshCollection::new(
+            identity,
+            base_record,
+            u32::try_from(body_records.len()).ok()?,
+            if flagged {
+                Some(DesignMeshFlaggedCollection {
+                    word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
+                    word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
+                    entries: flagged_entries,
+                })
+            } else {
+                None
+            },
+        )
+        .ok()?;
+        let collection = if flagged {
+            collection
+        } else {
+            collection
+                .with_received_count(u32::try_from(first_count).ok()?)
+                .ok()?
+        };
         Some(Some(MeshCollectionRecord {
-            collection: DesignMeshCollection::new(
-                identity,
-                base_record,
-                u32::try_from(body_records.len()).ok()?,
-                if flagged {
-                    Some(DesignMeshFlaggedCollection {
-                        word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
-                        word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
-                        entries: flagged_entries,
-                    })
-                } else {
-                    None
-                },
-            )
-            .ok()?,
+            collection,
             texture_table_record_index,
             body_records,
             owner_record_index,
@@ -1600,7 +1630,10 @@ fn mesh_operation_relation(
     guids: &HashMap<u32, MeshGuidRecord>,
     entries: &HashMap<u32, MeshEntryNameRecord>,
 ) -> Result<Option<MeshOperationRelation>, CodecError> {
-    let Some(scope_frame) = context.scopes.get(&body.scope_record_index).copied() else {
+    let Some(scope_record_index) = body.scope_record_index else {
+        return Ok(None);
+    };
+    let Some(scope_frame) = context.scopes.get(&scope_record_index).copied() else {
         return Ok(None);
     };
     validate_mesh_registration(
@@ -1615,7 +1648,7 @@ fn mesh_operation_relation(
     let Some(scope) = parse_parameter_scope_with_type_guid(
         context.bytes,
         context.records,
-        body.scope_record_index,
+        scope_record_index,
         scope_identity.class_tag(),
         scope_identity.byte_offset(),
         Some(MESH_CUT_SCOPE_TYPE_GUID),
@@ -1643,13 +1676,13 @@ fn mesh_operation_relation(
         )?;
         let group_record = &context.bytes[group_frame.start..group_frame.end];
         let group_identity = record_identity(group_record, group_frame, "mesh-operation-group")?;
-        let header = crate::design::decode::operands::RecordFrame {
+        let header = crate::design::decode::operands::construction_groups::RecordFrame {
             record_index: reference.value,
             class_tag: group_identity.class_tag().clone(),
             byte_offset: group_identity.byte_offset(),
         };
-        let crate::design::decode::operands::ConstructionOperandGroupParse::Complete(group) =
-            crate::design::decode::operands::parse_construction_operand_group(
+        let crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse::Complete(group) =
+            crate::design::decode::operands::construction_groups::parse_construction_operand_group(
                 context.bytes,
                 &scope,
                 u32::try_from(ordinal)
@@ -1975,6 +2008,7 @@ where
         let collection_index = collection.collection.record().record_index();
         let mut scope_indices = Vec::new();
         let mut collection_bodies = HashSet::new();
+        let mut scopeless_bodies = 0_usize;
         for body_index in &collection.body_records {
             let body = bodies
                 .get(body_index)
@@ -1983,8 +2017,12 @@ where
             if !collection_bodies.insert(*body_index) {
                 return Err(stream_error("collection body references are unique"));
             }
-            if !scope_indices.contains(&body.scope_record_index) {
-                scope_indices.push(body.scope_record_index);
+            match body.scope_record_index {
+                Some(scope_index) if !scope_indices.contains(&scope_index) => {
+                    scope_indices.push(scope_index);
+                }
+                Some(_) => {}
+                None => scopeless_bodies += 1,
             }
         }
         let mut scope_ordinals = HashMap::new();
@@ -1995,7 +2033,7 @@ where
             })?;
             for (ordinal, body_index) in scope.body_records.iter().enumerate() {
                 if !bodies.get(body_index).is_some_and(|body| {
-                    body.scope_record_index == scope_index
+                    body.scope_record_index == Some(scope_index)
                         && body.collection_record_index == collection_index
                 }) {
                     return Err(stream_error(
@@ -2016,14 +2054,13 @@ where
             }
             selected_scopes.push(scope.scope);
         }
-        if scope_ordinals.len() != collection.body_records.len() {
+        if scope_ordinals.len() + scopeless_bodies != collection.body_records.len() {
             return Err(stream_error("scope bodies partition collection bodies"));
         }
-        let scope_offset = selected_scopes
-            .first()
-            .ok_or_else(|| stream_error("each nonempty collection has a mesh scope"))?
-            .record()
-            .byte_offset();
+        let scope_offset = selected_scopes.first().map_or_else(
+            || collection.collection.record().byte_offset(),
+            |scope| scope.record().byte_offset(),
+        );
         let texture_table = texture_tables
             .remove(&collection.texture_table_record_index)
             .ok_or_else(|| {
@@ -2123,10 +2160,9 @@ where
             let body_owner = parse_mesh_body_owner(bytes, body_owner_frame)?;
             feature_bodies.push(DesignMeshBody {
                 scope_record_index: body.scope_record_index,
-                scope_body_ordinal: Some(scope_ordinals[body_record_index]),
+                scope_body_ordinal: scope_ordinals.get(body_record_index).copied(),
                 words: body.words,
                 split_streams: Vec::new(),
-                history_streams: Vec::new(),
                 face_group_metadata: None,
                 placement: body.placement,
                 entry: entry_name.entry,
@@ -2216,7 +2252,6 @@ where
                     scope_body_ordinal: None,
                     words: body.words,
                     split_streams: Vec::new(),
-                    history_streams: Vec::new(),
                     face_group_metadata: None,
                     placement: body.placement,
                     entry: entry.entry,
@@ -2418,29 +2453,19 @@ pub(crate) fn mesh_guid_byte_losses(
         })
 }
 
-pub(crate) fn mesh_split_stream_losses(
+pub(crate) fn mesh_component_flag_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
     features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.split_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshSplitStreamAssumed.note(format!(
-                "mesh body {} stream {} reads its component segments in stored order; the native record retains the descriptor",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
-    })
-}
-
-pub(crate) fn mesh_history_window_losses(
-    features: &[DesignMeshFeature],
-) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
-    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.history_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshHistoryWindowAssumed.note(format!(
-                "mesh body {} stream {} uses its declared output length as the LZMA history bound; the native record retains its encoding",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
+        body.split_streams
+            .iter()
+            .filter(|stream| stream.component_flag)
+            .map(|stream| {
+                crate::loss::F3dLossCode::MeshComponentFlagUninterpreted.note(format!(
+                    "mesh body {} stream {} reads the payload of a component flagged Z: true as unflagged f32 components; the native record retains the flag",
+                    body.placement.record().record_index(), stream.name
+                ))
+            })
     })
 }
 
@@ -2563,6 +2588,12 @@ pub(crate) fn decode_mesh_bodies(
         };
         let mut first = Some(container);
         for (design_ordinal, feature_ordinal, body_ordinal) in joined {
+            let body_byte_offset = design_records[design_ordinal][feature_ordinal]
+                .body_at(body_ordinal)
+                .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?
+                .placement
+                .record()
+                .byte_offset();
             let container = match first.take() {
                 Some(container) => container,
                 None => match scan
@@ -2572,8 +2603,9 @@ pub(crate) fn decode_mesh_bodies(
                     Ok(container) => container,
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        outcomes.push(MeshContainerOutcome::Failed {
+                        outcomes.push(MeshContainerOutcome::Unplaced {
                             entry_name: entry.name.clone(),
+                            body_id: mesh_body_id(&entry.name, body_byte_offset),
                             error,
                         });
                         continue;
@@ -2585,7 +2617,6 @@ pub(crate) fn decode_mesh_bodies(
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             body.container_mesh_uuid = Some(container.mesh_uuid.clone());
             body.split_streams.clone_from(&container.split_streams);
-            body.history_streams.clone_from(&container.history_streams);
             body.face_group_metadata
                 .clone_from(&container.face_group_metadata);
             let body = design_records[design_ordinal][feature_ordinal]
@@ -2593,15 +2624,16 @@ pub(crate) fn decode_mesh_bodies(
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             let projected = match MeshBody::from_container(
                 &entry.name,
-                body.placement.record().byte_offset(),
+                body_byte_offset,
                 body.placement.transform(),
                 container,
             ) {
                 Ok(projected) => projected,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    outcomes.push(MeshContainerOutcome::Failed {
+                    outcomes.push(MeshContainerOutcome::Unplaced {
                         entry_name: entry.name.clone(),
+                        body_id: mesh_body_id(&entry.name, body_byte_offset),
                         error,
                     });
                     continue;
@@ -2631,6 +2663,7 @@ pub(crate) fn decode_mesh_bodies(
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::serde_erase::json;
 
     mod body_forms;
     mod collection;
@@ -2676,7 +2709,7 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
 
     fn parse_mesh_design_records<F>(
@@ -3609,10 +3642,10 @@ mod tests {
             panic!("one mesh feature");
         };
         assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!([66])
+            cadmpeg_core::json!([66])
         );
         assert_eq!(wire["texture_table_reference_offset"], 31);
         assert_eq!(wire["collection_base_record"]["byte_offset"], 42);
@@ -3621,8 +3654,7 @@ mod tests {
         assert_eq!(wire["bodies"][0]["body_words"]["body_word"], 0);
         assert_eq!(wire["body_count_offsets"][0], 21);
         assert_eq!(wire["body_count_offsets"][1], 62);
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
     }
 
@@ -3705,10 +3737,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["body_name"], "Axle");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.bodies()[0]
                 .placement
@@ -3746,15 +3777,14 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["scopes"][0]["scope_flagged_word"], 37);
         assert_eq!(wire["scopes"][0]["scope_body_count_offset"], start + 25);
         assert_eq!(
             wire["scope_body_reference_offsets"],
-            serde_json::json!([start + 29])
+            cadmpeg_core::json!([start + 29])
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_scope_prefix_losses(&features).collect();
         assert_eq!(losses.len(), 1);
@@ -3788,7 +3818,7 @@ mod tests {
         );
         assert_eq!(body.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
         let start = u64_from_index(start);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         let body_wire = &wire["bodies"][0];
         assert_eq!(body_wire["body_words"]["flagged_word"], 0x1122_3344_u32);
         assert_eq!(body_wire["body_words"]["body_word"], 0x5566_7788_u32);
@@ -3796,7 +3826,7 @@ mod tests {
         assert_eq!(super::mesh_word_losses(&features).count(), 2);
         assert_eq!(
             body_wire["transform_offsets"],
-            serde_json::json!([start + 46, start + 175])
+            cadmpeg_core::json!([start + 46, start + 175])
         );
         assert_eq!(body_wire["scope_reference_offset"], start + 512);
         assert_eq!(body_wire["wrapper_reference_offset"], start + 523);
@@ -3804,14 +3834,13 @@ mod tests {
         assert_eq!(body_wire["guid_reference_offset"], start + 545);
         assert_eq!(body_wire["scene_node_reference_offset"], start + 557);
         let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire.clone()).unwrap();
+            json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, *feature);
         let mut plain_offsets = wire;
         plain_offsets["bodies"][0]["transform_offsets"] =
-            serde_json::json!([start + 42, start + 171]);
+            cadmpeg_core::json!([start + 42, start + 171]);
         assert!(
-            serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets)
-                .is_err()
+            json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets).is_err()
         );
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 1);
     }
@@ -3892,13 +3921,12 @@ mod tests {
             feature.bodies()[0].guid.opaque_run(),
             Some(&MESH_GUID_BYTES_21_TO_31)
         );
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["bodies"][0]["guid_opaque_bytes"],
             "112233445566778899aabb"
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
 
         let losses: Vec<_> = super::mesh_guid_byte_losses(&features).collect();
@@ -3928,7 +3956,7 @@ mod tests {
         )
         .expect("mesh graph");
         assert_eq!(features[0].bodies()[0].guid.opaque_run(), None);
-        let wire = serde_json::to_value(&features[0]).unwrap();
+        let wire = json::to_value(&features[0]).unwrap();
         assert!(wire["bodies"][0].get("guid_opaque_bytes").is_none());
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 0);
     }
@@ -4213,10 +4241,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["wrapper_opaque_tail"], "090807");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_wrapper_tail_losses(&features).collect();
         assert_eq!(losses.len(), 1);
@@ -4502,7 +4529,6 @@ mod tests {
         .unwrap();
         let container = || MeshContainer {
             split_streams: Vec::new(),
-            history_streams: Vec::new(),
             face_group_metadata: None,
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
             mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(

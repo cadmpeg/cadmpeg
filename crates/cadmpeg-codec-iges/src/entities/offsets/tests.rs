@@ -15,7 +15,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
 use crate::test_support::test_curves_and_surfaces::{
-    function_offset_line_file, linear_offset_line_file,
+    function_offset_line_file, linear_offset_line_file, offset_file_with_source,
     offset_quarter_circle_with_absolute_native_parameters, placed_uniform_offset_circle_file,
     placed_uniform_offset_line_file, uniform_offset_circle_file,
     uniform_offset_circle_file_with_parameters, wide_control_linear_offset_line_file,
@@ -46,6 +46,7 @@ fn vector_distance(left: Vector3, right: Vector3) -> f64 {
 fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 1,
@@ -195,25 +196,25 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -368,13 +369,15 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected an offset construction");
     };
     let source = definition_payload_0.source();
-    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal } = definition_payload_0.side()
+    let cadmpeg_ir::geometry::curve_offsets::OffsetSide::PlaneNormal { normal } =
+        definition_payload_0.side()
     else {
         panic!("expected an offset construction");
     };
@@ -580,8 +583,14 @@ fn decode_applies_declared_real_significance_to_curve_offset_normals() {
 #[test]
 fn decode_solves_a_parameter_linear_line_offset() {
     for (basis_code, expected_basis) in [
-        (1, cadmpeg_ir::geometry::CurveOffsetLawBasis::ArcLength),
-        (2, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter),
+        (
+            1,
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::ArcLength,
+        ),
+        (
+            2,
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::Parameter,
+        ),
     ] {
         let result = IgesCodec
             .decode(
@@ -608,14 +617,15 @@ fn decode_solves_a_parameter_linear_line_offset() {
                 cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
             ]
         );
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-            &result.ir().geometry.procedural_curves[0].definition()
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+            definition_payload_0,
+        ) = &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("expected a retained linear offset law");
         };
-        let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+        let Some(cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::Variable {
             distance_law:
-                cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                cadmpeg_ir::geometry::curve_offsets::CurveOffsetDistanceLaw::Linear {
                     basis,
                     distances,
                     control_range,
@@ -716,14 +726,15 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
             cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
         ]
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+        definition_payload_0,
+    ) = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected a retained coordinate-function offset law");
     };
-    let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+    let Some(cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::Variable {
         distance_law:
-            cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
                 function,
                 coordinate,
                 basis,
@@ -737,7 +748,10 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     };
     assert_eq!(function.as_str(), "iges:model:curve#D3");
     assert_eq!(coordinate.get(), 2);
-    assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
+    assert_eq!(
+        *basis,
+        cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::Parameter
+    );
     assert_eq!(function_parameter_offset.get(), 0.0);
     assert_eq!(function_parameter_scale.get(), 0.1);
     assert!(
@@ -748,4 +762,79 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+/// The ids in the `dropped=[..]` list of a `record.unreadable` message.
+fn dropped_ids(message: &str) -> Vec<&str> {
+    message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .map_or_else(Vec::new, |list| {
+            list.split(", ").filter(|id| !id.is_empty()).collect()
+        })
+}
+
+#[test]
+fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
+    let bytes = offset_file_with_source(
+        "100",
+        b"100,0,0,0,2,0,0,3;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{given_up:#?}");
+    crate::test_support::assert_given_up(given_up[0], ("entity", 1));
+    assert!(
+        dropped_ids(&given_up[0].message).contains(&"iges:entity:directory#3"),
+        "{}",
+        given_up[0].message
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+    assert!(result.ir().geometry.curves.is_empty());
+}
+
+#[test]
+fn an_offset_of_a_source_that_no_pass_projects_keeps_its_own_charge() {
+    let bytes = offset_file_with_source(
+        "134",
+        b"134,0,0,0,0;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 3)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .unwrap();
+    assert!(
+        given_up.message.contains("offset source curve is missing"),
+        "{}",
+        given_up.message
+    );
+    assert!(
+        dropped_ids(&given_up.message).is_empty(),
+        "{}",
+        given_up.message
+    );
 }

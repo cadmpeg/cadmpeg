@@ -43,20 +43,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -75,24 +68,16 @@
           "occurrences": [],
           "part_number": "P1",
           "representations": [],
-          "sketches": [],
           "source_name": "Part",
           "storage": {
-            "kind": "embedded"
-          },
-          "tessellations": []
+            "document": {},
+            "kind": "file"
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -132,6 +117,14 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "edition 3 sections",
+        "file_description.implementation_level": "4;2",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "sections",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242",
         "schema": "AP242"
       },
       "identity": {
@@ -196,8 +189,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "FILE_SCHEMA identifier AP242; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
@@ -209,8 +201,7 @@
           "value": {
             "code": "geometry.document-length-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
@@ -222,8 +213,7 @@
           "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
@@ -283,6 +273,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
     "file_digests": {},
     "retained_records": {

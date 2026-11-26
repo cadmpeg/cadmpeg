@@ -1,4 +1,5 @@
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use crate::test_support::container::{make_block, sldprt_with_body};
@@ -108,7 +109,7 @@ fn terminal_owner_refusal_survives_native_store_projection_and_loss_reporting() 
             );
         }
         let validation = crate::resolved_features::validate::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             result.ir(),
         )
         .unwrap();

@@ -2,7 +2,8 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::Severity;
 
 use crate::{loss::InventorLossCode, InventorCodec};
@@ -106,7 +107,9 @@ fn thicken_selection_validation_checks_both_references() {
     );
     for field in ["faces", "parameter"] {
         let mut changed = ir.clone();
-        let namespace = changed.native.namespace_mut("inventor");
+        let namespace = changed
+            .native
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
         let mut properties: Vec<serde_json::Value> = namespace
             .arena_as("pm_dc_feature_properties")
             .expect("native properties");
@@ -162,7 +165,9 @@ fn thicken_validation_rejects_control_families_on_the_wrong_classes() {
         .expect("synthetic validation context");
     for family in ["thicken_control13", "thicken_control14"] {
         let mut changed = ir.clone();
-        let namespace = changed.native.namespace_mut("inventor");
+        let namespace = changed
+            .native
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
         let mut properties: Vec<serde_json::Value> = namespace
             .arena_as("pm_dc_feature_properties")
             .expect("native properties");
@@ -191,7 +196,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         .expect("synthetic offset decode")
         .into_parts();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = ir.model.features[0].evaluation.definition()
     else {
@@ -230,7 +235,9 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         "{findings:?}"
     );
     let mut changed = ir.clone();
-    let namespace = changed.native.namespace_mut("inventor");
+    let namespace = changed
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     let mut sources: Vec<serde_json::Value> =
         namespace.arena_as("pm_dc_features").expect("native source");
     sources[0]["save_version_major"] = 18.into();
@@ -244,7 +251,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         == "Inventor neutral thicken operands do not match their PmDc slots"));
     let mut definition = ir.model.features[0].evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = &mut definition
     else {
@@ -329,7 +336,7 @@ fn offset_slot_16_pair_changes_the_boolean_and_preserves_the_length() {
         if forward {
             assert!(matches!(ir.model.features[0].evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::MoveFace {
-                    motion: cadmpeg_ir::features::FaceMotion::Offset { distance }, ..
+                    motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance }, ..
                 }) if distance.get() == 4.0));
         } else {
             assert!(matches!(ir.model.features[0].evaluation.definition(),
@@ -454,7 +461,7 @@ fn forward_offset_validation_rejects_the_opposite_sign_at_equal_magnitude() {
     );
     let mut definition = ir.model.features[0].evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = &mut definition
     else {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use crate::examples::unit_cube;
 use crate::geometry::SurfaceGeometry;
@@ -58,7 +59,7 @@ fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -85,11 +86,12 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
             pcurve: crate::ids::PcurveId::mint("test:model:pcurve#second").expect("valid identity"),
             isoparametric: Some(false),
             parameter_range: Some(
-                crate::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+                crate::geometry::procedural_curves::DirectedParameterRange::new([0.0, 1.0])
+                    .unwrap(),
             ),
         },
     ];
-    let json = serde_json::to_string(&uses).unwrap();
+    let json = json::to_string(&uses).unwrap();
     assert_eq!(
         serde_json::from_str::<Vec<crate::topology::PcurveUse>>(&json).unwrap(),
         uses
@@ -98,27 +100,30 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 
 #[test]
 fn support_side_rejects_orphan_legacy_parameter_range() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "surface": null,
         "pcurve": null,
         "pcurve_parameter_range": [0.0, 1.0],
     });
-    assert!(serde_json::from_value::<crate::geometry::IntcurveSupportSide>(wire).is_err());
+    assert!(
+        json::from_value::<crate::geometry::intersection_curves::IntcurveSupportSide>(wire)
+            .is_err()
+    );
 }
 
 #[test]
 fn the_g2_full_support_is_one_nested_key_or_absent() {
-    let shape = crate::geometry::G2BlendFirstShape::Full {
-        support: Some(crate::geometry::G2BlendFullSupport {
+    let shape = crate::geometry::blends::G2BlendFirstShape::Full {
+        support: Some(crate::geometry::blends::G2BlendFullSupport {
             surface: crate::ids::SurfaceId::mint("test:model:surface#support")
                 .expect("valid identity"),
-            tolerance: crate::geometry::FitTolerance::try_new(0.02).unwrap(),
+            tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.02).unwrap(),
         }),
     };
-    let value = serde_json::to_value(&shape).unwrap();
+    let value = json::to_value(&shape).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "full",
             "support": {
                 "surface": "test:model:surface#support",
@@ -127,17 +132,17 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
         })
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::G2BlendFirstShape>(value.clone()).unwrap(),
+        json::from_value::<crate::geometry::blends::G2BlendFirstShape>(value.clone()).unwrap(),
         shape
     );
 
-    let absent = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(
-        serde_json::json!({"kind": "full"}),
+    let absent = json::from_value::<crate::geometry::blends::G2BlendFirstShape>(
+        cadmpeg_core::json!({"kind": "full"}),
     )
     .unwrap();
     assert_eq!(
         absent,
-        crate::geometry::G2BlendFirstShape::Full { support: None }
+        crate::geometry::blends::G2BlendFirstShape::Full { support: None }
     );
 
     let mut half = value.clone();
@@ -145,14 +150,14 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
         .as_object_mut()
         .expect("a support object")
         .remove("tolerance");
-    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(half)
+    let error = json::from_value::<crate::geometry::blends::G2BlendFirstShape>(half)
         .unwrap_err()
         .to_string();
     assert!(error.contains("tolerance"), "{error}");
 
     let mut bogus = value;
-    bogus["support"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(bogus)
+    bogus["support"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<crate::geometry::blends::G2BlendFirstShape>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -160,12 +165,12 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct RevisionCompoundLoftDirectionWireTest {
-    direction: crate::geometry::CompoundLoftDirection,
+    direction: crate::geometry::lofts::CompoundLoftDirection,
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct VariableBlendShapeWireTest {
-    radii: crate::geometry::VariableBlendRadii,
+    radii: crate::geometry::variable_blends::VariableBlendRadii,
     u_range: [f64; 2],
     #[serde(
         default,
@@ -175,11 +180,13 @@ struct VariableBlendShapeWireTest {
     v_lower: Option<f64>,
 }
 
-fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendValue {
-    crate::geometry::VariableBlendValue {
+fn variable_blend_value(
+    discriminator: i64,
+) -> crate::geometry::variable_blends::VariableBlendValue {
+    crate::geometry::variable_blends::VariableBlendValue {
         modern_flag: false,
         calibrated: 0,
-        payload: crate::geometry::VariableBlendValuePayload::TwoEnds {
+        payload: crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
             discriminator,
             parameters: [0.0, 1.0],
             radii: [1.0, 2.0],
@@ -190,23 +197,23 @@ fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendVal
 #[test]
 fn the_variable_blend_radii_are_one_nested_tagged_object() {
     let value = VariableBlendShapeWireTest {
-        radii: crate::geometry::VariableBlendRadii::Two {
+        radii: crate::geometry::variable_blends::VariableBlendRadii::Two {
             first: variable_blend_value(0),
             second: variable_blend_value(1),
         },
         u_range: [-1.0, 2.0],
         v_lower: Some(-0.5),
     };
-    let wire = serde_json::to_value(&value).unwrap();
+    let wire = json::to_value(&value).unwrap();
     assert_eq!(wire["radii"]["kind"], "two");
     assert_eq!(wire["radii"]["first"]["payload"]["kind"], "two_ends");
     assert_eq!(wire["radii"]["first"]["payload"]["discriminator"], 0);
     assert_eq!(wire["radii"]["second"]["payload"]["kind"], "two_ends");
     assert_eq!(wire["radii"]["second"]["payload"]["discriminator"], 1);
-    assert_eq!(wire["u_range"], serde_json::json!([-1.0, 2.0]));
+    assert_eq!(wire["u_range"], cadmpeg_core::json!([-1.0, 2.0]));
     assert_eq!(wire["v_lower"], -0.5);
     assert_eq!(
-        serde_json::from_value::<VariableBlendShapeWireTest>(wire).unwrap(),
+        json::from_value::<VariableBlendShapeWireTest>(wire).unwrap(),
         value
     );
 }
@@ -214,40 +221,39 @@ fn the_variable_blend_radii_are_one_nested_tagged_object() {
 #[test]
 fn a_single_variable_blend_radius_has_no_second_law_key() {
     let single = VariableBlendShapeWireTest {
-        radii: crate::geometry::VariableBlendRadii::Single {
+        radii: crate::geometry::variable_blends::VariableBlendRadii::Single {
             value: variable_blend_value(0),
         },
         u_range: [-1.0, 2.0],
         v_lower: None,
     };
-    let base = serde_json::to_value(&single).unwrap();
+    let base = json::to_value(&single).unwrap();
     assert_eq!(base["radii"]["kind"], "single");
     assert!(base["radii"].get("second").is_none());
 
     let mut second_beside_single = base.clone();
-    second_beside_single["radii"]["second"] =
-        serde_json::to_value(variable_blend_value(1)).unwrap();
-    let error = serde_json::from_value::<VariableBlendShapeWireTest>(second_beside_single)
+    second_beside_single["radii"]["second"] = json::to_value(variable_blend_value(1)).unwrap();
+    let error = json::from_value::<VariableBlendShapeWireTest>(second_beside_single)
         .unwrap_err()
         .to_string();
     assert!(error.contains("second"), "{error}");
 
     let mut bogus = base.clone();
-    bogus["radii"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<VariableBlendShapeWireTest>(bogus)
+    bogus["radii"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<VariableBlendShapeWireTest>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 
     assert!(base.get("v_lower").is_none());
     let mut wire = base;
-    wire["u_range"] = serde_json::json!([-1.0, null]);
-    assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
+    wire["u_range"] = cadmpeg_core::json!([-1.0, null]);
+    assert!(json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
 }
 
 #[test]
 fn an_absent_blend_tangent_is_spelled_null_and_no_magic_value() {
-    use crate::geometry::VariableBlendInterpolationPoint;
+    use crate::geometry::variable_blends::VariableBlendInterpolationPoint;
     use crate::math::{Point3, Vector3};
 
     let point = VariableBlendInterpolationPoint {
@@ -257,29 +263,29 @@ fn an_absent_blend_tangent_is_spelled_null_and_no_magic_value() {
         location: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
     };
-    let wire = serde_json::to_value(&point).unwrap();
-    assert_eq!(wire["tangents"], serde_json::json!([null, 1.0e37]));
+    let wire = json::to_value(&point).unwrap();
+    assert_eq!(wire["tangents"], cadmpeg_core::json!([null, 1.0e37]));
     assert_eq!(
-        serde_json::from_value::<VariableBlendInterpolationPoint>(wire).unwrap(),
+        json::from_value::<VariableBlendInterpolationPoint>(wire).unwrap(),
         point
     );
 }
 
-fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
-    crate::geometry::LoftSubdata::type_211([1, 0], [0.0, 1.0])
+fn empty_loft_subdata() -> crate::geometry::lofts::LoftSubdata {
+    crate::geometry::lofts::LoftSubdata::type_211([1, 0], [0.0, 1.0])
 }
 
 #[test]
 fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
-    let table = crate::geometry::LoftSubdata::table(
+    let table = crate::geometry::lofts::LoftSubdata::table(
         7,
         vec![
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [0.0, 1.0],
                 columns: vec![[2.0, 3.0]],
                 extra: None,
             },
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [4.0, 5.0],
                 columns: vec![[6.0, 7.0]],
                 extra: Some([8.0, 9.0]),
@@ -291,15 +297,15 @@ fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
     assert_eq!(table.row_count(), 2);
     assert_eq!(table.column_count(), 1);
 
-    assert!(crate::geometry::LoftSubdata::table(
+    assert!(crate::geometry::lofts::LoftSubdata::table(
         9,
         vec![
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [0.0, 1.0],
                 columns: Vec::new(),
                 extra: None,
             },
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [2.0, 3.0],
                 columns: vec![[4.0, 5.0]],
                 extra: None,
@@ -311,26 +317,24 @@ fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
 
 #[test]
 fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
-    let table = crate::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
+    let table = crate::geometry::lofts::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
     assert_eq!(table.row_count(), 4);
     assert_eq!(table.column_count(), 0);
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftSubdata>(
-            serde_json::to_value(&table).unwrap()
-        )
-        .unwrap(),
+        json::from_value::<crate::geometry::lofts::LoftSubdata>(json::to_value(&table).unwrap())
+            .unwrap(),
         table
     );
 }
 
 #[test]
 fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
-    let support = crate::geometry::LoftProfileMember {
-        profile: crate::geometry::LoftPathCurve {
+    let support = crate::geometry::lofts::LoftProfileMember {
+        profile: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([Some(0.0), Some(1.0)]),
         },
-        form: crate::geometry::LoftMemberForm::Support {
+        form: crate::geometry::lofts::LoftMemberForm::Support {
             type_code: 3,
             surface: Some(
                 crate::ids::SurfaceId::mint("test:model:surface#loft").expect("valid identity"),
@@ -343,7 +347,7 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
             direction: None,
         },
     };
-    let wire = serde_json::to_value(&support).unwrap();
+    let wire = json::to_value(&support).unwrap();
     assert!(wire.get("type_code").is_none());
     assert_eq!(wire["form"]["kind"], "support");
     assert_eq!(wire["form"]["type_code"], 3);
@@ -351,16 +355,16 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
     assert_eq!(wire["form"]["first_flag"], true);
     assert!(wire["form"].get("secondary_pcurve").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftProfileMember>(wire.clone()).unwrap(),
+        json::from_value::<crate::geometry::lofts::LoftProfileMember>(wire.clone()).unwrap(),
         support
     );
 
-    let pair = crate::geometry::LoftProfileMember {
-        profile: crate::geometry::LoftPathCurve {
+    let pair = crate::geometry::lofts::LoftProfileMember {
+        profile: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([None, None]),
         },
-        form: crate::geometry::LoftMemberForm::PcurvePair {
+        form: crate::geometry::lofts::LoftMemberForm::PcurvePair {
             pcurve: None,
             secondary_pcurve: None,
             asm_extension: None,
@@ -368,28 +372,28 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
             direction: None,
         },
     };
-    let mut pair_wire = serde_json::to_value(&pair).unwrap();
+    let mut pair_wire = json::to_value(&pair).unwrap();
     assert_eq!(pair_wire["form"]["kind"], "pcurve_pair");
     assert!(pair_wire["form"].get("type_code").is_none());
     assert!(pair_wire["form"].get("support_bounds").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire.clone()).unwrap(),
+        json::from_value::<crate::geometry::lofts::LoftProfileMember>(pair_wire.clone()).unwrap(),
         pair
     );
 
-    pair_wire["form"]["surface"] = serde_json::json!("test:model:surface#conflict");
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire)
+    pair_wire["form"]["surface"] = cadmpeg_core::json!("test:model:surface#conflict");
+    let error = json::from_value::<crate::geometry::lofts::LoftProfileMember>(pair_wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("surface"), "{error}");
 
     let mut support_wire = wire.clone();
-    support_wire["form"]["secondary_pcurve"] = serde_json::json!({
+    support_wire["form"]["secondary_pcurve"] = cadmpeg_core::json!({
         "kind": "line",
         "origin": {"u": 0.0, "v": 0.0},
         "direction": {"u": 1.0, "v": 0.0},
     });
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(support_wire)
+    let error = json::from_value::<crate::geometry::lofts::LoftProfileMember>(support_wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("secondary_pcurve"), "{error}");
@@ -399,7 +403,7 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
         .as_object_mut()
         .unwrap()
         .remove("first_flag");
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(without_flag)
+    let error = json::from_value::<crate::geometry::lofts::LoftProfileMember>(without_flag)
         .unwrap_err()
         .to_string();
     assert!(error.contains("first_flag"), "{error}");
@@ -407,52 +411,52 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
 
 #[test]
 fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
-    let expression = crate::geometry::LawExpression::Edge {
-        curve: crate::geometry::LoftPathCurve {
+    let expression = crate::geometry::laws::LawExpression::Edge {
+        curve: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#law").expect("valid identity"),
             endpoints: Some([None, Some(2.0)]),
         },
         parameters: [-1.0, 3.0],
     };
-    let wire = serde_json::to_value(&expression).unwrap();
+    let wire = json::to_value(&expression).unwrap();
     assert_eq!(wire["kind"], "edge");
     assert_eq!(wire["curve"], "test:model:curve#law");
-    assert_eq!(wire["endpoints"], serde_json::json!([null, 2.0]));
+    assert_eq!(wire["endpoints"], cadmpeg_core::json!([null, 2.0]));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawExpression>(wire).unwrap(),
+        json::from_value::<crate::geometry::laws::LawExpression>(wire).unwrap(),
         expression
     );
 }
 
 #[test]
 fn a_law_formula_names_its_variant_with_a_tag() {
-    let null = crate::geometry::LawFormula::Null {};
-    let null_wire = serde_json::to_value(&null).unwrap();
-    assert_eq!(null_wire, serde_json::json!({ "kind": "null" }));
+    let null = crate::geometry::laws::LawFormula::Null {};
+    let null_wire = json::to_value(&null).unwrap();
+    assert_eq!(null_wire, cadmpeg_core::json!({ "kind": "null" }));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawFormula>(null_wire).unwrap(),
+        json::from_value::<crate::geometry::laws::LawFormula>(null_wire).unwrap(),
         null
     );
 
-    let named = crate::geometry::LawFormula::Named {
+    let named = crate::geometry::laws::LawFormula::Named {
         name: cadmpeg_core::nonblank_literal!("distance-law"),
-        variables: vec![crate::geometry::LawExpression::Double { value: 2.0 }],
+        variables: vec![crate::geometry::laws::LawExpression::Double { value: 2.0 }],
     };
-    let named_wire = serde_json::to_value(&named).unwrap();
+    let named_wire = json::to_value(&named).unwrap();
     assert_eq!(
         named_wire,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "named",
             "name": "distance-law",
             "variables": [{ "kind": "double", "value": 2.0 }]
         })
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawFormula>(named_wire).unwrap(),
+        json::from_value::<crate::geometry::laws::LawFormula>(named_wire).unwrap(),
         named
     );
 
-    let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    let error = json::from_value::<crate::geometry::laws::LawFormula>(cadmpeg_core::json!({
         "kind": "null",
         "variables": []
     }))
@@ -464,7 +468,7 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     // the native null token is an ordinary named law; the IR has no opinion
     // about the text, and the decoder maps the native token to Null before the
     // IR sees it.
-    let named = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    let named = json::from_value::<crate::geometry::laws::LawFormula>(cadmpeg_core::json!({
         "kind": "named",
         "name": "a_named_law",
         "variables": []
@@ -476,7 +480,7 @@ fn a_law_formula_names_its_variant_with_a_tag() {
 #[test]
 fn a_law_formula_name_refuses_a_blank_string() {
     for blank in ["", " ", "\t"] {
-        let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+        let error = json::from_value::<crate::geometry::laws::LawFormula>(cadmpeg_core::json!({
             "kind": "named",
             "name": blank,
             "variables": []
@@ -487,15 +491,23 @@ fn a_law_formula_name_refuses_a_blank_string() {
     }
 }
 
-fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
-    crate::geometry::ProceduralCurveDefinition::Spring(
+fn ranged_spring_definition() -> crate::geometry::procedural_curves::ProceduralCurveDefinition {
+    crate::geometry::procedural_curves::ProceduralCurveDefinition::Spring(
         crate::geometry::curve_payloads::SpringCurvePayload::try_new(
-            crate::geometry::SpringLayout::ContextFirst {
+            crate::geometry::surface_curves::SpringLayout::ContextFirst {
                 supports: [
-                    crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
-                    crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
+                    crate::geometry::surface_curves::SpringSupport::Ranges([
+                        [0.0, 1.0],
+                        [2.0, 3.0],
+                    ]),
+                    crate::geometry::surface_curves::SpringSupport::Ranges([
+                        [4.0, 5.0],
+                        [6.0, 7.0],
+                    ]),
                 ],
-                first_pcurve: Box::new(crate::geometry::SpringPcurve::Range([8.0, 9.0])),
+                first_pcurve: Box::new(crate::geometry::surface_curves::SpringPcurve::Range([
+                    8.0, 9.0,
+                ])),
                 second_pcurve: None,
                 parameter_range: [-1.0, 2.0],
                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],
@@ -511,78 +523,84 @@ fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
 #[test]
 fn the_spring_layout_is_one_nested_tagged_object() {
     let definition = ranged_spring_definition();
-    let wire = serde_json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(wire["kind"], "spring");
     assert!(wire.get("context").is_none());
     assert!(wire.get("surface_parameter_ranges").is_none());
     assert_eq!(wire["layout"]["kind"], "context_first");
     assert_eq!(
         wire["layout"]["supports"][0],
-        serde_json::json!({"kind": "ranges", "value": [[0.0, 1.0], [2.0, 3.0]]})
+        cadmpeg_core::json!({"kind": "ranges", "value": [[0.0, 1.0], [2.0, 3.0]]})
     );
     assert_eq!(
         wire["layout"]["first_pcurve"],
-        serde_json::json!({"kind": "range", "value": [8.0, 9.0]})
+        cadmpeg_core::json!({"kind": "range", "value": [8.0, 9.0]})
     );
     assert!(wire["layout"].get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap(),
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(wire)
+            .unwrap(),
         definition
     );
 }
 
 #[test]
 fn a_spring_support_side_states_one_carrier_and_no_other_key() {
-    let mut split = serde_json::to_value(ranged_spring_definition()).unwrap();
-    split["layout"]["supports"][0]["kind"] = serde_json::json!("surface");
+    let mut split = json::to_value(ranged_spring_definition()).unwrap();
+    split["layout"]["supports"][0]["kind"] = cadmpeg_core::json!("surface");
     let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(split).unwrap_err();
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(split)
+            .unwrap_err();
     assert!(error.to_string().contains("string"), "{error}");
 
-    let mut cache_keys = serde_json::to_value(ranged_spring_definition()).unwrap();
-    cache_keys["layout"]["form"] = serde_json::json!({});
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(cache_keys)
-        .unwrap_err();
+    let mut cache_keys = json::to_value(ranged_spring_definition()).unwrap();
+    cache_keys["layout"]["form"] = cadmpeg_core::json!({});
+    let error = json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(
+        cache_keys,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("form"), "{error}");
 
-    let mut bogus = serde_json::to_value(ranged_spring_definition()).unwrap();
-    bogus["layout"]["zz_bogus"] = serde_json::json!(1);
+    let mut bogus = json::to_value(ranged_spring_definition()).unwrap();
+    bogus["layout"]["zz_bogus"] = cadmpeg_core::json!(1);
     let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(bogus).unwrap_err();
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(bogus)
+            .unwrap_err();
     assert!(error.to_string().contains("zz_bogus"), "{error}");
 }
 
 #[test]
 fn projection_role_keeps_the_native_string_wire_shape() {
-    let tail = crate::geometry::ProjectionTail::Ranged {
+    let tail = crate::geometry::surface_curves::ProjectionTail::Ranged {
         flag: true,
         parameter_range: [-1.0, 2.0],
-        role: crate::geometry::ProjectionRole::Surf2,
+        role: crate::geometry::surface_curves::ProjectionRole::Surf2,
     };
-    let wire = serde_json::to_value(&tail).unwrap();
+    let wire = json::to_value(&tail).unwrap();
     assert_eq!(wire["role"], "surf2");
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap(),
+        json::from_value::<crate::geometry::surface_curves::ProjectionTail>(wire).unwrap(),
         tail
     );
-    let error = serde_json::from_value::<crate::geometry::ProjectionTail>(serde_json::json!({
-        "kind": "ranged",
-        "flag": true,
-        "parameter_range": [-1.0, 2.0],
-        "role": "other"
-    }))
-    .unwrap_err();
+    let error =
+        json::from_value::<crate::geometry::surface_curves::ProjectionTail>(cadmpeg_core::json!({
+            "kind": "ranged",
+            "flag": true,
+            "parameter_range": [-1.0, 2.0],
+            "role": "other"
+        }))
+        .unwrap_err();
     assert!(error.to_string().contains("projection role field"));
 }
 
 #[test]
 fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
-    let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset(
+    let definition = crate::geometry::procedural_curves::ProceduralCurveDefinition::VectorOffset(
         crate::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
             crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
             [-1.0, 2.0],
             crate::math::Vector3::new(3.0, 4.0, 5.0),
-            crate::geometry::VectorOffsetRoles {
+            crate::geometry::procedural_curves::VectorOffsetRoles {
                 source: 7,
                 offset: 9,
             },
@@ -590,27 +608,35 @@ fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
         )
         .unwrap(),
     );
-    let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["roles"], serde_json::json!({"source": 7, "offset": 9}));
+    let wire = json::to_value(&definition).unwrap();
+    assert_eq!(
+        wire["roles"],
+        cadmpeg_core::json!({"source": 7, "offset": 9})
+    );
     assert!(wire.get("labels").is_none());
     assert!(wire.get("codes").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(
+            wire.clone()
+        )
+        .unwrap(),
         definition
     );
 
     let mut labelled = wire.clone();
-    labelled["roles"]["labels"] = serde_json::json!(["source", "offset"]);
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(labelled)
-        .unwrap_err()
-        .to_string();
+    labelled["roles"]["labels"] = cadmpeg_core::json!(["source", "offset"]);
+    let error =
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(labelled)
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("labels"), "{error}");
 
     let mut stray = wire;
-    stray["roles"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(stray)
-        .unwrap_err()
-        .to_string();
+    stray["roles"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error =
+        json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(stray)
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
 
@@ -634,18 +660,18 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
             .expect("valid identity"),
         cache: Some(SolvedSurfaceGeometry::Unknown { record: None }),
     };
-    let curve_wire = serde_json::to_value(&curve).unwrap();
-    let surface_wire = serde_json::to_value(&surface).unwrap();
+    let curve_wire = json::to_value(&curve).unwrap();
+    let surface_wire = json::to_value(&surface).unwrap();
     assert_eq!(
-        serde_json::from_value::<CurveGeometry>(curve_wire.clone()).unwrap(),
+        json::from_value::<CurveGeometry>(curve_wire.clone()).unwrap(),
         curve
     );
     assert_eq!(
-        serde_json::from_value::<SurfaceGeometry>(surface_wire.clone()).unwrap(),
+        json::from_value::<SurfaceGeometry>(surface_wire.clone()).unwrap(),
         surface
     );
-    assert!(serde_json::from_value::<SolvedCurveGeometry>(curve_wire).is_err());
-    assert!(serde_json::from_value::<SolvedSurfaceGeometry>(surface_wire).is_err());
+    assert!(json::from_value::<SolvedCurveGeometry>(curve_wire).is_err());
+    assert!(json::from_value::<SolvedSurfaceGeometry>(surface_wire).is_err());
 }
 
 /// A solved cache holds `Solved*Geometry`, which has no procedural variant, so
@@ -655,33 +681,33 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
 fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
     use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-    let mut curve = serde_json::json!({
+    let mut curve = cadmpeg_core::json!({
         "kind": "procedural",
         "construction": "test:model:procedural_curve#0"
     });
-    let mut surface = serde_json::json!({
+    let mut surface = cadmpeg_core::json!({
         "kind": "procedural",
         "construction": "test:model:procedural_surface#0"
     });
     for _ in 0..3 {
-        let error = serde_json::from_value::<SolvedCurveGeometry>(curve.clone())
+        let error = json::from_value::<SolvedCurveGeometry>(curve.clone())
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown variant `procedural`"), "{error}");
-        let error = serde_json::from_value::<SolvedSurfaceGeometry>(surface.clone())
+        let error = json::from_value::<SolvedSurfaceGeometry>(surface.clone())
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown variant `procedural`"), "{error}");
 
-        curve = serde_json::json!({
+        curve = cadmpeg_core::json!({
             "kind": "transformed",
             "basis": curve,
-            "transform": serde_json::to_value(crate::transform::Transform::default()).unwrap()
+            "transform": json::to_value(crate::transform::Transform::default()).unwrap()
         });
-        surface = serde_json::json!({
+        surface = cadmpeg_core::json!({
             "kind": "transformed",
             "basis": surface,
-            "transform": serde_json::to_value(crate::transform::Transform::default()).unwrap()
+            "transform": json::to_value(crate::transform::Transform::default()).unwrap()
         });
     }
 
@@ -693,7 +719,7 @@ fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
         .expect("placed curve"),
     ));
     assert_eq!(
-        serde_json::from_value::<CurveGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
+        json::from_value::<CurveGeometry>(json::to_value(&solved).unwrap()).unwrap(),
         solved
     );
     let solved = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
@@ -704,7 +730,7 @@ fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
         .expect("placed surface"),
     ));
     assert_eq!(
-        serde_json::from_value::<SurfaceGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
+        json::from_value::<SurfaceGeometry>(json::to_value(&solved).unwrap()).unwrap(),
         solved
     );
 }
@@ -745,12 +771,9 @@ mod variable_blend_value;
 
 #[test]
 fn support_context_admission_preserves_mapping_and_numeric_invariants() {
-    use {
-        super::{
-            DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, SupportPcurve,
-        },
-        crate::geometry::pcurve::{LinePcurve, PcurveGeometry},
-    };
+    use super::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use super::procedural_curves::{DirectedParameterRange, SupportPcurve};
+    use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
     let sides = [
         IntcurveSupportSide {
             surface: None,
@@ -788,7 +811,11 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 1.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, original);
@@ -801,29 +828,38 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
 
             discontinuities[1].push(f64::INFINITY);
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, original);
-    let mut wire = serde_json::to_value(&context).unwrap();
+    let mut wire = json::to_value(&context).unwrap();
     assert_eq!(
-        serde_json::from_value::<IntcurveSupportContext>(wire.clone()).unwrap(),
+        json::from_value::<IntcurveSupportContext>(wire.clone()).unwrap(),
         context
     );
-    wire["parameter_range"] = serde_json::json!([1.0, 1.0]);
-    assert!(serde_json::from_value::<IntcurveSupportContext>(wire).is_err());
+    wire["parameter_range"] = cadmpeg_core::json!([1.0, 1.0]);
+    assert!(json::from_value::<IntcurveSupportContext>(wire).is_err());
     edit::replace(&mut context, |previous| {
         let mut sides = previous.sides().clone();
         let mut range = previous.parameter_range().endpoints();
         let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
-            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let sides: &mut [crate::geometry::intersection_curves::IntcurveSupportSide; 2] =
+                &mut sides;
             let range: &mut [f64; 2] = &mut range;
 
             sides[0].pcurve.as_mut().unwrap().parameter_range = None;
             *range = [1.0, 1.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .unwrap();
     let unchanged = context.clone();
@@ -832,12 +868,17 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
         let range = previous.parameter_range().endpoints();
         let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
-            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let sides: &mut [crate::geometry::intersection_curves::IntcurveSupportSide; 2] =
+                &mut sides;
 
             sides[0].pcurve.as_mut().unwrap().parameter_range =
                 Some(DirectedParameterRange::new([5.0, 2.0]).unwrap());
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, unchanged);
@@ -861,18 +902,18 @@ fn composite_curve_requires_a_segment_on_construction_and_serde() {
         segments,
         self_intersect: None,
     });
-    let wire = serde_json::json!({"kind": "solved", "value": {
+    let wire = cadmpeg_core::json!({"kind": "solved", "value": {
         "kind": "composite",
         "segments": [{"curve": "synthetic:test:curve#child", "same_sense": false, "transition": "continuous"}],
     }});
-    assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+    assert_eq!(json::to_value(&curve).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<CurveGeometry>(wire.clone()).unwrap(),
+        json::from_value::<CurveGeometry>(wire.clone()).unwrap(),
         curve
     );
     let mut empty = wire;
-    empty["value"]["segments"] = serde_json::json!([]);
-    assert!(serde_json::from_value::<CurveGeometry>(empty).is_err());
+    empty["value"]["segments"] = cadmpeg_core::json!([]);
+    assert!(json::from_value::<CurveGeometry>(empty).is_err());
 }
 
 mod offset_coordinate;
@@ -896,33 +937,35 @@ fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
     let cases: [(&str, serde_json::Value); 4] = [
         (
             "G2BlendFirstShape",
-            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+            cadmpeg_core::json!({"kind": "full", "zz_bogus": 1}),
         ),
         (
             "DeformableSurfaceData",
-            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+            cadmpeg_core::json!({"kind": "full", "zz_bogus": 1}),
         ),
         (
             "LawSurfaceTail",
-            serde_json::json!({"kind": "full", "zz_bogus": 1}),
+            cadmpeg_core::json!({"kind": "full", "zz_bogus": 1}),
         ),
         (
             "ProjectionTail",
-            serde_json::json!({"kind": "ranged", "zz_bogus": 1}),
+            cadmpeg_core::json!({"kind": "ranged", "zz_bogus": 1}),
         ),
     ];
     for (name, wire) in cases {
         let error = match name {
             "G2BlendFirstShape" => {
-                serde_json::from_value::<crate::geometry::G2BlendFirstShape>(wire).unwrap_err()
+                json::from_value::<crate::geometry::blends::G2BlendFirstShape>(wire).unwrap_err()
             }
-            "DeformableSurfaceData" => {
-                serde_json::from_value::<crate::geometry::DeformableSurfaceData>(wire).unwrap_err()
-            }
+            "DeformableSurfaceData" => json::from_value::<
+                crate::geometry::deformable_surfaces::DeformableSurfaceData,
+            >(wire)
+            .unwrap_err(),
             "LawSurfaceTail" => {
-                serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap_err()
+                json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap_err()
             }
-            _ => serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap_err(),
+            _ => json::from_value::<crate::geometry::surface_curves::ProjectionTail>(wire)
+                .unwrap_err(),
         }
         .to_string();
         assert!(error.contains("zz_bogus"), "{name}: {error}");
@@ -931,16 +974,16 @@ fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
 
 #[test]
 fn a_law_surface_full_tail_states_its_solved_cache_contract() {
-    let tail = crate::geometry::LawSurfaceTail::Full {
-        cache: crate::geometry::LegacyCache::try_new(0.25).expect("fit tolerance"),
+    let tail = crate::geometry::laws::LawSurfaceTail::Full {
+        cache: crate::geometry::legacy_cache::LegacyCache::try_new(0.25).expect("fit tolerance"),
     };
-    let wire = serde_json::to_value(tail.clone()).unwrap();
+    let wire = json::to_value(tail.clone()).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "full", "cache": {"fit_tolerance": 0.25}})
+        cadmpeg_core::json!({"kind": "full", "cache": {"fit_tolerance": 0.25}})
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+        json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap(),
         tail
     );
 }
@@ -948,48 +991,48 @@ fn a_law_surface_full_tail_states_its_solved_cache_contract() {
 #[test]
 fn every_payload_free_law_surface_tail_refuses_an_unknown_key() {
     for kind in ["full", "historical", "optimal"] {
-        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
-        let error = serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire)
+        let wire = cadmpeg_core::json!({"kind": kind, "zz_bogus": 1});
+        let error = json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{kind}: {error}");
     }
     for tail in [
-        crate::geometry::LawSurfaceTail::Historical {},
-        crate::geometry::LawSurfaceTail::Optimal {},
+        crate::geometry::laws::LawSurfaceTail::Historical {},
+        crate::geometry::laws::LawSurfaceTail::Optimal {},
     ] {
-        let wire = serde_json::to_value(tail.clone()).unwrap();
+        let wire = json::to_value(tail.clone()).unwrap();
         assert_eq!(
-            serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+            json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap(),
             tail
         );
     }
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Historical {}).unwrap(),
-        serde_json::json!({"kind": "historical"})
+        json::to_value(crate::geometry::laws::LawSurfaceTail::<f64>::Historical {}).unwrap(),
+        cadmpeg_core::json!({"kind": "historical"})
     );
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Optimal {}).unwrap(),
-        serde_json::json!({"kind": "optimal"})
+        json::to_value(crate::geometry::laws::LawSurfaceTail::<f64>::Optimal {}).unwrap(),
+        cadmpeg_core::json!({"kind": "optimal"})
     );
 }
 
 #[test]
 fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
-    use crate::geometry::{SkinSurfaceLayout, SkinSurfaceProfile};
+    use crate::geometry::skin_surfaces::{SkinSurfaceLayout, SkinSurfaceProfile};
 
     let compact = SkinSurfaceLayout::Compact {
         inner_count: 3,
         curve: "test:model:curve#0".try_into().expect("valid identity"),
-        subdata: crate::geometry::LoftSubdata::type_211([1, 1], [0.0, 1.0]),
+        subdata: crate::geometry::lofts::LoftSubdata::type_211([1, 1], [0.0, 1.0]),
         first_tail: 1,
         secondary_curve: "test:model:curve#1".try_into().expect("valid identity"),
         second_tail: 2,
     };
-    let wire = serde_json::to_value(&compact).unwrap();
-    assert_eq!(wire["inner_count"], serde_json::json!(3));
+    let wire = json::to_value(&compact).unwrap();
+    assert_eq!(wire["inner_count"], cadmpeg_core::json!(3));
     assert_eq!(
-        serde_json::from_value::<SkinSurfaceLayout>(wire).unwrap(),
+        json::from_value::<SkinSurfaceLayout>(wire).unwrap(),
         compact
     );
 
@@ -998,15 +1041,15 @@ fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
         path: "test:model:curve#2".try_into().expect("valid identity"),
         tail: [0, 0],
     };
-    let mut wire = serde_json::to_value(&profiles).unwrap();
+    let mut wire = json::to_value(&profiles).unwrap();
     assert!(wire.get("inner_count").is_none());
     assert_eq!(
-        serde_json::from_value::<SkinSurfaceLayout>(wire.clone()).unwrap(),
+        json::from_value::<SkinSurfaceLayout>(wire.clone()).unwrap(),
         profiles
     );
 
-    wire["inner_count"] = serde_json::json!(0);
-    let error = serde_json::from_value::<SkinSurfaceLayout>(wire)
+    wire["inner_count"] = cadmpeg_core::json!(0);
+    let error = json::from_value::<SkinSurfaceLayout>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
@@ -1014,14 +1057,14 @@ fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
 
 #[test]
 fn the_shared_math_carriers_reject_an_unknown_key_by_name() {
-    let vector = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0, "zz_bogus": 1});
-    let error = serde_json::from_value::<crate::math::Vector3>(vector)
+    let vector = cadmpeg_core::json!({"x": 1.0, "y": 2.0, "z": 3.0, "zz_bogus": 1});
+    let error = json::from_value::<crate::math::Vector3>(vector)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 
-    let point = serde_json::json!({"u": 1.0, "v": 2.0, "zz_bogus": 1});
-    let error = serde_json::from_value::<crate::math::Point2>(point)
+    let point = cadmpeg_core::json!({"u": 1.0, "v": 2.0, "zz_bogus": 1});
+    let error = json::from_value::<crate::math::Point2>(point)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1029,35 +1072,35 @@ fn the_shared_math_carriers_reject_an_unknown_key_by_name() {
 
 #[test]
 fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
-    let null = crate::geometry::LawExpression::Null {};
+    let null = crate::geometry::laws::LawExpression::Null {};
     assert_eq!(
-        serde_json::to_value(&null).unwrap(),
-        serde_json::json!({"kind": "null"})
+        json::to_value(&null).unwrap(),
+        cadmpeg_core::json!({"kind": "null"})
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawExpression>(
-            serde_json::json!({"kind": "null"})
+        json::from_value::<crate::geometry::laws::LawExpression>(
+            cadmpeg_core::json!({"kind": "null"})
         )
         .unwrap(),
         null
     );
     for wire in [
-        serde_json::json!({"kind": "null", "zz_bogus": 1}),
-        serde_json::json!({"kind": "text", "value": "x", "zz_bogus": 1}),
+        cadmpeg_core::json!({"kind": "null", "zz_bogus": 1}),
+        cadmpeg_core::json!({"kind": "text", "value": "x", "zz_bogus": 1}),
     ] {
-        let error = serde_json::from_value::<crate::geometry::LawExpression>(wire)
+        let error = json::from_value::<crate::geometry::laws::LawExpression>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
-    let formula = serde_json::json!({
+    let formula = cadmpeg_core::json!({
         "kind": "named",
         "name": "law",
         "variables": [],
         "zz_bogus": 1,
     });
-    let error = serde_json::from_value::<crate::geometry::LawFormula>(formula)
+    let error = json::from_value::<crate::geometry::laws::LawFormula>(formula)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1065,7 +1108,7 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
 
 #[test]
 fn the_ir_scalar_mints_name_no_native_sentinel() {
-    use crate::geometry::{LoftSubdata, LoftSubdataRow};
+    use crate::geometry::lofts::{LoftSubdata, LoftSubdataRow};
     use crate::scalar::PositiveI64;
 
     // A radius selector is positive. The native `-1` absence spelling fails

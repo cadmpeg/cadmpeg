@@ -315,13 +315,13 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    assert_eq!(region.shells.len(), 2);
+    assert_eq!(region.stated_shells().count(), 2);
     assert_eq!(
-        region.shells[0].as_str(),
+        region.stated_shells().cloned().collect::<Vec<_>>()[0].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{outer_sequence}")
     );
     assert_eq!(
-        region.shells[1].as_str(),
+        region.stated_shells().cloned().collect::<Vec<_>>()[1].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{void_sequence}")
     );
     let void_shell = result
@@ -329,9 +329,9 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[1])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[1])
         .unwrap();
-    for face in result.ir().geometry.shell_faces(&void_shell.id) {
+    for face in result.ir().geometry.stated_shell_faces(&void_shell.id) {
         assert_eq!(face.sense, cadmpeg_ir::topology::Sense::Reversed);
     }
     assert!(
@@ -435,15 +435,18 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    assert_eq!(region.shells.len(), 1);
+    assert_eq!(region.stated_shells().count(), 1);
     let shell = result
         .ir()
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[0])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
         .unwrap();
-    assert_eq!(result.ir().geometry.shell_faces(&shell.id).count(), 4);
+    assert_eq!(
+        result.ir().geometry.stated_shell_faces(&shell.id).count(),
+        4
+    );
     let solid_edges = result
         .ir()
         .geometry
@@ -476,6 +479,66 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
 }
 
 #[test]
+fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
+    let mut bytes = explicit_tetrahedron_solid_file();
+    let edge_list = bytes
+        .windows(8)
+        .position(|window| window == b"504,6,21")
+        .expect("edge-list Parameter Data");
+    bytes[edge_list..edge_list + 3].copy_from_slice(b"505");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.ir().geometry.bodies.is_empty());
+    let native = result.ir().native.namespace("iges").unwrap();
+    let mut dependents = Vec::new();
+    for record in &native.arenas()["entities"] {
+        let fields = record.fields().unwrap();
+        if matches!(fields["entity_type"].as_i64(), Some(508 | 510 | 514 | 186)) {
+            dependents.push(fields["directory_sequence"].as_u64().unwrap());
+        }
+    }
+    assert_eq!(dependents.len(), 10);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    for sequence in &dependents {
+        assert!(
+            !given_up.iter().any(|loss| loss
+                .message
+                .starts_with(&format!("part entity \"D{sequence}\" "))),
+            "D{sequence}: {given_up:#?}"
+        );
+    }
+    let edges = given_up
+        .iter()
+        .find(|loss| loss.message.starts_with("part parameter-data "))
+        .expect("the give-up of the edge list");
+    let dropped = edges
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap()
+        .split(", ")
+        .collect::<Vec<_>>();
+    for sequence in &dependents {
+        let id = format!("iges:entity:directory#{sequence}");
+        assert!(dropped.contains(&id.as_str()), "{id}: {}", edges.message);
+    }
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+}
+
+#[test]
 fn decode_builds_shared_explicit_open_shell_topology() {
     let result = IgesCodec
         .decode(
@@ -502,7 +565,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     let shell_faces = result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .collect::<Vec<_>>();
     assert_eq!(shell_faces.len(), 1);
     let face = shell_faces[0];
@@ -511,7 +574,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(
         result
@@ -898,7 +961,7 @@ fn assert_outer_loops_counterclockwise_about_oriented_normal(ir: &CadIr) {
             Sense::Forward => normal,
             Sense::Reversed => Vector3::new(-normal.x, -normal.y, -normal.z),
         };
-        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+        let [loop_id] = face.loops.stated().collect::<Vec<_>>()[..] else {
             panic!("every face has one loop");
         };
         let area = polygon_loop_area_about(ir, loop_id, oriented);
@@ -1044,7 +1107,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
             .get();
             cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                ir,
+                &cadmpeg_ir::index::ModelIndex::new_model_only(ir),
                 &surface.geometry,
                 uv.u,
                 uv.v,

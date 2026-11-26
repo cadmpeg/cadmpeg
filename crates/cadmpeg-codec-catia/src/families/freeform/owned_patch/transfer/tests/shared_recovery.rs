@@ -67,8 +67,10 @@ fn assert_no_reconciliation(notes: &[LossNote]) {
 }
 
 pub(super) fn assert_shared_sheet(ir: &CadIr) {
+    let mut rooted = ir.clone();
+    cadmpeg_ir::examples::add_document_root(&mut rooted);
     let validation =
-        cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate recovered sheet");
+        cadmpeg_ir::validate_neutral(&rooted, Vec::new()).expect("validate recovered sheet");
     assert!(validation.is_ok(), "{:?}", validation.findings);
     assert_eq!(ir.geometry.faces.len(), 2);
     assert_eq!(ir.geometry.edges.len(), 7);

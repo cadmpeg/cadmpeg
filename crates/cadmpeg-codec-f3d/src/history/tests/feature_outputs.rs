@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 fn active_body() -> cadmpeg_ir::topology::Body {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
@@ -11,9 +13,9 @@ fn active_body() -> cadmpeg_ir::topology::Body {
 }
 
 pub(super) fn base_feature() -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     Feature {
         product_definition: None,
@@ -30,7 +32,7 @@ pub(super) fn base_feature() -> cadmpeg_ir::features::Feature {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                 BodyId::mint("test:model:body#2").unwrap(),
                 BodyId::mint("test:model:body#1").unwrap(),
             ])
@@ -129,9 +131,9 @@ fn output_binding_inputs() -> (
 
 #[test]
 fn split_outputs_bind_across_complete_transition_chains() {
-    use cadmpeg_ir::features::{
-        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let mut feature = base_feature();
     feature
         .evaluation
@@ -164,7 +166,7 @@ fn split_outputs_bind_across_complete_transition_chains() {
     );
     let body = active_body();
     let mut complete = feature.clone();
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut complete),
         std::slice::from_ref(&scope),
         &mut [history.clone()],
@@ -180,7 +182,7 @@ fn split_outputs_bind_across_complete_transition_chains() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
     let mut incomplete = history.clone();
     incomplete.states_mut()[1].transition = None;
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [incomplete],
@@ -194,7 +196,7 @@ fn split_outputs_bind_across_complete_transition_chains() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()));
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [history.clone(), history],
@@ -308,7 +310,7 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
     };
     for case in &expected {
         let (mut feature, scope) = feature_scope(case.0);
-        super::super::bind_feature_outputs(
+        super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             &[scope],
             &mut [chain()],
@@ -323,7 +325,7 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
         .iter()
         .map(|(state_id, _)| feature_scope(*state_id))
         .unzip();
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         &mut features,
         &scopes,
         &mut [chain()],
@@ -339,9 +341,10 @@ fn feature_outputs_name_the_bodies_a_state_deletes_from_its_previous_state() {
 
 #[test]
 fn feature_output_binding_preserves_base_feature_selection() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, history, body) = output_binding_inputs();
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [history],
@@ -379,9 +382,10 @@ fn native_base_feature() -> (
 
 #[test]
 fn stored_body_scope_uses_unique_complete_history_outputs() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, history, body) = native_base_feature();
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -420,7 +424,7 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
         } else {
             Vec::new()
         };
-        super::super::bind_feature_outputs(
+        super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut histories,
@@ -432,7 +436,7 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
         assert!(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         }) if Some(native.as_str()) == feature.native_ref.as_deref()
         ));
         let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
@@ -447,7 +451,8 @@ fn stored_body_scope_refuses_missing_bodies_and_ambiguous_states() {
 #[test]
 fn stored_body_scope_keeps_proven_empty_history_as_no_op() {
     use crate::loss::F3dLossCode;
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = native_base_feature();
     let history = crate::test_support::history::history(
         "f3d:asm-history#1".into(),
@@ -459,7 +464,7 @@ fn stored_body_scope_keeps_proven_empty_history_as_no_op() {
             state(0, 0, None, bodies_topology(&[])),
         ],
     );
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -484,7 +489,7 @@ fn stored_body_scope_does_not_type_box_from_outputs() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, _, _, body) = native_base_feature();
     feature.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
     );
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
@@ -518,7 +523,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
     use crate::loss::F3dLossCode;
     use crate::records::feature::scope::DesignScopePayloadMut;
     let (mut feature, mut scope, history, body) = native_base_feature();
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -538,7 +543,7 @@ fn stored_body_scope_reports_recipe_absence_from_snapshot_kind() {
     );
     if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "body_entity_suffixes":[81], "body_entity_suffix_offsets":[22],
                 "body_reference_records":[81], "body_reference_record_offsets":[22],
                 "parameter_body_record":91, "parameter_body_record_offset":100,
@@ -565,7 +570,7 @@ fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, _) = output_binding_inputs();
     feature.evaluation.set_outputs(Default::default());
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [],
@@ -576,7 +581,7 @@ fn stored_body_scope_without_any_proof_keeps_its_neutral_snapshot() {
     .unwrap();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         }) if native == "native:scope"));
 }
 
@@ -596,7 +601,8 @@ fn history_in_source(source: &str, bodies: &[i64]) -> crate::history_records::As
 
 #[test]
 fn stored_body_scope_qualifies_body_slots_by_history_blob() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let mut first = active_body();
     first.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/first.smbh/brep:entity#1").unwrap();
     let mut second = active_body();
@@ -607,7 +613,7 @@ fn stored_body_scope_qualifies_body_slots_by_history_blob() {
             [second.clone(), first.clone()],
         ] {
             let (mut feature, scope, _, _) = native_base_feature();
-            super::super::bind_feature_outputs(
+            super::super::feature_outputs::bind_feature_outputs(
                 std::slice::from_mut(&mut feature),
                 std::slice::from_ref(&scope),
                 &mut [history_in_source(source, &[1])],
@@ -631,7 +637,7 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, mut body) = native_base_feature();
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/other.smbh/brep:entity#1").unwrap();
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history_in_source("selected.smbh", &[1])],
@@ -643,7 +649,7 @@ fn stored_body_scope_refuses_a_body_from_another_history_blob() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
@@ -662,7 +668,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
     let (mut feature, mut scope, _, _) = native_base_feature();
     if let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
         *slot = Some(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "body_entity_suffixes":[81], "body_entity_suffix_offsets":[22],
                 "body_reference_records":[81], "body_reference_record_offsets":[22],
                 "parameter_body_record":91, "parameter_body_record_offset":100,
@@ -674,7 +680,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
             .unwrap(),
         );
     }
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history_in_source("selected.smbh", &[])],
@@ -686,7 +692,7 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
     let losses = super::super::stored_bodies::losses(&[feature], &[scope]);
@@ -699,21 +705,24 @@ fn stored_body_scope_refuses_a_declared_body_count_mismatch() {
 
 #[test]
 fn stored_body_scope_binds_explicit_body_members_without_history() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, scope, _, body) = output_binding_inputs();
     feature
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()])
-                        .unwrap(),
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body
+                        .id
+                        .clone()])
+                    .unwrap(),
                     native: scope.id.clone(),
                 },
             },
         ));
     feature.evaluation.set_outputs(Default::default());
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [],
@@ -773,12 +782,13 @@ fn derived_native_feature(
 #[test]
 fn derived_base_scope_with_proven_bodies_is_a_stored_snapshot() {
     use crate::loss::F3dLossCode;
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for kind in DERIVED_KINDS {
         let scope = derived_scope(kind, 1, 0);
         let mut feature = derived_native_feature(&scope);
         let (_, _, history, body) = native_base_feature();
-        super::super::bind_feature_outputs(
+        super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -835,7 +845,7 @@ fn derived_base_scope_without_proven_bodies_stays_native() {
                 }
                 _ => Vec::new(),
             };
-            super::super::bind_feature_outputs(
+            super::super::feature_outputs::bind_feature_outputs(
                 std::slice::from_mut(&mut feature),
                 std::slice::from_ref(&scope),
                 &mut histories,
@@ -866,7 +876,8 @@ fn derived_base_scope_without_proven_bodies_stays_native() {
 #[test]
 fn derived_base_scope_with_proven_empty_transition_is_a_typed_no_op() {
     use crate::loss::F3dLossCode;
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for kind in DERIVED_KINDS {
         let scope = derived_scope(kind, 1, 0);
         let mut feature = derived_native_feature(&scope);
@@ -880,7 +891,7 @@ fn derived_base_scope_with_proven_empty_transition_is_a_typed_no_op() {
                 state(0, 0, None, bodies_topology(&[])),
             ],
         );
-        super::super::bind_feature_outputs(
+        super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -1056,10 +1067,9 @@ fn historical_partial_and_native_edge_selections_test() {
     use crate::history_records::{AsmHistoricalEdgeSample, AsmHistoricalTopology};
     use crate::loss::F3dLossCode;
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-    use cadmpeg_ir::features::{
-        DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::HistoricalEdgeId;
     use cadmpeg_ir::math::Point3;
 
@@ -1075,7 +1085,7 @@ fn historical_partial_and_native_edge_selections_test() {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges,
                     radius: RadiusSpec::Unresolved { form: None },
                     tangency_weight: None,
@@ -1113,6 +1123,7 @@ fn historical_partial_and_native_edge_selections_test() {
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
         tangent: None,
+        carrier: None,
     });
 
     let history = crate::test_support::history::history(
@@ -1126,7 +1137,7 @@ fn historical_partial_and_native_edge_selections_test() {
         ],
     );
 
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature_partial),
         std::slice::from_ref(&scope),
         &mut [history.clone()],
@@ -1153,7 +1164,7 @@ fn historical_partial_and_native_edge_selections_test() {
     let mut feature_native = make_fillet(EdgeSelection::Native("native:edge".into()));
     feature_native.native_ref = Some(scope.id.clone());
 
-    let losses_native = super::super::bind_feature_outputs(
+    let losses_native = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature_native),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -1259,7 +1270,7 @@ fn historical_body_bounds_unresolved_test() {
         ],
     );
 
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -1308,7 +1319,7 @@ fn body_measurement_covers_only_the_states_feature_outputs_read() {
     let mut feature = base_feature();
     feature.native_ref = Some(scope.id.clone());
 
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -1345,7 +1356,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
     // 1-face closed solid (e.g. sphere or torus with 1 face, shell closed, coedges on edge >= 2)
     let closed_solid =
         solid_box_topology(1, Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0));
-    assert!(super::super::HistoricalBodyIndex::new(&closed_solid).is_solid(1));
+    assert!(super::super::historical_index::HistoricalBodyIndex::new(&closed_solid).is_solid(1));
 
     // 2-face open sheet (edge 8 only has 1 coedge incidence, coedge 7)
     let open_sheet = AsmHistoricalTopology {
@@ -1380,7 +1391,7 @@ fn is_solid_historical_body_single_face_solid_and_sheet_closure() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    assert!(!super::super::HistoricalBodyIndex::new(&open_sheet).is_solid(1));
+    assert!(!super::super::historical_index::HistoricalBodyIndex::new(&open_sheet).is_solid(1));
 }
 
 #[test]
@@ -1392,21 +1403,20 @@ fn changed_topology_family_refs_includes_carriers() {
     delta.curves.deleted = vec![103];
     delta.pcurves.inserted = vec![104];
 
-    let changed = super::super::changed_topology_family_refs(&delta, false);
+    let changed = super::super::body_closures::changed_topology_family_refs(&delta, false);
     assert!(changed.contains(&101));
     assert!(changed.contains(&102));
     assert!(!changed.contains(&103)); // deleted = false
 
-    let deleted = super::super::changed_topology_family_refs(&delta, true);
+    let deleted = super::super::body_closures::changed_topology_family_refs(&delta, true);
     assert!(deleted.contains(&103));
 }
 
 #[test]
 fn stored_false_shell_retained_on_bbox_growth() {
-    use cadmpeg_ir::features::{
-        DistinctMembers, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Point3;
 
     let scope = scope_between(1, 0);
@@ -1459,7 +1469,7 @@ fn stored_false_shell_retained_on_bbox_growth() {
         ],
     );
 
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         &mut [history],
@@ -1480,10 +1490,10 @@ fn stored_false_shell_retained_on_bbox_growth() {
 
 #[test]
 fn combine_join_to_cut_deleting_vs_non_deleting() {
-    use cadmpeg_ir::features::{
-        BooleanKind, DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let make_combine = || Feature {
         id: FeatureId::mint("test:model:feature#combine").unwrap(),
@@ -1498,14 +1508,15 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
-                    cadmpeg_ir::features::BodySelection::Unresolved,
-                    cadmpeg_ir::features::BodySelection::Unresolved,
+                    cadmpeg_ir::features::selections::BodySelection::Unresolved,
+                    cadmpeg_ir::features::selections::BodySelection::Unresolved,
                 )
                 .unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: true,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
@@ -1531,7 +1542,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         ],
     );
 
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature_non_deleting),
         std::slice::from_ref(&scope),
         &mut [history_non_deleting],
@@ -1564,7 +1575,7 @@ fn combine_join_to_cut_deleting_vs_non_deleting() {
         ],
     );
 
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature_deleting),
         std::slice::from_ref(&scope),
         &mut [history_deleting],
@@ -1590,9 +1601,11 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
     use crate::records::feature::scope::{
         DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
     };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
     use cadmpeg_ir::features::{
-        BodySelection, BooleanKind, CombineOperands, DistinctMembers, Feature, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation,
+        CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let resolved = |form: Option<DesignCombineForm>, bodies_before: &[i64], initial_op, keep| {
@@ -1627,6 +1640,8 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         let mut feature = Feature {
@@ -1649,7 +1664,8 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     op: initial_op,
                     keep_tools: keep,
 
-                    destination: cadmpeg_ir::features::CombineDestination::default(),
+                    destination:
+                        cadmpeg_ir::features::operation_settings::CombineDestination::default(),
                 }),
                 DistinctMembers::try_from(vec![]).unwrap(),
             ),
@@ -1666,7 +1682,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                 state(0, 0, None, solid_boxes_topology(bodies_before)),
             ],
         );
-        let losses = super::super::bind_feature_outputs(
+        let losses = super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -1738,7 +1754,7 @@ fn feature_outputs_include_bodies_changed_before_the_terminal_scope_state() {
             state(0, 0, None, AsmHistoricalTopology::default()),
         ],
     )];
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut histories,
@@ -1769,7 +1785,7 @@ fn feature_output_interval_refusal_has_a_loss() {
                 vec![history]
             }
         };
-        let losses = super::super::bind_feature_outputs(
+        let losses = super::super::feature_outputs::bind_feature_outputs(
             std::slice::from_mut(&mut feature),
             &[scope],
             &mut histories,
@@ -1800,8 +1816,8 @@ fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
                 .evaluation
                 .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::MoveFace {
-                        faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                        motion: cadmpeg_ir::features::FaceMotion::Offset {
+                        faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
+                        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset {
                             distance: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
                         },
                     },
@@ -1817,7 +1833,7 @@ fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
                 histories.reverse();
                 bodies.reverse();
             }
-            let losses = super::super::bind_feature_outputs(
+            let losses = super::super::feature_outputs::bind_feature_outputs(
                 std::slice::from_mut(&mut feature),
                 &[scope],
                 &mut histories,
@@ -1840,7 +1856,7 @@ fn feature_outputs_follow_bound_history_when_numeric_states_repeat() {
 fn feature_output_body_namespace_refusal_has_a_loss() {
     let (mut feature, scope, _, mut body) = native_base_feature();
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/other.smbh/brep:entity#1").unwrap();
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [history_in_source("selected.smbh", &[1])],
@@ -1869,7 +1885,7 @@ fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_unbound() {
         false,
         vec![state(0, 0, None, bodies_topology(&[]))],
     );
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [history],
@@ -1882,14 +1898,16 @@ fn stored_body_scope_keeps_equal_state_without_a_stored_body_proof_unbound() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         }) if Some(native.as_str()) == feature.native_ref.as_deref()
     ));
 }
 
 #[test]
 fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
-    use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (mut feature, _, history, body) = output_binding_inputs();
     let scope = scope_between(1, 1);
     feature.native_ref = Some(scope.id.clone());
@@ -1904,7 +1922,7 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
     feature
         .evaluation
         .set_outputs(vec![body.id.clone()].try_into().unwrap());
-    super::super::bind_feature_outputs(
+    super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [history],
@@ -1929,12 +1947,12 @@ fn base_feature_output_blob_selects_its_complete_output_chain() {
     let (mut feature, scope, mut history, mut body) = output_binding_inputs();
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep/selected.smbh/brep:entity#1").unwrap();
     feature.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
     );
     history.id = "f3d:Breps.BlobParts/BREP.selected.smbh:asm-history#1".into();
     let mut other = history.clone();
     other.id = "f3d:Breps.BlobParts/BREP.other.smbh:asm-history#1".into();
-    let losses = super::super::bind_feature_outputs(
+    let losses = super::super::feature_outputs::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
         &mut [other, history],

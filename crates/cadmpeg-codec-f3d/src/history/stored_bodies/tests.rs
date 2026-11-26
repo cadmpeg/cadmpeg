@@ -13,6 +13,7 @@ fn body(id: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 
@@ -137,7 +138,8 @@ fn base_feature_scope(
     crate::records::feature::scope::DesignParameterScope,
 ) {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{Feature, FeatureId};
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
         DesignFeatureKind::BaseFeature,
@@ -162,11 +164,13 @@ fn base_feature_scope(
 
 #[test]
 fn a_base_feature_scope_projected_as_a_paste_copy_reports_its_assumed_placement() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let bodies = || {
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![
-            BodyId::mint("test:model:body#1").unwrap()
-        ])
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
+            "test:model:body#1",
+        )
+        .unwrap()])
         .unwrap()
     };
     let native = "f3d:Design/BulkStream.dat:design-parameter-scope#10".to_owned();
@@ -192,9 +196,9 @@ fn a_base_feature_scope_projected_as_a_paste_copy_reports_its_assumed_placement(
                 bodies: bodies(),
                 native,
             },
-            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
-                0.0, 0.0, 0.0,
-            ))
+            translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
+            )
             .unwrap(),
             rotation: None,
             copies: 1,
@@ -226,9 +230,8 @@ fn contains_in_source_scopes_slots_by_brep_and_retains_ambiguity() {
 
 #[test]
 fn an_inserting_paste_records_its_copies_as_its_result_bodies() {
-    use cadmpeg_ir::features::{
-        BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, InsertedBodies,
-    };
+    use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, InsertedBodies};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let copies = vec![
         BodyId::mint("test:model:body#8").unwrap(),
         BodyId::mint("test:model:body#9").unwrap(),

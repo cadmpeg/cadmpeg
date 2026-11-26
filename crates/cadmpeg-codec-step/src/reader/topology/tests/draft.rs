@@ -1,6 +1,6 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -49,7 +49,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
     session
@@ -120,7 +120,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
     );
 
     let fit = pcurve_declared_endpoint_fit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ModelIndex::build(&ir),
         &surface_id,
         &pcurve,
@@ -229,7 +229,7 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
         .expect("stale trimmed pcurve use");
     assert_eq!(
         use_.parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
 }
@@ -336,7 +336,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
 #[test]
 fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = crate::StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("data/tp09_unsampled_divergence.p21")),
@@ -363,10 +363,11 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
         admissions[0].severity,
         cadmpeg_ir::report::Severity::Warning
     );
-    assert_eq!(
-        admissions[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
-    );
+    assert!(!cadmpeg_ir::report::strictness::Strictness {
+        pinned: true,
+        ..Default::default()
+    }
+    .refuses(admissions[0], false));
 }
 
 /// The document reports one admission warning for all admitted relations. The
@@ -739,12 +740,7 @@ fn shared_surface_carrier_is_staged_once() {
         curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
-        region: Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: Vec::new(),
-            native_ref: None,
-        },
+        region: Region::new(region_id.clone(), body_id.clone(), Vec::new()),
         body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
@@ -753,6 +749,7 @@ fn shared_surface_carrier_is_staged_once() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     })
     .expect("duplicate references to one source surface must stage");

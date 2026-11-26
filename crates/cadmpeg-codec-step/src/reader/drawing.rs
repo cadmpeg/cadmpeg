@@ -4,10 +4,11 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
@@ -33,7 +34,7 @@ const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
-    entities: &'a BTreeMap<String, ReferenceEntity>,
+    targets: &'a BTreeMap<String, ReferenceTarget>,
     known_typed: &'a dyn SourceClaims,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
@@ -126,7 +127,7 @@ impl TargetContext<'_> {
         target_resolution(
             id,
             self.target_identities,
-            self.entities,
+            self.targets,
             self.known_typed,
             self.exchange,
             self.external_documents,
@@ -151,9 +152,13 @@ pub(super) fn decode(
         };
         let parameters = source_parameters(record, name);
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DrawingRecordTooFewParameters.note(format!(
+                    "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
+                )),
+            ));
             continue;
         }
 
@@ -225,10 +230,25 @@ pub(super) fn decode(
             external_documents.insert(id, entry.uri.as_str());
         }
     }
-    let entities = reference_entities(ir);
+    let mut targets = reference_targets(ir);
+    let mut drawing_kinds = BTreeMap::new();
+    for (order, candidate) in candidates.iter().enumerate() {
+        if cadmpeg_core::decode::id_from_index(order).is_none() {
+            continue;
+        }
+        let drawing = DrawingId::from(candidate.identity.clone());
+        drawing_kinds.insert(drawing.clone(), drawing_kind(candidate.name));
+        targets.insert(
+            candidate.identity.as_str().to_owned(),
+            ReferenceTarget::Drawing {
+                drawing,
+                part: None,
+            },
+        );
+    }
     let target_context = TargetContext {
         target_identities: &target_identities,
-        entities: &entities,
+        targets: &targets,
         known_typed,
         exchange,
         external_documents: &external_documents,
@@ -266,9 +286,13 @@ pub(super) fn decode(
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
-            losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
-                "drawing #{id} position in the stored order exceeds the stated order width"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DrawingOrderUnstatable.note(format!(
+                    "drawing #{id} position in the stored order exceeds the stated order width"
+                )),
+            ));
             continue;
         };
 
@@ -281,6 +305,11 @@ pub(super) fn decode(
             &target_context,
             &mut losses,
         )?;
+        let views = if name == "DRAWING_SHEET_REVISION" {
+            sheet_views(&mut relationships, &drawing_kinds)
+        } else {
+            Vec::new()
+        };
 
         drawings.insert(
             id,
@@ -288,6 +317,7 @@ pub(super) fn decode(
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
                 relationships,
                 template: None,
+                views,
                 position: None,
                 scale: None,
                 direction: None,
@@ -440,9 +470,9 @@ fn add_source_typed_targets(
     }
     let native_targets =
         cadmpeg_ir::native::arena_from(ctx, native_targets.into_iter().map(Ok::<_, CodecError>))?;
-    let namespace = ir.native.namespace_mut("step");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("step"));
     let arenas = namespace.arenas_mut();
-    let arena_key = String::from("drawing_targets");
+    let arena_key = cadmpeg_core::nonblank_literal!("drawing_targets");
 
     let target_arena = arenas.entry(arena_key).or_default();
 
@@ -607,6 +637,39 @@ fn add_reference_fields(
         })?;
     }
     Ok(())
+}
+
+/// The drawing records a sheet revision's `items` set names that are no page
+/// and no template, which leave `relationships` for `views`, in id order: the
+/// set's serialization order has no drawing meaning.
+fn sheet_views(
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
+    kinds: &BTreeMap<DrawingId, DrawingKind>,
+) -> Vec<DrawingId> {
+    let role = parameter_key("DRAWING_SHEET_REVISION", 1);
+    let Some(items) = relationships.remove(&role) else {
+        return Vec::new();
+    };
+    let mut views = BTreeSet::new();
+    let mut kept = Vec::new();
+    for item in items {
+        match &item.target {
+            ReferenceTarget::Drawing {
+                drawing,
+                part: None,
+            } if kinds
+                .get(drawing)
+                .is_some_and(|kind| !matches!(kind, DrawingKind::Page | DrawingKind::Template)) =>
+            {
+                views.insert(drawing.clone());
+            }
+            _ => kept.push(item),
+        }
+    }
+    if !kept.is_empty() {
+        relationships.insert(role, kept);
+    }
+    views.into_iter().collect()
 }
 
 fn note_ambiguous_target(
@@ -889,8 +952,30 @@ fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -
     })
 }
 
-/// The entities of the geometry and the products, by identity, that a
-/// drawing reference can name.
+/// The targets, by identity, that a drawing reference can name: the
+/// entities of the geometry and the products, PMI annotations, and semantic
+/// annotations. The drawing records join them as the stage mints them.
+fn reference_targets(ir: &CadIr) -> BTreeMap<String, ReferenceTarget> {
+    let mut targets: BTreeMap<String, ReferenceTarget> = reference_entities(ir)
+        .into_iter()
+        .map(|(id, entity)| (id, ReferenceTarget::Entity(InstanceTarget::new(entity))))
+        .collect();
+    for annotation in &ir.model.pmi {
+        targets.insert(
+            annotation.id.as_str().to_owned(),
+            ReferenceTarget::Pmi(annotation.id.clone()),
+        );
+    }
+    for annotation in &ir.model.semantic_annotations {
+        targets.insert(
+            annotation.id.as_str().to_owned(),
+            ReferenceTarget::Annotation(annotation.id.clone()),
+        );
+    }
+    targets
+}
+
+/// The entities of the geometry and the products, by identity.
 fn reference_entities(ir: &CadIr) -> BTreeMap<String, ReferenceEntity> {
     let geometry = &ir.geometry;
     geometry
@@ -950,17 +1035,16 @@ fn reference_entities(ir: &CadIr) -> BTreeMap<String, ReferenceEntity> {
         .collect()
 }
 
-/// The reference a resolved identity is: an entity the document holds, or
+/// The reference a resolved identity is: an entity, a drawing record, or an
+/// annotation the document holds, or else, for a record kept only as native,
 /// the source record by its STEP instance name.
 fn resolved_reference(
     id: u64,
     identity: &str,
-    entities: &BTreeMap<String, ReferenceEntity>,
+    targets: &BTreeMap<String, ReferenceTarget>,
 ) -> Result<ReferenceSelection, CodecError> {
-    Ok(match entities.get(identity) {
-        Some(entity) => {
-            ReferenceSelection::new(ReferenceTarget::Entity(InstanceTarget::new(entity.clone())))
-        }
+    Ok(match targets.get(identity) {
+        Some(target) => ReferenceSelection::new(target.clone()),
         None => ReferenceSelection::unresolved(instance_name(id)?),
     })
 }
@@ -968,7 +1052,7 @@ fn resolved_reference(
 fn instance_name(id: u64) -> Result<NativeName, CodecError> {
     let blank = || CodecError::malformed("STEP instance name is empty");
     Ok(NativeName {
-        codec: CodecId::from(NonBlankString::new("step").ok_or_else(blank)?),
+        codec: cadmpeg_ir::codec_id!("step"),
         value: NativeNameValue::Text(NonBlankString::new(format!("#{id}")).ok_or_else(blank)?),
     })
 }
@@ -976,7 +1060,7 @@ fn instance_name(id: u64) -> Result<NativeName, CodecError> {
 fn target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
-    entities: &BTreeMap<String, ReferenceEntity>,
+    targets: &BTreeMap<String, ReferenceTarget>,
     known_typed: &dyn SourceClaims,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
@@ -988,7 +1072,7 @@ fn target_resolution(
         .and_then(|identities| identities.first())
     {
         return Ok(TargetResolution::Resolved(resolved_reference(
-            id, identity, entities,
+            id, identity, targets,
         )?));
     }
     if let Some(uri) = external_documents.get(&id) {
@@ -1002,7 +1086,7 @@ fn target_resolution(
     let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange, ctx)? {
         Some(WrapperTargetResolution::Singleton(identity)) => {
             return Ok(TargetResolution::Resolved(resolved_reference(
-                id, &identity, entities,
+                id, &identity, targets,
             )?));
         }
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),

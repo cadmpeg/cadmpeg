@@ -3,6 +3,7 @@
 use crate::native::F3dNative;
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn project(native: &F3dNative) -> Vec<cadmpeg_ir::features::Feature> {
@@ -26,7 +27,7 @@ fn project(native: &F3dNative) -> Vec<cadmpeg_ir::features::Feature> {
 
 #[test]
 fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for raw in [[1, 1], [0, 1], [127, 254]] {
         for hollow in [false, true] {
             for operation in [1, 2, 3, 4] {
@@ -63,7 +64,7 @@ fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
                     assert!(matches!(features[0].evaluation.definition(),
                         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                         if kind.as_str() == "Pipe"));
-                    assert!(!serde_json::to_string(&features)
+                    assert!(!json::to_string(&features)
                         .unwrap()
                         .contains("circular_region"));
                 }
@@ -74,7 +75,7 @@ fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
 
 #[test]
 fn pipe_native_dimensions_have_no_shape_specific_wall_predicate() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for thickness in [-1.0, 0.0, 0.35, 2.0] {
         for hollow in [false, true] {
             let native = Fixture::new(Config {

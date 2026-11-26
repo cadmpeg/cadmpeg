@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
@@ -805,6 +805,17 @@ impl From<CodecError> for TransformResolutionError {
     }
 }
 
+impl TransformFailure {
+    /// The transformation entity that has no Directory Entry in the
+    /// projection.
+    pub(crate) fn needs(&self) -> Option<u32> {
+        match self {
+            Self::MissingEntry(sequence) => Some(*sequence),
+            _ => None,
+        }
+    }
+}
+
 impl TransformResolutionError {
     pub(crate) fn non_resource(self) -> Result<TransformFailure, CodecError> {
         match self {
@@ -1142,8 +1153,8 @@ fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> b
 
 fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
     let unit = |vector| {
-        cadmpeg_ir::features::FiniteVector3::new(vector)
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(vector)
+            .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     };
     let (Some(normal), Some(plane_normal)) = (unit(normal), unit(plane_normal)) else {
         return false;
@@ -1232,7 +1243,7 @@ pub(super) fn curve_geometry_coplanar(
         }),
         SolvedCurveGeometry::Polyline(polyline) => polyline
             .points()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
             .all(point_valid),
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
@@ -1296,11 +1307,8 @@ pub(super) fn admit<T>(
     }
 }
 
-/// The Directory sequence a source-object association names.
-///
-/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
-/// sequence back out of that text: every consumer holds the sequence itself,
-/// through [`SourceSequences`] or through the entry it is projecting.
+/// The Directory sequence a source-object association names, spelled
+/// `D{sequence}` in the object-id text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SourceObjectId(u32);
 
@@ -1310,9 +1318,19 @@ impl SourceObjectId {
         Self(sequence)
     }
 
+    /// The id an object-id text `D{sequence}` names.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        text.strip_prefix('D')?.parse().ok().map(Self)
+    }
+
     /// The object-id text every source association carries.
     pub(crate) fn text(self) -> String {
         format!("D{}", self.0)
+    }
+
+    /// The Directory sequence of the entry.
+    pub(crate) const fn sequence(self) -> u32 {
+        self.0
     }
 }
 
@@ -1392,27 +1410,17 @@ impl SourceSequences {
 pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = format!("D{}", entry.sequence);
-    let name = std::str::from_utf8(&entry.label)
-        .ok()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let layer = entry.level.map(|level| level.to_string());
+    let object_id = SourceObjectId::new(entry.sequence).text();
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
         } else {
             cadmpeg_ir::SourceGeometryRole::Independent
         }),
-        format: cadmpeg_ir::CodecFormat::Iges,
+        format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name,
-        color: None,
-        visible: Some(entry.status.is_visible()),
-        layer,
         instance_path: Vec::new(),
     })
 }
@@ -1540,7 +1548,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         if entry.transform != 0 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Direction Entity references a prohibited transformation"),
@@ -1589,13 +1597,18 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
         let Some(basis_x) = transform
             .apply_vector(Vector3::new(1.0, 0.0, 0.0))
-            .map(cadmpeg_ir::features::FiniteVector3::get)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         else {
             super::push_geometry_loss(
                 &mut losses,
@@ -1606,7 +1619,7 @@ pub(crate) fn project_geometry(
         };
         let Some(basis_y) = transform
             .apply_vector(Vector3::new(0.0, 1.0, 0.0))
-            .map(cadmpeg_ir::features::FiniteVector3::get)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         else {
             super::push_geometry_loss(
                 &mut losses,
@@ -1830,7 +1843,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1946,7 +1964,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -2029,7 +2052,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -2377,7 +2405,12 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -2625,21 +2658,19 @@ pub(crate) fn project_geometry(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let region_shells = vec![shell.clone()];
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
-        ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body,
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region.clone(), body, region_shells));
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         if wire_edges.is_empty() && free_vertices.is_empty() {
             return Err(CodecError::malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty,
+                cadmpeg_ir::features::selections::BodySelectionError::Empty,
             ));
         }
         let shell = Shell::with_members(shell, region, wire_edges, free_vertices);
@@ -2673,6 +2704,17 @@ pub(crate) fn project_geometry(
         free_geometry::retain_independent(ir, &shell, &entries, &mut sequences);
     }
 
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.geometry.vertices {
+        vertex_points.insert(&vertex.point);
+    }
+    ir.geometry.points.retain(|point| {
+        !sequences
+            .point(&point.id)
+            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
+    });
+
     super::presentation::project(
         ir,
         directory,
@@ -2696,17 +2738,8 @@ pub(crate) fn project_geometry(
 
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
+    super::settle_given_up(&mut losses, &decoded);
 
-    let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.geometry.vertices {
-        vertex_points.insert(&vertex.point);
-    }
-    ir.geometry.points.retain(|point| {
-        !sequences
-            .point(&point.id)
-            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
     Ok(Projection {
         placement_rejections,
         decoded,

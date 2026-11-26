@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::declarations::{module_scope, Declaration, Declarations};
 use crate::{
     collect_rust_sources, derive_list_names_deserialize, derive_list_names_serialize,
-    is_test_module, is_test_path, read_source, skip_meta_value, write_spelling, WriteSpelling,
+    is_test_module, is_test_path, parse_source, skip_meta_value, write_spelling, WriteSpelling,
 };
 
 /// The writing declaration of a read type the routing attributes do not name.
@@ -43,6 +43,14 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
         "CadIrWriteWire",
         None,
     ),
+    // `SourceFidelity` writes through `SourceFidelityWriteWire` in its
+    // hand-written `Serialize`.
+    (
+        "crates/cadmpeg-ir/src/source_fidelity.rs",
+        "SourceFidelityWire",
+        "SourceFidelityWriteWire",
+        None,
+    ),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
     (
@@ -64,13 +72,13 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
         None,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepCircularRegionWire",
         "SweepCircularRegion",
         None,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/tree.rs",
         "TreeChildrenWire",
         "TreeChildren",
         None,
@@ -130,7 +138,7 @@ pub(crate) const HAND_WRITTEN_KEYS: &[(&str, &str, &str, WriteSpelling)] = &[
         WriteSpelling::Omitted,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepSection",
         "<tuple field>",
         WriteSpelling::Omitted,
@@ -303,10 +311,8 @@ pub(crate) fn wire_index(root: &Path) -> WireIndex {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = read_source(&file);
-            let parsed = syn::parse_file(&text)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
+            let parsed_file = parse_source(&file, &relative);
+            let parsed = &parsed_file.1;
             index_declarations(
                 &parsed.items,
                 &relative,

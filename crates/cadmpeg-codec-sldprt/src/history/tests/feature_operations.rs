@@ -23,13 +23,14 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
+const EPS_PATTERN_FULL_TURN: f64 = 1.0e-12;
 
 #[test]
 fn decode_resolves_feature_topology_selections() {
-    use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
-        FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     // Two bodies so the combine has disjoint operands: a body cannot be both
     // the target and the tool of its own boolean.
@@ -155,12 +156,14 @@ fn decode_resolves_feature_topology_selections() {
                 operands
                     .try_edit(|target, tools| {
                         *target = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
-                                .expect("distinct bodies"),
+                            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                                body_id.clone(),
+                            ])
+                            .expect("distinct bodies"),
                         );
                         *tools = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(vec![
-                                tool_body_id.clone()
+                            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                                tool_body_id.clone(),
                             ])
                             .expect("distinct bodies"),
                         );
@@ -194,7 +197,7 @@ fn decode_resolves_feature_topology_selections() {
             }
         });
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -333,7 +336,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         );
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -361,19 +364,20 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
     dependencies.pop();
     regenerated.ir_mut().model.features[2].dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies).unwrap();
+    // The record states its operands, not the dependency list: a removed
+    // dependency is named, and the stored operands read back.
+    let (unwritten, written) = crate::test_support::write_unwritten_feature_edits(
         regenerated.ir(),
         regenerated.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("dependencies are inconsistent with its operands"),
-        "{error}"
     );
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("changes dependencies"),
+        "{}",
+        unwritten[0]
+    );
+    assert_eq!(written.ir().model.features[2].dependencies.len(), 2);
 }
 
 #[test]
@@ -424,7 +428,8 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_combine_selection() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     fn append_body_path(payload: &mut Vec<u8>, local_id: u32) {
         payload.extend_from_slice(&1u32.to_le_bytes());
@@ -562,9 +567,10 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
 
 #[test]
 fn decode_projects_generic_revolution_with_explicit_operation() {
-    use cadmpeg_ir::features::{
-        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -588,7 +594,8 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
 
 #[test]
 fn decode_projects_compact_solid_sweep_join_operation() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode};
+    use cadmpeg_ir::features::sweeps::SweepMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     add_solidworks_version(&mut source, 17_000);
@@ -618,7 +625,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             shape,
             ..
         }) if matches!((shape.mode(),), (SweepMode::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::Join
+                op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join
             },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
@@ -626,13 +633,14 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             shape,
             ..
         }) if matches!((shape.mode(),), (SweepMode::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::Join
+                op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join
             },))));
 }
 
 #[test]
 fn decode_projects_compact_solid_sweep_general_curve_section() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -667,7 +675,8 @@ fn decode_projects_compact_solid_sweep_general_curve_section() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_sweep_section() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     fn sweep_payload(has_path: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moSweep_c", "Sweep", 137)]);
@@ -721,7 +730,9 @@ fn decode_does_not_globalize_configuration_local_sweep_section() {
 
 #[test]
 fn decode_projects_native_surface_sweep_class_without_localized_type() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepMode};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sweeps::SweepMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -755,7 +766,8 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
 
 #[test]
 fn decode_projects_surface_sweep_reference_curve_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -841,15 +853,14 @@ fn decode_projects_surface_sweep_reference_curve_path() {
     };
     *path = Some(PathRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &changed_profile,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a reference-curve sweep path"));
+    let (unwritten, _) =
+        crate::test_support::unwritten_feature_edits(&changed_profile, decoded.source_fidelity());
+    assert!(
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a reference-curve sweep path")),
+        "{unwritten:?}"
+    );
 
     decoded
         .ir_mut()
@@ -884,7 +895,8 @@ fn decode_projects_surface_sweep_reference_curve_path() {
 
 #[test]
 fn decode_projects_generated_surface_sweep_profile_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1080,9 +1092,9 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     };
     assert_eq!(
         extent,
-        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
-            side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::LinearTermination::Blind {
+        &cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+            side: cadmpeg_ir::features::extents::ExtrudeSide {
+                termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
                 },
                 draft: None,
@@ -1099,7 +1111,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -1203,7 +1215,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -1211,4 +1223,40 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
+}
+
+#[test]
+fn a_circular_pattern_reads_its_count_and_angle_from_the_dimensions_its_record_names() {
+    use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Cut-Extrude2" Type="Cut" id="41"/><Feature Name="CirPattern1" Type="CirPattern" id="86" AxisOrigin="0mm,5mm,0mm" AxisDirection="0,0,1" Seeds="41" CountDimension="D1" AngleDimension="D3"><Dimension Name="D1">6</Dimension><Dimension Name="D3">360deg</Dimension></Feature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let features = &decoded.ir().model.features;
+    let seed = features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Cut-Extrude2"))
+        .unwrap();
+    let pattern = features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("CirPattern1"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        pattern.evaluation.definition()
+    else {
+        panic!("a pattern: {:?}", pattern.evaluation.definition());
+    };
+    assert_eq!(seeds, &[PatternSeed::Feature(seed.id.clone())]);
+    let PatternTransform::Circular { angle, count, .. } = pattern.definition() else {
+        panic!("a circular pattern: {:?}", pattern.definition());
+    };
+    assert_eq!(*count, 6);
+    assert!((angle.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_FULL_TURN);
 }

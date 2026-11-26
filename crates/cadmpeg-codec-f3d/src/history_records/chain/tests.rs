@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::history_records::*;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
@@ -170,6 +171,22 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                 edge: key,
                 interior: origin,
                 tangent: if changed { None } else { Some(axis) },
+                carrier: None,
+            })
+            .collect(),
+        face_samples: keys
+            .iter()
+            .map(|&key| AsmHistoricalFaceSample {
+                face: key,
+                surface: cadmpeg_ir::features::evaluation::HistoricalFaceSurface::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        origin,
+                        axis,
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+                reversed: changed,
             })
             .collect(),
         ..AsmHistoricalTopology::default()
@@ -291,6 +308,7 @@ fn expected_topology(state_id: i64, scope: AsmTopologyScope) -> Option<AsmHistor
         expected.vertex_points.clear();
         expected.point_positions.clear();
         expected.edge_samples.clear();
+        expected.face_samples.clear();
         if !expected.has_retained_rows() {
             return None;
         }
@@ -412,11 +430,11 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     for state in history.states() {
         assert!(history.topology(state).is_some());
         let transition = state.transition.as_ref().unwrap();
-        let bytes = serde_json::to_vec(transition).unwrap();
-        assert_eq!(*transition, serde_json::from_slice(&bytes).unwrap());
+        let bytes = json::to_vec(transition).unwrap();
+        assert_eq!(*transition, json::from_slice(&bytes).unwrap());
     }
-    let bytes = serde_json::to_vec(&history).unwrap();
-    let decoded: AsmHistory = serde_json::from_slice(&bytes).unwrap();
+    let bytes = json::to_vec(&history).unwrap();
+    let decoded: AsmHistory = json::from_slice(&bytes).unwrap();
     assert_eq!(decoded, history);
     assert!(decoded.materialized.states.get().is_none());
     for state in decoded.states() {
@@ -1105,7 +1123,7 @@ fn carrier_groups_preserve_membership_multiplicity_changes() {
             assert_eq!(transition.rows.surface_repeats.removed, [2]);
         }
         let mut decoded: AsmHistoricalTransition =
-            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+            json::from_slice(&json::to_vec(&transition).unwrap()).unwrap();
         decoded.apply_versions(&mut materialized_versions).unwrap();
         decoded.apply_topology(&mut materialized).unwrap();
         assert_eq!(materialized, topologies[index]);
@@ -1182,7 +1200,7 @@ fn shared_carrier_slot_rows_change_as_groups() {
             assert_eq!(transition.rows.surface_axes.removed, [2]);
         }
         let decoded: AsmHistoricalTransition =
-            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+            json::from_slice(&json::to_vec(&transition).unwrap()).unwrap();
         decoded.apply_topology(&mut materialized).unwrap();
         assert_eq!(materialized, topologies[index], "state {index}");
         memberships.apply(&decoded).unwrap();
@@ -1400,4 +1418,20 @@ fn retained_scope_cylinder_only_state_retains_topology_and_memberships() {
     );
 
     assert_identity_query(&mut history, &requested);
+}
+#[test]
+fn a_changed_envelope_bound_has_a_row_delta() {
+    let before = AsmHistoricalEnvelope {
+        entity: 7,
+        boundary: vec![8, 9, 10],
+        low: Point3::new(0.0, 0.0, 0.0),
+        high: Point3::new(1.0, 1.0, 1.0),
+    };
+    let after = AsmHistoricalEnvelope {
+        high: Point3::new(2.0, 1.0, 1.0),
+        ..before.clone()
+    };
+    let delta = AsmHistoricalRowDelta::between(&[before], std::slice::from_ref(&after)).unwrap();
+    assert_eq!(delta.set, vec![after]);
+    assert!(delta.removed.is_empty());
 }

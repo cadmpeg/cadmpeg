@@ -31,12 +31,18 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
-        source_less.geometry.vertices[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-        source_less.geometry.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
+        source_less.geometry.vertices[0].tolerance = Some(
+            cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("positive finite tolerance"),
+        );
+        source_less.geometry.edges[0].tolerance = Some(
+            cadmpeg_ir::scalar::PositiveLength::new(0.035).expect("positive finite tolerance"),
+        );
         let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
         let tolerant_edge = source_less.geometry.edges[0].id.clone();
         {
@@ -98,7 +104,11 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
     assert_eq!(source_less.geometry.vertices[0].tolerance, None);
@@ -159,7 +169,11 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
     assert_eq!(source_less.geometry.vertices[0].tolerance, None);

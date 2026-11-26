@@ -2,13 +2,25 @@
 
 use cadmpeg_core::CodecError;
 
-use super::{admit_evaluation_cycles, CarrierConstructions};
+use super::check_evaluation_cycles;
+use crate::index::ModelIndex;
 use crate::report::check::Check;
 use crate::test_support::evaluation_cycles::cyclic_model;
 use crate::validate::{admit, validate_neutral};
+use crate::CadIr;
+
+fn cycle_findings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<crate::report::check::Finding>, CodecError> {
+    let index = ModelIndex::new_model_only(ir);
+    let mut findings = Vec::new();
+    check_evaluation_cycles(ctx, ir, &index, &mut findings)?;
+    Ok(findings)
+}
 
 #[test]
-fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
+fn validation_reports_a_malformed_curve_surface_reference_cycle() {
     let (ir, curve, surface) = cyclic_model();
     let expected =
         format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}");
@@ -17,21 +29,17 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
     assert!(!admit::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
-        admit::DRAFT_CORE_CHECKS,
+        admit::DRAFT_CORE,
         Vec::new()
     )
     .expect("admit the model")
     .is_ok());
-    assert!(matches!(
-        admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(), &ir),
-        Err(CodecError::Malformed(message)) if message == expected
-    ));
 }
 
 #[test]
-fn cycle_admission_preserves_zero_depth_session_refusal() {
+fn cycle_check_preserves_zero_depth_session_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let (ir, _, _) = cyclic_model();
     let arena = DecodeArena::new();
@@ -39,7 +47,7 @@ fn cycle_admission_preserves_zero_depth_session_refusal() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let Err(CodecError::ResourceLimit(limit)) = admit_evaluation_cycles(&ctx, &ir) else {
+    let Err(CodecError::ResourceLimit(limit)) = cycle_findings(&ctx, &ir) else {
         panic!("traversal frame must be refused");
     };
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
@@ -54,10 +62,8 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     let (mut ir, curve, surface) = cyclic_model();
     // Repeated carrier rows still share the last graph entry and one active state.
     ir.geometry.curves.push(ir.geometry.curves[0].clone());
-    let index = crate::index::ModelIndex::new_model_only(&ir);
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut findings = Vec::new();
-    super::check_evaluation_cycles(&ctx, &ir, &index, &mut findings).unwrap();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let findings = cycle_findings(&ctx, &ir).unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].check, Check::ReferentialIntegrity);
     assert_eq!(findings[0].entity.as_deref(), Some(curve.as_str()));
@@ -69,7 +75,7 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
 }
 
 #[test]
-fn cycle_admission_admits_solved_carriers_among_many_points() {
+fn cycle_check_finds_no_cycle_among_solved_carriers() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::examples::unit_cube().expect("cube fixture");
     let point = ir.geometry.points[0].clone();
@@ -77,12 +83,14 @@ fn cycle_admission_admits_solved_carriers_among_many_points() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
-    admit_evaluation_cycles(&ctx, &ir).expect("solved carriers have no cycle index slots");
+    assert!(cycle_findings(&ctx, &ir)
+        .expect("solved carriers walk")
+        .is_empty());
     ctx.finish_session().expect("unfused session");
 }
 
 #[test]
-fn cycle_admission_finds_cycles_among_many_unrelated_points() {
+fn cycle_check_finds_cycles_among_many_unrelated_points() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut ir, curve, surface) = cyclic_model();
     let cube = crate::examples::unit_cube().expect("cube fixture");
@@ -92,68 +100,17 @@ fn cycle_admission_finds_cycles_among_many_unrelated_points() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
-    assert!(
-        matches!(admit_evaluation_cycles(&ctx, &ir), Err(CodecError::Malformed(message))
-        if message == format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}"))
+    let findings = cycle_findings(&ctx, &ir).expect("cyclic model walk");
+    assert_eq!(
+        findings
+            .iter()
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>(),
+        [
+            format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")
+                .as_str()
+        ]
     );
     ctx.finish_session()
-        .expect("semantic refusal does not fuse resources");
-}
-
-#[test]
-fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
-    use crate::geometry::{
-        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-        ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
-    let (mut ir, curve, surface) = cyclic_model();
-    // Duplicate construction IDs select the first construction row.
-    ir.geometry.procedural_curves.push(ProceduralCurve::new(
-        ir.geometry.procedural_curves[0].id.clone(),
-        ProceduralCurveDefinition::Exact { cache: None },
-    ));
-    // Duplicate curve carriers select the first resolved construction.
-    let other_curve = ProceduralCurveId::mint("test:cycle:construction#other-curve").unwrap();
-    ir.geometry.procedural_curves.push(ProceduralCurve::new(
-        other_curve.clone(),
-        ProceduralCurveDefinition::Exact { cache: None },
-    ));
-    let mut carrier = ir.geometry.curves[0].clone();
-    carrier.geometry = CurveGeometry::Procedural {
-        construction: other_curve,
-        cache: None,
-    };
-    ir.geometry.curves.push(carrier);
-    // Duplicate surface carriers select the last resolved construction.
-    let other_surface = ProceduralSurfaceId::mint("test:cycle:construction#other-surface").unwrap();
-    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
-        other_surface.clone(),
-        ProceduralSurfaceDefinition::Replica {
-            source: surface.clone(),
-            transform: crate::transform::Transform::identity(),
-        },
-        None,
-    ));
-    let mut carrier = ir.geometry.surfaces[0].clone();
-    carrier.geometry = SurfaceGeometry::Procedural {
-        construction: other_surface,
-        cache: None,
-    };
-    ir.geometry.surfaces.push(carrier);
-    let index = super::CycleIndex::build(&ir);
-    let general = crate::index::ModelIndex::new_model_only(&ir);
-    assert_eq!(index.curve(curve.as_str()), general.curve(curve.as_str()));
-    assert_eq!(
-        index.surface(surface.as_str()),
-        general.surface(surface.as_str())
-    );
-    assert_eq!(
-        index.curve(curve.as_str()),
-        Some(&ir.geometry.procedural_curves[0])
-    );
-    assert_eq!(
-        index.surface(surface.as_str()),
-        Some(&ir.geometry.procedural_surfaces[1])
-    );
+        .expect("a cycle finding does not fuse resources");
 }

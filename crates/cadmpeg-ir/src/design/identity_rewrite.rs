@@ -1,11 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Rewrite the identities owned by the design references that model-class
+//! records hold.
+
 use super::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, CurveValue, FrameAxis,
     FrameValue, InputReference, InputRole, PlaneValue, PostStep, ScalarDimension, SourceMode,
 };
-use super::dimension::Dimension;
+use super::dimension::{Dimension, ParameterRef, RefTarget};
+use super::expr::{Expression, ExpressionToken, Neutral, Node};
 use super::names::{
-    CodecId, GenerationRole, Generator, InstanceIndex, NameKind, NativeName, NativeNameValue,
-    TopoName,
+    CodecId, CodecName, GenerationRole, Generator, InstanceIndex, NameKind, NativeName,
+    NativeNameValue, TopoName,
 };
 use super::options::NativeOption;
 use super::parameter::Deviations;
@@ -34,10 +39,10 @@ impl<T: Ord + RewriteIdentities> RewriteIdentities for std::collections::BTreeSe
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("rewrite structured name set")?;
         let mut values = Self::new();
@@ -66,10 +71,10 @@ impl<T, P: RewriteIdentities> RewriteIdentities for Dimension<T, P> {
         }
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Literal(value) => Self::Literal(value),
@@ -92,16 +97,17 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Self::new(self.into_vec().rewrite_identities(ctx, map)?).map_err(CodecError::malformed)
     }
 }
 
 rewrite_scalar!(CodecId);
+rewrite_scalar!(CodecName);
 rewrite_scalar!(super::parameter::Tolerance);
 rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);
@@ -151,10 +157,10 @@ impl RewriteIdentities for ConfigurationRef {
             Self::Named(_) => Ok(()),
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         Ok(match self {
             Self::Local(id) => Self::Local(id.rewrite_identities(ctx, map)?),
@@ -182,7 +188,7 @@ rewrite_enum!(StepRef, []; {Occurrence(value), Native(value)});
 rewrite_record!(Witness, []; {point, direction, endpoints, frame, curves, surface, body});
 rewrite_enum!(PickDomain, []; {EdgeInterval {start, end}, Limits {start, end}, Fragment(value), Containing(value)});
 rewrite_record!(RuleTerm<O>, [O: MemberOrder]; {rule, seeds, propagation});
-rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Native(literal)});
+rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Affected, Native(literal)});
 rewrite_enum!(Propagation, []; {Off, Minimal, Connected {continuity, angle, gap}, Native(literal)});
 rewrite_record!(SketchRegion, []; {outer, holes});
 rewrite_record!(BoundaryUse, []; {entity, fragment});
@@ -202,3 +208,68 @@ rewrite_enum!(ScalarDimension, []; {Length(value), Angle(value), Ratio(value), U
 rewrite_enum!(PostStep, []; {Flip(value), Translate {axis, distance}, Rotate {axis, angle}, AxisRotate {axis, angle}, Fixed(value)});
 rewrite_record!(SourceMode, []; {codec, method, native_options, source_settings});
 rewrite_enum!(NativeOption, []; {Bool(value), Integer(value), Real(value), Length(value), Angle(value), Text(value), Selection(value), OrderedSelection(value)});
+rewrite_enum!(RefTarget, []; {
+    Parameter(value),
+    External {definition, name},
+});
+rewrite_record!(ParameterRef, []; {target, through});
+
+/// The parameter references of an expression: the `Reference` leaves of its
+/// tree, walked on a work stack since a tree is deeper than the ceiling that
+/// admits it, and the `Reference` tokens of its source text. A measure's
+/// selection is design content, which has no identity rewrite.
+impl RewriteIdentities for Expression {
+    fn visit_identity_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        match self {
+            Self::Neutral(Neutral(root)) => {
+                let mut pending = vec![root];
+                while let Some(node) = pending.pop() {
+                    if let Node::Reference(reference) = node {
+                        reference.visit_identity_references(ctx, visitor)?;
+                    }
+                    pending.extend(node.operands());
+                }
+                Ok(())
+            }
+            Self::Source { tokens, .. } => tokens.iter().try_for_each(|token| match token {
+                ExpressionToken::Reference(reference) => {
+                    reference.visit_identity_references(ctx, visitor)
+                }
+                ExpressionToken::Text(_) => Ok(()),
+            }),
+        }
+    }
+    fn rewrite_identities(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        map: &mut IdentityMap<'_>,
+    ) -> Result<Self, CodecError> {
+        let mut rewrite = |reference: &mut ParameterRef| -> Result<(), CodecError> {
+            *reference = reference.clone().rewrite_identities(ctx, map)?;
+            Ok(())
+        };
+        match &mut self {
+            Self::Neutral(Neutral(root)) => {
+                let mut pending = vec![root];
+                while let Some(node) = pending.pop() {
+                    if let Node::Reference(reference) = node {
+                        rewrite(reference)?;
+                    }
+                    pending.extend(node.operands_mut());
+                }
+            }
+            Self::Source { tokens, .. } => {
+                for token in tokens {
+                    if let ExpressionToken::Reference(reference) = token {
+                        rewrite(reference)?;
+                    }
+                }
+            }
+        }
+        Ok(self)
+    }
+}

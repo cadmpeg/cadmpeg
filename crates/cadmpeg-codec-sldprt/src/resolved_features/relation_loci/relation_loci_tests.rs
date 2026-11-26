@@ -1,7 +1,7 @@
 //! Tests for the `relation_loci` module.
 
 use super::{
-    marker_center_dimensioned_entity, relation_constraint_is_inactive, typed_relation_definition,
+    marker_center_dimensioned_entity, relation_contradicts_geometry, typed_relation_definition,
     typed_relation_definition_with_profile_axis, unique_locus,
 };
 use crate::records::operand_tag::NativeOperandTag;
@@ -11,14 +11,13 @@ use crate::records::{
     SketchRelationKind,
 };
 use crate::resolved_features::transforms::ProfileAxis;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
-};
-use cadmpeg_ir::{
-    features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue},
-    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;
@@ -87,7 +86,7 @@ fn length_parameter(value: f64) -> DesignParameter {
         expression: value.to_string(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -125,7 +124,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -247,7 +246,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -255,7 +254,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -340,7 +339,7 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
     let parameter = length_parameter(1.0);
     let definition = typed_relation_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
@@ -400,7 +399,7 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -445,7 +444,7 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(1.0)),
             &sketch,
@@ -493,7 +492,7 @@ fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(14.0)),
             &sketch,
@@ -517,7 +516,7 @@ fn solver_point_relation_requires_materialized_positions() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -592,7 +591,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -659,7 +658,7 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
@@ -675,7 +674,7 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(9.0)),
             &sketch,
@@ -724,7 +723,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -743,7 +742,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     let rejected_parameter = length_parameter(1.202_017_195);
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&rejected_parameter),
             &sketch,
@@ -762,13 +761,13 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         ),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(
+    assert!(!relation_contradicts_geometry(
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
     )
     .unwrap());
-    assert!(relation_constraint_is_inactive(
+    assert!(relation_contradicts_geometry(
         Some(&rejected_parameter),
         &definition,
         &[first, second],
@@ -874,7 +873,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(140.0)),
             &sketch,
@@ -896,7 +895,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             Some(&length_parameter(140.0)),
             &sketch,
@@ -918,7 +917,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(0.0)),
             &sketch,
@@ -955,7 +954,7 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -995,7 +994,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             Some(&parameter),
             &sketch,
@@ -1025,7 +1024,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(5.0)),
             &sketch,
@@ -1065,7 +1064,7 @@ fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
@@ -1116,7 +1115,7 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
 
     assert_eq!(
         typed_relation_definition_with_profile_axis(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             crate::resolved_features::relation_loci::SketchRelationEntities {
@@ -1192,7 +1191,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1287,7 +1286,7 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(52.0)),
             &sketch,
@@ -1353,7 +1352,7 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1455,7 +1454,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1471,7 +1470,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     );
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(3.0)),
             &sketch,
@@ -1509,7 +1508,7 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1550,7 +1549,7 @@ fn dynamic_line_distance_with_ambiguous_complete_roster_stays_native() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1583,7 +1582,7 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1603,7 +1602,7 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
     )]);
     relation.operands[0].entity_ref = Some(known_marker.id().to_string());
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -1664,7 +1663,7 @@ fn authoritative_line_distance_requires_defined_parallel_supports() {
             ),
         ]);
         let result = typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(expected)),
             &sketch,
@@ -1681,5 +1680,39 @@ fn authoritative_line_distance_requires_defined_parallel_supports() {
         } else {
             assert_eq!(result, None);
         }
+    }
+}
+
+#[test]
+fn an_angle_between_two_lines_holds_for_either_supplement() {
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let vertical = line_entity(
+        "synthetic:test:id#vertical",
+        &sketch,
+        Point2::new(0.0, -1.0),
+        Point2::new(0.0, 1.0),
+    );
+    let diagonal = line_entity(
+        "synthetic:test:id#diagonal",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(-1.0, -1.0),
+    );
+    let entities = [vertical.clone(), diagonal.clone()];
+    let mut parameter = length_parameter(1.0);
+    let definition = SketchConstraintDefinitionInput::Angle {
+        first: vertical.id().clone(),
+        second: diagonal.id().clone(),
+        parameter: parameter.id.clone(),
+    };
+    for (degrees, contradicted) in [(45.0_f64, false), (135.0, false), (30.0, true)] {
+        parameter.value = Some(ParameterValue::Angle(
+            Angle::new(degrees.to_radians()).unwrap(),
+        ));
+        assert_eq!(
+            relation_contradicts_geometry(Some(&parameter), &definition, &entities).unwrap(),
+            contradicted,
+            "{degrees} degrees"
+        );
     }
 }

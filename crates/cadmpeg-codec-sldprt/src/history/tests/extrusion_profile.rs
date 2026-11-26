@@ -2,6 +2,7 @@
 //! Extrusion projection and adjacent-profile binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -30,15 +31,15 @@ fn decode_projects_cut_extrude_with_canonical_length() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                         length: actual_length,
                     },
                     ..
                 }
             },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             ..
         }) if actual_length.get() == 12.7
     ));
@@ -46,10 +47,10 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -109,9 +110,8 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_extrusion_termination() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     fn compact_extrusion_payload(through_all: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]);
@@ -207,12 +207,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         .all(
             |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
         ));
-    let round_trip =
-        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+    let round_trip: Vec<cadmpeg_ir::features::parameters::DesignConfiguration> =
+        serde_json::from_str(&json::to_string(&decoded.ir().model.configurations).unwrap())
+            .unwrap();
     assert_eq!(
-        round_trip.model.configurations[0]
-            .feature_states
-            .get(&feature_id),
+        round_trip[0].feature_states.get(&feature_id),
         decoded.ir().model.configurations[0]
             .feature_states
             .get(&feature_id)
@@ -223,23 +222,18 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     edited.model.configurations[1]
         .feature_states
         .insert(feature_id, replacement);
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let error =
+        crate::test_support::plan_inherited_write_declined(&edited, decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("configuration design-state edit has no complete native lane encoding"),
+        error.contains("configuration design-state edit has no complete native lane encoding"),
         "unexpected error: {error}"
     );
 }
 
 #[test]
 fn decode_binds_adjacent_profile_feature_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -290,7 +284,8 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_adjacent_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -369,7 +364,8 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
 
 #[test]
 fn decode_binds_following_profile_marked_as_dissected_child() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -420,9 +416,9 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
 
 #[test]
 fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
-    use cadmpeg_ir::features::{
-        BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -479,10 +475,9 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
 
 #[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-        LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -513,8 +508,14 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
 #[test]
 fn decode_projects_hyphenated_extrusion_operations() {
     for (kind, expected) in [
-        ("Boss-Extrude", cadmpeg_ir::features::BooleanOp::Join),
-        ("Cut-Extrude", cadmpeg_ir::features::BooleanOp::Cut),
+        (
+            "Boss-Extrude",
+            cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        ),
+        (
+            "Cut-Extrude",
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        ),
     ] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
@@ -575,7 +576,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),
+            profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(profile)),
             ..
         }) if profile == &sketch.id
     ));
@@ -635,43 +636,43 @@ fn decode_projects_feature_input_extrusion_operations() {
     for (code, expected, class_name, layouts) in [
         (
             3,
-            cadmpeg_ir::features::BooleanOp::Join,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             "moICE_c",
             &[(true, 8), (true, 4), (false, 8), (false, 4)][..],
         ),
         (
             1,
-            cadmpeg_ir::features::BooleanOp::Join,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             "moExtrusion_c",
             &[(true, 8), (true, 4)][..],
         ),
         (
             1,
-            cadmpeg_ir::features::BooleanOp::Cut,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
         (
             2,
-            cadmpeg_ir::features::BooleanOp::Cut,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
         (
             10,
-            cadmpeg_ir::features::BooleanOp::Cut,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
         (
             0,
-            cadmpeg_ir::features::BooleanOp::Cut,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
         (
             22_993,
-            cadmpeg_ir::features::BooleanOp::Cut,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
@@ -737,7 +738,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Extrude {
-                    op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                    op: cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
                     ..
                 }
             )
@@ -754,8 +755,14 @@ fn decode_projects_feature_input_extrusion_operations() {
     }
 
     for (kind, expected) in [
-        ("BossExtrude", cadmpeg_ir::features::BooleanOp::Join),
-        ("CutExtrude", cadmpeg_ir::features::BooleanOp::Cut),
+        (
+            "BossExtrude",
+            cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        ),
+        (
+            "CutExtrude",
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        ),
     ] {
         let mut source = sldprt_with_body(&triangle_body());
         add_solidworks_version(&mut source, 17_000);
@@ -789,8 +796,16 @@ fn decode_projects_feature_input_extrusion_operations() {
     }
 
     for (family, operation, expected) in [
-        (0x40, 0, cadmpeg_ir::features::BooleanOp::Join),
-        (0xca, 2, cadmpeg_ir::features::BooleanOp::Cut),
+        (
+            0x40,
+            0,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        ),
+        (
+            0xca,
+            2,
+            cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        ),
     ] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(

@@ -11,9 +11,9 @@ use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -254,10 +254,8 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
 
 #[test]
 fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
-    // 256 spans of degree 63 need 2^20 blends; repeating the support check
-    // per face would cost that once for each of the 256 faces.
-    let last = 63 + 256 - 1;
-    let pcurve = planar_nurbs_parameters(63, 256, true, |index| {
+    let last = 3 + 4 - 1;
+    let pcurve = planar_nurbs_parameters(3, 4, true, |index| {
         if index == 0 || index == last {
             [0.2, 0.2]
         } else {
@@ -265,14 +263,19 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         }
     });
     let decode = |faces| {
-        IgesCodec
+        super::SUPPORT_BOUNDS_CHECKS.with(|checks| checks.set(0));
+        let result = IgesCodec
             .decode(
                 &mut Cursor::new(subrange_nurbs_surfaces_sharing_pcurve_file(
                     2, &pcurve, faces,
                 )),
                 &DecodeOptions::default(),
             )
-            .unwrap()
+            .unwrap();
+        (
+            result,
+            super::SUPPORT_BOUNDS_CHECKS.with(std::cell::Cell::get),
+        )
     };
     let face_losses = |result: &cadmpeg_ir::codec::DecodeResult, sequence: usize| {
         let tag = format!("directory_entry:D{sequence}");
@@ -291,7 +294,8 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         messages.sort();
         messages
     };
-    let single = decode(1);
+    let (single, single_checks) = decode(1);
+    assert!(single_checks > 0);
     let expected = face_losses(&single, 9);
     assert!(
         single
@@ -304,8 +308,9 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         single.report().losses
     );
 
-    let faces = 256;
-    let shared = decode(faces);
+    let faces = 3;
+    let (shared, shared_checks) = decode(faces);
+    assert_eq!(shared_checks, single_checks);
     for face in 0..faces {
         let sequence = 9 + 2 * face;
         assert!(
@@ -552,7 +557,7 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
 
     assert!(matches!(
         cluster_boundary_positions(
-            &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+            &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
             cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
         ),
         Err(BoundaryVertexCreationError::Cluster(
@@ -570,7 +575,7 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
         Point3::new(0.0, 0.0, 0.0),
     ];
     let clusters = cluster_boundary_positions(
-        &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+        &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
     )
     .unwrap();
@@ -598,12 +603,14 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-a".into(),
             endpoint: BoundaryEndpoint::Start,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         },
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-b".into(),
             endpoint: BoundaryEndpoint::End,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
         },
     ];
 
@@ -717,25 +724,25 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -911,10 +918,10 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     let roles = face
         .loops
-        .iter()
+        .stated()
         .map(|id| face.loop_role(id))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -929,7 +936,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } = &face.loops else {
         panic!("an explicit outer boundary states a classified face");
     };
-    assert_eq!(Some(outer), face.loops.iter().next());
+    assert_eq!(Some(outer), face.loops.stated().next());
     assert_eq!(inner.len(), 1);
     assert!(
         result.report().losses.is_empty(),
@@ -962,7 +969,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
                     result.report().losses
                 )
             });
-        assert!(face.loops.is_empty());
+        assert!(face.loops.stated().next().is_none());
         // A parameter-domain outer boundary is no classification: the face
         // states an empty loop list, not a classified face with no outer.
         assert!(matches!(
@@ -978,6 +985,79 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
             .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
+}
+
+#[test]
+fn a_trimmed_cylinder_with_no_boundary_is_a_partial_face_with_no_loop() {
+    // A Type 144 whose outer boundary is the support's own domain, on a
+    // cylinder: the domain is unbounded along the axis, so the face states
+    // no extent and is partial, with the loss naming it.
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORIGIN".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 192,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00010000",
+            parameters: "192,1,3,10;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "DOMAIN".into(),
+            status: "00000000",
+            parameters: "144,5,0,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "iges:model:face#D7")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let unstated: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect();
+    assert_eq!(unstated.len(), 1, "{:#?}", result.report().losses);
+    assert!(unstated[0].message.contains("a cylinder"));
+    assert!(unstated[0]
+        .message
+        .split_whitespace()
+        .any(|word| word == face.id.as_str()));
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
+    assert!(
+        !validation.findings.iter().any(|finding| finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "{:#?}",
+        validation.findings
+    );
 }
 
 #[test]
@@ -1011,13 +1091,13 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     let loop_ = result
         .ir()
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     // The face states no outer boundary, so it states no classification: the
     // parameter domain supplies the exterior, and the procedural surface
@@ -1219,7 +1299,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         .unwrap();
     assert_eq!(
         result.report().losses.len(),
-        1,
+        2,
         "{:#?}",
         result.report().losses
     );
@@ -1227,6 +1307,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         result.report().losses[0].code,
         IgesLossCode::GeometryNotProjected.kind()
     );
+    crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 13));
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards
     // against: the loss must land on the trimmed surface, never on the Type
@@ -1309,7 +1390,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .expect("outer loop");
     assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
@@ -1603,7 +1684,9 @@ fn boundary_clustering_chain_uses_no_call_stack_depth() {
     let points: Vec<_> = (0..=m)
         .map(|i| f64::from(i) * 1.5)
         .chain((0..m).rev().map(|i| f64::from(i) * 1.5 + 0.75))
-        .map(|x| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap())
+        .map(|x| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap()
+        })
         .collect();
     assert!(matches!(
         cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()),

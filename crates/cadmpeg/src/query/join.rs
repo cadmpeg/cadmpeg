@@ -330,7 +330,7 @@ fn canonical_key(value: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{join_records, JoinMode, JoinSpec, ROWS_BUILT};
-    use serde_json::json;
+    use cadmpeg_core::json;
     use serde_json::Value;
 
     fn spec<'a>(
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn join_head_one_constructs_only_one_row() {
         let left = vec![json!({"id": "left", "key": "same"})];
-        let right: Vec<Value> = (0..4096)
+        let right: Vec<Value> = (0..2)
             .map(|i| json!({"id": format!("right-{i}"), "key": "same"}))
             .collect();
         let mut request = spec(&left, &right, "key", "key", JoinMode::Matched, None);

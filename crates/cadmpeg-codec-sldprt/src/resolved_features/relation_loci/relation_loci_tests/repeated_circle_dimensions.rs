@@ -1,10 +1,11 @@
-use super::super::{relation_constraint_is_inactive, typed_relation_definition};
+use super::super::{relation_contradicts_geometry, typed_relation_definition};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
-use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -63,14 +64,14 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
     };
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -137,7 +138,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -153,7 +154,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -169,7 +170,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
     );
 }
 #[test]
-fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
+fn repeated_circle_dimension_is_contradicted_when_any_radius_differs() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, radius| {
         SketchEntity::new(
@@ -196,7 +197,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
@@ -205,7 +206,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(Some(&parameter), &definition, &entities,).unwrap());
+    assert!(!relation_contradicts_geometry(Some(&parameter), &definition, &entities,).unwrap());
 
     let mut mismatched = entities;
     mismatched[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -213,5 +214,5 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(relation_constraint_is_inactive(Some(&parameter), &definition, &mismatched,).unwrap());
+    assert!(relation_contradicts_geometry(Some(&parameter), &definition, &mismatched,).unwrap());
 }

@@ -6,6 +6,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 const REVERSE_NORMAL_TYPE_GUID: &str = "693D6578-4BCE-44F8-B15A-2CE5162A23EE";
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
@@ -105,6 +106,7 @@ fn type_guid_selects_reverse_normal_for_a_localized_compact_scope() {
                 value: GROUP,
                 offset: 26,
             },
+            link: None,
         })
     );
     assert_eq!(
@@ -116,7 +118,7 @@ fn type_guid_selects_reverse_normal_for_a_localized_compact_scope() {
         [GROUP, BODIES[0], BODIES[1]]
     );
     let restored: DesignParameterScope =
-        serde_json::from_str(&serde_json::to_string(&scope).unwrap()).unwrap();
+        serde_json::from_str(&json::to_string(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 
@@ -131,6 +133,7 @@ fn shifted_prefix_moves_the_body_group_reference_four_bytes() {
                 value: GROUP,
                 offset: 30,
             },
+            link: None,
         })
     );
 }
@@ -147,7 +150,7 @@ fn prefix_outside_either_form_leaves_the_operation_unread() {
             ..Fixture::compact()
         },
         Fixture {
-            guid: "ABCDEF12-3456-7890-ABCD-EF1234567890",
+            guid: "ABCDEF12-3456-7890-ABCD-EF123456789!",
             ..Fixture::compact()
         },
         Fixture {
@@ -163,5 +166,19 @@ fn prefix_outside_either_form_leaves_the_operation_unread() {
         assert_eq!(scope.kind(), DesignFeatureKind::ReverseNormal);
         assert_eq!(scope.reverse_normal_operation(), None);
         assert!(scope.payload().is_uninterpreted());
+    }
+}
+
+#[test]
+fn a_linked_scope_keeps_its_link_guid() {
+    let guid = "180f14e0-154e-434b-acff-8bfbd101803c";
+    for (fixture, offset) in [(Fixture::compact(), 40), (Fixture::shifted(), 44)] {
+        let scope = Fixture { guid, ..fixture }.decode(Some(REVERSE_NORMAL_TYPE_GUID));
+        let operation = scope.reverse_normal_operation().expect("linked operation");
+        let link = operation.link.as_ref().expect("link GUID");
+        assert_eq!((link.value.as_str(), link.offset), (guid, offset));
+        let restored: DesignParameterScope =
+            serde_json::from_str(&json::to_string(&scope).unwrap()).unwrap();
+        assert_eq!(restored, scope);
     }
 }

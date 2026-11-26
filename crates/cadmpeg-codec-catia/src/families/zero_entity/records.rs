@@ -8,12 +8,12 @@ use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::decode::{DecodeContext, View};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -1635,7 +1635,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 origin.x + height * axis.x,
                                 origin.y + height * axis.y,
                                 origin.z + height * axis.z,
@@ -1697,7 +1697,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 origin.x + slant * half_angle.cos() * axis.x,
                                 origin.y + slant * half_angle.cos() * axis.y,
                                 origin.z + slant * half_angle.cos() * axis.z,
@@ -1754,7 +1754,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 center.x + minor_radius * angle.sin() * axis.x,
                                 center.y + minor_radius * angle.sin() * axis.y,
                                 center.z + minor_radius * angle.sin() * axis.z,
@@ -1901,9 +1901,9 @@ fn zero_entity_model_curve_construction(
         zero_angle_radius * transverse.z,
     );
     Some(ProceduralCurveDefinition::Helix(
-        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+        cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
             [start.u, end.u],
-            cadmpeg_ir::geometry::HelixFrame {
+            cadmpeg_ir::geometry::helix::HelixFrame {
                 center: Point3::new(
                     origin.x + zero_angle_v * half_angle.cos() * axis.x,
                     origin.y + zero_angle_v * half_angle.cos() * axis.y,
@@ -2300,7 +2300,7 @@ fn zero_entity_nurbs_surface(
     for row in control_points.chunks(index_from_u32(layout.v_count)) {
         rows.push(row.to_vec());
     }
-    crate::nurbs::note_refusal(
+    crate::nurbs::give_up_refused(
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
@@ -2309,6 +2309,10 @@ fn zero_entity_nurbs_surface(
         ),
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "zero-entity-nurbs-surface-frame"),
+            record,
+        ),
     )
     .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
 }
@@ -2391,11 +2395,11 @@ mod tests {
         zero_entity_surfaces, zero_entity_torus, zero_entity_vertex_incidences,
         ZeroEntityFaceControl, ZeroEntityLoopMembers, ZeroEntityUseSlot,
     };
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;

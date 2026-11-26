@@ -8,12 +8,13 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::names::InstanceIndex;
 use cadmpeg_ir::design::ops::{
     body as new,
-    shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing},
+    shared::{
+        CircularLayout, LinearLayout, LinearRun, MirrorLayout, PatternLayout, PatternRun, RunSides,
+        Spacing,
+    },
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDirection3, FinitePoint3,
-};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::UnitVector3;
@@ -42,7 +43,11 @@ pub(super) fn plane(
             x_axis: UnitVector3::normalized(n.cross(basis))
                 .ok_or("the mirror frame is degenerate")?,
         }),
-        ..Construction::default()
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -120,7 +125,7 @@ pub(super) fn project(seeds: &[PatternSeed], pattern: &PatternKind) -> Projected
                     change: new::InstanceChange::Skipped,
                 });
             }
-            PatternLayout::Linear {
+            PatternLayout::Linear(LinearLayout {
                 first: LinearRun {
                     direction: swept::direction(
                         direction.ok_or("the pattern direction is absent")?,
@@ -137,14 +142,14 @@ pub(super) fn project(seeds: &[PatternSeed], pattern: &PatternKind) -> Projected
                     })
                     .transpose()?,
                 seed_only: second.as_ref().map(|_| Dimension::Literal(false)),
-            }
+            })
         }
         PatternTransform::Circular {
             axis_origin,
             axis_dir,
             angle,
             count,
-        } => PatternLayout::Circular {
+        } => PatternLayout::Circular(CircularLayout {
             axis: swept::axis(*axis_origin, *axis_dir)?,
             angular: PatternRun {
                 spacing: Spacing::Span {
@@ -160,14 +165,14 @@ pub(super) fn project(seeds: &[PatternSeed], pattern: &PatternKind) -> Projected
             },
             radial: None,
             orientation: None,
-        },
+        }),
         PatternTransform::Mirror {
             plane_origin,
             plane_normal,
-        } => PatternLayout::Mirror {
+        } => PatternLayout::Mirror(MirrorLayout {
             plane: plane(*plane_origin, *plane_normal)?,
             stitch_tolerance: None,
-        },
+        }),
         _ => return Err("the pattern layout requires additional v11 operands"),
     };
     Ok(new::Pattern {

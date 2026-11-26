@@ -9,6 +9,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16_retained, CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -361,8 +362,8 @@ fn scaled_point(
 }
 
 fn angular_measurement(first: [f64; 2], second: [f64; 2]) -> f64 {
-    let first = first[1].atan2(first[0]);
-    (second[1].atan2(second[0]) - first).rem_euclid(std::f64::consts::TAU)
+    let first = first[1].portable_atan2(first[0]);
+    (second[1].portable_atan2(second[0]) - first).rem_euclid(std::f64::consts::TAU)
 }
 
 pub(crate) struct LegacyAnnotation {
@@ -805,7 +806,7 @@ fn decode_legacy(
                     diameter,
                 },
                 CoordinateLane::Derived(dimension_line_point),
-                radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
+                radius_point[0].portable_hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
             )
         }
         LegacyDimensionFields::Angular { angle, radius } => {
@@ -816,10 +817,10 @@ fn decode_legacy(
                 ));
             }
             let first_direction = [1.0, 0.0];
-            let second_direction = [angle.get().cos(), angle.get().sin()];
+            let second_direction = [angle.get().portable_cos(), angle.get().portable_sin()];
             let dimension_line_point = [
-                radius.get() * (0.5 * angle.get()).cos(),
-                radius.get() * (0.5 * angle.get()).sin(),
+                radius.get() * (0.5 * angle.get()).portable_cos(),
+                radius.get() * (0.5 * angle.get()).portable_sin(),
             ];
             (
                 annotation.plane,
@@ -946,7 +947,7 @@ fn decode_v2(
             },
             CoordinateLane::Derived(user_text_point),
             true,
-            (points[1][0] - points[3][0]).hypot(points[1][1] - points[3][1]),
+            (points[1][0] - points[3][0]).portable_hypot(points[1][1] - points[3][1]),
         )
     } else if class == V2_RADIAL {
         if !matches!(kind, 4 | 5) || points.len() < 3 {
@@ -972,7 +973,7 @@ fn decode_v2(
             },
             CoordinateLane::Derived(user_text_point),
             !annotation.user_positioned_text,
-            radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
+            radius_point[0].portable_hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
         )
     } else if class == V2_ANGULAR {
         if kind != 3 || points.len() < 2 {
@@ -1017,8 +1018,8 @@ fn decode_v2(
                 first_extension_offset: FiniteReal::NEG_ONE,
                 second_extension_offset: FiniteReal::NEG_ONE,
                 dimension_line_point: CoordinateLane::Derived([
-                    radius.get() * (0.5 * angle.get()).cos(),
-                    radius.get() * (0.5 * angle.get()).sin(),
+                    radius.get() * (0.5 * angle.get()).portable_cos(),
+                    radius.get() * (0.5 * angle.get()).portable_sin(),
                 ]),
             },
             CoordinateLane::Admitted(user_text_point),
@@ -1263,7 +1264,7 @@ pub(crate) fn decode(
             diameter,
             ..
         } => {
-            radius_point[0].hypot(radius_point[1])
+            radius_point[0].portable_hypot(radius_point[1])
                 * distance_scale.get()
                 * if *diameter { 2.0 } else { 1.0 }
         }
@@ -2433,7 +2434,7 @@ pub(crate) mod tests {
         .expect("valid linear dimension");
         let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
             .expect("dimension projection");
-        let baseline = serde_json::json!({
+        let baseline = cadmpeg_core::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
             "value": annotation.value,

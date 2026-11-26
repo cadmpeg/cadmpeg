@@ -21,6 +21,7 @@ mod detect;
 mod dialect;
 mod ids;
 mod inspect;
+mod joint;
 mod layers;
 /// Byte-offset constants generated from `docs/layouts/usd.toml`.
 mod layout;
@@ -41,7 +42,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -105,15 +106,22 @@ impl CodecBackend for UsdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        decode::decode(ctx, root)
+        let mut decoded = decode::decode(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            crate::ids::stage(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
     }
 }
 
 impl EncoderBackend for UsdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "USD";
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(TARGETS, Some(0));
 
@@ -123,24 +131,34 @@ impl EncoderBackend for UsdCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         let packaged = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDZ);
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDZ);
         let binary = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged)?;
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
+        let (mut body, members) = writer::plan(input, &target, packaged);
         if binary {
-            body.bytes = crate_layer(&body.bytes)?;
-            body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
+            let (bytes, left_out) = crate_layer(&body.bytes)?;
+            body.bytes = bytes;
+            body.losses
+                .extend(cadmpeg_ir::codec::write::value_unwritable(
+                    "USDC",
+                    "leaves out the fields whose value has no USDC 0.8.0 form",
+                    left_out,
+                ));
+            let metres = input
+                .scene
+                .meters_per_unit
+                .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
+            body.notes = vec![format!(
+                "USDC 0.8.0 binary layer, {}",
+                writer::units_note(metres)
+            )];
         }
         if packaged {
-            let mut all = vec![(usdz::ROOT_MEMBER, body.bytes.as_slice())];
-            all.extend(
-                members
-                    .iter()
-                    .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
-            );
-            body.bytes = usdz::package(&all)?;
+            let (bytes, losses) = usdz::package_layer(&body.bytes, &members);
+            body.bytes = bytes;
+            body.losses.extend(losses);
             body.notes
                 .push(format!("USDZ package, root layer {}", usdz::ROOT_MEMBER));
         }
@@ -148,12 +166,21 @@ impl EncoderBackend for UsdCodec {
     }
 }
 
-/// The USDC form of the written text layer `text`.
-fn crate_layer(text: &[u8]) -> Result<Vec<u8>, CodecError> {
+/// The USDC form of the written text layer `text`, and the fields left out
+/// because their value has no USDC form.
+///
+/// The text is this writer's own, so it parses: only a decode budget stops
+/// the parse.
+fn crate_layer(text: &[u8]) -> Result<(Vec<u8>, Vec<String>), CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text, &arena, &policy)?;
-    let layer = text::grammar::parse_layer(&ctx, text)?;
+    let layer = text::grammar::parse_layer(&ctx, text).inspect_err(|error| {
+        debug_assert!(
+            matches!(error, CodecError::ResourceLimit(_)),
+            "the written layer parses: {error}"
+        );
+    })?;
     ctx.finish_session()?;
     usdc::write::write(&layer)
 }

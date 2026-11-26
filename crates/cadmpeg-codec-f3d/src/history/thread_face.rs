@@ -7,9 +7,9 @@ use crate::history_records::{
     AsmHistory,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureInputTopology, FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Face;
@@ -194,8 +194,8 @@ fn live_faces(
             }
         }
     }
-    let source =
-        super::historical_brep_source(&history.id).ok_or("the history BREP identity is absent")?;
+    let source = super::face_resolution::historical_brep_source(&history.id)
+        .ok_or("the history BREP identity is absent")?;
     let member = history
         .id
         .strip_prefix("f3d:")
@@ -214,22 +214,30 @@ fn live_faces(
             return Err("the historical face belongs to another state or member");
         }
         let face = unique(input.faces.iter().filter(|face| {
-            super::stable_ref(face.id.as_str()) == Some(slot)
+            super::body_closures::stable_ref(face.id.as_str()) == Some(slot)
                 && if face.id.as_str().starts_with("f3d:brep:entity#") {
-                    member.is_some() && member == input.primary_brep
+                    member
+                        .zip(input.primary_brep)
+                        .is_some_and(|(member, brep)| {
+                            crate::ids::encoded_identity_key_component_matches(member, brep)
+                        })
                 } else {
-                    super::entity_in_brep_source(face.id.as_str(), source)
+                    super::face_resolution::entity_in_brep_source(face.id.as_str(), source)
                 }
         }))
         .ok_or("the stable slot has no unique live face in its BREP member")?;
         if !later.is_empty() {
-            let surface = super::stable_ref(face.surface.as_str())
+            let surface = super::body_closures::stable_ref(face.surface.as_str())
                 .filter(|_| {
                     let surface = face.surface.as_str();
                     if surface.starts_with("f3d:brep:entity#") {
-                        member.is_some() && member == input.primary_brep
+                        member
+                            .zip(input.primary_brep)
+                            .is_some_and(|(member, brep)| {
+                                crate::ids::encoded_identity_key_component_matches(member, brep)
+                            })
                     } else {
-                        super::entity_in_brep_source(surface, source)
+                        super::face_resolution::entity_in_brep_source(surface, source)
                     }
                 })
                 .ok_or("the live face surface has no stable slot in its BREP member")?;

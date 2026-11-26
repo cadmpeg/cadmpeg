@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 fn native() -> crate::native::F3dNative {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     let types = [
@@ -19,7 +21,7 @@ fn native() -> crate::native::F3dNative {
             id: format!("f3d:Design1/BulkStream.dat:design-record-header#{index}"), record_index: index,
             class_tag: "256".to_owned().try_into().unwrap(), byte_offset: if index == 50 {20} else {1000 + u64::from(index)},
         }).collect(),
-        design_sheet_metal_settings: vec![serde_json::from_value(serde_json::json!({
+        design_sheet_metal_settings: vec![json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
             "byte_offset": 20, "paired_byte_offset": 100, "mask": 4, "inputs": {"version": "v2", "slots": [null, 51, null, null, null, null, null]},
             "rule_record_index": 51, "presentation_record_index": 52, "owner_record_index": 53, "context_record_index": 54,
@@ -44,6 +46,36 @@ fn settings_native_links_require_the_retained_v3_tail_width() {
                 slots: [None; 9],
                 rule_reference_tail: tail,
             };
+            native.design_sheet_metal_settings[0].paired_byte_offset = paired_offset + offset_delta;
+            crate::test_support::with_decode_context(|decode| {
+                let ir = cadmpeg_ir::CadIr::empty();
+                let ctx = crate::validate::Ctx::new(&ir, &native, decode);
+                let mut findings = Vec::new();
+                super::validate(&ctx, &mut findings);
+                assert_eq!(findings.len(), usize::from(offset_delta != 0));
+            });
+        }
+    }
+}
+
+#[test]
+fn settings_native_links_size_the_leading_reference_form() {
+    use crate::records::sheet_metal_settings::{
+        DesignSheetMetalSettingsInputs, V3RuleReferenceTail,
+    };
+    for (tail, paired_offset) in [
+        (V3RuleReferenceTail::ZeroPair, 100),
+        (V3RuleReferenceTail::OneZeroPair, 101),
+    ] {
+        for offset_delta in [0, 1] {
+            let mut native = native();
+            native.design_types[0].set_version(3);
+            native.design_sheet_metal_settings[0].mask = None;
+            native.design_sheet_metal_settings[0].inputs =
+                DesignSheetMetalSettingsInputs::V3LeadingReference {
+                    first: 54,
+                    rule_reference_tail: tail,
+                };
             native.design_sheet_metal_settings[0].paired_byte_offset = paired_offset + offset_delta;
             crate::test_support::with_decode_context(|decode| {
                 let ir = cadmpeg_ir::CadIr::empty();

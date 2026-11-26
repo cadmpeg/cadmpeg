@@ -15,10 +15,14 @@ use crate::vecmath::normalize;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection, GeneratedFaceRef};
+use cadmpeg_ir::features::surface_inputs::{SurfaceBoundary, SurfaceContinuity};
 use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, FeatureResultTopology,
-    GeneratedFaceRef, PathRef, SurfaceBoundary, SurfaceContinuity, ThickenSide,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -53,8 +57,10 @@ pub(in super::super) fn filled_surface_feature_definition(
     IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
         boundary,
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-            SurfaceContinuity::Contact,
+        continuity: Some(
+            cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one(
+                SurfaceContinuity::Contact,
+            ),
         ),
         merge_result: Some(false),
         interior_constraints: Vec::new(),
@@ -493,9 +499,12 @@ pub(in super::super) fn feature_result_topology(
     if faces.is_empty() && edges.is_empty() {
         return Ok(None);
     }
-    let Ok(members) =
-        cadmpeg_ir::features::FeatureResultMembers::new(Vec::new(), faces, edges, Vec::new())
-    else {
+    let Ok(members) = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
+        Vec::new(),
+        faces,
+        edges,
+        Vec::new(),
+    ) else {
         return Ok(None);
     };
     let id = FeatureResultTopologyId::mint(format!(

@@ -16,13 +16,26 @@ fn typed_load_refusal(policy: DecodePolicy) -> cadmpeg_core::CodecError {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::native::SldprtNative::load_with_context(&service, namespace).unwrap(),
-        crate::native::SldprtNative::load(namespace).unwrap()
+        crate::native::SldprtNative::load_with_context(
+            &service,
+            namespace,
+            cadmpeg_ir::units::Tolerances::default().linear
+        )
+        .unwrap(),
+        crate::native::SldprtNative::load(
+            namespace,
+            cadmpeg_ir::units::Tolerances::default().linear
+        )
+        .unwrap()
     );
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::native::SldprtNative::load_with_context(&limited, namespace)
-        .unwrap_err()
-        .into()
+    crate::native::SldprtNative::load_with_context(
+        &limited,
+        namespace,
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err()
+    .into()
 }
 
 #[test]

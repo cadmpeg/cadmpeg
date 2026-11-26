@@ -3,11 +3,11 @@
 
 use std::num::NonZeroI8;
 
-use super::super::read;
 use super::super::units::{Unit, UnitFactor, UnitSymbol};
 use super::{
-    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Function, Measure, Node, UnaryOp,
+    AddOp, BendVariable, BinaryOp, Constant, ExprError, Function, Measure, MulOp, Node, UnaryOp,
 };
+use crate::bounds::MAX_EXPRESSION_DEPTH;
 use crate::scalar::NonNegativeReal;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,23 +149,15 @@ impl<R: Clone> Parser<'_, R> {
         }
     }
 
-    fn binary(op: BinaryOp, left: Node<R>, right: Node<R>) -> Node<R> {
-        Node::Binary {
-            op,
-            left: Box::new(left),
-            right: Box::new(right),
-        }
-    }
-
     /// The operator that continues a chain of `spine` at the next token.
-    fn chain_op(&self, spine: Spine) -> Option<BinaryOp> {
+    fn chain_op(&self, spine: Spine) -> Option<Link> {
         match spine {
-            Spine::Or => self.at_word("or").then_some(BinaryOp::Or),
-            Spine::And => self.at_word("and").then_some(BinaryOp::And),
-            Spine::Sum if self.at_mark("+") => Some(BinaryOp::Add),
-            Spine::Sum if self.at_mark("-") => Some(BinaryOp::Subtract),
-            Spine::Prod if self.at_mark("*") => Some(BinaryOp::Multiply),
-            Spine::Prod if self.at_mark("/") => Some(BinaryOp::Divide),
+            Spine::Or => self.at_word("or").then_some(Link::Or),
+            Spine::And => self.at_word("and").then_some(Link::And),
+            Spine::Sum if self.at_mark("+") => Some(Link::Add(AddOp::Add)),
+            Spine::Sum if self.at_mark("-") => Some(Link::Add(AddOp::Subtract)),
+            Spine::Prod if self.at_mark("*") => Some(Link::Mul(MulOp::Multiply)),
+            Spine::Prod if self.at_mark("/") => Some(Link::Mul(MulOp::Divide)),
             Spine::Sum | Spine::Prod => None,
         }
     }
@@ -214,18 +206,17 @@ impl<R: Clone> Parser<'_, R> {
         loop {
             rule = match rule {
                 Rule::Expr => {
-                    frames.push(Frame::chain(Spine::Or, Some(level()?)));
+                    frames.push(Frame::chain(Spine::Or));
                     Rule::And
                 }
                 Rule::And => {
-                    frames.push(Frame::chain(Spine::And, None));
+                    frames.push(Frame::chain(Spine::And));
                     Rule::Not
                 }
                 Rule::Not => {
                     if self.at_word("not") {
-                        let depth = level()?;
                         self.i += 1;
-                        frames.push(Frame::Not(depth));
+                        frames.push(Frame::Not);
                         Rule::Not
                     } else {
                         frames.push(Frame::Cmp(None));
@@ -233,18 +224,17 @@ impl<R: Clone> Parser<'_, R> {
                     }
                 }
                 Rule::Sum => {
-                    frames.push(Frame::chain(Spine::Sum, None));
+                    frames.push(Frame::chain(Spine::Sum));
                     Rule::Prod
                 }
                 Rule::Prod => {
-                    frames.push(Frame::chain(Spine::Prod, None));
+                    frames.push(Frame::chain(Spine::Prod));
                     Rule::Neg
                 }
                 Rule::Neg => {
                     if self.at_mark("-") {
-                        let depth = level()?;
                         self.i += 1;
-                        frames.push(Frame::Neg(depth));
+                        frames.push(Frame::Neg);
                         Rule::Neg
                     } else {
                         frames.push(Frame::Pow(None));
@@ -267,37 +257,25 @@ impl<R: Clone> Parser<'_, R> {
         frames: &mut Vec<Frame<Node<R>>>,
     ) -> Result<Next<Node<R>>, ExprError> {
         Ok(match frame {
-            Frame::Chain {
-                spine,
-                depth,
-                mut chain,
-                left,
-            } => {
+            Frame::Chain { spine, left } => {
                 let node = match left {
                     None => node,
-                    Some((left, op)) => Self::binary(op, left, node),
+                    Some((left, link)) => link.join(left, node),
                 };
                 let Some(op) = self.chain_op(spine) else {
-                    drop(depth);
                     return Ok(Next::Node(node));
                 };
                 self.i += 1;
-                chain.next()?;
                 frames.push(Frame::Chain {
                     spine,
-                    depth,
-                    chain,
                     left: Some((node, op)),
                 });
                 Next::Read(spine.operand())
             }
-            Frame::Not(depth) => {
-                drop(depth);
-                Next::Node(Node::Unary {
-                    op: UnaryOp::Not,
-                    operand: Box::new(node),
-                })
-            }
+            Frame::Not => Next::Node(Node::Unary {
+                op: UnaryOp::Not,
+                operand: Box::new(node),
+            }),
             Frame::Cmp(None) => match self.comparison_op() {
                 Some(op) => {
                     self.i += 1;
@@ -306,28 +284,21 @@ impl<R: Clone> Parser<'_, R> {
                 }
                 None => Next::Node(node),
             },
-            Frame::Cmp(Some((left, op))) => Next::Node(Self::binary(op, left, node)),
-            Frame::Neg(depth) => {
-                drop(depth);
-                Next::Node(Node::Unary {
-                    op: UnaryOp::Negate,
-                    operand: Box::new(node),
-                })
-            }
+            Frame::Cmp(Some((left, op))) => Next::Node(Node::binary(op, left, node)),
+            Frame::Neg => Next::Node(Node::Unary {
+                op: UnaryOp::Negate,
+                operand: Box::new(node),
+            }),
             Frame::Pow(None) => {
                 if self.at_mark("^") {
-                    let depth = level()?;
                     self.i += 1;
-                    frames.push(Frame::Pow(Some((node, depth))));
+                    frames.push(Frame::Pow(Some(node)));
                     Next::Read(Rule::Neg)
                 } else {
                     Next::Node(node)
                 }
             }
-            Frame::Pow(Some((left, depth))) => {
-                drop(depth);
-                Next::Node(Self::binary(BinaryOp::Power, left, node))
-            }
+            Frame::Pow(Some(left)) => Next::Node(Node::binary(BinaryOp::Power, left, node)),
             Frame::Paren => {
                 self.expect_mark(")")?;
                 Next::Node(node)
@@ -340,9 +311,9 @@ impl<R: Clone> Parser<'_, R> {
                     Next::Read(Rule::Expr)
                 } else {
                     self.expect_mark(")")?;
-                    let branches = <[Node<R>; 3]>::try_from(parts)
+                    let [condition, then, otherwise] = <[Node<R>; 3]>::try_from(parts)
                         .map_err(|_| ExprError::Malformed("an if states three parts".into()))?;
-                    Next::Node(Node::If(Box::new(branches)))
+                    Next::Node(Node::branch(condition, then, otherwise))
                 }
             }
             Frame::Call(function, mut args) => {
@@ -499,25 +470,44 @@ impl Spine {
     }
 }
 
-/// A rule partly read, waiting for the node it reads next, with the levels
-/// of the ceiling it holds.
+/// The operator that joins the next operand to a chain.
+#[derive(Clone, Copy)]
+enum Link {
+    Add(AddOp),
+    Mul(MulOp),
+    And,
+    Or,
+}
+
+impl Link {
+    /// `left` and `right` as one chain node, `right` joining the run of
+    /// `left` where `left` is a chain of the same level.
+    fn join<R>(self, left: Node<R>, right: Node<R>) -> Node<R> {
+        match self {
+            Self::Add(op) => Node::add(left, op, right),
+            Self::Mul(op) => Node::mul(left, op, right),
+            Self::And => Node::and(left, right),
+            Self::Or => Node::or(left, right),
+        }
+    }
+}
+
+/// A rule partly read, waiting for the node it reads next.
 enum Frame<N> {
-    /// A chain, with the `expr` level for `or`, and the operands read so far
-    /// with the operator that follows them.
+    /// A chain, with the operands read so far and the operator that follows
+    /// them.
     Chain {
         spine: Spine,
-        depth: Option<read::Depth>,
-        chain: Chain,
-        left: Option<(N, BinaryOp)>,
+        left: Option<(N, Link)>,
     },
     /// `not` before its operand.
-    Not(read::Depth),
+    Not,
     /// A comparison, with its left operand and operator once read.
     Cmp(Option<(N, BinaryOp)>),
     /// `-` before its operand.
-    Neg(read::Depth),
-    /// A power, with its base and the level of its exponent once read.
-    Pow(Option<(N, read::Depth)>),
+    Neg,
+    /// A power, with its base once read.
+    Pow(Option<N>),
     /// `(` before its `expr`.
     Paren,
     /// An `if`, with the parts read so far.
@@ -527,13 +517,8 @@ enum Frame<N> {
 }
 
 impl<N> Frame<N> {
-    const fn chain(spine: Spine, depth: Option<read::Depth>) -> Self {
-        Self::Chain {
-            spine,
-            depth,
-            chain: Chain::new(),
-            left: None,
-        }
+    const fn chain(spine: Spine) -> Self {
+        Self::Chain { spine, left: None }
     }
 }
 
@@ -551,8 +536,8 @@ enum Next<N> {
 /// # Errors
 ///
 /// Returns [`ExprError::Malformed`] for text outside the grammar of
-/// canonical text, and [`ExprError::ResourceLimit`] for text nested past the
-/// expression ceiling.
+/// canonical text, and for text whose tree is deeper than the 64 levels of
+/// an expression (§2.5).
 pub fn parse<R: Clone>(text: &str, refs: &[R], measures: &[Measure]) -> Result<Node<R>, ExprError> {
     let mut parser = Parser {
         toks: tokens(text)?,
@@ -563,6 +548,13 @@ pub fn parse<R: Clone>(text: &str, refs: &[R], measures: &[Measure]) -> Result<N
     let node = parser.expr()?;
     if parser.i != parser.toks.len() {
         return malformed(format!("trailing tokens {:?}", parser.toks.get(parser.i..)));
+    }
+    let depth = node.depth();
+    if depth > MAX_EXPRESSION_DEPTH {
+        return malformed(format!(
+            "the expression is {depth} levels deep, past the {MAX_EXPRESSION_DEPTH} levels of an \
+             expression"
+        ));
     }
     Ok(node)
 }

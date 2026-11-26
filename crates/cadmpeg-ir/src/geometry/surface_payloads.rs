@@ -1,16 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural surface payloads.
 
-use super::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, CompoundComponent, CompoundLoftConstruction,
-    CompoundLoftTail, DeformableSurfaceConstruction, ExactSpline, G2BlendConstruction,
-    LawSurfaceConstruction, LoftBridgeToken, LoftRevisionForm, LoftSection, NetSurfaceConstruction,
-    RollingBallConstruction, ScaledCompoundLoftConstruction, ScaledCompoundLoftShape,
-    SkinSurfaceConstruction, SplineSurfaceParameters, SweepSurfaceConstruction,
-    VariableBlendConstruction, VertexBlendBoundaryGeometry, VertexBlendConstruction,
+use super::blends::{
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, G2BlendConstruction, RollingBallConstruction,
+    VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
-use super::{CacheContract, LegacyCache, LegacyCacheSlot};
-use crate::features::{FinitePoint3, FiniteVector3};
+use super::deformable_surfaces::DeformableSurfaceConstruction;
+use super::laws::LawSurfaceConstruction;
+use super::legacy_cache::ProceduralGeometryError;
+use super::legacy_cache::{CacheContract, LegacyCache, LegacyCacheSlot};
+use super::lofts::{
+    CompoundLoftConstruction, CompoundLoftTail, LoftBridgeToken, LoftRevisionForm, LoftSection,
+    ScaledCompoundLoftConstruction, ScaledCompoundLoftShape,
+};
+use super::procedural_curves::CompoundComponent;
+use super::procedural_curves::DirectedParameterRange;
+use super::procedural_surfaces::TaperSurfaceKind;
+use super::procedural_surfaces::{ExactSpline, SplineSurfaceParameters};
+use super::revision_forms::RevisionSurfaceForm;
+use super::skin_surfaces::{NetSurfaceConstruction, SkinSurfaceConstruction};
+use super::sweep_surfaces::SweepSurfaceConstruction;
+use super::variable_blends::VariableBlendConstruction;
+use super::OffsetExtension;
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::pcurve::PcurveGeometry;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
@@ -19,16 +32,9 @@ use crate::units::{DirectionAboveEpsilon, FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use {
-    super::{
-        DirectedParameterRange, OffsetExtension, ProceduralGeometryError, RevisionSurfaceForm,
-        TaperSurfaceKind,
-    },
-    crate::geometry::pcurve::PcurveGeometry,
-};
 
 /// Admitted support surface restriction parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SubSurfaceConstructionWire"))]
 #[serde(try_from = "SubSurfaceConstructionWire")]
@@ -85,7 +91,7 @@ impl TryFrom<SubSurfaceConstructionWire> for SubSurfaceConstruction {
 }
 
 /// Admitted taper surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "TaperSurfaceConstructionWire"))]
 #[serde(try_from = "TaperSurfaceConstructionWire")]
@@ -137,9 +143,9 @@ struct TaperSurfaceConstructionWire {
 impl TaperSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -214,7 +220,7 @@ impl TryFrom<TaperSurfaceConstructionWire> for TaperSurfaceConstruction {
 }
 
 /// Admitted extrusion surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -273,9 +279,9 @@ struct ExtrusionSurfaceConstructionWire {
 impl ExtrusionSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -416,7 +422,7 @@ fn admit_revolution_interval(
 }
 
 /// Admitted revolution surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -491,9 +497,9 @@ struct RevolutionSurfaceConstructionWire {
 impl RevolutionSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -630,7 +636,7 @@ impl TryFrom<RevolutionSurfaceConstructionWire> for RevolutionSurfaceConstructio
 }
 
 /// Admitted offset surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "OffsetSurfaceConstructionWire"))]
 #[serde(try_from = "OffsetSurfaceConstructionWire")]
@@ -696,9 +702,9 @@ impl OffsetSurfaceConstruction {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             match &mut self.extension {
                 OffsetExtension::Revision { form } => Some(&mut form.cache),
                 OffsetExtension::Legacy { .. } => None,
@@ -793,7 +799,7 @@ impl TryFrom<OffsetSurfaceConstructionWire> for OffsetSurfaceConstruction {
 }
 
 /// Admitted subset surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SubsetSurfaceConstructionWire"))]
 #[serde(try_from = "SubsetSurfaceConstructionWire")]
@@ -938,7 +944,7 @@ impl TryFrom<SubsetSurfaceConstructionWire> for SubsetSurfaceConstruction {
 }
 
 /// Admitted parallel offset surface parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1005,7 +1011,7 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
 }
 
 /// Admitted unbounded linear sweep parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1065,7 +1071,7 @@ impl TryFrom<LinearSweepSurfaceConstructionWire> for LinearSweepSurfaceConstruct
 }
 
 /// Admitted full axis revolution parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1143,7 +1149,7 @@ impl TryFrom<AxisRevolutionSurfaceConstructionWire> for AxisRevolutionSurfaceCon
 }
 
 /// Admitted ordered curve sum parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SumSurfaceConstructionWire"))]
 #[serde(try_from = "SumSurfaceConstructionWire")]
@@ -1179,9 +1185,9 @@ struct SumSurfaceConstructionWire {
 impl SumSurfaceConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -1237,7 +1243,7 @@ impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
 }
 
 /// Admitted exact surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "ExactSurfacePayloadWire"))]
 #[serde(try_from = "ExactSurfacePayloadWire")]
@@ -1295,7 +1301,7 @@ impl TryFrom<ExactSurfacePayloadWire> for ExactSurfacePayload {
 }
 
 /// Admitted compound surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfacePayloadWire"))]
 #[serde(try_from = "CompoundSurfacePayloadWire")]
@@ -1347,7 +1353,7 @@ impl TryFrom<CompoundSurfacePayloadWire> for CompoundSurfacePayload {
 }
 
 /// Admitted loft surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "LoftSurfacePayloadWire"))]
 #[serde(try_from = "LoftSurfacePayloadWire")]
@@ -1476,7 +1482,7 @@ impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
 }
 
 /// Admitted compound loft surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftSurfacePayloadWire"))]
 #[serde(try_from = "CompoundLoftSurfacePayloadWire")]
@@ -1535,7 +1541,7 @@ impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
 }
 
 /// Admitted scaled compound loft surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1593,7 +1599,7 @@ impl TryFrom<ScaledCompoundLoftSurfacePayloadWire> for ScaledCompoundLoftSurface
 }
 
 /// Admitted law surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "LawSurfacePayloadWire"))]
 #[serde(try_from = "LawSurfacePayloadWire")]
@@ -1634,7 +1640,7 @@ impl TryFrom<LawSurfacePayloadWire> for LawSurfacePayload {
 }
 
 /// Admitted skin surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SkinSurfacePayloadWire"))]
 #[serde(try_from = "SkinSurfacePayloadWire")]
@@ -1689,7 +1695,7 @@ impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
 }
 
 /// Admitted net surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "NetSurfacePayloadWire"))]
 #[serde(try_from = "NetSurfacePayloadWire")]
@@ -1742,7 +1748,7 @@ impl TryFrom<NetSurfacePayloadWire> for NetSurfacePayload {
 }
 
 /// Admitted sweep surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SweepSurfacePayloadWire"))]
 #[serde(try_from = "SweepSurfacePayloadWire")]
@@ -1814,7 +1820,7 @@ impl TryFrom<SweepSurfacePayloadWire> for SweepSurfacePayload {
 }
 
 /// Admitted deformable surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DeformableSurfacePayloadWire"))]
 #[serde(try_from = "DeformableSurfacePayloadWire")]
@@ -1857,7 +1863,7 @@ impl TryFrom<DeformableSurfacePayloadWire> for DeformableSurfacePayload {
 }
 
 /// Admitted G2 blend surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "G2BlendSurfacePayloadWire"))]
 #[serde(try_from = "G2BlendSurfacePayloadWire")]
@@ -1911,7 +1917,7 @@ impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
 }
 
 /// Admitted variable blend surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "VariableBlendSurfacePayloadWire"))]
 #[serde(try_from = "VariableBlendSurfacePayloadWire")]
@@ -1973,7 +1979,7 @@ impl TryFrom<VariableBlendSurfacePayloadWire> for VariableBlendSurfacePayload {
 }
 
 /// Admitted vertex blend surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "VertexBlendSurfacePayloadWire"))]
 #[serde(try_from = "VertexBlendSurfacePayloadWire")]
@@ -2043,7 +2049,7 @@ impl OrderedOptionalRange {
 }
 
 /// Admitted blend surface construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "BlendSurfacePayloadWire"))]
 #[serde(try_from = "BlendSurfacePayloadWire")]
@@ -2168,7 +2174,11 @@ impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
 impl ExactSurfacePayload {
     pub(super) fn revision_cache(
         &self,
-    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
+    ) -> Option<
+        &super::revision_forms::RevisionCacheForm<
+            super::revision_forms::RevisionSurfaceParameterization<FiniteReal>,
+        >,
+    > {
         match &self.spline {
             ExactSpline::Revision { form, .. } => Some(&form.cache),
             ExactSpline::Legacy { .. } => None,
@@ -2176,9 +2186,9 @@ impl ExactSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             match &mut self.spline {
                 ExactSpline::Revision { form, .. } => Some(&mut form.cache),
                 ExactSpline::Legacy { .. } => None,
@@ -2191,14 +2201,18 @@ impl ExactSurfacePayload {
 impl LoftSurfacePayload {
     pub(super) fn revision_cache(
         &self,
-    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
+    ) -> Option<
+        &super::revision_forms::RevisionCacheForm<
+            super::revision_forms::RevisionSurfaceParameterization<FiniteReal>,
+        >,
+    > {
         self.cache.form().map(|form| &form.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -2208,7 +2222,11 @@ impl LoftSurfacePayload {
 impl SweepSurfacePayload {
     pub(super) fn revision_cache(
         &self,
-    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
+    ) -> Option<
+        &super::revision_forms::RevisionCacheForm<
+            super::revision_forms::RevisionSurfaceParameterization<FiniteReal>,
+        >,
+    > {
         self.native
             .as_ref()
             .and_then(|construction| construction.cache.form())
@@ -2216,9 +2234,9 @@ impl SweepSurfacePayload {
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.native
                 .as_mut()
                 .and_then(|construction| construction.cache.form_mut())
@@ -2231,14 +2249,18 @@ impl SweepSurfacePayload {
 impl DeformableSurfacePayload {
     pub(super) fn revision_cache(
         &self,
-    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
+    ) -> Option<
+        &super::revision_forms::RevisionCacheForm<
+            super::revision_forms::RevisionSurfaceParameterization<FiniteReal>,
+        >,
+    > {
         self.construction.cache.form().map(|form| &form.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.construction
                 .cache
                 .form_mut()
@@ -2251,14 +2273,18 @@ impl DeformableSurfacePayload {
 impl BlendSurfacePayload {
     pub(super) fn revision_cache(
         &self,
-    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
+    ) -> Option<
+        &super::revision_forms::RevisionCacheForm<
+            super::revision_forms::RevisionSurfaceParameterization<FiniteReal>,
+        >,
+    > {
         self.cache.form().map(|construction| &construction.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache
                 .form_mut()
                 .map(|construction| &mut construction.cache),
@@ -2274,15 +2300,15 @@ impl VariableBlendSurfacePayload {
     /// method, so the payload lends no admitted interior.
     pub(super) fn write_cache_fit_tolerance(
         &mut self,
-        value: Option<super::FitTolerance>,
-    ) -> Result<(), super::CacheContractError> {
-        super::set_variable_blend_cache(&mut self.construction.cache, value)
+        value: Option<super::legacy_cache::FitTolerance>,
+    ) -> Result<(), super::legacy_cache::CacheContractError> {
+        super::procedural_surfaces::set_variable_blend_cache(&mut self.construction.cache, value)
     }
 
     pub(super) fn scale_cache_fit_tolerance(
         &mut self,
         scale: crate::scalar::PositiveReal,
-    ) -> Result<(), super::CacheContractError> {
+    ) -> Result<(), super::legacy_cache::CacheContractError> {
         self.construction.cache.scale_fit_tolerance(scale)
     }
 }
@@ -2368,7 +2394,7 @@ impl LawSurfacePayload {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         match &self.construction.tail {
-            crate::geometry::LawSurfaceTail::Full { cache } => Some(*cache),
+            crate::geometry::laws::LawSurfaceTail::Full { cache } => Some(*cache),
             _ => None,
         }
     }
@@ -2378,7 +2404,7 @@ impl LawSurfacePayload {
     /// the slot is required.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
         match &mut self.construction.tail {
-            crate::geometry::LawSurfaceTail::Full { cache } => {
+            crate::geometry::laws::LawSurfaceTail::Full { cache } => {
                 Some(LegacyCacheSlot::Required(cache))
             }
             _ => None,

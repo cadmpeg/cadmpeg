@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::wire;
 
@@ -112,7 +113,7 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     assert_eq!(suffix.terminal_reference, 49);
 
     let error = load_tampered_object_record(&native, |record| {
-        record["repeated_reference_suffix"]["terminal_reference"] = serde_json::json!(50);
+        record["repeated_reference_suffix"]["terminal_reference"] = cadmpeg_core::json!(50);
     });
     assert!(error.contains("repeated_reference_suffix"), "{error}");
 }
@@ -129,9 +130,9 @@ fn load_tampered_object_record(
         .arenas_mut()
         .get_mut("object_graph_records")
         .expect("object-record arena");
-    let mut record = serde_json::to_value(&arena[0]).unwrap();
+    let mut record = json::to_value(&arena[0]).unwrap();
     tamper(&mut record);
-    arena[0] = serde_json::from_value(record).unwrap();
+    arena[0] = json::from_value(record).unwrap();
     match crate::native::CatiaNative::load(&namespace) {
         Ok(_) => panic!("tampered object record loaded"),
         Err(error) => error.to_string(),
@@ -152,7 +153,7 @@ fn native_namespace_rejects_an_object_record_subtype_disagreeing_with_its_payloa
     );
 
     let error = load_tampered_object_record(&native, |record| {
-        record["subtype"] = serde_json::json!("Empty");
+        record["subtype"] = cadmpeg_core::json!("Empty");
     });
     assert!(error.contains("subtype"), "{error}");
 }
@@ -217,13 +218,10 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         ]
     );
 
-    let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
+    let mut wire = json::to_value(&native.entity_records[0]).unwrap();
     wire["numeric_pair"]["slots"][0] =
-        serde_json::to_value(crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 8 })
-            .unwrap();
-    assert!(
-        serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err()
-    );
+        json::to_value(crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 8 }).unwrap();
+    assert!(json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err());
 }
 
 #[test]
@@ -453,10 +451,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("store reference-signature cohort");
     let mut cohorts: Vec<serde_json::Value> =
         namespace.arena_as("reference_signature_cohorts").unwrap();
-    cohorts[0]["second_reference"] = serde_json::json!(6);
+    cohorts[0]["second_reference"] = cadmpeg_core::json!(6);
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "reference_signature_cohorts",
             &cohorts,
         )

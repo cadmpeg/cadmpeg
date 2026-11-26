@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -235,7 +236,7 @@ fn relation_program_output_entity_serializes_its_class_name() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
-    let wire = serde_json::to_value(super::super::CatiaEntityRecordWire::from(
+    let wire = json::to_value(super::super::CatiaEntityRecordWire::from(
         native.entity_records[1].clone(),
     ))
     .expect("serialize entity record wire");
@@ -384,7 +385,8 @@ fn relation_input_index_matches_parameter_with_optional_ordinal() {
 
 #[test]
 fn complete_relation_program_inputs_transfer_typed_parameters() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
@@ -512,7 +514,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
 #[test]
 fn complete_relation_program_output_transfers_a_typed_result() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));

@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{native_stream, unique_feature_match, ProjectInputs, DESIGN_LENGTH_TO_MILLIMETRE};
-use crate::{
-    design::decode::operands::{face_source_record_is_registered, FaceSourceType},
-    loss::F3dLossCode,
-    records::feature::scope::DesignParameterScope,
+use crate::design::decode::operands::face_sources::{
+    face_source_record_is_registered, FaceSourceType,
 };
-use cadmpeg_ir::{
-    features::{FeatureDefinition, FeatureOperation, PlanarProfileRef},
-    report::loss::LossNote,
-    scalar::PositiveLength,
-};
+use crate::loss::F3dLossCode;
+use crate::records::feature::scope::DesignParameterScope;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
 
 pub(super) fn project(
     scope: &DesignParameterScope,

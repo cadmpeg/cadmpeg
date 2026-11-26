@@ -23,13 +23,9 @@ fn support_ownership_survives_the_absence_of_projected_topology() {
         ir.model = Default::default();
         let mut surface = edgeless_doc().geometry.surfaces.remove(0);
         surface.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
-            format: cadmpeg_ir::CodecFormat::Iges,
+            format: cadmpeg_ir::codec_id!("iges"),
             geometry_role: Some(role),
             object_id: cadmpeg_core::nonblank_literal!("D1"),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         });
         ir.geometry.surfaces.push(surface);
@@ -103,7 +99,8 @@ fn independent_curve_preserves_its_active_parameter_interval() {
         id: CurveId::mint("test:model:curve#active").unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
@@ -142,11 +139,11 @@ fn independent_curve_preserves_its_active_parameter_interval() {
 
 #[test]
 fn independent_exact_surface_preserves_its_active_uv_rectangle() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload;
     use cadmpeg_ir::geometry::{
-        nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-        surface_payloads::ExactSurfacePayload,
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry,
+        ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     let nurbs = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
@@ -219,23 +216,18 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
 
 #[test]
 fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
-    use cadmpeg_ir::geometry::{
-        surface_payloads::SubsetSurfaceConstruction, ProceduralSurface,
-        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction;
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface, SurfaceGeometry};
     for senses in [Some(true), None] {
         for independent in [false, true] {
             let mut ir = CadIr::empty();
             let mut support = edgeless_doc().geometry.surfaces.remove(0);
             if independent {
                 support.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Fcstd,
+                    format: cadmpeg_ir::codec_id!("fcstd"),
                     geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
                     object_id: cadmpeg_core::nonblank_literal!("authored-plane"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 });
             }
@@ -319,9 +311,9 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
 
 #[test]
 fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
-    use cadmpeg_ir::geometry::{
-        curve_payloads::SubsetCurveConstruction, ProceduralCurve, ProceduralCurveDefinition,
-    };
+    use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::ProceduralCurve;
     let mut ir = CadIr::empty();
     let basis: CurveId = "test:model:curve#basis".try_into().unwrap();
     let construction = ProceduralCurve::new(
@@ -336,7 +328,8 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         source_object: None,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
@@ -397,7 +390,8 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
                     cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap(),
                 ),

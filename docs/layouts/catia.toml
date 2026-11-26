@@ -2897,7 +2897,7 @@ anchor = "| `+49` | `f32le[2]` | counted owner Cartesian Z bounds |"
 name = "eight_reference_construction_tail"
 kind = "byte"
 section = "6.4"
-anchor = "An eight-reference B-family class-`37` rolling-ball construction payload"
+anchor = "An eight-reference B-family class-`37` construction payload"
 size = 14
 
 [[record.field]]
@@ -4219,61 +4219,6 @@ source = "spec"
 anchor = "Each counted record starts"
 
 [[record]]
-name = "consolidated_vertex_wide_roster"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs"
-kind = "byte"
-section = "6.4"
-anchor = "Its wide forward-reference\nproduction is five bytes:"
-size = 5
-
-[[record.field]]
-name = "marker"
-offset = 0
-type = "u8"
-source = "spec"
-anchor = "| `+0` | `u8` | wide roster-reference marker `0e` |"
-value = 14
-
-[[record.field]]
-name = "ordinal"
-offset = 1
-type = "u24"
-endianness = "little"
-source = "spec"
-anchor = "| `+1` | `u24le` | forward allocation ordinal |"
-
-[[record.field]]
-name = "terminal"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| `+4` | `u8` | roster-reference terminal `00` |"
-value = 0
-
-[[record]]
-name = "sphere_pcurve_coordinate_selector"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs"
-kind = "byte"
-section = "6.7"
-anchor = "27-byte coordinate selector"
-size = 27
-endianness = "little"
-
-[[record.field]]
-name = "tag"
-offset = 0
-type = "bytes[3]"
-source = "spec"
-anchor = "27-byte coordinate selector"
-
-[[record.field]]
-name = "coefficients"
-offset = 3
-type = "f64[3]"
-source = "spec"
-anchor = "27-byte coordinate selector"
-
-[[record]]
 name = "surface_weight_row_prefix"
 parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
 kind = "byte"
@@ -4324,6 +4269,86 @@ offset = 3
 type = "u16"
 source = "spec"
 anchor = "leading-repeat count for command `05`"
+
+[[record]]
+name = "surface_weight_symmetric_03_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "Command `01` with row control `0003` or `0007`"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 1
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 3
+
+[[record]]
+name = "surface_weight_symmetric_07_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "Command `01` with row control `0003` or `0007`"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 1
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 7
+
+[[record]]
+name = "consolidated_vertex_wide_roster"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs"
+kind = "byte"
+section = "6.4"
+anchor = "Its wide forward-reference\nproduction is five bytes:"
+size = 5
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | wide roster-reference marker `0e` |"
+value = 14
+
+[[record.field]]
+name = "ordinal"
+offset = 1
+type = "u24"
+endianness = "little"
+source = "spec"
+anchor = "| `+1` | `u24le` | forward allocation ordinal |"
+
+[[record.field]]
+name = "terminal"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| `+4` | `u8` | roster-reference terminal `00` |"
+value = 0
 
 [[record]]
 name = "consolidated_packed_plane_full_u_payload"
@@ -4543,49 +4568,50 @@ source = "spec"
 anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
 
 [[record]]
-name = "surface_weight_symmetric_03_prefix"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+name = "sphere_pcurve_coordinate_selector"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs"
 kind = "byte"
-section = "6.1"
-anchor = "Command `01` with row control `0003` or `0007`"
-size = 3
+section = "6.7"
+anchor = "27-byte coordinate selector"
+size = 27
+endianness = "little"
 
 [[record.field]]
-name = "command"
+name = "tag"
 offset = 0
-type = "u8"
+type = "bytes[3]"
 source = "spec"
-anchor = "Command `01` with row control `0003` or `0007`"
-value = 1
+anchor = "27-byte coordinate selector"
+
+value = [0x41, 0x11, 0x82]
 
 [[record.field]]
-name = "control"
-offset = 1
-type = "u16"
+name = "coefficients"
+offset = 3
+type = "f64[3]"
 source = "spec"
-anchor = "Command `01` with row control `0003` or `0007`"
-value = 3
+anchor = "27-byte coordinate selector"
 
 [[record]]
-name = "surface_weight_symmetric_07_prefix"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+name = "owned_pcurve_wide_channel_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/wire/records.rs"
 kind = "byte"
-section = "6.1"
-anchor = "Command `01` with row control `0003` or `0007`"
+section = "6.3"
+anchor = "the sheet-owned channel header after the knots can instead be `14 <K:u16le>`"
 size = 3
 
 [[record.field]]
-name = "command"
+name = "marker"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "Command `01` with row control `0003` or `0007`"
-value = 1
+anchor = "`14 <K:u16le>`"
+value = 20
 
 [[record.field]]
-name = "control"
+name = "site_count"
 offset = 1
 type = "u16"
+endianness = "little"
 source = "spec"
-anchor = "Command `01` with row control `0003` or `0007`"
-value = 7
+anchor = "This three-byte header repeats the definition-point count `K`."

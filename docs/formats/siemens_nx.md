@@ -4,7 +4,7 @@
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/nx.md`](../layouts/nx.md), generated from `docs/layouts/nx.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/nx.md`](../layouts/nx.md), generated from `docs/layouts/nx.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Format overview
 
@@ -631,6 +631,10 @@ a FREESECT link there is malformed. The CFB directory contains the
 `UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
 `UG_PART/UG_PART` directory path is required.
 
+The sections in `UG_PART/UG_PART` have two stored forms. NX 8 parts store clear
+transmit sections. NX 9 parts store each section as a zlib member. A part without
+a clear transmit section is scanned for zlib members.
+
 Every reachable CFB stream has one exact logical byte span bounded by its
 declared stream size. Storage entries have no stream bytes. Stream payloads are
 addressed by their directory paths; their physical sector chains do not join
@@ -846,7 +850,7 @@ Parasolid XT node type.
 |   29 | POINT   |     40 |  133 | TRIMMED_CURVE | 85 + shift |
 |   30 | LINE    |     67 |  134 | B_CURVE       | 23         |
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
-|   32 | ELLIPSE |    107 |      |               |            |
+|   32 | ELLIPSE |    107 |   67 | SWEPT_SURF    | 53         |
 |   38 | INTERSECTION |  31 |      |               |            |
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
@@ -866,6 +870,17 @@ this ownership transitively through their typed support, spine, basis, pcurve,
 and original-curve slots. A fixed-record-shaped byte run with no such owner is
 not part of the body topology image.
 
+A CHART and a type-141 record of five non-null references are also record
+boundaries for a preceding fixed record. Attribute records of types 79 through 84
+are record boundaries for a preceding fixed record. In a byte scan, a complete
+type-81, type-82, or type-83 record that ends at a record boundary and spans at
+most 16,384 bytes owns its bytes: a fixed-record-shaped byte run inside that record
+is attribute data. The byte bound is a scan heuristic. Schema text and node fields
+can read as an attribute tag with a large count, and the scan reads the nodes
+inside such a longer span. The compact index 81, 82, or 83 of a complete fixed
+record has the same two bytes as these tags, so those bytes belong to the fixed
+record.
+
 Type 38 is the XT `INTERSECTION` node. A first-use declaration may append
 an `intersection_data` pointer to type 204 (`00cc`) `INTERSECTION_DATA`.
 The type-204 declaration gives the node name `INTERSECTION_DATA`, description
@@ -881,11 +896,16 @@ previous-member references. Its owner reference is non-null. A complete
 `MEMBER_OF_FEATURE` frame and the type-38 inline schema header each begin a
 record, so each bounds the fixed record before it.
 
+Type 90 `FEATURE` has `node_id:u32 +4`, then the attributes, owner, next and
+previous references, a one-byte type, and the first-member reference. Its owner
+reference is non-null. A complete `FEATURE` frame also bounds the fixed record
+before it.
+
 ### 4.2 Deltas-stream framing
 
-Deltas streams retain physical history; aggregate change selection is unresolved.
-Every paired or unpaired Deltas stream, including a schema-only stream, has an
-empty semantic view. A paired partition keeps its own input bytes. Raw Deltas
+A Deltas stream holds the main-line history of its paired partition as
+backward deltas; replay (below) gives the state at each main-line mark.
+A paired partition keeps its own input bytes. Raw Deltas
 bytes do not enter Graph, NURBS, intersection, attribute, or native family
 scanners. Primary-only Graph ownership remains a separate obligation.
 
@@ -944,8 +964,7 @@ the exact suffix from that section's start. A failure between sections retains
 from the current cursor. Invalid headers and unsupported bases retain the whole
 input. Type-looking bytes inside consumed fields are payload. No byte search,
 reference match, complement interval, or repaired byte image establishes a
-record start. PMARK counts and map tails frame no production and select no
-current state.
+record start. PMARK counts and map tails frame no production.
 
 Generic native output uses `parasolid_deltas_schemas` and
 `parasolid_deltas_instances`. Enclosing productions use
@@ -1004,8 +1023,47 @@ The initial partition mark is the unique mark with null `preceding`.
 `first_following` names the first successor; `next_sibling` and `prev_sibling`
 link the following marks with the same predecessor. A sibling is not a second
 child. The main line follows the initial mark to the partition's current mark.
-These relations define the partition's PMARK graph. They do not establish
-which aggregate node section implements a constituent delta.
+These relations define the partition's PMARK graph.
+
+**Delta assignment.** The leading section and the first map section hold the
+delta of the current mark. Each PMARK section and the map section after it
+hold the delta of the section's last PMARK; the section's other PMARKs have
+empty deltas. A PMARK section that ends the stream at EOF has the initial mark
+as its last PMARK and holds no node. The delta of a mark `M` has three parts:
+the node images of its leading or PMARK section, the entries of its map
+prefix, and the node images of its map section. Following `preceding` from
+the current mark reaches the initial mark through every main-line mark once.
+The PMARK sections of the main line occur in that order or in the reverse
+order, and the sections of marks off the main line can occur between them.
+
+**Main-line replay.** Each main-line mark other than the initial mark has
+`delta_is_forward` `0`, and its delta is backward. The backward delta of `M`
+turns the state at `M` into the state at the `preceding` mark `P`. The images
+of its leading or PMARK section are the restored nodes, absent at `M` and
+present at `P`. Its map entries name the created nodes, present at `M` and
+absent at `P`. The images of its map section are the older images: the images
+at `P` of nodes present at both marks. The partition and every delta share
+one node-index space. The state at the current mark is the partition. One
+step removes the node of each map entry, adds each restored image, and then
+replaces each node that has an older image by that image. Before the step,
+each map entry names a present node of the entry's kind, each restored image
+names an absent node, each older image names a node of its own kind that
+remains after the removal, and no two restored images and no two older
+images name one node. Every non-null pointer of every state resolves in that
+state, and the state at the initial mark holds no BODY, FACE, EDGE, or VERTEX
+node. A zero-length delta leaves the state unchanged.
+
+**Forward deltas.** A mark with `delta_is_forward` `1` is off the main line.
+Its `preceding` names a main-line mark or another mark off the main line.
+Its delta is forward: it turns the state at `P` into the state at `M`. The
+images of its PMARK section are the nodes present at `M` and absent at `P`.
+Its map entries name the nodes present at `P` and absent at `M`. The images
+of its map section are the images at `M` of nodes present at both marks.
+
+**Feature join.** The GROUP nodes that the change from `P` to `M` creates are
+the GROUP (kind 90) entries of the map of `M`. An operation body-write frame
+that names one of these GROUPs as `group_node` (§7.1) places the operation at
+`M`; the state before the operation is the state at `P`.
 
 
 The first node of each declared type inserts the schema information from
@@ -1189,11 +1247,10 @@ Kind 100 is TRANSFORM, not INSTANCE. BODY, SHELL, FIN, ASSEMBLY, and TRANSFORM
 are outside the member union.
 
 **Deletion framing:** complete enclosing fields own their bytes. A six-byte
-`kind, xmt, 00 01` shape does not establish a deletion event. A deletion needs
-an independently established node frame, target identity, byte extent, and
-owning change. No deletion or numerical BODY scope selects a current state.
-Neither a short nor an extended apparent XMT in this shape certifies a
-deletion endpoint.
+`kind, xmt, 00 01` shape does not establish a deletion event. A node that the
+change from `P` to `M` deletes is a restored node of the delta of `M`
+(§4.2 "Main-line replay"); its frame, node index, and byte extent are those of
+that node image.
 
 ---
 
@@ -1207,6 +1264,8 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 ```
 
 **Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
+
+A FACE on a SPHERE with a null loop reference covers the whole sphere. Its body is closed although it has no EDGE. The neutral model bounds the face with a one-vertex loop at each pole. No face covers a PLANE, CYLINDER, or CONE whole, so a FACE with a null loop reference on one of them states no boundary; the neutral face is partial.
 
 Fixed-record lengths are logical lengths before framing bytes. A frame begins at
 the owned type tag, consumes its first-use schema information, reads the compact
@@ -1241,8 +1300,10 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 A FIN has one of two forms. An edge FIN has `sense` `+` (`2b`) or `-` (`2d`) and bounds the EDGE that `FIN.edge` names. A vertex-loop FIN has `sense` `?` (`3f`), `forward_fin` and `backward_fin` equal to its own xmt, null `other_fin`, and null `edge`; its `vertex` names the VERTEX at which its LOOP bounds the face. A vertex-loop FIN is the single FIN of its LOOP. The vertex-loop form is the complete grammar of a FIN with `sense` `?`.
 
 Within one physical graph view, each fixed-record `(type, XMT)` identity is
-unique. Multiple complete records with the same identity invalidate that
-identity and transfer no node. Delta replacements are resolved before graph
+unique. When a byte scan finds several complete records with the same identity,
+the one record among them that ends at a record boundary transfers. When several
+of them end at a record boundary, or none does, the identity is invalid and
+transfers no node. Delta replacements are resolved before graph
 construction and do not form duplicate identities.
 
 For SHELL, FACE, LOOP, FIN, EDGE, and VERTEX, a non-null `attributes`
@@ -1262,7 +1323,7 @@ referenced list and its instances resolve.
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes                                                                                                                                                                                                                                                                      |
 | edges    | one per EDGE node; `FIN.vertex` is the vertex at the end of its FIN, and a FIN begins at `FIN.other_fin → FIN.vertex`, or at `FIN.backward_fin → FIN.vertex` when `other_fin` is null; a forward `EDGE.fin` runs along its EDGE and a reversed one against it; the EDGE runs along its curve when the curve's common-header sense is `+` and against it when the sense is `-`; canonical start/end order follows the curve direction and each coedge sense is relative to that order; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
-| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE; a LOOP whose `fin` is a vertex-loop FIN of that LOOP is a vertex loop, and its boundary is the vertex at `FIN.vertex → VERTEX.point`; a vertex loop whose vertex has no resolved POINT is omitted from its FACE |
+| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE; a LOOP whose `fin` is a vertex-loop FIN of that LOOP is a vertex loop, and its boundary is the vertex at `FIN.vertex → VERTEX.point`; a vertex loop whose vertex has no resolved POINT is omitted from its FACE; a FACE from which a LOOP is omitted is partial |
 | faces    | one per FACE node, with resolved surface when available; its orientation relative to an analytic surface's stored parameter frame is the composition of the FACE sense and the surface common-header sense                                                                                                                               |
 | bodies   | one per validated body-shape SHELL                                                                                                                                                                                                                                                                                                         |
 
@@ -1321,7 +1382,10 @@ reference is the carrier path. When it resolves through
 `TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's
 surface and pcurve define a procedural parametric surface curve. Its finite
 domain is the trim interval, or the solved NURBS pcurve knot domain when the FIN
-references the SP_CURVE directly.
+references the SP_CURVE directly. Each FIN of a tolerant edge can carry its own
+curve. When the curve of the first FIN does not resolve, the curve of the radial
+partner FIN is the carrier path. The first FIN of such an edge can be on a swept
+surface; open item PS-44 holds the parameterization of that surface.
 A FIN pcurve attaches to a coedge only when its `SP_CURVE.surface` and the
 owning `FACE.surface` reference the same surface in the same physical stream,
 and evaluation through that surface reaches both edge vertices within the
@@ -1337,7 +1401,7 @@ BODY, REGION, and SHELL records contain no placement reference. POINT coordinate
 
 Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `region_ref` are non-null; `first_face`→FACE in the SHELL's stream. A null `face_anchor` requires the `FACE.next` walk to close at null with visited faces back-referencing the SHELL. A non-null `face_anchor` equals `first_face` and selects all FACE records that back-reference the SHELL.
 
-**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
+**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces. A null-vertex EDGE can have a partner FIN with a null loop, null forward and backward references, and a null vertex. This partner closes the EDGE at the same point as the FIN in the loop.
 
 ---
 
@@ -1412,9 +1476,13 @@ The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4
 
 Degree, pole-count, and distinct-knot-count fields have no additional numeric ceiling beyond their encoded integer widths. The basis cardinality and the complete counted control, multiplicity, and knot lanes are the validity bounds. Multiplicity and knot arrays hold at least the distinct-knot count of entries, and every entry past that count has zero multiplicity. Every distinct knot has a positive multiplicity, and the expanded knot count is exactly `pole_count + degree + 1` in each direction. Every weight is positive.
 
+#### 6.2.1 Swept surface (SWEPT_SURF 67)
+
+**SWEPT_SURF (67):** header through sense `+18`, section curve ref `+19` (large-index capable), unit `sweep` vector `+21`, `scale:f64 +45`, length `53`. Transfer gives a linear sweep of the section curve along `sweep × scale`, in millimetres. The header sense gives the face normal in the same way as an analytic surface. Open item PS-44 holds the surface parameterization.
+
 ### 6.3 Procedural intersection curves (type 38)
 
-NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`.
+NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`, as in older schemas such as `SCH_2400143`. A byte scan reads every type-38 record after that declaration in its stream with six references. A type-38 record that no such declaration precedes has five references when a record tag is at the sixth reference and no record tag is after it.
 
 The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, construction references, and the type-38 nodetype’s inflated-stream offset. First-use and subsequent instances share one type identity.
 
@@ -1435,12 +1503,10 @@ first-use schema declaration and an ordinary subsequent nodetype do not create
 separate construction families or identity namespaces. A selected image has
 one construction per XMT. Duplicate XMTs leave that construction unresolved,
 including records with identical fields. Record spelling provides no priority. Repeated XMTs in a Deltas aggregate are
-saved states on pmark transitions. Their chart, supports, witnesses and sense
-belong to the selected type-38 state. Physical order alone does not identify
-the current state; the paired partition supplies its current image.
-An unselected Deltas type-38 image or deletion does not modify that partition
-relation. Its saved fields and event offset remain separate from the current
-construction.
+images at different main-line marks. Their chart, supports, witnesses and sense
+belong to the type-38 node of the replayed state that holds the image (§4.2
+"Main-line replay"). Physical order alone does not identify a state; the paired
+partition supplies the current image.
 
 The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a complete intersection witness relation. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 pointer fields carry binary status bytes (`00` or `01`); the status is separate from the reference identity.
 
@@ -1533,7 +1599,7 @@ parameter_error[2]:f64   (sentinel pair -31415800000000.0)
 count × Hvec              (Hvec block always starts at pre+52, pre = end of count+xmt)
 ```
 
-The counted description in the physical Parasolid transmit header selects the Hvec row width. The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. A `TRANSMIT FILE (partition)` description or a `TRANSMIT FILE created` description without a subtype selects **`xyz3`**: 24-byte `(x,y,z)` rows in metres. A `TRANSMIT FILE (deltas)` description selects **`ext11`**: 88-byte `(x,y,z, p3,p4,p5,p6, tx,ty,tz, t)` rows. The schema token and record-local coordinates do not select the width. A malformed or unrecognized description, including `MESH FILE`, does not establish a Hvec layout. Layout selection precedes the semantic checks for a unit tangent and strictly increasing native `t`; failure of those checks does not select another row width. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. For an `xyz3` chart, `t_0 = base_parameter` and `t_{k+1} = t_k + chord_k · base_scale`, with chords in metres. An `ext11` chart retains its serialized native `t` values; accumulated chords do not replace them. `chordal_error` defines the verification tolerance for chart-hosted carriers. `base_parameter` is finite, and `base_scale` is finite and nonzero. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
+The counted description in the physical Parasolid transmit header selects the Hvec row width. The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. A `TRANSMIT FILE (partition)` description or a `TRANSMIT FILE created` description without a subtype selects **`xyz3`**: 24-byte `(x,y,z)` rows in metres. A `TRANSMIT FILE (deltas)` description selects **`ext11`**: 88-byte `(x,y,z, p3,p4,p5,p6, tx,ty,tz, t)` rows. The schema token and record-local coordinates do not select the width. A malformed or unrecognized description, including `MESH FILE`, does not establish a Hvec layout. Layout selection precedes the semantic checks for a unit tangent and strictly increasing native `t`; failure of those checks does not select another row width. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. For an `xyz3` chart, `t_0 = base_parameter` and `t_{k+1} = t_k + chord_k · base_scale`, with chords in metres. An `ext11` chart retains its serialized native `t` values; accumulated chords do not replace them. `chordal_error` defines the verification tolerance for chart-hosted carriers. A chart with points on one straight line can state a `chordal_error` of zero, because the points give the line exactly. A curved chart states a positive `chordal_error`. `base_parameter` is finite, and `base_scale` is finite and nonzero. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
 
 The leading count is positive and the complete Hvec lane is the record boundary. A chart carrier requires at least two distinct model-space points. No additional numeric ceiling applies.
 
@@ -1542,7 +1608,11 @@ Each physical direct or escaped CHART_s record remains a distinct typed source r
 **LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,
 XMT, the one-byte limit type and inserted one-byte `term_use` field, and exactly
 that many Hvec rows. Their two bytes form the endpoint discriminator.
-Form `L?` has count `1`; forms `TF` and `TS` have count `2`. The count and
+Form `L?` has count `1`; forms `TF` and `TS` have count `2`. Older schemas, such
+as `SCH_2400143`, store the limit type alone. Their one-byte forms are `L` with
+count `1` and `T` with count `2`. Form `L` before a coordinate that starts with
+byte `3f` has the same two bytes as form `L?`. The form is the one whose rows end
+at a record tag. The count and
 discriminator remain separate fields. Partition `xyz3` rows
 contain three model-space coordinates in metres. Deltas `ext11` rows contain
 `x, y, z, u0, u1, v0, v1, tx, ty, tz, t`, all big-endian binary64. The support
@@ -1641,15 +1711,23 @@ chart tolerance.
 
 ### 6.5 Rolling-ball blend surface (BLEND_SURF 56)
 
+A subtype `E` record has the same fields as a subtype `R` record. One support of a subtype `E` record is a subtype `R` record with zero offsets. That zero-radius record has collapsed onto its spine, so the ball touches the other support and passes through that spine. In a type-38 record without a support-UV reference, a type-59 blend bound can be in the first support slot. The bound resolves to its blend surface in either slot. A blend face with closed edges on a closed spine covers the complete spine domain, independent of the parameters that its pcurves reach.
+
 A BLEND_SURF FACE is a procedural canal or envelope surface. Record layout:
 
 ```text
 compact header through sense +18
-subtype byte +19            (`0x52` / `R` = rolling-ball)
+subtype byte +19            (`0x52` / `R` = rolling-ball, `0x45` / `E` = cliff-edge)
 support refs +20,+22,+24    (large-index capable): support 0, support 1, spine
 4 × f64                     values = (range[0], range[1], thumb_weight[0], thumb_weight[1])
 4 × xmt tail refs           `1` (null references)
 ```
+
+A constant circular BLEND_SURF without a section cache has a surface parameter
+`u` along its spine and a parameter `v` across the section, from the contact on
+support 0 at `v = 0` to the contact on support 1 at `v = 1`. The section center is
+at the blend radius from both supports. A blend rail is that contact, where the
+blend and its support are tangent. A degree-one CHART_s node parameter is cumulative chord length in metres.
 
 A BLEND_SURF used by a FACE transfers as a procedural surface carrier. The
 carrier references the complete typed source record. The carrier and blend
@@ -1900,16 +1978,14 @@ position tokens use the non-null operation-state index encoding. Rows retain
 order, exact tokens, and source offsets. The table ends before the state-counter
 map with either no boundary bytes or the exact `01 01` boundary marker.
 
-In the retained `Drone Wing Chassis - Small wing radius.prt`,
-`Drone Wing Chassis - Small wing radius -90 degree.prt`, and
-`Drone Wing Chassis.prt` tables, all 261 endpoint values fall within the
+In three retained part tables, all 261 endpoint values fall within the
 zero-based row-ordinal ranges of their following counter maps, which contain 1,073, 1,109,
 and 1,447 rows respectively. Each table's largest endpoint equals its last
 counter-row ordinal. List positions are a separate lane; a position can exceed
 the counter-row count. An endpoint does not directly contain the counter row's
 object-index value: 69 of 70, 71 of 73, and 66 of 66 distinct endpoints,
 respectively, do not occur in that value lane. Aligning equal list positions
-or pair tags within corresponding group and row ordinals in the two small-wing
+or pair tags within corresponding group and row ordinals in the first two
 tables yields 81 uses of a bijection between 70 endpoint identities. These
 observations support a save-local counter-row ordinal relation; they do not
 supply a Boolean suppression value or a unique operation-to-state-object binding.
@@ -3006,7 +3082,7 @@ Each persistent-handle identity separately counts serialized occurrences in OM/c
 
 **Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The containing record depends on the addressed records; the addressed records have the containing record as a dependent. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order, and inverse dependent order follows containing-record ordinal.
 
-### 7.2 Partition images and unresolved Deltas selection
+### 7.2 Partition images and Deltas states
 
 A complex part contains current body images and historical or tool bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. `RMFastLoad` object-ID membership identifies the current body images. Multiple decisively represented images are distinct current bodies. When membership does not distinguish current images from historical or tool bodies, the final body set requires the operand bindings and order encoded by NX OM feature-history records.
 
@@ -3015,8 +3091,10 @@ contains its owner token, UTF-8 title and value, schema type, PDM-ownership flag
 and record version. These part-level values transfer as document attributes;
 the native record retains the remaining ownership and schema fields.
 
-Current decoding uses the partition image unchanged. No aggregate Deltas stream
-has an established selection, so neither replacements nor deletions are applied.
+The partition image is the state at the current mark. The paired Deltas
+stream gives the state at each earlier main-line mark by the replay of §4.2.
+A Deltas stream pairs with the partition stream that precedes it in the same
+carrier.
 
 A delta contains a unidirectional change between two adjacent pmarks. An
 aggregate transmit can contain several such changes. Its physical node order
@@ -3027,21 +3105,14 @@ selects a revision interval.
 The WORLD `body` pointer identifies the head of the current BODY chain.
 BODY `owner`, `next`, and `previous` are separate pointers; they are not pmark
 identifiers. WORLD `current_id` identifies the current pmark, and `highest_id`
-is the highest pmark identifier in the partition. A change applies through its identified
-source and target pmarks in the owning partition, not through a source-order
-reset of an unrelated integer field.
+is the highest pmark identifier in the partition. A change applies through its
+source and target pmarks in the owning partition (§4.2 "Delta assignment"),
+not through a source-order reset of an unrelated integer field.
 
-Within an identified change, a full node with an existing `(type, xmt)` key
-replaces that node; a previously absent key adds a node. Equal numeric XMT
-values in separate partition namespaces do not identify one node. An
-unestablished change boundary supplies no current-state selection.
-
-Replay of an aggregate requires its constituent frame, an owned directed pmark
-edge, and that edge's input state. Physical stream pairing is provenance.
-Aggregate records do not replace saved Partition or Plain image geometry,
-become standalone neutral geometry or semantic residuals, update primary
-GROUP membership, or establish appearance and operation-result bindings to
-those images. A saved image does not certify regenerated current design.
+Equal numeric XMT values in separate partition namespaces do not identify one
+node. A replayed state is a complete node set: its bodies, topology, geometry,
+attributes, and GROUPs read as those of a partition image. Attribute
+definitions stay in the partition and resolve from every state.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
@@ -3058,9 +3129,9 @@ is omitted by membership.
 
 Across the ordered feature-history sections, the newest record area's last non-`DELETE` body-write frame for one body identity is that body's latest writer and current image. Older record areas retain historical write-state images. A segment-bound image exists before the retained operations when it has no decoded writer. The two body-object indices in a segment tuple are aliases for one body image and are interchangeable in operand fields. Plain cached-body aliases also use the body-identity namespace and bind equal body-write identities; partition-stream aliases do not. Alias equality closes transitively across tuples that share either index; the smallest index canonically identifies the connected alias component. A `DELETE` consumes its direct primary body. A later Boolean consumes each tool image; a later `SEW` or `TRIM BODY` consumes each typed body operand. Consumption applies only when the image's latest writer precedes the consuming operation, and a still later writer supersedes it. Every segment binding receives one terminal or consumed lineage status when the complete ordered history resolves atomically. A lineage mapping is complete only when one status exists for every validated segment binding and those bindings cover every emitted partition image. An empty ordered operation set is complete: each bound image is an initial terminal image. Missing or ambiguous status, or incomplete image coverage, leaves lineage selection unresolved and retains every emitted image. A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection. Terminal selection retains at least one but fewer than all images; an all-terminal mapping is retained without pruning.
 
-A deletion relation requires an established node frame, exact target key,
-and owning change. A type-looking byte run inside a complete node or map
-supplies none of those relations.
+A deleted node is a restored node of the delta of the mark whose change
+deletes it (§4.2 "Main-line replay"). A type-looking byte run inside a
+complete node or map is payload.
 
 A complete `GROUP` record retains its source stream, XMT identity, kernel node
 identity, ordered references, byte extent, and inflated-stream offset. A GROUP
@@ -3097,8 +3168,8 @@ and `schema_embedding_map`. An empty array supplies no relation between a
 reference and a deletion target.
 
 BODY and WORLD field roles are defined in §4.2. The partition's current
-roots and pmark identity identify its current state. Aggregate Deltas
-section-to-change binding remains separate. A BODY's highest node
+roots and pmark identity identify its current state; §4.2 "Delta assignment"
+binds the Deltas sections to their marks. A BODY's highest node
 identifier and physical position do not define a revision counter or
 snapshot delimiter.
 
@@ -3273,3 +3344,11 @@ handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 ```
 
 `length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores. `expression` is a finite decimal scalar or formula. Context-free arithmetic uses parentheses, unary signs, `^`, `*`, `/`, `+`, and `-`. Formula parameter references use `p<decimal-index>` tokens. The nearest preceding `hostglobalvariables` marker supplies table identity. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.
+
+## 10. Given-up records
+
+A Parasolid record is a part (CADIR §3.3): the bytes of the complete record, from its offset in the inflated stream. The decoder gives up a record that it reads and then refuses as a `parasolid-record` part in the stream `nx:parasolid#<index>:<kind>`, where `<index>` is the stream index and `<kind>` is the stream kind. The part is contained in the retained record `nx:container:parasolid#<index>`, which holds the inflated stream, so the part keeps the length and the digest of its bytes. These records are a refused NURBS carrier, a carrier whose control values do not resolve, a CONE or TORUS whose fields state a form that has no surface, and a SHELL that has no admitted FACE. A BODY that has no emitted SHELL and has a given-up SHELL is dropped with that SHELL: the charge of the SHELL names the body id `nx:s<index>:body#<xmt>`. A BODY that has no emitted SHELL and no given-up SHELL is a `parasolid-record` part of its own.
+
+An indexed object-model entry is a part. When the section search of an entry stops at its work bound, the decoder gives up the entry as an `om-entry` part in the stream `nx:container`, at the file offset of the entry, with the entry path as its name. The part keeps the entry's bytes when they fit the retained-byte allowance, and their length and digest otherwise.
+
+When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges `nx/native.attachment-failed` and one `record.unreadable` that names `nx:container` (CADIR §3.3). Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.

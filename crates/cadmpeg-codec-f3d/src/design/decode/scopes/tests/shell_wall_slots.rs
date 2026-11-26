@@ -7,6 +7,7 @@ use crate::records::feature::direct_face::{
 };
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::loss::LossNote;
 
 const SHELL_TYPE_GUID: &str = "E8063467-BC05-4688-8196-AECB90F0EFEE";
@@ -201,9 +202,9 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
     };
     use crate::records::topology::construction::DesignConstructionOperandGroup;
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, ShellJoin, ShellMode,
-    };
+    use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = Fixture::new(Some(INSIDE), Some(OUTSIDE)).decode().unwrap();
     assert_eq!(operation.thickness.get(), 0.25);
@@ -224,7 +225,7 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         panic!("expected a Shell scope");
     };
     *slot = Some(operation);
-    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+    let group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#91",
         "scope_record_index": 90,
         "scope_reference_ordinal": 0,
@@ -254,8 +255,12 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         removed_faces,
         join,
         ..
-    })) = crate::design::feature_project::project_shell(&scope, &[], std::slice::from_ref(&group))
-        .unwrap()
+    })) = crate::design::feature_project::direct_face::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    )
+    .unwrap()
     else {
         panic!("expected a neutral Shell");
     };
@@ -274,7 +279,7 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         removed_faces,
         bodies,
         ..
-    })) = crate::design::feature_project::project_shell(&scope, &[], &[]).unwrap()
+    })) = crate::design::feature_project::direct_face::project_shell(&scope, &[], &[]).unwrap()
     else {
         panic!("expected an unresolved Shell");
     };

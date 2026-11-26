@@ -10,14 +10,62 @@ const WIRE_10_CHANGES: &str = "wire 11 writes each enum value's variant under `k
      holds the topology arenas under `geometry` instead of `model`, records `scope` instead of \
      `decode_depth`, and writes `design` and `process`";
 
-/// The refusal of a document whose `ir_version` is not [`IR_VERSION`].
-pub(super) fn unsupported_version(version: Option<&str>) -> String {
-    match version {
-        Some("10") => {
-            format!("unsupported ir_version \"10\"; expected {IR_VERSION}; {WIRE_10_CHANGES}")
-        }
-        _ => format!("unsupported ir_version {version:?}; expected {IR_VERSION}"),
+/// The refusal of a `model` member that names an arena the wire omits,
+/// given the reader's refusal `message`. Earlier builds of wire 11 wrote these
+/// arenas.
+pub(super) fn omitted_arena_refusal(message: &str) -> Option<String> {
+    // The model reader lists its members from `assets`, the first arena of the
+    // `model` home; a record nested in the model lists its own.
+    let arena = super::ArenaName::WIRE_OMITTED.iter().find(|arena| {
+        message.contains(&format!(
+            "unknown field `{}`, expected one of `assets`",
+            arena.key()
+        ))
+    })?;
+    Some(format!(
+        "{message}; `model.{}` is a design arena that an earlier build of wire {IR_VERSION} \
+         wrote and the current wire omits; decode the source file again",
+        arena.key()
+    ))
+}
+
+/// The hint a read reports with an ignored `model` member that names an
+/// arena the wire omits.
+pub(super) fn omitted_arena_hint(key: &str) -> String {
+    if super::ArenaName::WIRE_OMITTED
+        .iter()
+        .any(|arena| arena.key() == key)
+    {
+        format!(
+            "; `model.{key}` is a design arena that an earlier build of wire {IR_VERSION} \
+             wrote and the current wire omits; decode the source file again"
+        )
+    } else {
+        String::new()
     }
+}
+
+/// What a wire 9 reader must change to read wire 10.
+const WIRE_9_CHANGES: &str = "wire 10 names the trailing pair of an ASM inline pcurve `uv_offset` in place \
+     of `parameter_range`, adds an optional `uv_offset` to the general pcurve form, and adds the root \
+     members `fragment` and `repro` and the `point_clouds` arena";
+
+/// What a wire 8 reader must change to read wire 9.
+const WIRE_8_CHANGES: &str =
+    "wire 9 lists the sketches a product definition owns in `ProductDefinition.sketches`";
+
+/// The refusal of a document whose `ir_version` is not [`IR_VERSION`].
+pub(super) fn unsupported_version(version: Option<&serde_json::Value>) -> String {
+    let Some(version) = version else {
+        return format!("no `ir_version`; expected {IR_VERSION}");
+    };
+    let changes = match version.as_str() {
+        Some("10") => WIRE_10_CHANGES.to_owned(),
+        Some("9") => format!("{WIRE_9_CHANGES}; and {WIRE_10_CHANGES}"),
+        Some("8") => format!("{WIRE_8_CHANGES}; {WIRE_9_CHANGES}; and {WIRE_10_CHANGES}"),
+        _ => return format!("unsupported ir_version {version}; expected {IR_VERSION}"),
+    };
+    format!("unsupported ir_version {version}; expected {IR_VERSION}; {changes}")
 }
 
 #[cfg(test)]
@@ -214,13 +262,64 @@ mod tests {
     }
 
     #[test]
-    fn earlier_wire_refusal_is_generic() {
+    fn wire_9_refusal_names_the_wire_10_and_wire_11_changes() {
         let document = WIRE_10_UNIT_CUBE.replacen(r#""ir_version":"10""#, r#""ir_version":"9""#, 1);
         let error = CadIr::from_json(&document).unwrap_err().to_string();
         assert!(
-            error.contains("unsupported ir_version Some(\"9\"); expected 11"),
+            error.contains("unsupported ir_version \"9\"; expected 11; wire 10 names"),
             "{error}"
         );
-        assert!(!error.contains("wire 11"), "{error}");
+        for change in [
+            "`uv_offset`",
+            "`fragment` and `repro`",
+            "`point_clouds`",
+            "wire 11 writes",
+        ] {
+            assert!(error.contains(change), "{error}");
+        }
+        assert!(!error.contains("wire 9 lists"), "{error}");
+    }
+
+    #[test]
+    fn wire_8_refusal_names_each_later_wire_change() {
+        let document = WIRE_10_UNIT_CUBE.replacen(r#""ir_version":"10""#, r#""ir_version":"8""#, 1);
+        let error = CadIr::from_json(&document).unwrap_err().to_string();
+        assert!(
+            error.contains("unsupported ir_version \"8\"; expected 11; wire 9 lists"),
+            "{error}"
+        );
+        for change in [
+            "`ProductDefinition.sketches`",
+            "wire 10 names",
+            "wire 11 writes",
+        ] {
+            assert!(error.contains(change), "{error}");
+        }
+    }
+
+    #[test]
+    fn missing_version_refusal_says_so() {
+        let document = WIRE_10_UNIT_CUBE.replacen(r#""ir_version":"10","#, "", 1);
+        let error = CadIr::from_json(&document).unwrap_err().to_string();
+        assert!(error.contains("no `ir_version`; expected 11"), "{error}");
+    }
+
+    #[test]
+    fn omitted_arena_refusal_names_the_arena() {
+        let mut document: serde_json::Value = serde_json::from_str(
+            &crate::examples::unit_cube()
+                .unwrap()
+                .to_canonical_json()
+                .unwrap(),
+        )
+        .unwrap();
+        document["model"]["parameters"] = cadmpeg_core::json!([]);
+        let error = CadIr::from_json(&document.to_string())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`model.parameters` is a design arena"),
+            "{error}"
+        );
     }
 }

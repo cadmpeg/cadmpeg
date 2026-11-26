@@ -238,7 +238,7 @@ fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
                 }
                 Some(())
             };
-            for loop_id in &face.loops {
+            for loop_id in face.loops.boundary()? {
                 let boundary = loops.get(loop_id.as_str())?;
                 if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } =
                     &boundary.boundary
@@ -265,7 +265,7 @@ fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
 mod tests {
     use super::face_vertices;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::ids::{FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Face, FaceLoops, Loop, LoopBoundary, Point, Sense, Vertex};

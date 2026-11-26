@@ -7,13 +7,13 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError},
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
@@ -48,12 +48,15 @@ fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
 #[derive(Debug, Default)]
 pub(crate) struct LaneRefusals {
     notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Source records already charged `record.unreadable`, so a record two
+    /// routes read and refuse is given up once.
+    given_up: std::collections::BTreeSet<cadmpeg_ir::ids::Identity>,
 }
 
 impl LaneRefusals {
     /// An empty sink.
     pub(crate) fn new() -> Self {
-        Self { notes: Vec::new() }
+        Self::default()
     }
 
     /// Take every refusal recorded so far, in the order the readers stated
@@ -62,12 +65,44 @@ impl LaneRefusals {
         std::mem::take(&mut self.notes)
     }
 
-    /// How many refusals the sink holds.
+    /// How many refusals the sink holds, not counting the `record.unreadable`
+    /// that accompanies a given-up record.
     ///
     /// The router reads this before and after a route, so it can state how
     /// many records a route refused before it transferred no model.
     pub(crate) fn note_count(&self) -> usize {
-        self.notes.len()
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        self.notes
+            .iter()
+            .filter(|note| note.code != unreadable)
+            .count()
+    }
+
+    /// Record `why` and give up the source record `source`, whose carrier
+    /// the document then holds nowhere.
+    fn give_up(
+        &mut self,
+        source: cadmpeg_ir::ids::Identity,
+        why: cadmpeg_ir::report::loss::LossNote,
+    ) {
+        if self.given_up.contains(&source) {
+            self.notes.push(why);
+        } else {
+            self.notes
+                .extend(cadmpeg_ir::unknown::part::record_given_up(
+                    source.clone(),
+                    why,
+                ));
+            self.given_up.insert(source);
+        }
+    }
+
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
     }
 
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
@@ -204,15 +239,21 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+        )));
+    }
+
     pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
             "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
         )));
     }
 
-    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
-        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
-            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+    pub(crate) fn push_plane_pcurve_projected(&mut self, source: usize, gap: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlanePcurveProjected.note(format!(
+            "Projected the class-18 model curve at offset {source} onto its compatible plane. Positive rational weights bound the lift discrepancy by the largest control-point distance, {gap:.9} mm."
         )));
     }
 
@@ -372,11 +413,7 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) {
-        self.notes.push(
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-            "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-        )),
-        );
+        self.notes.push(lane_refusal_note(record, error));
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -404,6 +441,15 @@ impl LaneRefusals {
             )),
         );
     }
+}
+
+fn lane_refusal_note(
+    record: impl std::fmt::Display,
+    error: &cadmpeg_ir::geometry::nurbs::NurbsError,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+        "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
+    ))
 }
 
 /// Whether a source-stated parameter range is readable, and a named refusal in
@@ -440,6 +486,27 @@ pub(crate) fn note_refusal<T>(
         Ok(value) => Some(value),
         Err(error) => {
             refusal.push(record, &error);
+            None
+        }
+    }
+}
+
+/// Record a carrier refusal against the source record that stated it, give
+/// that record up under its source object key `source`, and answer `None`.
+///
+/// This is [`note_refusal`] for a reader of a source carrier record, whose
+/// refused lanes leave the document without that carrier; a carrier the
+/// decoder derives from records it keeps goes through [`note_refusal`].
+pub(crate) fn give_up_refused<T>(
+    result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
+    refusal: &mut LaneRefusals,
+    record: impl std::fmt::Display,
+    source: cadmpeg_ir::ids::Identity,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            refusal.give_up(source, lane_refusal_note(record, &error));
             None
         }
     }
@@ -763,9 +830,9 @@ pub(crate) fn reverse_helix_definition(
         }
         Some((
             ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                     angle_range.get(),
-                    cadmpeg_ir::geometry::HelixFrame {
+                    cadmpeg_ir::geometry::helix::HelixFrame {
                         center,
                         major,
                         minor,
@@ -1070,11 +1137,10 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 mod tests {
     mod floating_point_extremes;
 
-    use cadmpeg_ir::geometry::{
-        nurbs::{NurbsCurve, NurbsSurface},
-        pcurve::PcurveGeometry,
-        CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
-    };
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::scalar::PositiveReal;
 
@@ -1284,9 +1350,9 @@ mod tests {
     fn reversed_helix_preserves_conical_path() {
         let range = [0.25, 2.0];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(1.0, -2.0, 3.0),
                     major: Vector3::new(2.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 2.0, 0.0),
@@ -1412,9 +1478,9 @@ mod tests {
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
         let range = [0.125, 1.570_797_917_999_999_6];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1453,9 +1519,9 @@ mod tests {
         // states more than one.
         let range = [0.0, 4.0];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1496,9 +1562,9 @@ mod tests {
         let radius = SMALL_ADMITTED_HELIX_RADIUS;
         let definition = |minor| {
             ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                     [0.0, 1.0],
-                    cadmpeg_ir::geometry::HelixFrame {
+                    cadmpeg_ir::geometry::helix::HelixFrame {
                         center: Point3::new(0.0, 0.0, 0.0),
                         major: Vector3::new(radius, 0.0, 0.0),
                         minor,
@@ -1538,9 +1604,9 @@ mod tests {
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1560,9 +1626,9 @@ mod tests {
             let minor = *helix_payload.minor();
             let apex_factor = helix_payload.apex_factor();
             let axis = *helix_payload.axis();
-            *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            *helix_payload = cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 angle_range.get(),
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center,
                     major: major.get(),
                     minor: minor.get(),
@@ -1583,9 +1649,9 @@ mod tests {
         .is_none());
 
         let overflowing_points = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(f64::MAX, 0.0, 0.0),
                     major: Vector3::new(f64::MAX, 0.0, 0.0),
                     minor: Vector3::new(0.0, f64::MAX, 0.0),
@@ -1727,6 +1793,43 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_source_record_is_given_up_once() {
+        let mut refusal = LaneRefusals::new();
+        let short_weight_lane = || {
+            PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            )
+        };
+        for _ in 0..2 {
+            assert!(super::give_up_refused(
+                short_weight_lane(),
+                &mut refusal,
+                "a5 NURBS surface record at byte 64",
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
+                    64_usize,
+                ),
+            )
+            .is_none());
+        }
+        assert_eq!(refusal.note_count(), 2, "two refusals of one record");
+        let notes = refusal.take_notes();
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        let codes = notes.iter().map(|note| &note.code).collect::<Vec<_>>();
+        let refused = crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.kind();
+        assert_eq!(codes, [&refused, &unreadable, &refused]);
+        assert!(notes[1]
+            .message
+            .split_whitespace()
+            .any(|token| token == "catia:cgm:a5-surface-frame#64"));
+        assert_eq!(notes[1].severity, cadmpeg_ir::report::Severity::Error);
+    }
+
+    #[test]
     fn a_reversed_parameter_range_states_a_named_refusal() {
         let geometry = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -1799,9 +1902,9 @@ mod tests {
     #[test]
     fn circular_helix_cache_builds_a_unit_pitch_helix() {
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1847,9 +1950,9 @@ mod tests {
     #[test]
     fn a_circular_helix_counts_its_pitch_from_angle_zero() {
         let helix = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [std::f64::consts::PI, std::f64::consts::TAU],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),

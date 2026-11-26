@@ -83,6 +83,13 @@ pub struct Appearance {
     pub properties: BTreeMap<NonBlankString, FiniteReal>,
     /// Texture assets connected to shader input slots.
     pub textures: Vec<TextureRef>,
+    /// The native record this appearance was projected from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// One texture asset connected to an appearance shader slot.
@@ -182,13 +189,20 @@ pub struct BumpMap {
 }
 
 /// A topology entity which receives an appearance.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum AppearanceTarget {
     /// Whole-body appearance.
     Body(BodyId),
+    /// Appearance of an occurrence.
+    Occurrence(crate::ids::OccurrenceId),
+    /// Appearance of a product definition as a whole, below what the
+    /// definition states on its entities.
+    Definition(crate::ids::ProductDefinitionId),
     /// Per-face appearance override.
     Face(FaceId),
     /// Per-edge line appearance.
@@ -210,11 +224,44 @@ pub enum AppearanceTarget {
         /// The `source_id` of the group.
         group: String,
     },
-    /// Native presentation carrier without a neutral geometry arena.
-    Source {
-        /// Native source entity identity.
-        source_id: String,
+    /// Appearance of a neutral record that no other arm names: the field
+    /// name of its arena in the model, the design, or the topology, and its
+    /// id.
+    Record {
+        /// The arena's field name.
+        arena: NonBlankString,
+        /// The record's id.
+        id: String,
     },
+    /// An object the source assigns the appearance to that the decoder did
+    /// not join to a record of the document. The binding's
+    /// `source_entity_id` or `native_ref` states what the decoder read of it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unresolved,
+}
+
+/// How an appearance stated in one definition stands against what the
+/// definitions it places state for the entities under its target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    cadmpeg_derive::DeserializeName,
+)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AppearancePrecedence {
+    /// The appearance holds over everything the placed definitions state.
+    Outer,
+    /// The appearance holds over what the placed definitions state on its
+    /// own target or a farther one, and under what they state on a nearer one.
+    Nearest,
 }
 
 /// An explicit appearance assignment.
@@ -229,6 +276,14 @@ pub struct AppearanceBinding {
     pub target: InstanceTarget<AppearanceTarget>,
     /// Referenced appearance asset.
     pub appearance: AppearanceId,
+    /// How the binding stands against what the definitions inside the one
+    /// that states it state for the entities under its target.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_precedence"
+    )]
+    pub precedence: Option<AppearancePrecedence>,
     /// Fusion design-entity id, such as `0_985`.
     #[serde(
         default,
@@ -254,6 +309,13 @@ pub struct AppearanceBinding {
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub channels: BTreeMap<NonBlankString, String>,
+    /// The native record this binding was projected from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 #[cfg(test)]
@@ -271,8 +333,10 @@ cadmpeg_core::named_optional_field!(deserialize_base_color, Color, "base_color")
 cadmpeg_core::named_optional_field!(deserialize_urn, String, "urn");
 cadmpeg_core::named_optional_field!(deserialize_bump, BumpMap, "bump");
 cadmpeg_core::named_optional_field!(deserialize_coordinates, NonBlankString, "coordinates");
+cadmpeg_core::named_optional_field!(deserialize_precedence, AppearancePrecedence, "precedence");
 cadmpeg_core::named_optional_field!(deserialize_source_entity_id, String, "source_entity_id");
 cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_type");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

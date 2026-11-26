@@ -11,6 +11,7 @@ use crate::records::feature::path_features::{
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 const REVOLVE_TYPE_GUID: &str = "E3849A15-2FC6-42A0-AF3A-2F1D7273B406";
 const SCOPE: u32 = 70;
@@ -100,12 +101,12 @@ impl Fixture {
                     369
                 } else if self.second_reference.is_some() {
                     361
-                } else if self.references == 8 {
-                    373
+                } else if self.references >= 8 {
+                    373 + 11 * (self.references - 8)
                 } else {
                     351
                 });
-        let table = [81_u32, 82, 91, 92, 93, 94, ANGLE, 96];
+        let table = [79_u32, 80, 81, 82, 91, 92, 93, 94, ANGLE, 96];
         let table = &table[table.len() - self.references..];
         let tail_extra = if self.second_reference.is_some() {
             10
@@ -187,7 +188,7 @@ impl Fixture {
         .unwrap()
         .expect("Revolve scope");
         scope.id = format!("{STREAM}:design-parameter-scope#0");
-        let owner: DesignParameterOwner = serde_json::from_value(serde_json::json!({
+        let owner: DesignParameterOwner = json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-parameter-owner#{ANGLE}"),
             "byte_offset": 2000,
             "frame_length": 104,
@@ -269,6 +270,26 @@ fn the_unmarked_form_has_eight_references_and_its_operation_at_offset_21() {
     let mut eight = Fixture::marked();
     eight.references = 8;
     assert!(eight.decode().is_none());
+}
+
+#[test]
+fn a_nine_reference_boolean_marked_frame_adds_one_table_reference() {
+    let mut nine = Fixture::marked();
+    nine.references = 9;
+    nine.operation = 2;
+    let construction = nine.decode().expect("nine-reference cut revolve");
+    assert_eq!(construction.operation, DesignExtrudeOperation::Cut);
+    assert_eq!(construction.solid, Some(true));
+    assert_eq!(construction.angle_record_index, ANGLE);
+    let mut new_body = nine.clone();
+    new_body.operation = 4;
+    assert!(new_body.decode().is_none());
+    let mut short = nine.clone();
+    short.payload_length = Some(373);
+    assert!(short.decode().is_none());
+    let mut ten = nine.clone();
+    ten.references = 10;
+    assert!(ten.decode().is_none());
 }
 
 #[test]

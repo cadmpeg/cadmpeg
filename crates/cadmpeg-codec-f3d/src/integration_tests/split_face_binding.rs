@@ -3,17 +3,19 @@
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs,
 };
-use crate::history::{bind_feature_face_selections, FeatureFaceSelectionInputs};
+use crate::history::face_selections::{bind_feature_face_selections, FeatureFaceSelectionInputs};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{
-    FaceSelection, FeatureDefinition, FeatureInputTopology, FeatureOperation, SplitFaceTool,
-};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record: u32, member: u32, ordinal: u32, role: u64) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record}"),
         "scope_record_index": 42, "scope_reference_ordinal": ordinal,
         "record_index": record, "byte_offset": 1000, "class_tag": "256",
@@ -105,6 +107,9 @@ fn split_face_binding_requires_target_membership_through_final_admission() {
     let feature_id = projected.features[0].id.clone();
     let prefix = crate::ids::feature_input_prefix(&feature_id, 7);
     let mut input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 7),
         input_of: feature_id,
         bodies: Vec::new().try_into().unwrap(),

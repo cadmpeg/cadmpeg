@@ -3,8 +3,11 @@
 //! parameters, dimensions, bodies, fillets, sheet metal, patterns and
 //! geometry records.
 
-use super::super::reader::{bad, ParameterRecord, Ptr, Reader, Res, Stop, V};
+use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
+use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
+use crate::layout::revolution_line_reference_record_tail as record_tail;
+use crate::layout::revolution_turn_block as turn;
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
 
@@ -89,6 +92,9 @@ pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
 
+/// How far an axis tail's direction may lie from unit length.
+const EPS_AXIS_TAIL_UNIT: f64 = 1e-9;
+
 /// The shared rule state.
 #[derive(Debug, Clone)]
 pub(crate) struct CoreState {
@@ -147,6 +153,9 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
         Ptr::Obj { value, .. } => value,
         other => V::from(other),
     };
+    if let (V::Str(text), Some(&(_, at))) = (&name, r.open.last()) {
+        r.names.insert(at, text.clone());
+    }
     Ok(V::map([
         ("name", name),
         ("fam", V::from(fam)),
@@ -486,6 +495,23 @@ pub(crate) fn objat(r: &Reader<'_>, q: usize) -> bool {
 
 /// `axistail`.
 pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
+    if r.p >= tail_prefix::LEN
+        && r.pu32(r.p - tail_prefix::LEN + tail_prefix::VERSION)
+            .is_ok_and(|version| version == tail_prefix::VERSION_VALUE)
+        && r.eq(
+            r.p - tail_prefix::LEN + tail_prefix::ZEROS,
+            &tail_prefix::ZEROS_VALUE,
+        )
+        && unit_direction_at(r, r.p + record_tail::DIRECTION)
+        && r.eq(r.p + record_tail::ZERO, &record_tail::ZERO_VALUE)
+    {
+        let mut ax = Vec::new();
+        for _ in 0..7 {
+            ax.push(V::from(r.f64()?));
+        }
+        r.expect_bytes(&record_tail::ZERO_VALUE, "axis u8 0")?;
+        return Ok(V::List(ax));
+    }
     if r.p >= 8 && r.ffs(r.p - 8, 4) && r.zeros(r.p - 4, 8) && !r.zeros(r.p + 4, 8) {
         r.skip(4);
         let mut ax = Vec::new();
@@ -521,6 +547,18 @@ pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
     }
     r.expect_bytes(&[0], "axis u8 0")?;
     Ok(V::List(ax))
+}
+
+/// Whether the three f64 at `at` are a unit direction.
+fn unit_direction_at(r: &Reader<'_>, at: usize) -> bool {
+    let mut square = 0.0;
+    for index in 0..3 {
+        let Ok(value) = r.pf64(at + 8 * index) else {
+            return false;
+        };
+        square += value * value;
+    }
+    (square - 1.0).abs() <= EPS_AXIS_TAIL_UNIT
 }
 
 /// `refblock`: a reference's handle block.
@@ -1289,14 +1327,14 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         let oid = if r.byte(r.p)? == 0 && isclass(r, r.p + 1, &["moDimTolerance_c"])? {
             r.skip(1);
             r.ptr(None)?;
-            V::None
+            None
         } else {
             let q = r.p;
             r.skip(23);
             if r.slice(q, 23).len() < 7 {
                 return Err(Stop::End(r.p));
             }
-            V::from(r.pu32(q + 3)?)
+            Some(r.pu32(q + 3)?)
         };
         let Some(j) = r.find(&FFFEFF, r.p, r.p + 2000) else {
             return Err(bad("feature dim placement: no string"));
@@ -1317,8 +1355,12 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         r.cstring()?;
         r.skip(40);
         r.cstring()?;
-        record(r, entry.as_ref(), &name, &val, value_at);
-        return Ok(V::map([("name", name), ("value", val), ("oid", oid)]));
+        record(r, entry.as_ref(), &name, &val, value_at, oid);
+        return Ok(V::map([
+            ("name", name),
+            ("value", val),
+            ("oid", oid.map_or(V::None, V::from)),
+        ]));
     }
     let x = usize::from(ver_or(r, 0) >= 18000);
     r.expect_bytes(&[0], "parameter u8 0")?;
@@ -1369,7 +1411,7 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         }
         ops = ptrs.into_iter().map(V::from).collect();
     }
-    record(r, entry.as_ref(), &name, &val, value_at);
+    record(r, entry.as_ref(), &name, &val, value_at, Some(oid));
     Ok(V::map([
         ("name", name),
         ("value", val),
@@ -1386,6 +1428,7 @@ fn record(
     name: &V,
     val: &V,
     value_at: usize,
+    object_id: Option<u32>,
 ) {
     if let Some(t) = entry {
         r.parameters.push(ParameterRecord {
@@ -1394,6 +1437,7 @@ fn record(
             value: val.as_f64().unwrap_or(f64::NAN),
             at: t.at,
             value_at,
+            object_id,
         });
     }
 }
@@ -1576,15 +1620,34 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
     Ok(())
 }
 
-/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`.
+/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`, with the parameter
+/// objects the pattern holds noted with its seed list.
 pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
+    let from = reader.parameters.len();
+    let lists = reader.pattern_seeds.len();
+    let opened = reader.counter;
+    match featpattern_body(reader) {
+        Ok(value) => {
+            reader.note_pattern_parameters(from, opened);
+            Ok(value)
+        }
+        Err(stop) => {
+            reader.pattern_seeds.truncate(lists);
+            Err(stop)
+        }
+    }
+}
+
+/// The body of [`featpattern`].
+fn featpattern_body(reader: &mut Reader<'_>) -> Res<V> {
     let class = reader.last_class().ok_or(Stop::End(reader.p))?;
     let class = &*class;
     let count = feature(reader, class)?;
     let hd = bodyhead(reader, class)?;
     units_after_head(reader, &hd)?;
     reader.ptr(Some(&["moPMarkRecord_c"]))?;
-    reader.ptr(Some(&["suObList"]))?;
+    let seeds = reader.ptr(Some(&["suObList"]))?;
+    reader.note_pattern_seeds(&seeds);
     reader.ptr(Some(&["suObList"]))?;
     if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         && !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
@@ -1632,10 +1695,12 @@ pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
         reader.expect_bytes(&[0, 0], "cirpattern u16 0")?;
         let ax = reader.ptr(None)?;
         item1(reader, &ax)?;
-        axistail(reader)?;
-        if reader.u8()? > 1 {
+        let tail = axistail(reader)?;
+        let flag = reader.u8()?;
+        if flag > 1 {
             return Err(bad("cirpattern flag byte"));
         }
+        reader.note_pattern_axis(&tail, flag);
         display_objects(reader)?;
         reader.expect_bytes(
             &[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1851,6 +1916,39 @@ fn is76_bytes(t: &[u8]) -> bool {
 
 const REVOLVES: &[&str] = &["moRevolution_c", "moRevCut_c", "moRevolutionThin_c"];
 
+/// Whether the bytes at `at` are a revolve's turn block with a `suObList`
+/// after it.
+fn is_turn_block(reader: &Reader<'_>, at: usize) -> Res<bool> {
+    if at
+        .checked_add(turn::LEN + 2)
+        .is_none_or(|end| end > reader.len())
+    {
+        return Ok(false);
+    }
+    Ok(reader.eq(at + turn::LEAD, &turn::LEAD_VALUE)
+        && matches!(reader.byte(at + turn::REVERSE)?, 0 | 1)
+        && reader.eq(at + turn::PAD, &turn::PAD_VALUE)
+        && matches!(reader.pu32(at + turn::WORD)?, 0 | 1)
+        && isclass(reader, at + turn::LEN, &["suObList"])?)
+}
+
+/// The turn block of a revolve that writes zero bytes in place of its
+/// `moPMarkRecord_c`: the first turn block at `at + 31` or later whose bytes
+/// before it are zero.
+fn turn_block_after_zeros(reader: &Reader<'_>, at: usize) -> Res<Option<usize>> {
+    const MIN_ZEROS: usize = 31;
+    let mut zeros = 0;
+    while at + zeros < reader.len() && reader.byte(at + zeros)? == 0 && zeros < 4096 {
+        zeros += 1;
+    }
+    for block in at + MIN_ZEROS..=at + zeros {
+        if is_turn_block(reader, block)? {
+            return Ok(Some(block));
+        }
+    }
+    Ok(None)
+}
+
 /// The extrusion family (`moExtrusion_c`, `moRevolution_c`, `moSweepCut_c`,
 /// `moSMBaseFlange_c`, ...).
 pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
@@ -1867,9 +1965,13 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
     if hx == Some(1) {
         units(reader)?;
     }
-    if REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "suObList")? >= 40 {
-        let z = zrun_to(reader, reader.p, "suObList")?;
-        reader.skip(z - 9);
+    let zero_mark = if REVOLVES.contains(&cls) {
+        turn_block_after_zeros(reader, reader.p)?
+    } else {
+        None
+    };
+    if let Some(block) = zero_mark {
+        reader.p = block;
     } else if !REVOLVES.contains(&cls) && zrun_to(reader, reader.p, "moEndSpec_c")? >= 40 {
         // Zero bytes in place of the mark record (64; extruded cuts).
         let z = zrun_to(reader, reader.p, "moEndSpec_c")?;
@@ -1929,11 +2031,8 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
         ]));
     }
     if REVOLVES.contains(&cls) {
-        if reader.zeros(reader.p, 5)
-            && reader.eq(reader.p + 5, &[1, 0, 0, 0])
-            && isclass(reader, reader.p + 9, &["suObList"])?
-        {
-            reader.skip(9);
+        if is_turn_block(reader, reader.p)? {
+            reader.skip(turn::LEN);
         } else {
             reader.expect_zeros(9, "revolve 9 zero")?;
         }
@@ -2055,8 +2154,21 @@ pub(crate) fn compsolid(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::from(r.ptr(None)?))
 }
 
-/// `moPMarkRecord_c`.
+/// `moPMarkRecord_c`, noted with the named object that holds it.
 pub(crate) fn pmark(r: &mut Reader<'_>) -> Res<V> {
+    let at = r.p;
+    let owner = r.holder_name();
+    let value = pmark_record(r)?;
+    r.marks.push(MarkOwner {
+        at,
+        end: r.p,
+        owner,
+    });
+    Ok(value)
+}
+
+/// The body of a `moPMarkRecord_c`.
+fn pmark_record(r: &mut Reader<'_>) -> Res<V> {
     let big_x = r.u32()?;
     let f = r.u32()?;
     if f == 1 {
@@ -2676,7 +2788,9 @@ pub(crate) fn favhandle(r: &mut Reader<'_>) -> Res<V> {
     Ok(list(s))
 }
 
-/// `moBaseBody_c`.
+/// `moBaseBody_c`: the feature, its body head, its `moPMarkRecord_c` and,
+/// when present, a `CString`, a u32 and the name. The next object follows
+/// directly.
 pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
     feature(r, "moBaseBody_c")?;
     bodyhead(r, "moBaseBody_c")?;
@@ -2686,9 +2800,6 @@ pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
         r.cstring()?;
         r.u32()?;
         nm = V::from(r.cstring()?);
-    }
-    if r.p < r.len() {
-        r.expect_zeros(4, "base body u32 0")?;
     }
     Ok(V::map([("name", nm)]))
 }
@@ -3798,3 +3909,6 @@ pub(crate) fn lineaxis(r: &mut Reader<'_>) -> Res<V> {
     axistail(r)?;
     Ok(list(v))
 }
+
+#[cfg(test)]
+mod tests;

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::shared::{angle_sides, angle_spacings, length_sides, length_spacings};
 use super::{
@@ -17,13 +17,13 @@ use crate::design::construction::{kinds, Construction, FrameValue, ScalarDimensi
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::LinkState;
 use crate::design::ids::SpatialSketchConstraintId;
-use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
+use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::ops::shared::Spacing;
 use crate::design::ops::sketch::{
-    AngleOperands, AngleSector, BlockInstance, Contact, DefiningRole, Derivation, DerivationMode,
-    DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline, Operand, Planar,
-    PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchOffset,
-    SketchPattern, SketchPatternAxis, SketchPatternDirection, SketchPatternInstance,
+    AngleOperands, AngleSector, BlockInstance, BoundedCurve, Contact, DefiningRole, Derivation,
+    DerivationMode, DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline,
+    Operand, Planar, PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity,
+    SketchOffset, SketchPattern, SketchPatternAxis, SketchPatternDirection, SketchPatternInstance,
     SketchPatternLayout, SketchPlane, SketchPolygon, SketchRelation, SketchSlot, SketchSolve,
     SketchSpace, SketchText, SlotKind, SolveState, Spatial, SpatialCurve, SpatialSketch,
     SplineHandle, TextAlign, TextContent, TextHorizontalBox, TextLayout, TextVerticalBox,
@@ -31,13 +31,14 @@ use crate::design::ops::sketch::{
 use crate::design::options::{NativeOptions, ProjectionDirection};
 use crate::design::selection::PrincipalEntity;
 use crate::document::{CadIr, Design};
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
 use crate::test_support::nurbs;
+use crate::topology::IncreasingParameterInterval;
 use crate::units::{UnitVector2, UnitVector3};
 
 /// The ids, a direction, and curves of one sketch space.
@@ -108,7 +109,7 @@ fn frame() -> Construction<kinds::Frame> {
 
 fn native_name() -> NativeName {
     NativeName {
-        codec: CodecId::from(text("sldprt")),
+        codec: crate::codec_id!("sldprt"),
         value: NativeNameValue::Integers(vec![12]),
     }
 }
@@ -189,21 +190,21 @@ fn spatial_sketches() -> Vec<SpatialSketch> {
     ]
 }
 
-fn line_carrier() -> SolvedCurveGeometry {
-    SolvedCurveGeometry::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
+fn line_carrier() -> InlineCurve {
+    InlineCurve::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
 }
 
 fn spatial_curves() -> Vec<SpatialCurve> {
     vec![
         SpatialCurve::Point(point3(1.0, 2.0, 3.0)),
-        SpatialCurve::Bounded {
+        SpatialCurve::Bounded(BoundedCurve {
             carrier: line_carrier(),
-            range: Some([real(0.0), real(4.0)]),
-        },
-        SpatialCurve::Bounded {
+            range: IncreasingParameterInterval::new([0.0, 4.0]),
+        }),
+        SpatialCurve::Bounded(BoundedCurve {
             carrier: line_carrier(),
             range: None,
-        },
+        }),
     ]
 }
 

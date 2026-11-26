@@ -5,6 +5,7 @@ use crate::ids::{key_word, kind};
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashSet};
 
 use super::{named_parameter, RecordExt, ValueExt};
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -28,7 +29,7 @@ mod bodies;
 
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(super) const MAX_OCCURRENCES: usize = 100_000;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",
     "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
@@ -79,6 +80,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
+    max_occurrences: usize,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
@@ -296,7 +298,6 @@ pub(super) fn decode(
             ir.model.product_definitions.push(ProductDefinition {
                 sketches: Vec::default(),
 
-                tessellations: Vec::new(),
                 id: product_definition_id.clone(),
                 kind: Some(ProductDefinitionKind::Part),
                 source_name: name.as_deref().map(std::borrow::ToOwned::to_owned),
@@ -381,9 +382,13 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRODUCT_DEFINITION #{definition} has no local product prototype"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                definition,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRODUCT_DEFINITION #{definition} has no local product prototype"
+                )),
+            ));
             continue;
         };
         roots.push((definition, prototype));
@@ -398,12 +403,12 @@ pub(super) fn decode(
         _ => {
             // Several top-level definitions: the file itself is the root, and
             // it places each of them.
-            let document =
-                ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")));
+            let document = document_definition_id();
             let mut root = ProductDefinition::root(document.clone(), ExternalDocument::default());
             for (definition, prototype) in &roots {
-                if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-                    output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
+                if ir.model.occurrences.len() >= max_occurrences {
+                    output_truncated_at =
+                        Some((format!("root PRODUCT_DEFINITION #{definition}"), None));
                     break;
                 }
                 let id = OccurrenceId::from(ids::product(
@@ -426,18 +431,23 @@ pub(super) fn decode(
             owned.entry(document).or_default();
         }
     }
-    if let [(_, prototype)] = roots.as_slice() {
-        if let Some(definition) = ir
-            .model
-            .product_definitions
+    // The one top definition is the root, and so is a file's one product
+    // where no PRODUCT_DEFINITION can place it.
+    let top = match (
+        roots.as_slice(),
+        ir.model.product_definitions.as_mut_slice(),
+    ) {
+        ([(_, prototype)], definitions) => definitions
             .iter_mut()
-            .find(|definition| &definition.id == prototype)
-        {
-            definition.storage = Storage::File {
-                document: ExternalDocument::default(),
-                source: None,
-            };
-        }
+            .find(|definition| &definition.id == prototype),
+        ([], [definition]) if definitions.is_empty() => Some(definition),
+        _ => None,
+    };
+    if let Some(definition) = top {
+        definition.storage = Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        };
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -467,12 +477,12 @@ pub(super) fn decode(
             "occurrence-owned mapped"
         };
 
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque")));
+        losses.extend(give_up_instance(exchange, usage_id, StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"))));
     }
     for (&usage_id, source_ids) in &competing_placements {
         let records = join_product_references(source_ids.iter().copied());
 
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque")));
+        losses.extend(give_up_instance(exchange, usage_id, StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"))));
     }
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
@@ -483,7 +493,7 @@ pub(super) fn decode(
     // The walk is iterative, so the session depth ceiling bounds the
     // definition path length directly.
     let depth_limit = ctx.policy().limits.max_recursion_depth;
-    let mut depth_truncated = None::<(u64, usize)>;
+    let mut depth_truncated = Vec::new();
     let mut reached = BTreeMap::<u64, Reached>::new();
     'roots: for (root, _) in &roots {
         if output_truncated_at.is_some() {
@@ -511,20 +521,27 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} references an unresolved child definition"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    usage_id,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "NAUO #{usage_id} references an unresolved child definition"
+                    )),
+                ));
                 continue;
             };
             if u64_from_index(parent_length) >= depth_limit {
-                let (_, skipped) = depth_truncated.get_or_insert((usage_id, 0));
-                *skipped += 1;
+                depth_truncated.push(usage_id);
                 continue;
             }
             if reached.get(&usage.child_definition) == Some(&Reached::OnPath) {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "NAUO #{usage_id} closes an assembly definition cycle"
-                )));
+                losses.extend(give_up_instance(
+                    exchange,
+                    usage_id,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "NAUO #{usage_id} closes an assembly definition cycle"
+                    )),
+                ));
                 continue;
             }
             let Some(owner) = definition_prototypes.get(&parent_definition).cloned() else {
@@ -534,8 +551,8 @@ pub(super) fn decode(
                 kind!("occurrence"),
                 IdentityKey::from(usage_id),
             ));
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-                output_truncated_at = Some(format!("NAUO #{usage_id}"));
+            if ir.model.occurrences.len() >= max_occurrences {
+                output_truncated_at = Some((format!("NAUO #{usage_id}"), Some(usage_id)));
                 break 'roots;
             }
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
@@ -569,21 +586,27 @@ pub(super) fn decode(
             definition.occurrences.extend(occurrences);
         }
     }
-    if let Some(start) = output_truncated_at {
-        losses.push(
-            StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
-            "product occurrence decoding stopped at its limit of {MAX_OCCURRENCES} occurrences; \
+    if let Some((start, usage)) = output_truncated_at {
+        let why = StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
+            "product occurrence decoding stopped at its limit of {max_occurrences} occurrences; \
              {start} and the usages after it are not decoded"
-        )),
-        );
+        ));
+        match usage {
+            Some(usage) => losses.extend(give_up_instance(exchange, usage, why)),
+            // The occurrence of a root definition has no source record.
+            None => losses.push(why),
+        }
     }
-    if let Some((first, skipped)) = depth_truncated {
-        losses.push(
-            StepLossCode::OccurrenceExpansionDepthTruncated.note(format!(
+    if let Some(first) = depth_truncated.first() {
+        let why = StepLossCode::OccurrenceExpansionDepthTruncated.note(format!(
             "product definition paths stop at the recursion depth limit of {depth_limit} levels; \
-             {skipped} usage(s) from NAUO #{first} are not decoded"
-        )),
-        );
+             {} usage(s) from NAUO #{first} are not decoded",
+            depth_truncated.len()
+        ));
+        for &usage in &depth_truncated {
+            exchange.lost().give_up_for(usage, &why);
+        }
+        losses.push(why);
     }
     if !had_roots && !usages.is_empty() {
         losses.push(
@@ -1364,3 +1387,9 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The root definition where the file itself is the root: the document,
+/// which places the file's top definitions.
+pub(crate) fn document_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")))
+}

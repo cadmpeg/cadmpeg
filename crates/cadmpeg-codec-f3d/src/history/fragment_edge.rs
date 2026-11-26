@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[cfg(test)]
-use super::{
-    face_boundary_contexts_for_slots, selection, stable_ref, AsmHistoricalTopology, SideOneEdge,
-    TopologyQueryCache,
-};
+use super::body_closures::stable_ref;
+#[cfg(test)]
+use super::edge_operand_history::SideOneEdge;
+#[cfg(test)]
+use super::face_boundaries::face_boundary_contexts_for_slots;
+#[cfg(test)]
+use super::selection;
+#[cfg(test)]
+use crate::history::topology_cache::TopologyQueryCache;
+#[cfg(test)]
+use crate::history_records::AsmHistoricalTopology;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
@@ -62,7 +69,7 @@ fn common_edge(
     transition_deleted_edges: &[i64],
     required_edges: Option<&[i64]>,
     mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
-) -> Option<super::SideOneEdge> {
+) -> Option<super::edge_operand_history::SideOneEdge> {
     let ordinals = side_one_ordinals(structure)?;
     let mut common: Option<BTreeMap<i64, BTreeSet<i64>>> = None;
     for ordinal in ordinals {
@@ -92,11 +99,11 @@ fn common_edge(
         .copied()
         .filter(|edge| candidate_boundary_edges.contains(edge));
     match (proven.next(), proven.next(), common.as_slice()) {
-        (Some(slot), None, _) => Some(super::SideOneEdge {
+        (Some(slot), None, _) => Some(super::edge_operand_history::SideOneEdge {
             slot,
             inferred: false,
         }),
-        (None, _, [slot]) => Some(super::SideOneEdge {
+        (None, _, [slot]) => Some(super::edge_operand_history::SideOneEdge {
             slot: *slot,
             inferred: !transition_deleted_edges.contains(slot),
         }),
@@ -143,7 +150,7 @@ pub(crate) fn context_edge(
         &str,
         &crate::records::topology::historical_context::AsmFaceBoundary,
     >,
-) -> Option<super::SideOneEdge> {
+) -> Option<super::edge_operand_history::SideOneEdge> {
     let lanes = crate::records::dimensions::reference_lanes(&operand.recipe_references);
     let disjoint_names = side_one_ordinals(operand.recipe_structure.as_ref())?
         .into_iter()
@@ -168,7 +175,7 @@ pub(crate) fn context_edge(
                 .iter()
                 .zip(&context.preceding_face_boundary_ids)
             {
-                let face = super::stable_ref(face.as_str())?;
+                let face = super::body_closures::stable_ref(face.as_str())?;
                 let boundary = boundaries.get(id.as_str())?;
                 if boundary.face_slot != face || boundary.loops.is_empty() {
                     return None;
@@ -198,11 +205,12 @@ mod tests {
     use super::*;
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
     use crate::records::dimensions::DesignRecipeReference;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::ids::FaceId;
 
     #[test]
     fn fragment_singleton_deletion_proves_the_edge_without_narrowing_the_lane_intersection() {
-        let structure = serde_json::from_value(serde_json::json!({
+        let structure = json::from_value(cadmpeg_core::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 1, "scalars": [0, 2],
@@ -232,7 +240,7 @@ mod tests {
 
     #[test]
     fn fragment_pair_remains_ambiguous_with_candidate_boundaries_and_deletion() {
-        let structure = serde_json::from_value(serde_json::json!({
+        let structure = json::from_value(cadmpeg_core::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 2, "scalars": [1, 0],
@@ -259,7 +267,7 @@ mod tests {
     #[test]
     fn recipe_reference_disjoint_names_require_one_deleted_common_edge() {
         let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id":"f3d:Design/BulkStream.dat:edge-operand#7", "scope_record_index":42,
                 "scope_reference_ordinal":0, "record_index":7, "byte_offset":0, "class_tag":"297",
                 "paired_byte_offset":16, "paired_class_tag":"259", "recipe_record_index":10,
@@ -271,11 +279,12 @@ mod tests {
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0,
             -1, 0, 0, -1,
         ];
-        operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
-            &program,
-        )
-        .unwrap();
+        operand.recipe_structure =
+            crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &program,
+            )
+            .unwrap();
         operand.recipe_references = [(0, 0, 10), (0, 40, 20), (80, 80, 40)]
             .into_iter()
             .map(
@@ -298,15 +307,15 @@ mod tests {
         operand.recipe_reference_contexts = crate::records::dimensions::reference_lanes(&operand.recipe_references)
             .into_iter().enumerate().map(|(ordinal, lane)| {
                 let faces = super::super::recipe_index::reference_lane_faces(lane).faces;
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "reference_ordinal":ordinal, "result_faces":[], "result_shared_edge_slots":[],
-                    "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
+                    "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::body_closures::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
                     "preceding_faces":faces, "shared_edge_slots":[], "changed_shared_edge_slots":[],
                 })).unwrap()
             }).collect();
         let boundaries: Vec<crate::records::topology::historical_context::AsmFaceBoundary> =
             [(10, vec![31]), (20, vec![32]), (40, vec![31,32])].into_iter().map(|(face, edges)| {
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id":format!("boundary-{face}"), "parent":"state-1", "face_slot":face,
                     "loops":[{"loop_slot":face,"coedge_slots":edges.iter().map(|e| e*10+face).collect::<Vec<_>>(),"edge_slots":edges}],
                 })).unwrap()
@@ -332,8 +341,8 @@ mod tests {
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0,
             -1, 0, 0, -1,
         ];
-        let structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
+        let structure = crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &program,
         )
         .unwrap()
