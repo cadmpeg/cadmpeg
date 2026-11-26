@@ -133,9 +133,10 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     };
     let given_up = source.find("#2=").expect("given-up statement");
     let unresolved = source.find("#5=").expect("record with a missing reference");
-    // Each dependent is named by its instance name; the native record that
+    // Each dependent is named by the id of its DATA instance; the native record that
     // keeps its source is held.
-    assert!(part_at(given_up, "#2=ITEM(%,3);").ends_with("; dropped=[#3, #4]; lost=[#6 entry #3]"));
+    assert!(part_at(given_up, "#2=ITEM(%,3);")
+        .ends_with("; dropped=[step:data:instance#3, step:data:instance#4]; lost=[#6 entry #3]"));
     assert!(part_at(unresolved, "#5=ITEM(#9);").ends_with(
         ": malformed container: instance #5 omitted: unresolved instance reference #9; \
          exact source retained; dropped=[]"
@@ -220,7 +221,7 @@ fn a_polyline_that_loses_a_point_is_dropped_and_named() {
     let (source, decoded, message) = decode_with_point_three_given_up(data);
     let polyline = source.find("#10=").expect("polyline");
     assert!(
-        message.ends_with("; dropped=[#10]; lost=[#11 entry #10]"),
+        message.ends_with("; dropped=[step:data:instance#10]; lost=[#11 entry #10]"),
         "{message}"
     );
     assert!(source[polyline..].starts_with("#10=POLYLINE"));
@@ -236,7 +237,10 @@ fn a_b_spline_that_loses_a_pole_is_dropped_and_named() {
     ] {
         let (_, decoded, message) =
             decode_with_point_three_given_up(&format!("{curve}#11=GEOMETRIC_SET('',(#10));"));
-        assert!(message.contains("; dropped=[#10]"), "{message}");
+        assert!(
+            message.contains("; dropped=[step:data:instance#10]"),
+            "{message}"
+        );
         assert!(message.ends_with("; lost=[#11 entry #10]"), "{message}");
         assert!(decoded.ir().geometry.curves.is_empty(), "{curve}");
         assert!(!decoded

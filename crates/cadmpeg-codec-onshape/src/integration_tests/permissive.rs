@@ -52,13 +52,17 @@ fn a_repeated_feature_id_with_other_content_gives_up_the_repeat_and_keeps_the_re
     let result = decode(&bytes);
     assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
     assert_eq!(feature_count(&wire(&result)), total - 1);
+    let repeat = crate::archive::source_record(&repeat);
     let given_up = result
         .report()
         .losses
         .iter()
         .filter(|loss| {
             loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.split_whitespace().any(|word| word == repeat)
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|word| word == repeat.as_str())
         })
         .count();
     assert_eq!(given_up, 1, "{:?}", result.report().losses);

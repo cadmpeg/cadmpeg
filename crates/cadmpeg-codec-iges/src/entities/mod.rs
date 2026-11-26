@@ -383,7 +383,9 @@ fn settle_needs(
                 // a dropped one keeps its native entity record.
                 let needs_id = match ids.quarantined(with) {
                     Some(stub) => stub.clone(),
-                    None if charged.contains(&with) => entity_id(with)?,
+                    None if charged.contains(&with) || settled.get(&with) == Some(&None) => {
+                        entity_id(with)?
+                    }
                     None => entity_record(with),
                 };
                 let mut note = dropped_with(entity_record(entity), needs_id);

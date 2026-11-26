@@ -233,7 +233,7 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     );
     assert!(
         losses[1].message.starts_with(&format!(
-            "record pvz:model:definition#1/occurrence#{} given up: ",
+            "record pvz:model:child-occurrence#1-{} given up: ",
             LIMIT - 1
         )),
         "{}",
@@ -248,7 +248,7 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
         .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
         .expect("the charge names the dropped child occurrences");
     let mut expected = (1..LIMIT)
-        .map(|occurrence| format!("pvz:model:definition#0/occurrence#{occurrence}"))
+        .map(|occurrence| format!("pvz:model:child-occurrence#0-{occurrence}"))
         .collect::<Vec<_>>();
     expected.sort();
     assert_eq!(dropped, expected);

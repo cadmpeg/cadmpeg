@@ -526,9 +526,11 @@ fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
         .and_then(|rest| rest.split(']').next())
         .unwrap()
         .split(", ")
-        .filter(|id| id.starts_with("iges:source:part#"))
-        .count();
-    assert!(dropped >= dependents.len(), "{}", edges.message);
+        .collect::<Vec<_>>();
+    for sequence in &dependents {
+        let id = format!("iges:entity:directory#{sequence}");
+        assert!(dropped.contains(&id.as_str()), "{id}: {}", edges.message);
+    }
     assert!(!result
         .report()
         .losses

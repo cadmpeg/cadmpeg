@@ -90,7 +90,10 @@ fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
         charge.contains("DIRECTION #1 is invalid or zero"),
         "{charge}"
     );
-    assert!(charge.ends_with("; dropped=[#2]"), "{charge}");
+    assert!(
+        charge.ends_with("; dropped=[step:data:instance#2]"),
+        "{charge}"
+    );
     let stub = charge[head.len()..]
         .split_once(": ")
         .map(|(stub, _)| stub.to_owned())

@@ -392,7 +392,9 @@ fn a_wireframe_model_whose_shells_all_fail_drops_them_with_it() {
     // The wire shell #33 drops with the model and has no charge of its own.
     assert!(charge.message.starts_with(&head), "{}", charge.message);
     assert!(
-        charge.message.ends_with("; dropped=[#33]"),
+        charge
+            .message
+            .ends_with("; dropped=[step:data:instance#33]"),
         "{}",
         charge.message
     );
