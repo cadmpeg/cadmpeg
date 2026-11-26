@@ -580,6 +580,10 @@ pub(crate) enum SldprtLossCode {
     /// to one of them state no design configuration: a scope with
     /// configurations names its active one.
     DesignConfigurationActiveUnread,
+    /// Configurations of a part whose feature tree holds no feature and
+    /// whose geometry holds the stored state of a configuration that is not
+    /// active state no design configuration: no position places that state.
+    DesignConfigurationStateUnplaced,
     /// Parameters whose text is one reference to a parameter whose kind
     /// differs or is not read, and whose unit-blind tree does not type or is
     /// not confirmed by the document's values, hold the text and state no
@@ -871,6 +875,7 @@ impl SldprtLossCode {
         Self::DesignParameterValueUnread,
         Self::DesignParameterOwnerOutsideTimeline,
         Self::DesignConfigurationActiveUnread,
+        Self::DesignConfigurationStateUnplaced,
         Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignParameterClassAssumed,
@@ -1142,6 +1147,7 @@ impl SldprtLossCode {
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignParameterOwnerOutsideTimeline => "design.parameter-owner-outside-timeline",
             Self::DesignConfigurationActiveUnread => "design.configuration-active-unread",
+            Self::DesignConfigurationStateUnplaced => "design.configuration-state-unplaced",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
@@ -1371,6 +1377,7 @@ impl SldprtLossCode {
             | Self::DesignParameterValueUnread
             | Self::DesignParameterOwnerOutsideTimeline
             | Self::DesignConfigurationActiveUnread
+            | Self::DesignConfigurationStateUnplaced
             | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
@@ -1495,7 +1502,8 @@ impl SldprtLossCode {
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParameterReferenceAsText
             | Self::DesignParameterOwnerOutsideTimeline
-            | Self::DesignConfigurationActiveUnread => LossTaxonomy::ParametricRecordOmitted,
+            | Self::DesignConfigurationActiveUnread
+            | Self::DesignConfigurationStateUnplaced => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
@@ -2047,6 +2055,7 @@ mod tests {
                 "design.parameter-value-unread",
                 "design.parameter-owner-outside-timeline",
                 "design.configuration-active-unread",
+                "design.configuration-state-unplaced",
                 "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",

@@ -115,6 +115,8 @@ pub(crate) struct Projection {
 /// has no value add their reasons to `losses`. A part whose timeline is empty
 /// states its configurations in a scope with no root container, whose bodies
 /// are unproduced (§5.5), and its equation-manager lines go to `losses`.
+/// Interim: where its geometry holds the state of a configuration that is not
+/// active, which no position places, it states no scope.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -143,6 +145,11 @@ pub(crate) fn project(
         let configurations =
             configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
         if configurations.records.is_empty() {
+            return Ok(Projection::default());
+        }
+        if let Some(note) = configurations::unplaced(&configurations, &ir.geometry.bodies, &bodies)
+        {
+            losses.push(note);
             return Ok(Projection::default());
         }
         let added = 2 + configurations.records.len();

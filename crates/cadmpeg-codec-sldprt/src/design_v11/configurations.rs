@@ -15,7 +15,7 @@
 //! differ from the active one's also where only a dimension differs, and
 //! no reading yet separates a structural difference from that.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -25,8 +25,9 @@ use cadmpeg_ir::design::configuration::{
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::features::ConfigurationId;
-use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::topology::Body;
 
 use crate::history::project::neutral_configuration_id;
 use crate::loss::{NamedCount, SldprtLossCode};
@@ -106,6 +107,33 @@ pub(super) fn configurations(
     }
     let active = records.get(active).map(|record| record.id.clone());
     Ok(Configurations { records, active })
+}
+
+/// The note naming `configurations` where `geometry` holds a body that
+/// `current`, the active configuration's bodies, does not: the state of a
+/// configuration that is not active, which a scope with no root container
+/// has no position for (§5.4).
+pub(super) fn unplaced(
+    configurations: &Configurations,
+    geometry: &[Body],
+    current: &[BodyId],
+) -> Option<LossNote> {
+    let current = current.iter().collect::<HashSet<_>>();
+    if geometry.iter().all(|body| current.contains(&body.id)) {
+        return None;
+    }
+    let mut named = NamedCount::default();
+    for configuration in &configurations.records {
+        named.push(configuration.id.as_str());
+    }
+    Some(
+        SldprtLossCode::DesignConfigurationStateUnplaced.note(format!(
+            "{} configurations state no design configuration: the feature tree holds no \
+         feature, so no position places the stored state of a configuration that is not \
+         active: {named}",
+            named.count()
+        )),
+    )
 }
 
 /// States in each configuration that is not active the parameter values in

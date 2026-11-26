@@ -327,6 +327,12 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code
+            == crate::loss::SldprtLossCode::DesignConfigurationStateUnplaced.kind()));
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
