@@ -48,6 +48,15 @@ STEP exports:
   `Assembly_moved.stp` the assembly is the root product, and its offset is part
   of each part placement.
 
+Parasolid export:
+
+- `Cylinder_50x50.x_t`: a Parasolid 34.0 text transmit export of the
+  cylinder of `Cylinder_50x50.ics`. Its body has 3 faces, 3 edges, and 2
+  vertices: the two rim circles and a straight seam edge between the vertices
+  at (0.025, 0, 0) and (0.025, 0, 0.05) m. The header values `USER`, `KEY`, and
+  `FILE` are replaced by `unknown`. No codec reads this format, so the file has
+  no manifest entry.
+
 ## Requested files
 
 Assembly structure:
