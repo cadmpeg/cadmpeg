@@ -8,12 +8,14 @@ use cadmpeg_ir::CadIr;
 
 use super::{classify, transfer, Bodies};
 use crate::loss::IronCadLossCode;
-use crate::test_support::{acis_stream, face_body, node, plane_face_body, record, Sab};
+use crate::test_support::{
+    acis_stream, face_body, node, parasolid_record, plane_face_body, record, Sab,
+};
 use crate::{dialect, tree};
 
 const ACIS: u32 = 0x8000_0001;
 
-fn classified(payload: &[u8]) -> (Bodies, Vec<LossNote>) {
+fn classified(payload: &[u8]) -> (Bodies<'_>, Vec<LossNote>) {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
@@ -164,4 +166,48 @@ fn bytes_after_the_solved_records_are_charged_and_retained() {
     assert_eq!(count(&losses, IronCadLossCode::BodyPartitionUnread), 1);
     assert!(bodies.brep.is_some());
     assert_eq!(bodies.retained.len(), 2);
+}
+
+const PARASOLID: u32 = 0x8000_0002;
+
+const CREATED: &str = ": TRANSMIT FILE created by modeller version 3401176";
+
+/// A Parasolid part pair whose result record is `result`.
+fn parasolid_part(result: &[u8]) -> Vec<u8> {
+    node(&[
+        node(&[
+            node(&[node(&[])]),
+            record(PARASOLID, &parasolid_record(CREATED, 0)),
+        ]),
+        record(PARASOLID, result),
+    ])
+}
+
+#[test]
+fn a_parasolid_result_with_user_fields_is_unreadable_and_retained() {
+    let payload = parasolid_part(&parasolid_record(CREATED, 1));
+    let (bodies, losses) = classified(&payload);
+    assert_eq!(count(&losses, IronCadLossCode::BodyUnreadable), 1);
+    assert!(bodies.parasolid.is_empty());
+    assert_eq!(bodies.retained.len(), 2);
+}
+
+#[test]
+fn a_parasolid_result_that_the_neutral_framer_refuses_is_unreadable_and_retained() {
+    let payload = parasolid_part(&parasolid_record(": another description", 0));
+    let (bodies, losses) = classified(&payload);
+    assert_eq!(count(&losses, IronCadLossCode::BodyUnreadable), 1);
+    assert!(bodies.parasolid.is_empty());
+    assert_eq!(bodies.retained.len(), 2);
+}
+
+#[test]
+fn a_failed_result_leaves_a_single_decoded_result_unqualified() {
+    let broken = acis_stream(&[Sab::Name("body"), Sab::Ref(-1)]);
+    let body = plane_face_body();
+    let payload = node(&[part(&body, &broken), part(&body, &body)]);
+    let (bodies, _) = classified(&payload);
+    let brep = bodies.brep.unwrap();
+    let ids: Vec<_> = brep.bodies.iter().map(|body| body.id.as_str()).collect();
+    assert_eq!(ids, ["ironcad:brep:entity#0"]);
 }

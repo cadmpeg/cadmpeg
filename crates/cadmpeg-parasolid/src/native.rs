@@ -46,8 +46,9 @@ struct Header {
 /// # Errors
 ///
 /// Returns [`CodecError::Malformed`] when the transmit header, a first-use
-/// declaration, or a node does not follow the native grammar, or when a node
-/// index exceeds the neutral pointer range.
+/// declaration, or a node does not follow the native grammar, when the
+/// header states user fields, or when a node index exceeds the neutral
+/// pointer range.
 pub fn to_neutral(bytes: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut view = View::over_retained(bytes);
     let mut out = Vec::with_capacity(bytes.len());
@@ -162,8 +163,10 @@ fn header(view: &mut View<'_>, out: &mut Vec<u8>) -> Result<Header, CodecError> 
     } else {
         base_maximum(version)
     };
-    let user_fields = view.u32_le().ok_or_else(truncated)?;
-    out.extend_from_slice(&user_fields.to_be_bytes());
+    if view.u32_le().ok_or_else(truncated)? != 0 {
+        return Err(malformed(0, "user-field size is nonzero"));
+    }
+    out.extend_from_slice(&0_u32.to_be_bytes());
     Ok(Header {
         version,
         maximum,

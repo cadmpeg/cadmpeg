@@ -136,3 +136,12 @@ fn a_neutral_transmit_is_refused() {
     .concat();
     assert!(to_neutral(&neutral).is_err());
 }
+
+#[test]
+fn a_nonzero_user_field_size_is_refused() {
+    let mut native = native_header("SCH_3401176_13006", None);
+    let at = native.len() - 4;
+    native[at..].copy_from_slice(&1_u32.to_le_bytes());
+    native.extend_from_slice(&NATIVE_TERMINATOR);
+    assert!(to_neutral(&native).is_err());
+}

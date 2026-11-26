@@ -60,10 +60,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
 /// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
 /// records retained beside them.
 #[derive(Default)]
-struct Bodies {
+struct Bodies<'a> {
     brep: Option<AsmBrep>,
     parasolid: Vec<TransmitGeometry>,
     retained: Vec<UnknownRecord>,
+    /// Decoded part results before their identities settle.
+    pending: Vec<(KernelRecord<'a>, usize, PendingBody)>,
+}
+
+/// One decoded part result before its identities settle.
+enum PendingBody {
+    Acis(Box<AsmBrep>),
+    Parasolid(Box<TransmitGeometry>),
 }
 
 /// Moves the decoded ACIS graph, the decoded Parasolid bodies, and the
@@ -71,7 +79,7 @@ struct Bodies {
 fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
-    bodies: Bodies,
+    bodies: Bodies<'_>,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
@@ -79,6 +87,7 @@ fn transfer(
         brep,
         parasolid,
         retained,
+        pending: _,
     } = bodies;
     let AsmTransferRemainder {
         mut unknowns,
@@ -114,6 +123,7 @@ fn transfer(
             .procedural_curves
             .extend(geometry.procedural_curves);
         ir.geometry.pcurves.extend(geometry.pcurves);
+        ir.geometry.subds.extend(geometry.subds);
         unknowns.extend(decoded.unknowns);
     }
     for face in &unbounded_faces {
@@ -219,21 +229,15 @@ fn records<'a>(
 
 /// Adds a dialect layer for every kernel record and decodes the body of each
 /// part result record.
-fn classify(
+fn classify<'a>(
     ctx: &DecodeContext<'_>,
-    records: &[KernelRecord<'_>],
+    records: &[KernelRecord<'a>],
     layers: &mut DialectLayers,
     losses: &mut Vec<LossNote>,
-) -> Result<Bodies, CodecError> {
+) -> Result<Bodies<'a>, CodecError> {
     let acis_count = records
         .iter()
         .filter(|record| record.kernel == Kernel::Acis)
-        .count();
-    let results = records
-        .iter()
-        .filter(|record| {
-            matches!(record.kernel, Kernel::Acis | Kernel::Parasolid) && record.follows_node
-        })
         .count();
     let acis_instance = if acis_count > 1 {
         LayerInstance::Tagged
@@ -261,7 +265,7 @@ fn classify(
                             .note(format!("{carrier}: {error}")),
                     ),
                 }
-                parasolid_body(ctx, record, ordinal, results > 1, &mut bodies, losses)?;
+                parasolid_body(ctx, record, ordinal, &mut bodies, losses)?;
             }
             Kernel::Acis => {
                 let header = match kernel::acis_header(record.bytes) {
@@ -291,15 +295,7 @@ fn classify(
                             .note(format!("{carrier}: {error}")),
                     ),
                 }
-                acis_body(
-                    ctx,
-                    record,
-                    ordinal,
-                    &header,
-                    results > 1,
-                    &mut bodies,
-                    losses,
-                )?;
+                acis_body(ctx, record, ordinal, &header, &mut bodies, losses)?;
             }
             Kernel::Other(tag) => {
                 losses.push(IronCadLossCode::KernelUnrecognized.note(format!(
@@ -320,17 +316,17 @@ fn classify(
             losses.push(IronCadLossCode::KernelUnverified.note(message));
         }
     }
+    settle(ctx, &mut bodies, losses)?;
     Ok(bodies)
 }
 
 /// Decodes the ACIS body of a result record, or retains a feature record.
-fn acis_body(
+fn acis_body<'a>(
     ctx: &DecodeContext<'_>,
-    record: &KernelRecord<'_>,
+    record: &KernelRecord<'a>,
     ordinal: usize,
     header: &cadmpeg_asm::kernel_header::BinaryHeader,
-    qualify: bool,
-    bodies: &mut Bodies,
+    bodies: &mut Bodies<'a>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let carrier = format!("{BREP_DATA}/record {ordinal}");
@@ -339,14 +335,8 @@ fn acis_body(
         return retain(ctx, record, ordinal, bodies);
     }
     let stream = format!("{BREP_DATA}/record-{ordinal}");
-    let decoded = acis::decode(ctx, record.bytes, header, &stream).and_then(|decoded| {
-        let brep = if qualify {
-            acis::qualify(ctx, decoded.brep, &format!("record-{ordinal}"))?
-        } else {
-            decoded.brep
-        };
-        Ok((brep, decoded.reduced_records, decoded.unread))
-    });
+    let decoded = acis::decode(ctx, record.bytes, header, &stream)
+        .map(|decoded| (decoded.brep, decoded.reduced_records, decoded.unread));
     let (brep, reduced, unread) = match decoded {
         Ok(decoded) => decoded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -355,10 +345,9 @@ fn acis_body(
             return retain(ctx, record, ordinal, bodies);
         }
     };
-    match &mut bodies.brep {
-        Some(merged) => merged.append(brep),
-        None => bodies.brep = Some(brep),
-    }
+    bodies
+        .pending
+        .push((*record, ordinal, PendingBody::Acis(Box::new(brep))));
     if let Some(offset) = unread {
         losses.push(IronCadLossCode::BodyPartitionUnread.note(format!(
             "{carrier}: the ACIS stream holds bytes after its solved records from offset \
@@ -378,12 +367,11 @@ fn acis_body(
 }
 
 /// Decodes the Parasolid body of a result record, or retains a feature record.
-fn parasolid_body(
+fn parasolid_body<'a>(
     ctx: &DecodeContext<'_>,
-    record: &KernelRecord<'_>,
+    record: &KernelRecord<'a>,
     ordinal: usize,
-    qualify: bool,
-    bodies: &mut Bodies,
+    bodies: &mut Bodies<'a>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let carrier = format!("{BREP_DATA}/record {ordinal}");
@@ -392,25 +380,66 @@ fn parasolid_body(
         return retain(ctx, record, ordinal, bodies);
     }
     let stream = format!("{BREP_DATA}/record-{ordinal}");
-    let namespace = format!("record-{ordinal}");
-    let decoded = parasolid::decode(ctx, record.bytes, &stream).and_then(|decoded| {
-        parasolid::qualify(ctx, decoded, qualify.then_some(namespace.as_str()))
-    });
-    let mut decoded = match decoded {
-        Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+    match parasolid::decode(ctx, record.bytes, &stream) {
+        Ok(decoded) => {
+            bodies
+                .pending
+                .push((*record, ordinal, PendingBody::Parasolid(Box::new(decoded))));
+            Ok(())
+        }
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
-            return retain(ctx, record, ordinal, bodies);
+            retain(ctx, record, ordinal, bodies)
         }
-    };
-    for loss in std::mem::take(&mut decoded.losses) {
-        losses.push(
-            IronCadLossCode::ParasolidBodyPartial
-                .note(format!("{carrier}: {}: {}", loss.code, loss.message)),
-        );
     }
-    bodies.parasolid.push(decoded);
+}
+
+/// Moves the decoded part results into `bodies`, each under its record's
+/// namespace when more than one part result decoded.
+fn settle(
+    ctx: &DecodeContext<'_>,
+    bodies: &mut Bodies<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let pending = std::mem::take(&mut bodies.pending);
+    let qualify = pending.len() > 1;
+    for (record, ordinal, body) in pending {
+        let carrier = format!("{BREP_DATA}/record {ordinal}");
+        let namespace = format!("record-{ordinal}");
+        let namespace = qualify.then_some(namespace.as_str());
+        let settled = match body {
+            PendingBody::Acis(brep) => match namespace {
+                Some(namespace) => acis::qualify(ctx, *brep, namespace)
+                    .map(|brep| PendingBody::Acis(Box::new(brep))),
+                None => Ok(PendingBody::Acis(brep)),
+            },
+            PendingBody::Parasolid(decoded) => parasolid::qualify(ctx, *decoded, namespace)
+                .map(|decoded| PendingBody::Parasolid(Box::new(decoded))),
+        };
+        match settled {
+            Ok(PendingBody::Acis(brep)) => match &mut bodies.brep {
+                Some(merged) => merged.append(*brep),
+                None => bodies.brep = Some(*brep),
+            },
+            Ok(PendingBody::Parasolid(mut decoded)) => {
+                let prefix = parasolid::identity_prefix(namespace);
+                for loss in std::mem::take(&mut decoded.losses) {
+                    losses.push(IronCadLossCode::ParasolidBodyPartial.note(format!(
+                        "{carrier}: {}: {}",
+                        loss.code,
+                        parasolid::rewrite_message(&loss.message, &prefix)
+                    )));
+                }
+                bodies.parasolid.push(*decoded);
+            }
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
+                retain(ctx, &record, ordinal, bodies)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -427,7 +456,7 @@ fn retain(
     ctx: &DecodeContext<'_>,
     record: &KernelRecord<'_>,
     ordinal: usize,
-    bodies: &mut Bodies,
+    bodies: &mut Bodies<'_>,
 ) -> Result<(), CodecError> {
     let bytes = record.bytes.window();
     ctx.retain_bytes(

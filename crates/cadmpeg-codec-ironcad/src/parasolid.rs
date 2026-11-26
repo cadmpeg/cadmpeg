@@ -32,39 +32,17 @@ pub(crate) fn qualify(
     decoded: TransmitGeometry,
     namespace: Option<&str>,
 ) -> Result<TransmitGeometry, CodecError> {
+    let prefix = identity_prefix(namespace);
     let mut map = IdentityMap::new(|source: &str| {
         let suffix = source.strip_prefix(BUILDER_FORMAT).unwrap_or(source);
-        Ok(match namespace {
-            Some(namespace) => format!("ironcad:brep/{namespace}/{suffix}"),
-            None => format!("ironcad:{suffix}"),
-        })
+        Ok(format!("{prefix}{suffix}"))
     });
     let TransmitGeometry {
-        mut geometry,
+        geometry,
         unknowns,
         losses,
     } = decoded;
-    macro_rules! rewrite {
-        ($($field:ident),+ $(,)?) => {
-            $(geometry.$field = geometry.$field.rewrite_identities(ctx, &mut map)?;)+
-        };
-    }
-    rewrite!(
-        bodies,
-        regions,
-        shells,
-        faces,
-        loops,
-        coedges,
-        edges,
-        vertices,
-        points,
-        surfaces,
-        procedural_surfaces,
-        curves,
-        procedural_curves,
-        pcurves,
-    );
+    let geometry = geometry.rewrite_identities(ctx, &mut map)?;
     let unknowns = unknowns.rewrite_identities(ctx, &mut map)?;
     map.finish()?;
     Ok(TransmitGeometry {
@@ -72,4 +50,18 @@ pub(crate) fn qualify(
         unknowns,
         losses,
     })
+}
+
+/// The identity prefix that replaces the builder's format, under `namespace`
+/// when the scene holds more than one part result.
+pub(crate) fn identity_prefix(namespace: Option<&str>) -> String {
+    match namespace {
+        Some(namespace) => format!("ironcad:brep/{namespace}/"),
+        None => "ironcad:".to_owned(),
+    }
+}
+
+/// `message` with each builder identity prefix replaced by `prefix`.
+pub(crate) fn rewrite_message(message: &str, prefix: &str) -> String {
+    message.replace(BUILDER_FORMAT, prefix)
 }
