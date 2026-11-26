@@ -138,6 +138,22 @@ fn radial_controls_require_nonzero_segments_and_keep_finite_sweeps() {
     }
 }
 
+/// A radial sweep is a `FiniteReal`, so a non-finite sweep does not
+/// deserialize: neither the raw value nor the `null` that JSON writes for it.
+#[test]
+fn radial_sweep_refuses_non_finite_values() {
+    use serde::de::value::{Error, F64Deserializer};
+    for sweep in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            <FiniteReal as serde::Deserialize>::deserialize(F64Deserializer::<Error>::new(sweep))
+                .is_err()
+        );
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(radial(1.0).unwrap()).unwrap();
+        wire["kind"]["sweep"] = serde_json::json!(sweep);
+        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(wire).is_err());
+    }
+}
+
 #[test]
 fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
     for invalid in [vec![[0, 0], [0, 1]], vec![[0, 1], [1, 1]]] {
