@@ -16,8 +16,20 @@ pub(crate) const PROPERTY_SET: [u8; 20] = [
 /// Marker before a record name: `ff ff fe` and a UTF-16 code-unit count.
 pub(crate) const NAME_MARKER: [u8; 3] = [0xff, 0xff, 0xfe];
 
+/// Marker before a property name.
+pub(crate) const PROPERTY_MARKER: [u8; 2] = [0xf4, 0xff];
+
+/// Value type tag of an f64 property.
+pub(crate) const REAL_PROPERTY: u16 = 5;
+
 /// Value type tag of a string property.
-const STRING_PROPERTY: u16 = 8;
+pub(crate) const STRING_PROPERTY: u16 = 8;
+
+/// The value of a real property that the source leaves unset.
+const UNSET_REAL: f64 = -1.0e300;
+
+/// The longest property name, in bytes.
+const MAX_PROPERTY_NAME: u32 = 256;
 
 /// Metres to millimetres.
 const M_TO_MM: f64 = 1000.0;
@@ -30,6 +42,25 @@ pub(crate) struct SceneRecord {
     pub(crate) has_features: bool,
     /// The stored matrix as an IR transform in millimetres.
     pub(crate) transform: Option<Transform>,
+    /// The set properties, in stored order.
+    pub(crate) properties: Vec<(String, PropertyValue)>,
+}
+
+/// The value of one property.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum PropertyValue {
+    Real(f64),
+    Text(String),
+}
+
+impl SceneRecord {
+    /// The value of the property `name`.
+    pub(crate) fn property(&self, name: &str) -> Option<&PropertyValue> {
+        self.properties
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value)
+    }
 }
 
 impl SceneRecord {
@@ -59,14 +90,24 @@ pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
             continue;
         }
         let next = next_name(payload, after).unwrap_or(payload.len());
-        let transform = payload
-            .get(after..next)
-            .and_then(model_guid_end)
-            .and_then(|end| matrix(payload, after + end + scene_record_matrix::MATRIX));
+        let parsed = payload.get(after..next).map(properties).unwrap_or_default();
+        let transform = parsed
+            .iter()
+            .find(|property| property.name == "ModelGUID")
+            .and_then(|guid| matrix(payload, after + guid.end + scene_record_matrix::MATRIX));
+        let properties = parsed
+            .into_iter()
+            .filter(|property| property.value != PropertyValue::Real(UNSET_REAL))
+            .filter(
+                |property| !matches!(&property.value, PropertyValue::Text(text) if text.is_empty()),
+            )
+            .map(|property| (property.name, property.value))
+            .collect();
         out.push(SceneRecord {
             name,
             has_features: features,
             transform,
+            properties,
         });
         features = false;
         at = after;
@@ -86,7 +127,7 @@ fn next_name(payload: &[u8], mut from: usize) -> Option<usize> {
     }
 }
 
-fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+pub(crate) fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
     haystack
         .get(from..)?
         .windows(needle.len())
@@ -95,7 +136,7 @@ fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 }
 
 /// The printable UTF-16LE name after the marker at `at`.
-fn name_at(payload: &[u8], at: usize) -> Option<String> {
+pub(crate) fn name_at(payload: &[u8], at: usize) -> Option<String> {
     let count = usize::from(*payload.get(at + NAME_MARKER.len())?);
     if count == 0 {
         return None;
@@ -108,19 +149,76 @@ fn name_at(payload: &[u8], at: usize) -> Option<String> {
     (name.chars().all(|c| !c.is_control())).then_some(name)
 }
 
-/// The offset after the `ModelGUID` string value within `record`.
-fn model_guid_end(record: &[u8]) -> Option<usize> {
-    let key: Vec<u8> = "ModelGUID\0"
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect();
-    let at = find(record, &key, 0)? + key.len();
-    if View::u16_le_at(record, at)? != STRING_PROPERTY {
-        return None;
+/// One stored property and the offset after its value.
+struct Property {
+    name: String,
+    value: PropertyValue,
+    end: usize,
+}
+
+/// Reads the properties of one property set.
+///
+/// A property is `f4 ff`, a `u32` name length in bytes, the NUL-terminated
+/// UTF-16LE name, a `u16` value type, and the value. Properties of other
+/// value types end the read.
+fn properties(record: &[u8]) -> Vec<Property> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(found) = find(record, &PROPERTY_MARKER, at) {
+        at = found + PROPERTY_MARKER.len();
+        let Some(length) = View::u32_le_at(record, at)
+            .filter(|length| *length >= 2 && *length <= MAX_PROPERTY_NAME && length % 2 == 0)
+        else {
+            continue;
+        };
+        let Some(name) = utf16(record, at + 4, length) else {
+            continue;
+        };
+        let Ok(name_bytes) = usize::try_from(length) else {
+            continue;
+        };
+        let value_at = at + 4 + name_bytes;
+        let Some(kind) = View::u16_le_at(record, value_at) else {
+            break;
+        };
+        let (value, end) = match kind {
+            REAL_PROPERTY => {
+                let Some(value) = View::f64_le_at(record, value_at + 2) else {
+                    break;
+                };
+                (PropertyValue::Real(value), value_at + 10)
+            }
+            STRING_PROPERTY => {
+                let Some(length) = View::u32_le_at(record, value_at + 2) else {
+                    break;
+                };
+                let Some(text) = utf16(record, value_at + 6, length) else {
+                    break;
+                };
+                let Ok(text_bytes) = usize::try_from(length) else {
+                    break;
+                };
+                (PropertyValue::Text(text), value_at + 6 + text_bytes)
+            }
+            _ => continue,
+        };
+        out.push(Property { name, value, end });
+        at = end;
     }
-    let length = usize::try_from(View::u32_le_at(record, at + 2)?).ok()?;
-    let end = at + 6 + length;
-    (end <= record.len()).then_some(end)
+    out
+}
+
+/// The NUL-terminated UTF-16LE text of `length` bytes at `at`, without its
+/// NUL.
+fn utf16(bytes: &[u8], at: usize, length: u32) -> Option<String> {
+    let units = usize::try_from(length).ok()? / 2;
+    let units: Vec<u16> = (0..units)
+        .map(|index| View::u16_le_at(bytes, at + 2 * index))
+        .collect::<Option<_>>()?;
+    let (&last, text) = units.split_last()?;
+    (last == 0).then_some(())?;
+    let text = String::from_utf16(text).ok()?;
+    text.chars().all(|c| !c.is_control()).then_some(text)
 }
 
 /// The row-vector 4 × 4 matrix at `at` as a column-vector IR transform.

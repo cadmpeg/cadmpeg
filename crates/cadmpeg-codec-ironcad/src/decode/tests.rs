@@ -64,7 +64,7 @@ fn the_result_record_decodes_and_the_feature_record_is_retained() {
         &ctx,
         CadIr::empty(),
         bodies,
-        None,
+        super::Scene::default(),
         losses,
         Sha256Digest::digest(&payload),
     )
@@ -116,7 +116,7 @@ fn a_face_on_an_unrecognized_surface_record_is_charged() {
         &ctx,
         CadIr::empty(),
         bodies,
-        None,
+        super::Scene::default(),
         losses,
         Sha256Digest::digest(&payload),
     )

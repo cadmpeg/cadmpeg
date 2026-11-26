@@ -92,9 +92,12 @@ header product string names `IronCAD`. Lengths are centimetres (`asm.md` §4).
 
 ## 4. Units
 
-The `Document Data` stream names the scene units as UTF-16LE strings: a length
-unit (`Millimeters`), an angle unit (`Degrees`), and a mass unit (`Kilograms`).
-Parasolid kernel lengths are in metres.
+The `Document Data` stream stores unit entries in this order: a length unit,
+an angle unit, a second length unit, and a mass unit. An entry is an f64 scale
+to the SI unit, the unit name, the unit abbreviation, and a precision string.
+The strings use the record-name form of §5. A scene in millimetres stores
+`0.001`, `Millimeters`, and `mm`, then `π/180`, `Degrees`, and `deg`, then
+`Centimeters`, then `Kilograms`. Parasolid kernel lengths are in metres.
 
 ## 5. Scene records
 
@@ -115,12 +118,15 @@ feature records of a part come before its part record. An assembly record
 comes after the part records of its parts, and no feature record comes
 between it and the record before it.
 
-The property set holds named properties. A property name is a NUL-terminated
-little-endian UTF-16 string, a `u16` value type, and the value. Type `8` is a
-string: a `u32` byte length and the NUL-terminated UTF-16 text. Type `5` is an
-f64. The properties include `PartName`, `PartVolume`, `MassDensity`,
-`SizeboxHeight`, `SizeboxLength`, `SizeboxWidth`, and `ModelGUID`. Lengths are
-metres.
+The property set holds named properties. A property is the bytes `f4 ff`, a
+`u32` name length in bytes, the NUL-terminated little-endian UTF-16 name, a
+`u16` value type, and the value. Type `8` is a string: a `u32` byte length and
+the NUL-terminated UTF-16 text. Type `5` is an f64; the value `-1e300` marks an
+unset property. The properties include `PartName`, `Part Number`,
+`Description`, `Classification`, `PartVolume`, `PartMass`, `MassDensity`,
+`SizeboxHeight`, `SizeboxLength`, `SizeboxWidth`, `StartTaper`, `EndTaper`,
+and `ModelGUID`. Values are SI: lengths are metres, masses are kilograms, and
+`MassDensity` is kilograms per cubic metre.
 
 The `ModelGUID` value is a brace-enclosed GUID string. The record matrix
 starts 41 bytes after the end of that string.

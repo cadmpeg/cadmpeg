@@ -41,3 +41,11 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 **Known.** The part records come in the stored order of the part result records of `Brep Data` (DR-1063). The part matrices store the identity 3 × 3 block, and translations such as `(0.06318, -0.04831, 0.01487)` and `(-0.02024, 0.07955, 0.05932)` m. A part at the scene origin stores the identity matrix. Two part records before an assembly record store translations `(-0.11908, 0.098, 0.02891)` and `(-0.11908, 0.098, -0.02109)` m. The result body of the second part is a cylinder of height `0.05` m whose base lies at z = `0` in its part frame, so its top meets the frame origin of the first part. The assembly record stores the identity matrix. The decoder binds each part record to the part result record of the same rank, places that part as an occurrence of the root definition by the row-vector reading of its matrix, and charges `ironcad.placement.bound-by-order`. It transfers no assembly record and charges `ironcad.assembly.flattened`.
 
 **Need.** Save one block part at the scene origin, then the same scene after the part is moved by (20, 30, 50) mm, and then after it is rotated by 30° about Z. Compare the matrix of the part record. Then move an assembly that holds two parts, and compare the matrices of the assembly record and of its part records.
+
+### DR-1068. Roles of the unit entries of `Document Data`
+
+**Question.** Which unit entry of `Document Data` is the scene length unit, and what does the second length entry select?
+
+**Known.** `Document Data` stores a length entry, an angle entry, a second length entry, and a mass entry (`ironcad.md` §4). In a millimetre scene the first length entry names `Millimeters` with scale `0.001`, and the second names `Centimeters`. The decoder reads the first stated length, angle, and mass entry as the scene unit system and charges `ironcad.units.first-stated`.
+
+**Need.** Save the block with the scene length unit set to inches, then with the second length unit changed in the unit settings. Compare the entries of `Document Data`.

@@ -16,6 +16,8 @@ const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
 const ACIS_BLOCK: &str = "Block_ACIS_100x50x20.ics";
 /// Agreement of a decoded corner with the modelled block dimensions.
 const EPS_POINT_MM: f64 = 1.0e-9;
+/// Agreement of a converted density with the stored steel density.
+const EPS_DENSITY_KG_PER_MM3: f64 = 1.0e-15;
 
 fn detect(bytes: &[u8]) -> Confidence {
     let arena = DecodeArena::new();
@@ -333,4 +335,44 @@ fn single_part_scenes_place_their_part_at_the_origin() {
         cadmpeg_ir::transform::Transform::identity().affine_rows()
     );
     assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+}
+
+#[test]
+fn part_properties_mass_and_scene_units_are_transferred() {
+    let result = decode(SCENE);
+    assert_eq!(count(&result, IronCadLossCode::UnitsFirstStated), 1);
+    let model = &result.ir().model;
+    let part = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Compound_part"))
+        .unwrap();
+    assert_eq!(
+        part.native_ref.as_deref(),
+        Some("{D511A408-89F1-4138-8BAE-FC2721E6DBAE}")
+    );
+    let height = part
+        .bom_properties
+        .iter()
+        .find(|(key, _)| key.as_str() == "SizeboxHeight")
+        .map(|(_, value)| value.parse::<f64>().unwrap())
+        .unwrap();
+    assert!((height - 0.075).abs() <= EPS_POINT_MM);
+    assert!(!part
+        .bom_properties
+        .keys()
+        .any(|key| key.as_str() == "PartMass" || key.as_str() == "MassDensity"));
+    assert_eq!(model.mass_properties.len(), 5);
+    let density = model.mass_properties[0].density.unwrap().get();
+    assert!((density - 7.8e-6).abs() <= EPS_DENSITY_KG_PER_MM3);
+    assert!(model.mass_properties[0].mass.is_none());
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    let units = root.units.as_ref().unwrap();
+    assert_eq!(units.length, cadmpeg_ir::design::units::UnitSymbol::Mm);
+    assert_eq!(units.angle, cadmpeg_ir::design::units::UnitSymbol::Deg);
+    assert_eq!(units.mass, Some(cadmpeg_ir::design::units::UnitSymbol::Kg));
 }

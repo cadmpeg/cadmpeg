@@ -20,12 +20,17 @@ use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 
-use crate::container::{BREP_DATA, PUBLIC_ACCESS};
+use crate::container::{BREP_DATA, DOCUMENT_DATA, PUBLIC_ACCESS};
 use crate::loss::IronCadLossCode;
-use crate::placement::SceneRecord;
+use crate::placement::{PropertyValue, SceneRecord};
 use crate::tree::{Kernel, KernelRecord};
-use crate::{acis, container, dialect, frame, kernel, parasolid, placement, tree};
+use crate::{acis, container, dialect, frame, kernel, parasolid, placement, tree, units};
 use cadmpeg_codec_sldprt::transmit::TransmitGeometry;
+use cadmpeg_ir::design::units::UnitSystem;
+use cadmpeg_ir::ids::MassPropertiesId;
+use cadmpeg_ir::physics::{MassProperties, PhysicsTarget};
+use cadmpeg_ir::references::InstanceTarget;
+use cadmpeg_ir::scalar::PositiveReal;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
@@ -35,12 +40,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
         .collect();
     let mut bodies = Bodies::default();
-    let mut scene = None;
+    let mut scene = Scene::default();
     if !ctx.container_only() {
         if let Some(records) = records(ctx, &snapshot, &mut losses)? {
             bodies = classify(ctx, &records, &mut layers, &mut losses)?;
         }
-        scene = scene_records(ctx, &snapshot, &mut losses)?;
+        scene.records = scene_records(ctx, &snapshot, &mut losses)?;
+        scene.units = document_units(ctx, &snapshot, &mut losses)?;
         scene_streams(&snapshot, &mut losses);
     }
     let mut ir = CadIr::empty();
@@ -59,7 +65,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             source_fidelity: SourceFidelity::new(digest),
         });
     }
-    transfer(ctx, ir, bodies, scene.as_deref(), losses, digest)
+    transfer(ctx, ir, bodies, scene, losses, digest)
+}
+
+/// The part and assembly records and the scene units.
+#[derive(Default)]
+struct Scene {
+    records: Option<Vec<SceneRecord>>,
+    units: Option<UnitSystem>,
 }
 
 /// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
@@ -78,7 +91,7 @@ fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     bodies: Bodies,
-    scene: Option<&[SceneRecord]>,
+    scene: Scene,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
@@ -171,8 +184,8 @@ fn transfer(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
-    let placed = match scene {
-        Some(scene) => place(ctx, &mut ir, results, scene, &mut losses)?,
+    let placed = match &scene.records {
+        Some(records) => place(ctx, &mut ir, results, records, &mut losses)?,
         None => Vec::new(),
     };
     if let Some(root) = ir.state_root_definition(
@@ -184,6 +197,7 @@ fn transfer(
         ExternalDocument::default(),
     )? {
         root.occurrences.extend(placed);
+        root.units = scene.units;
     }
     Ok(Decoded {
         ir,
@@ -520,6 +534,10 @@ fn place(
         definition.kind = Some(ProductDefinitionKind::Part);
         definition.source_name = Some(part.name.clone());
         definition.bodies = bodies;
+        part_properties(part, &mut definition);
+        if let Some(mass) = mass_properties(part, &definition_id, rank) {
+            ir.model.mass_properties.push(mass);
+        }
         ir.model.product_definitions.push(definition);
         if part.transform.is_none() {
             losses.push(IronCadLossCode::PlacementUnbound.note(format!(
@@ -537,6 +555,100 @@ fn place(
         placed.push(occurrence_id);
     }
     Ok(placed)
+}
+
+/// Properties of a part record that the definition states directly.
+const DEFINITION_PROPERTIES: [&str; 4] = ["PartName", "Part Number", "Description", "ModelGUID"];
+
+/// Properties of a part record that its mass record states.
+const MASS_PROPERTIES: [&str; 2] = ["MassDensity", "PartMass"];
+
+/// Kilograms per cubic metre to kilograms per cubic millimetre.
+const KG_PER_M3_TO_KG_PER_MM3: f64 = 1.0e-9;
+
+/// Moves the part number, description, GUID, and remaining set properties
+/// of `part` into `definition`.
+fn part_properties(part: &SceneRecord, definition: &mut ProductDefinition) {
+    let text = |name: &str| match part.property(name) {
+        Some(PropertyValue::Text(text)) => Some(text.clone()),
+        _ => None,
+    };
+    definition.part_number = text("Part Number");
+    definition.description = text("Description");
+    definition.native_ref = text("ModelGUID");
+    for (name, value) in &part.properties {
+        if DEFINITION_PROPERTIES.contains(&name.as_str())
+            || MASS_PROPERTIES.contains(&name.as_str())
+        {
+            continue;
+        }
+        let Some(key) = cadmpeg_core::text::NonBlankString::new(name.clone()) else {
+            continue;
+        };
+        let value = match value {
+            PropertyValue::Real(value) => value.to_string(),
+            PropertyValue::Text(text) => text.clone(),
+        };
+        definition.bom_properties.insert(key, value);
+    }
+}
+
+/// The mass record of a part whose record states a mass or a density.
+fn mass_properties(
+    part: &SceneRecord,
+    definition: &ProductDefinitionId,
+    rank: u64,
+) -> Option<MassProperties> {
+    let real = |name: &str| match part.property(name) {
+        Some(PropertyValue::Real(value)) => Some(*value),
+        _ => None,
+    };
+    let mass = real("PartMass").and_then(PositiveReal::new);
+    let density = real("MassDensity")
+        .map(|value| value * KG_PER_M3_TO_KG_PER_MM3)
+        .and_then(PositiveReal::new);
+    if mass.is_none() && density.is_none() {
+        return None;
+    }
+    Some(MassProperties {
+        id: MassPropertiesId::compose(
+            &cadmpeg_ir::identity_namespace!("ironcad", "model", "mass-properties"),
+            rank,
+        ),
+        target: InstanceTarget::new(PhysicsTarget::Definition {
+            definition: definition.clone(),
+        }),
+        mass,
+        density,
+        center_of_mass: None,
+        inertia: None,
+        material: None,
+        native_ref: None,
+    })
+}
+
+/// Reads the scene units of `Document Data`.
+fn document_units(
+    ctx: &DecodeContext<'_>,
+    snapshot: &CompoundSnapshot<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<UnitSystem>, CodecError> {
+    let Some(entry) = snapshot.stream(DOCUMENT_DATA) else {
+        return Ok(None);
+    };
+    let stream = match snapshot.open(ctx, entry) {
+        Ok(stream) => stream,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    let units = units::scene_units(stream.window());
+    if units.is_some() {
+        losses.push(IronCadLossCode::UnitsFirstStated.note(
+            "the first stated length, angle, and mass unit of `Document Data` are read as the \
+             scene units",
+        ));
+    }
+    Ok(units)
 }
 
 /// Retains the kernel bytes of `record` as a native record.
