@@ -599,10 +599,10 @@
           },
           "nx:om-entry-0:parameter#399": {
             "fields": {
+              "kind": "derived",
               "native_ref": "derived",
-              "ordinal": "derived",
-              "owner": "derived",
-              "properties": "derived",
+              "scope": "derived",
+              "unit": "derived",
               "value": "derived"
             },
             "kind": "fields"
