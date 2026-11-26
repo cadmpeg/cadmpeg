@@ -167,6 +167,21 @@ fn opposite_caps_contradict_reversed_travel() {
     }
 }
 
+/// An extrusion whose suppression the source does not state is in force
+/// (§5.10), so the solid can contradict its travel; a suppressed one is not.
+#[test]
+fn travel_of_an_extrusion_not_stated_suppressed_is_tested() {
+    for (suppressed, contradicted) in [(None, true), (Some(false), true), (Some(true), false)] {
+        let mut ir = model(10.0, 1.0);
+        ir.model.features[0].suppressed = suppressed;
+        assert_eq!(
+            contradicted_features(&ir).contains(&ir.model.features[0].id),
+            contradicted,
+            "{suppressed:?}"
+        );
+    }
+}
+
 #[test]
 fn absent_caps_and_carrier_failures_preserve_travel() {
     for missing in [0.0, 10.0] {
@@ -270,15 +285,6 @@ fn placed_body_caps_are_compared_in_model_space() {
         [0.0, 0.0, 1.0, 20.0],
     ]);
     assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
-}
-
-#[test]
-fn suppressed_and_unresolved_suppression_preserve_travel() {
-    for suppressed in [None, Some(true)] {
-        let mut ir = model(10.0, 1.0);
-        ir.model.features[0].suppressed = suppressed;
-        assert!(contradicted_features(&ir).is_empty());
-    }
 }
 
 #[test]

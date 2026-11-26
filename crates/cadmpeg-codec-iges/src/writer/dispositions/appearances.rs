@@ -3,19 +3,17 @@
 //! written when the written file states it, and every other record is charged
 //! by id with its reason.
 //!
-//! A written Directory entry states the colour of the body or the face that
-//! its entity carries. A binding of the whole of a body or a face is written
-//! when every entity that carries it states the colour of its appearance; its
-//! source identity, object type, and channels are the source's names for the
-//! target that the written entity restates. An appearance is written when a
-//! written entity that carries a body or a face that one of its bindings
-//! names states its colour, it states only a colour and a name, and a written
-//! Type 314 states its name.
+//! A written Directory entry states the red, green, and blue of the colour of
+//! the body or the face that its entity carries, and no opacity. A binding of
+//! the whole of a body or a face is written when every entity that carries it
+//! states the red, green, and blue of its appearance; its source identity,
+//! object type, and channels are the source's names for the target that the
+//! written entity restates. An appearance is written when a written entity
+//! that carries a body or a face that one of its bindings names states its
+//! red, green, and blue, it states only an opaque colour and a name, and a
+//! written Type 314 states its name.
 //!
-//! A Type 143 or 144 has one Directory colour field for its sheet body and
-//! its face. A body whose faces it writes with another colour is charged
-//! once, unless a binding of the whole body to an appearance of the body
-//! colour is charged for the colour its entities state.
+//! An appearance that loses several facts is charged once with every reason.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,26 +34,26 @@ pub(super) const BINDING_TARGET: &str =
 const BINDING_UNWRITTEN: &str = "whose body or face no written entity carries";
 const BINDING_FIELDS: &str = "that state a precedence or a visibility that IGES does not state";
 const BINDING_NO_COLOR: &str = "whose appearance states no colour";
-const BINDING_COLOR: &str = "whose body or face a written Directory entry states with a colour \
+pub(super) const BINDING_COLOR: &str =
+    "whose body or face a written Directory entry states with a colour \
                              other than that of the appearance";
 pub(super) const APPEARANCE_UNUSED: &str =
     "whose colour no written body or face that one of their bindings names states";
 const APPEARANCE_CONTENT: &str = "that state an identity, a category, a schema, properties, or \
                                   textures that IGES does not state";
+const APPEARANCE_OPACITY: &str =
+    "whose colour states an opacity, which a Directory colour does not state";
 const APPEARANCE_NAME: &str = "whose name no written colour definition states";
 
 /// The schema of the appearances the IGES decoder states.
 const IGES_SCHEMA: &str = "IGES color";
 
 /// The appearances and the appearance bindings the written file does not
-/// state, each with its reason, by id.
+/// state, each with its reasons, by id.
 #[derive(Default)]
 pub(in crate::writer) struct AppearanceDrops {
-    pub(in crate::writer) appearances: BTreeMap<String, &'static str>,
-    pub(in crate::writer) bindings: BTreeMap<String, &'static str>,
-    /// Each body whose colour no written entity of its faces states, with
-    /// those faces.
-    body_colors: BTreeMap<String, BTreeSet<String>>,
+    pub(in crate::writer) appearances: BTreeMap<String, String>,
+    pub(in crate::writer) bindings: BTreeMap<String, String>,
 }
 
 impl AppearanceDrops {
@@ -72,7 +70,7 @@ impl AppearanceDrops {
             if let Some(reason) = binding_drop(binding, appearance, synthesis) {
                 drops
                     .bindings
-                    .insert(binding.id.as_str().to_owned(), reason);
+                    .insert(binding.id.as_str().to_owned(), reason.to_owned());
             }
         }
         let stated = ir
@@ -83,7 +81,8 @@ impl AppearanceDrops {
             .filter(|binding| {
                 let color = appearances
                     .get(binding.appearance.as_str())
-                    .and_then(|appearance| appearance.base_color);
+                    .and_then(|appearance| appearance.base_color)
+                    .and_then(super::opaque);
                 color.is_some()
                     && carriers(&binding.target.entity, synthesis)
                         .is_some_and(|carrying| carrying.iter().any(|p| p.color == color))
@@ -98,38 +97,43 @@ impl AppearanceDrops {
             .collect::<BTreeSet<_>>();
         for appearance in &ir.model.appearances {
             let id = appearance.id.as_str();
-            let reason = if !stated.contains(id) {
-                APPEARANCE_UNUSED
-            } else if states_more_than_a_colour(appearance) {
-                APPEARANCE_CONTENT
-            } else if appearance.name.is_some() && !named.contains(id) {
-                APPEARANCE_NAME
+            let reasons = if stated.contains(id) {
+                [
+                    (states_more_than_a_colour(appearance), APPEARANCE_CONTENT),
+                    (
+                        appearance.base_color.is_some_and(|color| color.a() != 1.0),
+                        APPEARANCE_OPACITY,
+                    ),
+                    (
+                        appearance.name.is_some() && !named.contains(id),
+                        APPEARANCE_NAME,
+                    ),
+                ]
+                .into_iter()
+                .filter_map(|(lost, reason)| lost.then_some(reason))
+                .collect::<Vec<_>>()
             } else {
-                continue;
+                vec![APPEARANCE_UNUSED]
             };
-            drops.appearances.insert(id.to_owned(), reason);
+            if !reasons.is_empty() {
+                drops
+                    .appearances
+                    .insert(id.to_owned(), reasons.join(", and "));
+            }
         }
-        drops.body_colors = body_colors(ir, synthesis, &drops.bindings);
         drops
     }
 
     /// One loss for each arena and reason, naming every record it charges.
     pub(in crate::writer) fn losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
-        for (body, faces) in &self.body_colors {
-            losses.push(IgesLossCode::WriterBodyColorNotRepresented.note(format!(
-                "IGES body {body} colour is not written on the entities of faces {}, whose one \
-                 Directory colour field states the face colour",
-                faces.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
-            )));
-        }
         for (arena, drops) in [
             ("appearances", &self.appearances),
             ("appearance_bindings", &self.bindings),
         ] {
             let mut by_reason = BTreeMap::<&str, Vec<&str>>::new();
             for (id, reason) in drops {
-                by_reason.entry(reason).or_default().push(id);
+                by_reason.entry(reason.as_str()).or_default().push(id);
             }
             for (reason, ids) in by_reason {
                 losses.push(IgesLossCode::WriterAppearanceNotRepresented.note(format!(
@@ -169,7 +173,7 @@ fn binding_drop(
     };
     if carrying
         .iter()
-        .any(|presented| presented.color != Some(color))
+        .any(|presented| presented.color != super::opaque(color))
     {
         return Some(BINDING_COLOR);
     }
@@ -197,69 +201,6 @@ fn carriers<'s>(target: &AppearanceTarget, synthesis: &'s Synthesis) -> Option<V
             .filter(|p| carries(p))
             .collect()
     })
-}
-
-/// Each body with a colour whose faces a Type 143 or 144 writes with another
-/// colour, with those faces, less each body that a binding of the whole body
-/// to an appearance of the body colour names, charged for its colour.
-fn body_colors(
-    ir: &CadIr,
-    synthesis: &Synthesis,
-    charged: &BTreeMap<String, &'static str>,
-) -> BTreeMap<String, BTreeSet<String>> {
-    let bodies = ir
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| (body.id.as_str(), body))
-        .collect::<BTreeMap<_, _>>();
-    let faces = ir
-        .geometry
-        .faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<BTreeMap<_, _>>();
-    let mut unwritten = BTreeMap::<String, BTreeSet<String>>::new();
-    for presented in synthesis.presented.values() {
-        let (Some(body), Some(face)) = (&presented.body, &presented.face) else {
-            continue;
-        };
-        let (Some(body), Some(face)) = (
-            bodies.get(synthesis.source_body(body).as_str()),
-            faces.get(face.as_str()),
-        ) else {
-            continue;
-        };
-        if face.color.is_some() && body.color.is_some_and(|color| face.color != Some(color)) {
-            unwritten
-                .entry(body.id.as_str().to_owned())
-                .or_default()
-                .insert(face.id.as_str().to_owned());
-        }
-    }
-    let appearances = ir
-        .model
-        .appearances
-        .iter()
-        .map(|appearance| (appearance.id.as_str(), appearance))
-        .collect::<BTreeMap<_, _>>();
-    for binding in &ir.model.appearance_bindings {
-        let AppearanceTarget::Body(body) = &binding.target.entity else {
-            continue;
-        };
-        let names_body_color = binding.target.path.is_none()
-            && charged.get(binding.id.as_str()) == Some(&BINDING_COLOR)
-            && bodies.get(body.as_str()).is_some_and(|body| {
-                body.color.is_some()
-                    && appearances
-                        .get(binding.appearance.as_str())
-                        .is_some_and(|appearance| appearance.base_color == body.color)
-            });
-        if names_body_color {
-            unwritten.remove(body.as_str());
-        }
-    }
-    unwritten
 }
 
 /// Whether `appearance` states more than a colour and a name.

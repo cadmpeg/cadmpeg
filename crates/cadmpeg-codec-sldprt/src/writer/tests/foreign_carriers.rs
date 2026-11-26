@@ -447,6 +447,31 @@ fn history_with_another_formats_native_references_is_written() {
     assert_eq!(decoded.model.sketches.len(), 1);
 }
 
+/// A source that does not state suppression leaves its features unsuppressed
+/// (§5.10): the history is written whole, with no note for it.
+#[test]
+fn history_whose_source_does_not_state_suppression_is_written_unsuppressed() {
+    let mut ir = cube_with_foreign_history();
+    for feature in &mut ir.model.features {
+        feature.suppressed = None;
+    }
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    for name in ["Profile", "Boss"] {
+        let feature = decoded
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{name} decodes back"));
+        assert_eq!(feature.suppressed, Some(false), "{name}");
+    }
+}
+
 /// Push a feature of another format named `name`, with the input topology
 /// `other:history-input:state#{key}` holding one face and one edge, and
 /// return its id. `definition` builds the operation from that state, face and
