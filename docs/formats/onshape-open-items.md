@@ -147,13 +147,11 @@ words than a parameter silences that parameter. Source responses remain assets.
 
 ## ONSHAPE-012 — Derived insert placement and configuration
 
-Question: How do a stored `placement`, `location`, mate connector value, `configuration` or `partIdentity` of an `importDerived` feature move or select the inserted bodies?
+Question: How do a stored `placement`, `location`, mate connector value, `configuration`, `partIdentity`, `includeMateConnectors`, `includeProperties` or `preserveActiveSheetMetal` of an `importDerived` feature move, select or add to the inserted bodies?
 
-Known: The feature specification stores `placement` as `AT_ORIGIN` or `AT_MATE_CONNECTOR`, a `location` query list, the mate connector values `mateConnectorIndex`, `mateConnectorId` and `mateConnectorIndexInFeature`, and a `configuration` array and `partIdentity` in the `partStudio` record. Every one of them has a default, and the default places the bodies at their source placement.
+Known: The feature specification stores `placement` as `AT_ORIGIN` or `AT_MATE_CONNECTOR`, a `location` query list, the mate connector values `mateConnectorIndex`, `mateConnectorId` and `mateConnectorIndexInFeature`, and a `configuration` array and `partIdentity` in the `partStudio` record, and the Boolean controls `includeMateConnectors`, `includeProperties` and `preserveActiveSheetMetal`. Every one of them has a default, and the default places the bodies at their source placement.
 
 Need: `importDerived` features that store a non-default value of one of these fields, with the rollback states before and after each feature and the referenced studio.
-
-Note: The fields `includeMateConnectors`, `includeProperties` and `preserveActiveSheetMetal` have defaults and are stored beside the placement fields.
 
 ## ONSHAPE-030 — Shell wall sense with opposite direction
 
