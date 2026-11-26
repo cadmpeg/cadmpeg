@@ -156,7 +156,7 @@ fn held_ids<'a>(value: &'a Value, held: &mut BTreeSet<&'a str>) {
 
 #[test]
 fn the_audit_finds_each_misnamed_give_up() {
-    let ir = serde_json::json!({
+    let ir = cadmpeg_core::json!({
         "model": { "bodies": [{ "id": "t:body#1" }, { "id": "t:body#2" }] },
         "native": { "t": {
             "unknowns": [{ "id": "t:source:part#a" }],

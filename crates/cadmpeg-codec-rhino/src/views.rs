@@ -1895,7 +1895,7 @@ mod tests {
             .arenas()["unknowns"];
         assert_eq!(unknowns.len(), 1);
         assert_eq!(unknowns[0].id(), stub);
-        assert_eq!(unknowns[0].field("links"), Some(serde_json::json!([])));
+        assert_eq!(unknowns[0].field("links"), Some(cadmpeg_core::json!([])));
         let retained = fidelity.retained_record(&stub).expect("retained digest");
         assert!(retained.data().is_none());
     }

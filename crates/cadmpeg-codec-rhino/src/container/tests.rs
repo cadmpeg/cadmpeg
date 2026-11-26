@@ -1247,7 +1247,7 @@ pub(crate) fn assert_part_given_up(
         .find(|record| record.id() == stub)
         .expect("the document holds the stub");
     let links = link.into_iter().collect::<Vec<_>>();
-    assert_eq!(record.field("links"), Some(serde_json::json!(links)));
+    assert_eq!(record.field("links"), Some(cadmpeg_core::json!(links)));
     let retained = fidelity
         .retained_record(stub)
         .expect("the part's digest is retained");

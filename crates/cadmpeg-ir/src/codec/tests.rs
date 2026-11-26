@@ -1845,7 +1845,7 @@ fn a_native_record_whose_label_equals_a_charged_id_is_kept() {
     fn issue(ir: &mut CadIr) {
         let record = crate::NativeRecord::new(
             crate::ids::Identity::new("test:native:issue#1").unwrap(),
-            [("scope".to_owned(), serde_json::json!("test:file:scope#3"))]
+            [("scope".to_owned(), cadmpeg_core::json!("test:file:scope#3"))]
                 .into_iter()
                 .collect(),
         )
@@ -1864,7 +1864,7 @@ fn a_native_record_whose_label_equals_a_charged_id_is_kept() {
         .unwrap_or_default();
     assert_eq!(
         issues,
-        [serde_json::json!({"id": "test:native:issue#1", "scope": "test:file:scope#3"})]
+        [cadmpeg_core::json!({"id": "test:native:issue#1", "scope": "test:file:scope#3"})]
     );
 }
 
@@ -1874,7 +1874,7 @@ fn a_native_record_whose_label_equals_a_charged_id_is_kept() {
 fn a_surface_whose_source_object_equals_a_charged_id_is_kept() {
     fn labelled(ir: &mut CadIr) {
         ir.geometry.surfaces[0].source_object = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "format": "test",
                 "object_id": "test:file:surface#7",
                 "instance_path": []

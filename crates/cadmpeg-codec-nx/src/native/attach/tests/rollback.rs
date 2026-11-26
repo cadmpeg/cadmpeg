@@ -22,7 +22,7 @@ fn a_rolled_back_attachment_names_each_record_it_added_and_no_record_it_kept() {
             .set_arena(
                 ctx,
                 "kept",
-                &[serde_json::json!({"id": "nx:native:kept#0"})],
+                &[cadmpeg_core::json!({"id": "nx:native:kept#0"})],
             )
             .expect("the kept arena is admitted");
         let mut unknowns = vec![unknown("nx:container:kept#0")];
@@ -34,7 +34,7 @@ fn a_rolled_back_attachment_names_each_record_it_added_and_no_record_it_kept() {
             .set_arena(
                 ctx,
                 "added",
-                &[serde_json::json!({"id": "nx:native:added#0"})],
+                &[cadmpeg_core::json!({"id": "nx:native:added#0"})],
             )
             .expect("the added arena is admitted");
         unknowns.push(unknown("nx:container:added#0"));
