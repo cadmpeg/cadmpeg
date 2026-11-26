@@ -34,7 +34,7 @@ The page header holds three fields. Bytes 0 through 3 are the little-endian i32 
 
 A record-start page or continuation page stores its four-byte marker at offset 4: the count `128` and the record-start flag. Bytes 0 through 3 hold the next-page index.
 
-A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as a little-endian u16 at offset 4. Bytes 6 through 7 hold the record-start flag: `1` when the terminal page is the only page of its record, and `0` when it closes a record that a record-start page opened. `used` is at most 128. The body bytes after the first `used` bytes carry no record data.
+A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as a little-endian u16 at offset 4. The used length is `128` when the record ends at the end of the page body: bytes 4 through 7 then equal the continuation marker, or the record-start marker when the page is the only page of its record, and the page is terminal by its bytes 0 through 3. Bytes 6 through 7 hold the record-start flag: `1` when the terminal page is the only page of its record, and `0` when it closes a record that a record-start page opened. `used` is at most 128. The body bytes after the first `used` bytes carry no record data.
 
 The pages of a record are consecutive: each next-page index is the index of the page that follows it. The records of a stream are consecutive and in table-of-contents order (§6). A stream has no page outside a record.
 
