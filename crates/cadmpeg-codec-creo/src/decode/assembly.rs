@@ -4,13 +4,14 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::assembly::{Member, MemberTable};
@@ -65,12 +66,16 @@ pub(super) fn transfer_assembly_members(
     let mut definitions = Vec::new();
     let mut owned = Vec::new();
     let mut external_occurrences = 0_usize;
-    let mut unresolved_placements = 0_usize;
+    let mut unresolved_placements = Vec::new();
     let mut unresolved_references = 0_usize;
     let mut transferred = 0_usize;
     for (row, member) in table.members.iter().enumerate() {
+        let id = crate::identity::compose_checked::<OccurrenceId>(
+            &crate::identity::MODEL_OCCURRENCE,
+            format_args!("member-{row}"),
+        )?;
         let Some(transform) = member_transform(&member.frame) else {
-            unresolved_placements += 1;
+            unresolved_placements.push(id);
             continue;
         };
         let document = member_document(member);
@@ -106,10 +111,6 @@ pub(super) fn transfer_assembly_members(
         } else {
             unresolved_references += 1;
         }
-        let id = crate::identity::compose_checked::<OccurrenceId>(
-            &crate::identity::MODEL_OCCURRENCE,
-            format_args!("member-{row}"),
-        )?;
         annotate(
             annotations,
             &id,
@@ -121,7 +122,7 @@ pub(super) fn transfer_assembly_members(
         ctx.charge_entities(1, "admit Creo assembly member occurrences")?;
         let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
         occurrence.name = Some(member.name.clone());
-        occurrence.native_ref = Some(format!("NeuAsmSld:members:{}", member.id));
+        occurrence.native_ref = Some(member_record(member));
         source_carriers.admit_occurrence(ir, occurrence)?;
         owned.push(id);
         transferred += 1;
@@ -142,11 +143,20 @@ pub(super) fn transfer_assembly_members(
             external_documents.len()
         )));
     }
-    if unresolved_placements > 0 {
+    if !unresolved_placements.is_empty() {
         transfer_losses.push(CreoLossCode::AssemblyPlacementUnresolved.note(format!(
-            "{unresolved_placements} component row(s) store a frame that is not a proper rigid \
-             placement; those occurrences did not transfer"
+            "{} component row(s) store a frame that is not a proper rigid \
+             placement; those occurrences did not transfer",
+            unresolved_placements.len()
         )));
+        let code = CreoLossCode::AssemblyPlacementUnresolved.kind();
+        transfer_losses.extend(unresolved_placements.iter().map(|occurrence| {
+            GivenUpRecord::new(
+                occurrence,
+                format_args!("{code}: the row stores a frame that is not a proper rigid placement"),
+            )
+            .loss()
+        }));
     }
     if unresolved_references > 0 {
         transfer_losses.push(
@@ -169,15 +179,67 @@ pub(super) fn transfer_assembly_members(
 
 fn record_table_stop(table: &MemberTable, transfer_losses: &mut Vec<LossNote>) {
     if let Some(stop) = &table.stop {
-        transfer_losses.push(CreoLossCode::AssemblyMemberTableIncomplete.note(format!(
+        let note = CreoLossCode::AssemblyMemberTableIncomplete.note(format!(
             "component table at offset {} declares {} row(s); {} row(s) decoded before offset {}: {}",
             table.offset,
             table.declared,
             table.members.len(),
             stop.offset,
             stop.reason
-        )));
+        ));
+        transfer_losses.push(note);
     }
+}
+
+/// Gives up the component rows from the first row the grammar does not
+/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part.
+/// The decode retains no other copy of those bytes.
+pub(super) fn give_up_unread_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<GivenUpPart>, CodecError> {
+    let Some(stop) = scan
+        .assembly
+        .as_ref()
+        .and_then(|table| table.stop.as_ref())
+        .filter(|stop| stop.row_unread)
+    else {
+        return Ok(None);
+    };
+    let Some(bytes) = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| {
+            section.name() == "NeuAsmSld"
+                && section.offset() <= stop.offset
+                && stop.offset < section.end()
+        })
+        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))
+    else {
+        return Ok(None);
+    };
+    let part = Part::at(
+        "creo",
+        "component-rows",
+        u64_from_index(stop.offset),
+        bytes,
+        [ArenaClass::Model],
+    );
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!(
+            "{}: {}",
+            CreoLossCode::AssemblyMemberTableIncomplete.kind(),
+            stop.reason
+        )),
+    )
+    .map(Some)
+}
+
+/// The native address of a component row.
+fn member_record(member: &Member) -> String {
+    format!("NeuAsmSld:members:{}", member.id)
 }
 
 /// The child model file a row names: the model name with the extension its

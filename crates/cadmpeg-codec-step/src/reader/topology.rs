@@ -3,7 +3,6 @@
 
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use super::geometry::curve_carrier_record;
@@ -476,12 +475,14 @@ pub(super) fn decode(
             )?;
             let (built, failures) = outcome.into_parts();
             let mut committed = 0;
+            let mut rejected = Vec::new();
             for mut built in built {
                 if let Err(error) = commit_session.commit_model(built.draft)? {
                     losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                         &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                         &error,
                     )?));
+                    rejected.extend(built.shell_sources);
                 } else {
                     committed += 1;
                     built_wire_models.insert(model);
@@ -495,14 +496,36 @@ pub(super) fn decode(
                 }
             }
             if committed == 0 {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-                )));
-            } else if let Some(failures) = failures {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                                "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
-                                failures.count
-                            )));
+                losses.extend(super::give_up_instance(
+                    exchange,
+                    model,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
+                    )),
+                ));
+                for set in failures
+                    .into_iter()
+                    .flat_map(|failures| failures.omitted)
+                    .chain(rejected)
+                {
+                    exchange.lost().drop_with(set, model);
+                }
+            } else {
+                if let Some(failures) = &failures {
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                        "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
+                        failures.omitted.len()
+                    )));
+                }
+                for set in failures
+                    .into_iter()
+                    .flat_map(|failures| failures.omitted)
+                    .chain(rejected)
+                {
+                    exchange
+                        .lost()
+                        .give_up(set, "unresolved connected edge set");
+                }
             }
         }
     }
@@ -522,12 +545,14 @@ pub(super) fn decode(
         )?;
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
+        let mut rejected = Vec::new();
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft)? {
                 losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
                 )?));
+                rejected.extend(built.shell_sources);
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
@@ -546,14 +571,34 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-            )));
-        } else if let Some(failures) = failures {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
-                failures.count
-            )));
+            losses.extend(super::give_up_instance(
+                exchange,
+                model,
+                StepLossCode::DecodeWarning.note(format!(
+                    "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
+                )),
+            ));
+            for shell in failures
+                .into_iter()
+                .flat_map(|failures| failures.omitted)
+                .chain(rejected)
+            {
+                exchange.lost().drop_with(shell, model);
+            }
+        } else {
+            if let Some(failures) = &failures {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
+                    failures.omitted.len()
+                )));
+            }
+            for shell in failures
+                .into_iter()
+                .flat_map(|failures| failures.omitted)
+                .chain(rejected)
+            {
+                exchange.lost().give_up(shell, "unresolved wire shell");
+            }
         }
     }
     let mut decoded_pcurves = BTreeSet::new();
@@ -608,6 +653,7 @@ pub(super) fn decode(
     // the commit session after releasing the immutable geometry borrow.
     let mut root_outcomes = BTreeMap::new();
     let seed_cache = std::cell::RefCell::new(PcurveSeedCache::default());
+    let mut failed_roots = Vec::new();
     {
         let index = (!decoded_pcurves.is_empty())
             .then(|| ModelIndex::new_model_only(commit_session.document()));
@@ -637,9 +683,12 @@ pub(super) fn decode(
     }
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "STEP topology root #{id} does not resolve to a complete connected topology graph",
-            )));
+            losses.extend(super::give_up_instance(exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "STEP topology root #{id} does not resolve to a complete connected topology graph",
+                )),
+            ));
             continue;
         };
         if let Some(root_built) = built_roots.get(&key) {
@@ -658,9 +707,12 @@ pub(super) fn decode(
             continue;
         }
         let Some((outcome, mut root_losses)) = root_outcomes.remove(&key) else {
-            losses.push(StepLossCode::TopologyRootIncomplete.note(format!(
-                "STEP topology root #{id} shares a rejected topology graph; no body was admitted"
-            )));
+            losses.extend(super::give_up_instance(exchange,
+                id,
+                StepLossCode::TopologyRootIncomplete.note(format!(
+                    "STEP topology root #{id} shares a rejected topology graph; no body was admitted"
+                )),
+            ));
             continue;
         };
 
@@ -672,6 +724,7 @@ pub(super) fn decode(
             .map(BuildFailure::message);
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
+        let mut rejected = Vec::new();
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session)?;
             if let Err(error) = commit_session.commit_model(built.draft)? {
@@ -679,6 +732,7 @@ pub(super) fn decode(
                     &format!("STEP topology root #{id}"),
                     &error,
                 )?));
+                rejected.extend(built.shell_sources);
             } else {
                 for shell in &built.shell_sources {
                     result
@@ -699,16 +753,18 @@ pub(super) fn decode(
             }
         }
         if body_ids.is_empty() {
-            if let Some(message) = failure_message {
-                result.losses.push(
-                    StepLossCode::TopologyRootRejected
-                        .note(format!("STEP topology root #{id} rejected: {message}")),
-                );
+            let why = if let Some(message) = failure_message {
+                StepLossCode::TopologyRootRejected
+                    .note(format!("STEP topology root #{id} rejected: {message}"))
             } else {
-                result.losses.push(StepLossCode::TopologyRootIncomplete.note(format!(
-                        "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                    )));
-            }
+                StepLossCode::TopologyRootIncomplete.note(format!(
+                    "STEP topology root #{id} does not resolve to a complete connected topology graph",
+                ))
+            };
+            result
+                .losses
+                .extend(super::give_up_instance(exchange, id, why));
+            failed_roots.push((id, record));
         } else {
             let copies = body_ids.clone();
             result.body_by_root.insert(id, copies);
@@ -719,15 +775,45 @@ pub(super) fn decode(
                     body_by_shell,
                 },
             );
-            if let Some(failures) = failures {
+            if let Some(failures) = &failures {
                 let detail = failure_message
                     .as_deref()
                     .map(|message| format!(": {message}"))
                     .unwrap_or_default();
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
-                    failures.count,
+                    failures.omitted.len(),
                 )));
+            }
+            for shell in failures
+                .into_iter()
+                .flat_map(|failures| failures.omitted)
+                .chain(rejected)
+            {
+                exchange.lost().give_up(shell, "unresolved shell");
+            }
+        }
+    }
+    // A shell or face of a failed root that another root built stays in
+    // the document, so only the members no root holds drop with the root.
+    let held = &commit_session.document().geometry.faces;
+    for (id, record) in failed_roots {
+        for shell in root_shell_steps(record, exchange, &shells)
+            .into_iter()
+            .flatten()
+        {
+            let (named, faces) = shell_members(shell, exchange, &shells);
+            for shell in named {
+                if !result.body_by_shell.contains_key(&shell) {
+                    let record = shell_identity(id, shell, scope_distinct_roots);
+                    exchange.lost().drop_record_with(shell, record.into(), id);
+                }
+            }
+            for face in faces {
+                let record = ids::data(kind!("face"), face);
+                if !held.iter().any(|held| held.id.as_str() == record.as_str()) {
+                    exchange.lost().drop_record_with(face, record, id);
+                }
             }
         }
     }
@@ -773,16 +859,23 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
-            )));
+            losses.extend(super::give_up_instance(exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
+                )),
+            ));
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft)? {
-            losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
-                &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
-                &error,
-            )?));
+            losses.extend(super::give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(topology_commit_error(
+                    &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
+                    &error,
+                )?),
+            ));
         } else {
             result
                 .body_by_root
@@ -930,7 +1023,7 @@ enum BuildOutcome {
 }
 
 struct BuildFailures {
-    count: NonZeroUsize,
+    omitted: Vec<u64>,
     first: Option<BuildFailure>,
 }
 
@@ -941,27 +1034,24 @@ impl BuildOutcome {
         }
     }
 
-    fn fail(&mut self, failure: Option<BuildFailure>) -> Result<(), CodecError> {
+    fn fail(&mut self, member: u64, failure: Option<BuildFailure>) {
         match self {
             Self::Built(built) => {
                 *self = Self::Partial {
                     built: std::mem::take(built),
                     failures: BuildFailures {
-                        count: NonZeroUsize::MIN,
+                        omitted: vec![member],
                         first: failure,
                     },
                 };
             }
             Self::Partial { failures, .. } => {
-                failures.count = failures.count.checked_add(1).ok_or_else(|| {
-                    CodecError::malformed("STEP topology failure count exceeds the address space")
-                })?;
+                failures.omitted.push(member);
                 if failures.first.is_none() {
                     failures.first = failure;
                 }
             }
         }
-        Ok(())
     }
 
     fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
@@ -1098,7 +1188,7 @@ fn build_wire(
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
-                count: NonZeroUsize::MIN,
+                omitted: Vec::new(),
                 first: None,
             },
         });
@@ -1107,7 +1197,7 @@ fn build_wire(
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
-                count: NonZeroUsize::MIN,
+                omitted: Vec::new(),
                 first: None,
             },
         });
@@ -1128,7 +1218,7 @@ fn build_wire(
             losses,
         ) {
             Ok(Some(value)) => outcome.push(value),
-            Ok(None) => outcome.fail(None)?,
+            Ok(None) => outcome.fail(set_id, None),
             Err(error) => return Err(error),
         }
     }
@@ -1325,7 +1415,7 @@ fn build_shell_wire(
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
-                count: NonZeroUsize::MIN,
+                omitted: Vec::new(),
                 first: None,
             },
         });
@@ -1334,7 +1424,7 @@ fn build_shell_wire(
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
-                count: NonZeroUsize::MIN,
+                omitted: Vec::new(),
                 first: None,
             },
         });
@@ -1358,7 +1448,7 @@ fn build_shell_wire(
             losses,
         ) {
             Ok(Some(value)) => outcome.push(value),
-            Ok(None) => outcome.fail(None)?,
+            Ok(None) => outcome.fail(shell_id, None),
             Err(error) => return Err(error),
         }
     }
@@ -1673,9 +1763,12 @@ fn build_geometric_set(
             continue;
         };
         let Some(items) = named_reference_values(set, set_type, 1) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
-            )));
+            losses.extend(super::give_up_instance(exchange,
+                set_id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
+                )),
+            ));
             continue;
         };
         typed.insert(set_id);
@@ -2877,6 +2970,32 @@ fn root_shell_steps(
     None
 }
 
+/// The shells a topology root's shell `shell` names, from `shell` to its
+/// base shell, and the faces of the base shell.
+fn shell_members(
+    shell: u64,
+    exchange: &Exchange,
+    shells: &BTreeMap<u64, ShellDef>,
+) -> (Vec<u64>, Vec<u64>) {
+    let definition = shells.get(&shell);
+    let base = definition.map_or(shell, |definition| definition.base);
+    let mut named = BTreeSet::from([shell, base]);
+    named.extend(
+        definition
+            .into_iter()
+            .flat_map(|definition| &definition.typed),
+    );
+    let faces = exchange
+        .records()
+        .get(&base)
+        .and_then(|record| connected_set_members(record, connected_face_set_type(record)?))
+        .into_iter()
+        .flatten()
+        .filter_map(ValueExt::reference)
+        .collect();
+    (named.into_iter().collect(), faces)
+}
+
 fn root_key(
     root: &RawRecord,
     exchange: &Exchange,
@@ -2970,7 +3089,7 @@ fn build(
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
-                count: NonZeroUsize::MIN,
+                omitted: Vec::new(),
                 first: Some(BuildFailure {
                     record_id: id,
                     carrier_kind: CarrierKind::TopologyRootCarrier,
@@ -3009,7 +3128,7 @@ fn build(
             Err(BuildError::Absent) => BuildOutcome::Partial {
                 built: Vec::new(),
                 failures: BuildFailures {
-                    count: NonZeroUsize::MIN,
+                    omitted: Vec::new(),
                     first: failure,
                 },
             },
@@ -3027,10 +3146,13 @@ fn build(
             match shell_definitions.get(&shell_reference) {
                 Some(definition) => definition.base,
                 None => {
-                    outcome.fail(Some(BuildFailure {
-                        record_id: shell_reference,
-                        carrier_kind: CarrierKind::ShellCarrier,
-                    }))?;
+                    outcome.fail(
+                        shell_reference,
+                        Some(BuildFailure {
+                            record_id: shell_reference,
+                            carrier_kind: CarrierKind::ShellCarrier,
+                        }),
+                    );
                     continue;
                 }
             }
@@ -3069,7 +3191,7 @@ fn build(
             &mut failure,
         ) {
             Ok(value) => outcome.push(value),
-            Err(BuildError::Absent) => outcome.fail(failure)?,
+            Err(BuildError::Absent) => outcome.fail(shell_reference, failure),
             Err(BuildError::Resource(error)) => return Err(error),
         }
     }

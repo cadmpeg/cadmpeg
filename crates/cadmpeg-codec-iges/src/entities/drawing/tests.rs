@@ -36,6 +36,7 @@ use crate::parameter::{ParameterRecord, Token, TokenValue};
 fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 0,
@@ -510,6 +511,7 @@ fn drawing_enumerations_match_the_iges_tables() {
 fn clipping_plane_use_flag_follows_the_declared_dialect() {
     let mut target = DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 108,
         parameter_start: 0,
@@ -1028,10 +1030,10 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
 }
 
 #[test]
-fn drawing_entity_loss_names_the_entity_and_reason() {
+fn drawing_entity_finding_names_the_entity_and_gives_up_nothing() {
     let entry = directory_entry(404, 0);
     let mut losses = Vec::new();
-    super::push_drawing_entity_loss(&mut losses, &entry, "missing");
+    crate::entities::push_entity_finding(&mut losses, &entry, format_args!("missing"));
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,

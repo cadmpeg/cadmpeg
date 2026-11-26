@@ -57,6 +57,9 @@ use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
+mod prune;
+use prune::prune_rejected_topology;
+
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
 const EPS_GEOMETRY_RESIDUAL: f64 = 1.0e-9;
@@ -132,8 +135,76 @@ pub(crate) struct Brep {
     /// whose lane the reader refused. The model carries the absence of each
     /// refused carrier, so the decode continues and reports the loss.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Topology records the decode drops. They stay apart from `losses`
+    /// until [`Brep::take_losses`], because [`Brep::qualify_ids`] renames
+    /// the ids they name.
+    pub(crate) dropped: Vec<DroppedRecord>,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
+}
+
+/// A topology record the decode drops (CADIR §3.3).
+#[derive(Debug, Clone)]
+pub(crate) enum DroppedRecord {
+    /// A record given up for its own content, and the records dropped with it.
+    GivenUp {
+        record: String,
+        at: Option<cadmpeg_ir::SourceProvenance>,
+        error: String,
+        dropping: Vec<String>,
+    },
+    /// A record dropped only because it needs the record `needs`.
+    With { record: String, needs: String },
+}
+
+impl DroppedRecord {
+    fn with(record: &str, needs: &str) -> Self {
+        Self::With {
+            record: record.to_owned(),
+            needs: needs.to_owned(),
+        }
+    }
+
+    fn qualify(&mut self, site: &str) {
+        match self {
+            Self::GivenUp {
+                record, dropping, ..
+            } => {
+                *record = qualified_reference(record, site);
+                for id in dropping {
+                    *id = qualified_reference(id, site);
+                }
+            }
+            Self::With { record, needs } => {
+                *record = qualified_reference(record, site);
+                *needs = qualified_reference(needs, site);
+            }
+        }
+    }
+
+    fn loss(self) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::ids::Identity;
+        Ok(match self {
+            Self::GivenUp {
+                record,
+                at,
+                error,
+                dropping,
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
+                .at(at)
+                .dropping(
+                    dropping
+                        .into_iter()
+                        .map(Identity::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .loss(),
+            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
+                Identity::new(record)?,
+                Identity::new(needs)?,
+            ),
+        })
+    }
 }
 
 /// A resolved face color retains the stream that admitted its source row.
@@ -151,6 +222,17 @@ pub(crate) struct OwnedFaceColor {
 }
 
 impl Brep {
+    /// The losses of the decode: its notes, then one loss per dropped record.
+    pub(crate) fn take_losses(
+        &mut self,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut losses = std::mem::take(&mut self.losses);
+        for dropped in std::mem::take(&mut self.dropped) {
+            losses.push(dropped.loss()?);
+        }
+        Ok(losses)
+    }
+
     pub(crate) fn neutral_entity_count(&self) -> Result<u64, cadmpeg_core::CodecError> {
         let counts = [
             self.bodies.len(),
@@ -413,6 +495,9 @@ impl Brep {
                 *target = qualified_reference(target, site);
             }
         }
+        for record in &mut self.dropped {
+            record.qualify(site);
+        }
         self.annotations
             .map_ids(|value| Ok(qualified_reference(value, site)))?
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -644,6 +729,34 @@ fn qualified_reference(value: &str, site: &str) -> String {
         format!("{value}@{site}")
     } else {
         value.to_owned()
+    }
+}
+
+/// The topology record `record` that the decode gives up for `code`, at
+/// `offset` in `stream` where the record has one. `dropped` names the
+/// records the decode drops with it.
+fn topology_given_up(
+    record: impl std::fmt::Display,
+    stream: &cadmpeg_ir::StreamName,
+    offset: Option<usize>,
+    code: crate::loss::SldprtLossCode,
+    why: &str,
+    dropped: &[SurfaceId],
+) -> DroppedRecord {
+    DroppedRecord::GivenUp {
+        record: record.to_string(),
+        at: offset.map(|offset| {
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "sldprt",
+                stream.clone(),
+                u64_from_index(offset),
+            )
+        }),
+        error: format!("{}: {why}", code.kind()),
+        dropping: dropped
+            .iter()
+            .map(|surface| surface.as_str().to_owned())
+            .collect(),
     }
 }
 
@@ -3874,6 +3987,7 @@ fn decode_graph_inner(
     let mut emitted_curves: HashSet<u32> = HashSet::new();
     let mut surface_curve_attrs = Vec::new();
     let mut edge_set: HashSet<u32> = HashSet::new();
+    let mut withheld_edges = HashSet::<u32>::new();
     let mut edge_endpoint_positions = HashMap::<u32, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
@@ -3900,6 +4014,15 @@ fn decode_graph_inner(
             )
         {
             out.stats.withheld_ring_edges += 1;
+            withheld_edges.insert(e);
+            out.dropped.push(topology_given_up(
+                id_edge(e),
+                stream,
+                t.edge_uses().get(&e).map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
+                "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
+                &[],
+            ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
@@ -4195,6 +4318,43 @@ fn decode_graph_inner(
             }
         }
     }
+    // A ring that uses a withheld edge builds no loop. Its loop and coedges
+    // are dropped with that edge, and its other edges with those coedges.
+    let mut unbuilt_uses = Vec::<(EdgeId, CoedgeId)>::new();
+    for f in &faces {
+        for (loop_attr, ring) in &f.loops {
+            if kept_loops.contains(loop_attr) {
+                continue;
+            }
+            let Some(first) = ring.iter().find(|c| {
+                t.coedges()
+                    .get(c)
+                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
+            }) else {
+                continue;
+            };
+            let loop_id = id_loop(*loop_attr);
+            for c in ring {
+                let Some(ce) = t.coedges().get(c) else {
+                    continue;
+                };
+                let coedge = id_coedge(*c);
+                let edge = id_edge(ce.refs[6]);
+                let needs = if withheld_edges.contains(&ce.refs[6]) {
+                    edge.as_str()
+                } else {
+                    loop_id.as_str()
+                };
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), needs));
+                unbuilt_uses.push((edge, coedge));
+            }
+            out.dropped.push(DroppedRecord::with(
+                loop_id.as_str(),
+                id_coedge(*first).as_str(),
+            ));
+        }
+    }
     let mut emitted_coedges = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
@@ -4442,10 +4602,22 @@ fn decode_graph_inner(
     };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
-        out.stats.unclaimed_faces += faces
+        for face in faces
             .iter()
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
-            .count();
+        {
+            out.stats.unclaimed_faces += 1;
+            out.dropped.push(topology_given_up(
+                id_face(face.bridge_attr),
+                stream,
+                t.bridges()
+                    .get(&face.bridge_attr)
+                    .map(|record| record.offset),
+                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
+                "no body record claims the face",
+                &[id_surf(face.bridge_attr)],
+            ));
+        }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     // The tolerance each emitted edge states: a blend cache bounds the face
@@ -4509,14 +4681,38 @@ fn decode_graph_inner(
             FaceAdmission::Admitted => {}
             FaceAdmission::VertexLoopUnresolved => {
                 out.stats.withheld_vertex_loop_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
+                    "a vertex loop of the face names no resolved vertex",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::FinAmbiguous => {
                 out.stats.withheld_ambiguous_fin_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+                    "a loop of the face holds an ambiguous FIN",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
             FaceAdmission::NoLoop => {
                 out.stats.withheld_faces += 1;
+                out.dropped.push(topology_given_up(
+                    id_face(f.bridge_attr),
+                    stream,
+                    t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
+                    "no loop of the face decodes",
+                    &[id_surf(f.bridge_attr)],
+                ));
                 continue;
             }
         }
@@ -5143,7 +5339,7 @@ fn decode_graph_inner(
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_spherical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &unbuilt_uses);
     out.stats.tolerant_edges_without_curve = out
         .edges
         .iter()
@@ -5154,6 +5350,7 @@ fn decode_graph_inner(
         return Ok(Brep {
             approximations: out.approximations,
             losses: out.losses,
+            dropped: out.dropped,
             stats: out.stats,
             ..Brep::default()
         });
@@ -5470,120 +5667,6 @@ fn phase_full_turn_edge_ranges(
         }
     }
     Ok(())
-}
-
-fn prune_rejected_topology(out: &mut Brep) {
-    let kept_loops = out
-        .faces
-        .iter()
-        .flat_map(|face| face.loops.stated())
-        .map(cadmpeg_ir::ids::LoopId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.loops
-        .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
-
-    let kept_coedges = out
-        .loops
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Loop::coedges)
-        .map(cadmpeg_ir::ids::CoedgeId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.coedges
-        .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
-    for coedge in &mut out.coedges {
-        if !kept_coedges.contains(coedge.radial_next.as_str()) {
-            coedge.radial_next = coedge.id.clone();
-        }
-    }
-
-    let kept_pcurves = out
-        .coedges
-        .iter()
-        .flat_map(|coedge| &coedge.pcurves)
-        .map(|use_| &use_.pcurve)
-        .map(cadmpeg_ir::ids::PcurveId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.pcurves
-        .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
-
-    let kept_edges = out
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.edges
-        .retain(|edge| kept_edges.contains(edge.id.as_str()));
-
-    let kept_vertices = out
-        .edges
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Edge::vertices)
-        .chain(
-            out.loops
-                .iter()
-                .flat_map(cadmpeg_ir::topology::Loop::vertices),
-        )
-        .map(cadmpeg_ir::ids::VertexId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.vertices
-        .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
-
-    let kept_points = out
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.points
-        .retain(|point| kept_points.contains(point.id.as_str()));
-
-    let kept_curves = out
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
-        .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-            match surface.definition() {
-                ProceduralSurfaceDefinition::Blend(definition) => definition.spine().as_ref(),
-                ProceduralSurfaceDefinition::LinearSweep(definition) => {
-                    Some(definition.directrix())
-                }
-                _ => None,
-            }
-            .map(cadmpeg_ir::ids::CurveId::as_str)
-        }))
-        .collect::<std::collections::HashSet<_>>();
-    out.curves
-        .retain(|curve| kept_curves.contains(curve.id.as_str()));
-    let kept_constructions = out
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            curve
-                .geometry
-                .procedural_construction()
-                .map(ProceduralCurveId::as_str)
-        })
-        .collect::<std::collections::HashSet<_>>();
-    out.procedural_curves
-        .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
-    let unknown_curves = out
-        .curves
-        .iter()
-        .filter(|curve| {
-            matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .map(|curve| curve.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.stats.unknown_curve_edges = out
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.curve()
-                .is_some_and(|curve_id| unknown_curves.contains(curve_id.as_str()))
-        })
-        .count();
 }
 
 fn annotate_surface_frame(
@@ -11044,7 +11127,7 @@ mod tests {
             ..Default::default()
         };
 
-        super::prune_rejected_topology(&mut brep);
+        super::prune_rejected_topology(&mut brep, &[]);
         assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 

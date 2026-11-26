@@ -270,7 +270,7 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
         },
     ]);
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"].len(),
@@ -287,6 +287,15 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
             .count(),
         2
     );
+    // The pass only validates the assemblies, whose native records the
+    // document keeps, so its findings give up nothing and pin no floor.
+    crate::test_support::assert_gives_up(result.report(), &[]);
+    IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &crate::test_support::strict_options(),
+        )
+        .unwrap();
 }
 
 #[test]
@@ -1092,6 +1101,7 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
 fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
     let entry = |line_font, subordinate, use_flag, hierarchy| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 308,
         parameter_start: 0,

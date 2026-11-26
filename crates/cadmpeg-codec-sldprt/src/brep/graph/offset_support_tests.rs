@@ -90,7 +90,7 @@ fn emit_support(
         Some(surface.clone())
     );
     assert_eq!(sink.out.surfaces.len(), count);
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &[]);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.surfaces = out.surfaces;
     ir.geometry.curves = out.curves;

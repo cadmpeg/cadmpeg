@@ -357,6 +357,12 @@ impl StreamHandle {
     pub fn new(stream: StreamName) -> Self {
         Self(Arc::new(stream))
     }
+
+    /// The shared stream name.
+    #[must_use]
+    pub fn name(&self) -> &StreamName {
+        &self.0
+    }
 }
 
 /// Update policy for one annotation builder.

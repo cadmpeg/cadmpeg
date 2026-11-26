@@ -95,6 +95,12 @@ A FACE whose `loop` pointer is null on a plane, cylinder, or cone states no
 boundary. The face is stated partial with the loss
 `topology.face-boundary-unstated`.
 
+The decoder gives up a face that states no orientation. The loss of the face
+lists as dropped its loops and their fins. The decoder gives up a loop that it
+cannot read, such as a loop whose fins do not form a ring or a loop that uses
+an edge that it cannot read. The loss of the loop lists as dropped its fins,
+its face, and the other loops of that face with their fins.
+
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along
 the sweep; the face loops bound it. A null `scale` makes the sweep parameter

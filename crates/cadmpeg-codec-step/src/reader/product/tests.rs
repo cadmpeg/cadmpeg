@@ -423,10 +423,13 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
         let unknowns = result.ir().native_unknowns("step").unwrap();
-        let unknown_ids = unknowns
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
+        let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+            unknowns
+                .iter()
+                .map(|record| record.id.as_str())
+                .partition(|id| id.starts_with("step:source:part#"));
+        // The usage given up for its ambiguous placements is one part.
+        assert_eq!(stubs.len(), 1);
         assert_eq!(
             unknown_ids,
             std::collections::BTreeSet::from([
@@ -490,10 +493,13 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
         let unknowns = result.ir().native_unknowns("step").unwrap();
-        let unknown_ids = unknowns
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
+        let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+            unknowns
+                .iter()
+                .map(|record| record.id.as_str())
+                .partition(|id| id.starts_with("step:source:part#"));
+        // The usage given up for its ambiguous placements is one part.
+        assert_eq!(stubs.len(), 1);
         assert_eq!(
             unknown_ids,
             std::collections::BTreeSet::from([
@@ -981,10 +987,13 @@ fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 
     let unknowns = result.ir().native_unknowns("step").unwrap();
-    let unknown_ids = unknowns
-        .iter()
-        .map(|record| record.id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
+    let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+        unknowns
+            .iter()
+            .map(|record| record.id.as_str())
+            .partition(|id| id.starts_with("step:source:part#"));
+    // The usage given up for its ambiguous placements is one part.
+    assert_eq!(stubs.len(), 1);
     assert_eq!(
         unknown_ids,
         std::collections::BTreeSet::from([
