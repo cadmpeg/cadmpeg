@@ -6,6 +6,7 @@ use crate::records::act::{
 };
 use crate::records::identity::Located;
 use crate::test_support::native_test::reject_changed_id;
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
@@ -14,10 +15,7 @@ const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 fn act_guid_borrowed_wire_matches_owned_wire_bytes() {
     let guid = ActGuid::new("f3d:native:act-guid#20".into(), 20, 3, GUID.into()).unwrap();
     let owned = super::ActGuidWire::from(guid.clone());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&guid).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-    );
+    assert_eq!(json::to_vec(&guid).unwrap(), json::to_vec(&owned).unwrap());
 }
 
 #[test]
@@ -25,9 +23,7 @@ fn act_guid_native_retained_limit_refuses_before_guid_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let guid = ActGuid::new("f3d:native:act-guid#20".into(), 20, 3, GUID.into()).unwrap();
-    let needed = cadmpeg_core::serde_erase::json::to_vec(&guid)
-        .unwrap()
-        .len();
+    let needed = json::to_vec(&guid).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -51,8 +47,8 @@ fn act_guid_native_retained_limit_refuses_before_guid_clone() {
         .set_arena(&service, "act_guids", std::slice::from_ref(&guid))
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["act_guids"][0]).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&guid).unwrap()
+        json::to_value(&namespace.arenas()["act_guids"][0]).unwrap(),
+        json::to_value(&guid).unwrap()
     );
 }
 
@@ -62,8 +58,8 @@ fn act_table_reference_borrowed_wire_matches_owned_wire_bytes() {
         ActTableReference::new("f3d:native:act-table-reference#20".into(), 3, 20, 7).unwrap();
     let owned = super::ActTableReferenceWire::from(reference.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&reference).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&reference).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -73,9 +69,7 @@ fn act_table_reference_native_retained_limit_refuses_before_id_clone() {
 
     let reference =
         ActTableReference::new("f3d:native:act-table-reference#20".into(), 3, 20, 7).unwrap();
-    let needed = cadmpeg_core::serde_erase::json::to_vec(&reference)
-        .unwrap()
-        .len();
+    let needed = json::to_vec(&reference).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -107,9 +101,8 @@ fn act_table_reference_native_retained_limit_refuses_before_id_clone() {
         )
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["act_table_references"][0])
-            .unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&reference).unwrap()
+        json::to_value(&namespace.arenas()["act_table_references"][0]).unwrap(),
+        json::to_value(&reference).unwrap()
     );
 }
 
@@ -125,8 +118,8 @@ fn act_registry_channel_borrowed_wire_matches_owned_wire_bytes() {
     .unwrap();
     let owned = super::ActRegistryChannelWire::from(channel.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&channel).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&channel).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -142,9 +135,7 @@ fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
         GUID.into(),
     )
     .unwrap();
-    let needed = cadmpeg_core::serde_erase::json::to_vec(&channel)
-        .unwrap()
-        .len();
+    let needed = json::to_vec(&channel).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -176,9 +167,8 @@ fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
         )
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["act_registry_channels"][0])
-            .unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&channel).unwrap()
+        json::to_value(&namespace.arenas()["act_registry_channels"][0]).unwrap(),
+        json::to_value(&channel).unwrap()
     );
 }
 
@@ -202,10 +192,7 @@ fn root_component_fixture() -> ActComponentLink {
 fn act_root_component_borrowed_wire_matches_owned_wire_bytes() {
     let root = root_component_fixture();
     let owned = super::ActComponentLinkWire::from(root.clone());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&root).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-    );
+    assert_eq!(json::to_vec(&root).unwrap(), json::to_vec(&owned).unwrap());
 }
 
 #[test]
@@ -213,9 +200,7 @@ fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let root = root_component_fixture();
-    let needed = cadmpeg_core::serde_erase::json::to_vec(&root)
-        .unwrap()
-        .len();
+    let needed = json::to_vec(&root).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -239,9 +224,8 @@ fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
         .set_arena(&service, "act_component_links", std::slice::from_ref(&root))
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["act_component_links"][0])
-            .unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&root).unwrap()
+        json::to_value(&namespace.arenas()["act_component_links"][0]).unwrap(),
+        json::to_value(&root).unwrap()
     );
 }
 
@@ -278,8 +262,8 @@ fn act_entity_borrowed_wire_matches_owned_wire_bytes() {
     let entity = entity_fixture();
     let owned = super::ActEntitySerde::from(entity.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&entity).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&entity).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -288,9 +272,7 @@ fn act_entity_native_retained_limit_refuses_before_channel_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let entity = entity_fixture();
-    let needed = cadmpeg_core::serde_erase::json::to_vec(&entity)
-        .unwrap()
-        .len();
+    let needed = json::to_vec(&entity).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -314,8 +296,8 @@ fn act_entity_native_retained_limit_refuses_before_channel_clone() {
         .set_arena(&service, "act_entities", std::slice::from_ref(&entity))
         .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["act_entities"][0]).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&entity).unwrap()
+        json::to_value(&namespace.arenas()["act_entities"][0]).unwrap(),
+        json::to_value(&entity).unwrap()
     );
 }
 
@@ -328,18 +310,12 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
         "channels": {"Appearance": "11111111-2222-3333-4444-555555555555"},
         "channel_guid_offsets": {"Appearance": 120}
     });
-    let entity: crate::records::act::ActEntity =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(entity).unwrap(),
-        wire
-    );
+    let entity: crate::records::act::ActEntity = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(entity).unwrap(), wire);
     for offsets in [serde_json::json!({}), serde_json::json!({"Material": 120})] {
         let mut invalid = wire.clone();
         invalid["channel_guid_offsets"] = offsets;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActEntity>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
         assert!(error
             .to_string()
             .contains("channels and channel_guid_offsets"));
@@ -347,17 +323,12 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
     for guid in ["", "11111111-2222-3333-4444-55555555555z"] {
         let mut invalid = wire.clone();
         invalid["channels"]["Appearance"] = serde_json::json!(guid);
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActEntity>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
         assert!(error.to_string().contains("GUID"));
     }
     let mut invalid = wire;
     invalid["channels"] = serde_json::json!({});
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActEntity>(invalid)
-            .is_err()
-    );
+    assert!(json::from_value::<crate::records::act::ActEntity>(invalid).is_err());
 }
 
 #[test]
@@ -369,12 +340,8 @@ fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
         "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120},
         "channel_class_tail": "0001", "channel_class_tail_offset": 300
     });
-    let entity: crate::records::act::ActEntity =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(entity).unwrap(),
-        wire
-    );
+    let entity: crate::records::act::ActEntity = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(entity).unwrap(), wire);
     for (bytes, offset) in [
         (serde_json::json!(""), serde_json::json!(300)),
         (serde_json::json!("0000"), serde_json::json!(300)),
@@ -384,9 +351,7 @@ fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
         let mut invalid = wire.clone();
         invalid["channel_class_tail"] = bytes;
         invalid["channel_class_tail_offset"] = offset;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActEntity>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
         assert!(error.to_string().contains("channel_class_tail"));
     }
 }
@@ -399,19 +364,13 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
         "channel_class_tag": "261", "channel_record_index_offset": 100,
         "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120}
     });
-    let entity: crate::records::act::ActEntity =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let entity: crate::records::act::ActEntity = json::from_value(wire.clone()).unwrap();
     assert_eq!(entity.table_entity_id_offset(), Some(34));
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(entity).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_value(entity).unwrap(), wire);
     for offset in [20, 33, 35, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["table_entity_id_offset"] = serde_json::json!(offset);
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActEntity>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
         assert!(error.to_string().contains("table_entity_id_offset"));
     }
     assert!(crate::records::act::ActTableRow::new(u64::MAX - 13).is_err());
@@ -430,24 +389,15 @@ fn act_component_link_preserves_tracking_references_on_the_wire() {
         "entity_id": "0_3", "entity_id_offset": 36,
         "display_name": "", "display_name_offset": 61
     });
-    let root: crate::records::act::ActComponentLink =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(root).unwrap(),
-        wire
-    );
+    let root: crate::records::act::ActComponentLink = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(root).unwrap(), wire);
     for record in [0, 1, 2, 4, u32::MAX] {
         let mut invalid = wire.clone();
         invalid["tracked_entity_record"] = serde_json::json!(record);
-        let link = cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::act::ActComponentLink,
-        >(invalid.clone())
-        .unwrap();
+        let link =
+            json::from_value::<crate::records::act::ActComponentLink>(invalid.clone()).unwrap();
         assert_eq!(link.references.tracked_entity, record);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(link).unwrap(),
-            invalid
-        );
+        assert_eq!(json::to_value(link).unwrap(), invalid);
     }
     for field in [
         "record_index_offset",
@@ -461,10 +411,7 @@ fn act_component_link_preserves_tracking_references_on_the_wire() {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(0);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActComponentLink>(
-                invalid
-            )
-            .is_err(),
+            json::from_value::<crate::records::act::ActComponentLink>(invalid).is_err(),
             "{field}"
         );
     }
@@ -496,20 +443,14 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
         "id": "stream:act-table-reference#20", "ordinal": 0,
         "byte_offset": 20, "target_record": 3, "target_record_offset": 21
     });
-    let reference: crate::records::act::ActTableReference =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let reference: crate::records::act::ActTableReference = json::from_value(wire.clone()).unwrap();
     assert_eq!(reference.byte_offset(), 20);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(reference).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_value(reference).unwrap(), wire);
     for offset in [0, 20, 22, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["target_record_offset"] = serde_json::json!(offset);
-        let error = cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::act::ActTableReference,
-        >(invalid)
-        .unwrap_err();
+        let error =
+            json::from_value::<crate::records::act::ActTableReference>(invalid).unwrap_err();
         assert!(error.to_string().contains("target_record_offset"));
     }
     assert!(crate::records::act::ActTableReference::new(
@@ -534,28 +475,20 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
         "id": "stream:act-guid#20", "byte_offset": 20, "guid_offset": 24,
         "ordinal": 0, "guid": "01234567-89ab-cdef-0123-456789abcdef"
     });
-    let guid: crate::records::act::ActGuid =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let guid: crate::records::act::ActGuid = json::from_value(wire.clone()).unwrap();
     assert_eq!(guid.byte_offset(), 20);
     assert_eq!(guid.guid_offset(), 24);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(guid).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_value(guid).unwrap(), wire);
     for offset in [0, 20, 23, 25, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["guid_offset"] = serde_json::json!(offset);
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActGuid>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActGuid>(invalid).unwrap_err();
         assert!(error.to_string().contains("guid_offset"));
     }
     for text in ["", "01234567-89ab-cdef-0123-456789abcdeg"] {
         let mut invalid = wire.clone();
         invalid["guid"] = serde_json::json!(text);
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::act::ActGuid>(invalid)
-                .unwrap_err();
+        let error = json::from_value::<crate::records::act::ActGuid>(invalid).unwrap_err();
         assert!(error.to_string().contains("GUID"));
     }
     let text = "01234567-89ab-cdef-0123-456789abcdef";
@@ -582,31 +515,21 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
         "name": "abc", "name_offset": 24,
         "guid": "01234567-89ab-cdef-0123-456789abcdef", "guid_offset": 31
     });
-    let channel: crate::records::act::ActRegistryChannel =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let channel: crate::records::act::ActRegistryChannel = json::from_value(wire.clone()).unwrap();
     assert_eq!(channel.byte_offset(), 20);
     assert_eq!(channel.name(), "abc");
     assert_eq!(channel.name_offset(), 24);
     assert_eq!(channel.guid_offset(), 31);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(channel).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_value(channel).unwrap(), wire);
     for field in ["name_offset", "guid_offset"] {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::act::ActRegistryChannel,
-        >(invalid)
-        .is_err());
+        assert!(json::from_value::<crate::records::act::ActRegistryChannel>(invalid).is_err());
     }
     for name in [String::new(), "x".repeat(129), "é".into()] {
         let mut invalid = wire.clone();
         invalid["name"] = serde_json::json!(name);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::act::ActRegistryChannel,
-        >(invalid)
-        .is_err());
+        assert!(json::from_value::<crate::records::act::ActRegistryChannel>(invalid).is_err());
     }
     let guid = "01234567-89ab-cdef-0123-456789abcdef";
     assert!(crate::records::act::ActRegistryChannel::new(

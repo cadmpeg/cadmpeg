@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
@@ -20,25 +21,21 @@ fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
         (8, 4, "property vector marker differs from type 2"),
     ] {
         let source = crate::feature::tests::test_feature(0, count, &[]);
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&source)?;
+        let mut wire = json::to_value(&source)?;
         wire["properties"]["marker"] = serde_json::json!(marker);
         if marker == 8 {
             wire["properties"]["metadata"]["width"] = serde_json::json!("u16");
         }
-        let source: crate::feature::PmDcFeature =
-            cadmpeg_core::serde_erase::json::from_value(wire)?;
+        let source: crate::feature::PmDcFeature = json::from_value(wire)?;
         let identity = &source.identity;
         let mut data = empty_data();
-        data.records
-            .push(cadmpeg_core::serde_erase::json::from_value(
-                serde_json::json!({
-                    "id": format!("inventor:rse:record#{}-0", identity.segment_token),
-                    "token": identity.segment_token.as_str(), "ordinal": 0,
-                    "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
-                    "payload_offset": 0, "payload_len": 0, "payload_sha256": "0".repeat(64),
-                    "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
-                }),
-            )?);
+        data.records.push(json::from_value(serde_json::json!({
+            "id": format!("inventor:rse:record#{}-0", identity.segment_token),
+            "token": identity.segment_token.as_str(), "ordinal": 0,
+            "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "0".repeat(64),
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
+        }))?);
         let mut feature = annotation(source.id());
         data.pm_dc_features.push(source);
         let mut ir = cadmpeg_ir::CadIr::empty();

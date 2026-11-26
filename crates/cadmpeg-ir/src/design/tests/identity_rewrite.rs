@@ -10,6 +10,7 @@ use crate::design::selection::OrderedSelection;
 use crate::features::{ConfigurationId, ParameterId};
 use crate::scalar::Length;
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
@@ -45,8 +46,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
                 expected["configuration"] = "test:placed:configuration#one".into();
                 targets.insert(0, "test:model:configuration#one".to_owned());
             }
-            let state: StateRef =
-                cadmpeg_core::serde_erase::json::from_value(source.clone()).unwrap();
+            let state: StateRef = json::from_value(source.clone()).unwrap();
             let mut seen = Vec::new();
             state
                 .visit_identity_references(&ctx, &mut |id| {
@@ -59,10 +59,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
             let mut map = IdentityMap::new(rewrite);
             let state = state.rewrite_identities(&ctx, &mut map).unwrap();
             map.finish().unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(state).unwrap(),
-                expected
-            );
+            assert_eq!(json::to_value(state).unwrap(), expected);
         }
     }
 }
@@ -70,7 +67,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
 #[test]
 fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() {
     let literal = "test:model:parameter#one";
-    let selection: OrderedSelection = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let selection: OrderedSelection = json::from_value(serde_json::json!({
         "at":{"kind":"input"},
         "picks":{"kind":"named","value":[{
             "target":{"kind":"datum","value":{"feature":"test:model:feature#datum"}},
@@ -153,7 +150,7 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
         .with_text_replacements(&replacements);
     let rewritten = input.rewrite_identities(&ctx, &mut map).unwrap();
     map.finish().unwrap();
-    let text = cadmpeg_core::serde_erase::json::to_string(&rewritten).unwrap();
+    let text = json::to_string(&rewritten).unwrap();
     assert!(text.contains("test:placed:feature#datum"));
     assert!(text.contains("test:placed:configuration#two"));
     let Some(InputReference::Built(built)) = rewritten.reference else {

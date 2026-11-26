@@ -2469,7 +2469,12 @@ pub fn with_json_value_deserializer<'de>(
     deserialize_erased(value, read)
 }
 
-fn without_position(error: serde_json::Error) -> serde_json::Error {
+/// `error` without the text position the parser appends to its message.
+///
+/// A reader of text that it wrote itself, or that another reader cut out of
+/// a larger text, states a refusal the way a reader of the value would: the
+/// position would name a place in text the caller never sees.
+pub fn without_position(error: serde_json::Error) -> serde_json::Error {
     if error.line() == 0 {
         return error;
     }
@@ -2481,9 +2486,17 @@ fn without_position(error: serde_json::Error) -> serde_json::Error {
     }
 }
 
-fn from_json_str_without_position<T: de::DeserializeOwned>(
-    text: &str,
-) -> Result<T, serde_json::Error> {
+/// Reads `T` from JSON text whose writer bounded its nesting: the parser's
+/// recursion limit is lifted, text after the value is refused, and a refusal
+/// carries no text position ([`without_position`]).
+///
+/// Every typed read in the workspace goes through `serde_json`'s `StrRead`
+/// deserializer, so each type's read compiles once.
+///
+/// # Errors
+///
+/// Returns the refusal of `T`, or of text after the value.
+pub fn from_json_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(text);
     deserializer.disable_recursion_limit();
     let parsed = T::deserialize(&mut deserializer).map_err(without_position)?;
@@ -2491,19 +2504,19 @@ fn from_json_str_without_position<T: de::DeserializeOwned>(
     Ok(parsed)
 }
 
-/// Deserializes `T` from a [`serde_json::Value`] through `serde_json`'s
-/// `StrRead` deserializer, sharing the single JSON string deserializer used by
-/// `cadmpeg_core::tagged` and avoiding `serde_json::Value` and `DeAdapter`
-/// monomorphizations across callers.
+/// Deserializes `T` from a [`serde_json::Value`] by writing the value as text
+/// and reading it with [`from_json_str`], so `T` compiles no read against
+/// `serde_json::Value`'s deserializer.
 pub fn from_json_value<T: de::DeserializeOwned>(
     value: &serde_json::Value,
 ) -> Result<T, serde_json::Error> {
     let text = serde_json::to_string(value)?;
-    from_json_str_without_position(&text)
+    from_json_str(&text)
 }
 
-/// Deserializes `T` from UTF-8 JSON bytes through `serde_json`'s `StrRead`
-/// deserializer, avoiding a separate `SliceRead` monomorphization per type.
+/// Deserializes `T` from UTF-8 JSON bytes with `serde_json::from_str`, so
+/// `T` compiles its read against `StrRead`, the deserializer every other
+/// typed read uses, and not against `SliceRead` as well.
 pub fn from_json_slice<T: de::DeserializeOwned>(slice: &[u8]) -> Result<T, serde_json::Error> {
     let text = std::str::from_utf8(slice).map_err(de::Error::custom)?;
     serde_json::from_str(text)
@@ -2520,12 +2533,12 @@ pub mod json {
         super::to_json_value(&value)
     }
 
-    /// Deserializes `T` from `value` via [`super::from_json_value`], dropping
-    /// the owned JSON tree before parsing the intermediate text.
+    /// Deserializes `T` from `value` via [`super::from_json_value`],
+    /// consuming `value` as `serde_json::from_value` does.
     pub fn from_value<T: DeserializeOwned>(value: serde_json::Value) -> serde_json::Result<T> {
-        let text = serde_json::to_string(&value)?;
+        let read = super::from_json_value(&value);
         drop(value);
-        super::from_json_str_without_position(&text)
+        read
     }
 
     /// Serializes `value` into a compact JSON string via [`super::to_json_string`].

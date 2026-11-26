@@ -111,10 +111,11 @@ pub(super) fn side_one_reference_face_edge<'a>(
 mod tests {
     use super::*;
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn deleted_singleton_support_edge_has_transition_proof() {
-        let structure = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let structure = json::from_value(serde_json::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 1, "scalars": [0, 2],
@@ -125,7 +126,7 @@ mod tests {
         }))
         .unwrap();
         let references = [10, 20].map(|face| {
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "selector": 1, "selector_offset": face, "token": "1", "token_integer": 0,
                 "token_offset": face + 4, "design_reference": 1,
                 "design_reference_offset": face + 8,

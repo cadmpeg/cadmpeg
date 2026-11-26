@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn named_collection_owner_rejects_ambiguous_entries() {
@@ -104,9 +105,8 @@ fn named_collection_owner_keeps_its_frame() {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let wire = json::to_value(feature).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.collection_owner.native_frame().unwrap().as_ref(),
             expected.as_slice()
@@ -296,10 +296,9 @@ fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
     let [feature] = features.as_slice() else {
         panic!("one mesh feature");
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
+    let wire = json::to_value(feature).unwrap();
     assert_eq!(wire["collection_owner_name_count"], 3);
     assert_eq!(wire["collection_owner_backlink_offset"], start + 272);
-    let decoded: crate::records::mesh::DesignMeshFeature =
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
     assert_eq!(decoded, *feature);
 }

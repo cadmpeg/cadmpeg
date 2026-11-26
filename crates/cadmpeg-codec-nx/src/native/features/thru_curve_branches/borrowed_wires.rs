@@ -140,6 +140,7 @@ impl Serialize for FeatureThruCurveConstructionBranchGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
@@ -147,10 +148,8 @@ mod tests {
         let json =
             super::super::tests::WIRE.replace("\"id\":\"g\"", "\"id\":\"nx:feature:thru-curve#0\"");
         let group: FeatureThruCurveConstructionBranchGroup = serde_json::from_str(&json).unwrap();
-        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&group).unwrap();
-        let owned =
-            cadmpeg_core::serde_erase::json::to_vec(&super::super::GroupWire::from(group.clone()))
-                .unwrap();
+        let borrowed = json::to_vec(&group).unwrap();
+        let owned = json::to_vec(&super::super::GroupWire::from(group.clone())).unwrap();
         assert_eq!(borrowed, owned);
         assert_eq!(borrowed, json.as_bytes());
         assert_native_limit(

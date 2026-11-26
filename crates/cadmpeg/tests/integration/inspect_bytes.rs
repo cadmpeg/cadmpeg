@@ -6,6 +6,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -927,8 +928,7 @@ fn container_json_lists_entries_under_the_envelope() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["subcommand"], "container");
     assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));
@@ -961,8 +961,7 @@ fn container_lists_cfb_directory_rows() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["subcommand"], "container");
     assert_eq!(value["container_kind"], "cfb");
@@ -1090,8 +1089,7 @@ fn find_json_emits_the_envelope() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["subcommand"], "find");
     assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));

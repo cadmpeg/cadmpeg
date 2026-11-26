@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -284,7 +285,7 @@ fn inherit_writes_an_unrecognized_source_declaration_as_the_default() {
 fn inherit_writes_a_step_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": crate::dialect::FORMAT},
             "attributes": {},
         }))
