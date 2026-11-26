@@ -160,7 +160,7 @@ fn authored_constraint_families_keep_operands_and_values() {
                 .find(|c| c.id.as_str().ends_with(&suffix))
                 .unwrap();
             assert_eq!(
-                serde_json::to_value(constraint.definition.kind()).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(constraint.definition.kind()).unwrap(),
                 *expected,
                 "{name} constraint {}",
                 index + 1

@@ -32,7 +32,10 @@ mod tests {
             let json = code.to_string();
             let value: StateLinkCode = serde_json::from_str(&json).unwrap();
             assert_eq!(u8::from(value), code);
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+                json
+            );
         }
         for code in [0x02, 0x03, 0x1e, 0x3f, 0xff] {
             assert!(serde_json::from_str::<StateLinkCode>(&code.to_string())

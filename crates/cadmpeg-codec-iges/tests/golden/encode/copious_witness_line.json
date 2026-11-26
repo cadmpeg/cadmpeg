@@ -52,8 +52,7 @@
           "value": {
             "code": "output.empty",
             "kind": "no_exportable_solids",
-            "namespace": "export",
-            "strict_floor": "warning"
+            "namespace": "export"
           }
         },
         "message": "the written IGES file holds no entity: the document states no geometry this writer encodes",

@@ -213,11 +213,15 @@ fn stored_limit_programs_round_trip_exact_raw_bits() {
     let mut bytes = frame(0xaa, 7, &curve());
     bytes.extend(frame(0xe7, 7, &surface(1)));
     let expected = with_service_context(|ctx| derive(ctx, &bytes)).unwrap();
-    let wire = serde_json::to_vec(&expected).unwrap();
-    let loaded: Vec<CatiaE5NurbsLimitRecord> = serde_json::from_slice(&wire).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_vec(&expected).unwrap();
+    let loaded: Vec<CatiaE5NurbsLimitRecord> =
+        cadmpeg_core::serde_erase::json::from_slice(&wire).unwrap();
     assert_eq!(loaded, expected);
-    assert_eq!(serde_json::to_vec(&loaded).unwrap(), wire);
-    let mut value = serde_json::to_value(&expected[0]).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_vec(&loaded).unwrap(),
+        wire
+    );
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&expected[0]).unwrap();
     value["unexpected"] = true.into();
-    assert!(serde_json::from_value::<CatiaE5NurbsLimitRecord>(value).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<CatiaE5NurbsLimitRecord>(value).is_err());
 }

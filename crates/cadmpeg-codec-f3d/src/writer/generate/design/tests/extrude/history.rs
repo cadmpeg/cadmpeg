@@ -616,7 +616,7 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
         &[corners.map(|corner| (corner, Side::Line)).to_vec()],
         [0.0, SIDE],
     );
-    let renamed = serde_json::to_string(&solid.geometry)
+    let renamed = cadmpeg_core::serde_erase::json::to_string(&solid.geometry)
         .expect("the prism serializes")
         .replace('#', "#second-");
     let serde_json::Value::Object(arenas) =
@@ -624,7 +624,8 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     else {
         panic!("the prism's arenas");
     };
-    let mut merged = serde_json::to_value(&ir.geometry).expect("the cube serializes");
+    let mut merged =
+        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("the cube serializes");
     let mut body = None;
     for (arena, records) in arenas {
         let serde_json::Value::Array(records) = records else {
@@ -640,8 +641,9 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
         slot.as_array_mut().expect("an arena").extend(records);
     }
-    ir.geometry = serde_json::from_value(merged).expect("the merged arenas");
-    let body = serde_json::from_value(body.expect("the prism's body")).expect("a body id");
+    ir.geometry = cadmpeg_core::serde_erase::json::from_value(merged).expect("the merged arenas");
+    let body = cadmpeg_core::serde_erase::json::from_value(body.expect("the prism's body"))
+        .expect("a body id");
     ir.design.scopes[0].current[0].bodies.push(body);
     ir.finalize();
     (ir, second_id)
@@ -1019,4 +1021,220 @@ fn a_history_true_join_after_a_held_state_writes_that_state_and_its_body() {
         omitted.contains("test:design:evaluation#cube") && omitted.contains("#second-"),
         "{omitted}"
     );
+}
+
+/// [`with_a_second_extrude`] with a new body whose faces lie on the cube's
+/// surfaces where the two have the same surface, so that the two bodies
+/// share those carriers. Returns the design and the number of shared
+/// surfaces.
+fn sharing_carriers() -> (CadIr, usize) {
+    use std::collections::BTreeMap;
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let content = |surface: &cadmpeg_ir::geometry::Surface| {
+        let mut value =
+            cadmpeg_core::serde_erase::json::to_value(surface).expect("a surface serializes");
+        value
+            .as_object_mut()
+            .expect("a surface object")
+            .remove("id");
+        value
+    };
+    let (cube, prism): (Vec<_>, Vec<_>) = ir
+        .geometry
+        .surfaces
+        .iter()
+        .partition(|surface| !surface.id.as_str().contains("#second-"));
+    let shared = prism
+        .iter()
+        .filter_map(|surface| {
+            let on = cube.iter().find(|cube| content(cube) == content(surface))?;
+            Some((surface.id.clone(), on.id.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for face in &mut ir.geometry.faces {
+        if let Some(on) = shared.get(&face.surface) {
+            face.surface = on.clone();
+        }
+    }
+    ir.geometry
+        .surfaces
+        .retain(|surface| !shared.contains_key(&surface.id));
+    ir.finalize();
+    (ir, shared.len())
+}
+
+#[test]
+fn a_carrier_that_two_bodies_share_is_in_the_state_of_the_first() {
+    let (ir, shared) = sharing_carriers();
+    assert!(shared > 0, "the prism shares no surface with the cube");
+    for form in [
+        MissingStateForm::GeometryTrue,
+        MissingStateForm::HistoryTrue,
+    ] {
+        let (report, decoded, bytes) = write_bytes_as(&ir, form);
+        assert_eq!(
+            kinds(&decoded),
+            ["sketch", "extrude", "sketch", "extrude"],
+            "{:#?}",
+            report.losses
+        );
+        assert_eq!(decoded.geometry.bodies.len(), 2);
+        assert_eq!(decoded.geometry.surfaces.len(), 12 - shared);
+        assert_eq!(
+            history_chain(&bytes),
+            [
+                (4, -1, 2, 0, vec![(0, 2, true)]),
+                (2, 2, -1, 1, Vec::new()),
+                (3, 0, 1, 2, vec![(2, 2, true)]),
+            ]
+        );
+        let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+        assert!(!residual.contains("ASM record"), "{residual}");
+        each_board_inserts_the_records_of_its_body(&decoded, &bytes);
+    }
+}
+
+#[test]
+fn a_state_whose_result_body_is_not_written_names_its_feature_and_body() {
+    use cadmpeg_ir::ids::BodyId;
+    let body = |name: &str| BodyId::mint(format!("test:model:body#{name}")).expect("a body id");
+    let feature =
+        |name: &str| FeatureId::mint(format!("test:model:feature#{name}")).expect("a feature id");
+    let (cube, prism) = (body("cube"), body("prism"));
+    let (first, second) = (feature("first"), feature("second"));
+    let written = [&prism, &cube];
+    assert_eq!(
+        crate::writer::generate::design::state_bodies(
+            [(&first, &cube), (&second, &prism)],
+            &written
+        )
+        .expect("both bodies are written"),
+        [1, 0]
+    );
+    let error = crate::writer::generate::design::state_bodies(
+        [(&first, &cube), (&second, &prism)],
+        &[&cube],
+    )
+    .expect_err("the prism is not written");
+    assert_eq!(error.feature, second);
+    let error = error.error.to_string();
+    assert!(
+        error.contains(second.as_str()) && error.contains(prism.as_str()),
+        "{error}"
+    );
+}
+
+/// [`with_a_second_extrude`] with new bodies and the aligned distance `Gap`
+/// of 10 mm between the lines `l1` and `l3` of the second square. Returns
+/// the design, the second extrude and its result body.
+fn dimensioned_second_extrude() -> (CadIr, FeatureId, String) {
+    use cadmpeg_ir::design::ops::sketch::{
+        DistanceAxis, Operand, SketchConstraint, SketchRelation,
+    };
+    use cadmpeg_ir::design::options::NativeOptions;
+    let (mut ir, second) = with_a_second_extrude(Boolean::NewBody);
+    let operand = |name: &str| Operand::Entity(super::super::sketch::entity_id("second", name));
+    ir.design.sketch_constraints.push(SketchConstraint {
+        id: super::super::sketch::constraint_id("second", "gap"),
+        sketch: sketch_id("second"),
+        relation: SketchRelation::Distance {
+            a: operand("l1"),
+            b: operand("l3"),
+            along: Some(DistanceAxis::Aligned),
+            doubled: None,
+            value: Dimension::Parameter(parameter_id("gap")),
+        },
+        name: None,
+        active: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    ir.design.parameters.push(parameter(
+        "gap",
+        "Gap",
+        neutral(number(SIDE, Some(UnitSymbol::Mm))),
+        Some(SIDE),
+    ));
+    ir.finalize();
+    let body = ir.design.scopes[0].current[0]
+        .bodies
+        .last()
+        .expect("the second body")
+        .to_string();
+    (ir, second, body)
+}
+
+/// Whether `decoded` holds a distance dimension bound to the parameter
+/// `Gap`.
+fn has_gap(decoded: &CadIr) -> bool {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
+    decoded.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition.kind(),
+            Kind::Distance { parameter, .. }
+                if decoded
+                    .model
+                    .parameters
+                    .iter()
+                    .any(|row| &row.id == parameter && row.name == "Gap")
+        )
+    })
+}
+
+/// A history failure drops the geometry items before the sketch
+/// dimensions. Geometry-true writes the current bodies as the Base Feature;
+/// history-true writes the items after the timeline marker, rolled back
+/// with no body. The feature whose result body is not written takes the
+/// failure in its entry.
+#[test]
+fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
+    let (ir, second, body) = dimensioned_second_extrude();
+    for form in [
+        MissingStateForm::GeometryTrue,
+        MissingStateForm::HistoryTrue,
+    ] {
+        let (report, decoded, _) = write_bytes_as(&ir, form);
+        assert_eq!(
+            kinds(&decoded),
+            ["sketch", "extrude", "sketch", "extrude"],
+            "{:#?}",
+            report.losses
+        );
+        assert!(has_gap(&decoded), "{:#?}", report.losses);
+        super::super::super::HIDE_NEXT_RESULT_BODY.with(|hide| hide.set(true));
+        let (report, decoded, _) = write_bytes_as(&ir, form);
+        let (written, bodies, held) = match form {
+            MissingStateForm::GeometryTrue => (
+                &["sketch", "sketch", "base"][..],
+                2,
+                "the Base Feature holds it",
+            ),
+            MissingStateForm::HistoryTrue => (
+                &["sketch", "extrude", "sketch", "extrude"][..],
+                0,
+                "the writer writes it without its state",
+            ),
+        };
+        assert_eq!(kinds(&decoded), written, "{form:?}: {:#?}", report.losses);
+        assert_eq!(decoded.geometry.bodies.len(), bodies, "{form:?}");
+        if form == MissingStateForm::HistoryTrue {
+            let (rollback, members) = decoded_rollback(&decoded);
+            assert_eq!(rollback, Some(Rollback::Before(members[1].clone())));
+        }
+        assert!(has_gap(&decoded), "{form:?}: {:#?}", report.losses);
+        let missing = loss(&report, EVALUATION_MISSING).join("\n");
+        assert!(
+            missing.contains(&format!(
+                "{EXTRUDE} ({held}: the writer cannot write {second} with its state"
+            )),
+            "{form:?}: {missing}"
+        );
+        assert!(
+            missing.contains(&format!(
+                "{second} ({held}: the writer cannot write its history state (not implemented yet: the history state of {second} holds its result body {body}, which the B-rep stream does not write)"
+            )),
+            "{form:?}: {missing}"
+        );
+    }
 }

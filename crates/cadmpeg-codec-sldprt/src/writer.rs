@@ -1563,7 +1563,7 @@ fn section_type_ids(
 }
 
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let bytes = serde_json::to_vec(&ir.model.pmi)
+    let bytes = cadmpeg_core::serde_erase::json::to_vec(&ir.model.pmi)
         .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
@@ -3311,26 +3311,29 @@ fn retained_source_baseline<'a>(
         let raw = root.window();
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
         let len = raw.len();
-        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+        if let Ok(guard) = SOURCE_BASELINE_CACHE.lock() {
             if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
                 *cached_digest == digest && *cached_len == len
             }) {
                 *baseline = Some(Arc::clone(cached));
                 return Ok(baseline.as_deref());
             }
-            let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
-            sort_arenas(&mut decoded.ir);
-            let shared = Arc::new(decoded);
-            if guard.len() >= 2 {
-                guard.remove(0);
-            }
-            guard.push((digest, len, Arc::clone(&shared)));
-            *baseline = Some(shared);
-            return Ok(baseline.as_deref());
         }
         let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
         sort_arenas(&mut decoded.ir);
-        *baseline = Some(Arc::new(decoded));
+        let shared = Arc::new(decoded);
+        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
+            if !guard.iter().any(|(cached_digest, cached_len, _)| {
+                *cached_digest == digest && *cached_len == len
+            }) {
+                if guard.len() >= 8 {
+                    guard.remove(0);
+                }
+                guard.push((digest, len, Arc::clone(&shared)));
+            }
+        }
+        *baseline = Some(shared);
+        return Ok(baseline.as_deref());
     }
     Ok(baseline.as_deref())
 }

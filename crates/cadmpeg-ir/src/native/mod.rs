@@ -381,6 +381,15 @@ impl NativeRecord {
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
+        Self::canonical_erased(ctx, &|adapter| record.serialize(adapter))
+    }
+
+    fn canonical_erased(
+        ctx: &DecodeContext<'_>,
+        write: &dyn Fn(
+            cadmpeg_core::serde_erase::SerAdapter<'_>,
+        ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
+    ) -> Result<Self, NativeConvertError> {
         use std::cell::RefCell;
         thread_local! {
             static CANON_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -396,13 +405,11 @@ impl NativeRecord {
                 Err(_) => &mut fallback,
             };
             let mut min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
-            let serialized = record
-                .serialize(canon::CanonText::for_record_tracking(
-                    ctx,
-                    out,
-                    &mut min_remaining,
-                ))
-                .map_err(|error| error.into_native(ctx))?;
+            let serialized = cadmpeg_core::serde_erase::serialize_with(
+                canon::CanonText::for_record_tracking(ctx, out, &mut min_remaining),
+                write,
+            )
+            .map_err(|error| error.into_native(ctx))?;
             let canon::Written::Object(members) = serialized else {
                 return Err(NativeConvertError::NonObject);
             };
@@ -624,16 +631,7 @@ impl NativeRecord {
             privacy::observe::<T>(self.id(), &self.json);
             return Ok(value);
         }
-        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
-        deserializer.disable_recursion_limit();
-        let value = T::deserialize(&mut deserializer)
-            .and_then(|value| deserializer.end().map(|()| value))
-            .map_err(|source| NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source: without_position(source),
-            })?;
-        privacy::observe::<T>(self.id(), &self.json);
-        Ok(value)
+        self.to_typed(ctx)
     }
 
     /// Compare a typed serialization against this record's stored text
@@ -849,6 +847,18 @@ impl JsonSchema for NativeRecord {
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         RecordShape::json_schema(generator)
+    }
+}
+
+/// The native-record links of `record` of the arena `arena`: its `links`
+/// member where that is an array in `unknowns` and an array of strings in
+/// another arena, as validation reads them.
+fn record_links(arena: &str, record: &NativeRecord) -> Vec<Value> {
+    match record.field("links") {
+        Some(Value::Array(links)) if arena == "unknowns" || links.iter().all(Value::is_string) => {
+            links
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -1125,9 +1135,12 @@ impl Native {
     }
 
     /// States one record of each id in each sorted namespace arena whose
-    /// copies hold one value, and returns each id whose copies differ, all of
-    /// whose copies it keeps.
-    pub(crate) fn repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+    /// copies hold one value, and returns each id whose copies differ, whose
+    /// copies `differing` keeps.
+    pub(crate) fn repeated_ids(
+        &mut self,
+        differing: crate::document::DifferingCopies,
+    ) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
@@ -1138,6 +1151,7 @@ impl Native {
                         codec: format.as_str().to_owned(),
                         arena: arena.as_str().to_owned(),
                     },
+                    differing,
                     &mut repeated,
                 );
             }
@@ -1254,6 +1268,75 @@ impl Native {
             id: id.to_owned(),
             names,
         })
+    }
+
+    /// The ids of `among` that a record of a namespace arena has.
+    pub(crate) fn held_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        self.0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .filter_map(|record| among.get(record.id()).copied())
+            .collect()
+    }
+
+    /// The ids of `among` that a native-record link names.
+    pub(crate) fn linked_among<'a>(
+        &self,
+        among: &std::collections::BTreeSet<&'a str>,
+    ) -> std::collections::BTreeSet<&'a str> {
+        let mut linked = std::collections::BTreeSet::new();
+        for namespace in self.0.values() {
+            for (arena, records) in &namespace.arenas {
+                for record in records {
+                    linked.extend(
+                        record_links(arena.as_str(), record)
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .filter_map(|link| among.get(link).copied()),
+                    );
+                }
+            }
+        }
+        linked
+    }
+
+    /// Removes each id of `gone` from the native-record links of every
+    /// record, and returns each record id with the link it lost (§3.3).
+    ///
+    /// # Errors
+    ///
+    /// A record whose text no longer reads as an object.
+    pub(crate) fn release_links(
+        &mut self,
+        gone: &std::collections::BTreeSet<String>,
+    ) -> Result<Vec<(String, String)>, NativeConvertError> {
+        let mut lost = Vec::new();
+        for namespace in self.0.values_mut() {
+            for (arena, records) in &mut namespace.arenas {
+                for record in records.iter_mut() {
+                    let (released, kept): (Vec<Value>, Vec<Value>) =
+                        record_links(arena.as_str(), record)
+                            .into_iter()
+                            .partition(|link| {
+                                link.as_str().is_some_and(|link| gone.contains(link))
+                            });
+                    if released.is_empty() {
+                        continue;
+                    }
+                    let mut fields = record.fields()?;
+                    fields.insert("links".to_owned(), Value::Array(kept));
+                    *record = NativeRecord::new(record.id.clone(), fields)?;
+                    lost.extend(released.into_iter().filter_map(|link| match link {
+                        Value::String(link) => Some((record.id().to_owned(), link)),
+                        _ => None,
+                    }));
+                }
+            }
+        }
+        Ok(lost)
     }
 
     /// Removes every record of the native arena `arena` whose id is in

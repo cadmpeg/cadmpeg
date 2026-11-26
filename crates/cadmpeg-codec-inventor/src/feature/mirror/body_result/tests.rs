@@ -53,7 +53,8 @@ fn generated_body_checks_each_variable_word_and_its_type() {
                 .iter()
                 .position(|p| p.identity.record_ordinal == ordinal)
                 .expect("variable");
-            let mut wire = serde_json::to_value(&fixture.properties[index]).expect("variable");
+            let mut wire = cadmpeg_core::serde_erase::json::to_value(&fixture.properties[index])
+                .expect("variable");
             if field == "type_id" {
                 wire[field] =
                     serde_json::json!(crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE));
@@ -61,7 +62,8 @@ fn generated_body_checks_each_variable_word_and_its_type() {
                 let value = wire["kind"][field].as_u64().expect("word");
                 wire["kind"][field] = serde_json::json!(value + 1);
             }
-            fixture.properties[index] = serde_json::from_value(wire).expect("changed variable");
+            fixture.properties[index] =
+                cadmpeg_core::serde_erase::json::from_value(wire).expect("changed variable");
             assert!(
                 fixture
                     .index()
@@ -118,10 +120,10 @@ fn generated_body_checks_owner_class_source_and_generated_reference() {
                     .iter_mut()
                     .find(|p| p.identity.record_ordinal == 113)
                     .expect("map");
-                let mut wire = serde_json::to_value(&*map).expect("map");
+                let mut wire = cadmpeg_core::serde_erase::json::to_value(&*map).expect("map");
                 wire["kind"]["definition"]["source"] =
-                    serde_json::to_value(reference(107)).expect("reference");
-                *map = serde_json::from_value(wire).expect("changed map");
+                    cadmpeg_core::serde_erase::json::to_value(reference(107)).expect("reference");
+                *map = cadmpeg_core::serde_erase::json::from_value(wire).expect("changed map");
             }
         }
         assert!(fixture

@@ -124,7 +124,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             let attributes = attributes::AttributeIndex::new(target, native);
             encode_brep(target, native, &attributes).is_ok()
         }
-        Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
+        Stage::Design | Stage::NeutralDesign | Stage::History | Stage::Archive => attempt(
             target,
             false,
             false,
@@ -226,8 +226,11 @@ fn attempt<W: Write + Seek>(
     };
     let (smbh, history_notes) = match neutral.as_ref().filter(|_| stamped) {
         Some(neutral) => {
-            design::history::with_insertion_history(&smbh, &neutral.history_states(target))
-                .map_err(Failure::neutral_design)?
+            let states = neutral
+                .history_states(target)
+                .map_err(|missing| Failure::history(missing.error, Some(missing.feature)))?;
+            design::history::with_insertion_history(&smbh, &states)
+                .map_err(|error| Failure::history(error, None))?
         }
         None => (smbh, Vec::new()),
     };

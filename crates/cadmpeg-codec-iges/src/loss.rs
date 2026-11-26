@@ -127,8 +127,6 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced => "target.source-dialect-displaced",
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
@@ -188,7 +186,7 @@ impl IgesLossCode {
             Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
                 Severity::Blocking
             }
-            Self::ProceduralReduced => Severity::Info,
+            Self::ProceduralReduced | Self::VertexToleranceWidened => Severity::Info,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 Severity::Warning
             }
@@ -231,7 +229,6 @@ impl IgesLossCode {
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterSupportGeometryNotRepresented
@@ -246,7 +243,6 @@ impl IgesLossCode {
             | Self::WriterPcurveOmitted
             | Self::WriterOpenShellUnjoined
             | Self::WriterSolidUnjoined
-            | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
             Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
@@ -309,7 +305,6 @@ impl IgesLossCode {
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
@@ -326,10 +321,31 @@ impl IgesLossCode {
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
+    /// The strict floor `iges.md` (Decode admission) states: each code that
+    /// records a structural defect of the file pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::PointerUnresolved
+            | Self::CompositeCarrierDegraded
+            | Self::SourceDialectUnverified
+            | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNumericSyntaxRecovered
+            | Self::GlobalLengthUnitUnresolved
+            | Self::GlobalNoncanonicalFraming
+            | Self::DirectoryRecordQuarantined
+            | Self::DirectoryRecordRepeated
+            | Self::ParameterDataQuarantined
+            | Self::ParameterLiteralUnusable
+            | Self::ParameterCountOverdeclared
+            | Self::CardFramingRecovered => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new(
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
                     Ok(namespace) => namespace,
@@ -338,20 +354,15 @@ impl IgesLossCode {
             },
             self.code(),
             self.shared_taxonomy(),
-        );
-        match self {
-            Self::WriterSolidUnjoined | Self::WriterPcurveOmitted => kind.with_strict_floor(None),
-            _ => kind,
-        }
+        )
+        .with_strict_floor(self.strict_floor())
         .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `iges/<local>`; the message is the per-instance
-    /// text only. Severity comes from the local code and the strict floor from
-    /// the shared taxonomy; `writer.solid-unjoined` and `writer.pcurve-omitted`
-    /// pin no floor.
+    /// text only. Severity and strict floor come from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -410,7 +421,6 @@ mod tests {
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",

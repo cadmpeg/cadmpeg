@@ -182,7 +182,7 @@ fn project_fallback(
     };
     put(
         "source",
-        serde_json::to_string(&evidence).map_err(CodecError::malformed)?,
+        cadmpeg_core::serde_erase::to_json_string(&evidence).map_err(CodecError::malformed)?,
     )?;
     let mut losses = Vec::new();
     let mut note = |code: F3dLossCode, reason: &str| {

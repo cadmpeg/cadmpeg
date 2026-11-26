@@ -47,8 +47,9 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
             .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved"));
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
-        let wire = serde_json::to_value(recovered.ir()).unwrap();
-        let roundtrip = serde_json::from_value::<cadmpeg_ir::CadIr>(wire).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(recovered.ir()).unwrap();
+        let roundtrip =
+            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::CadIr>(wire).unwrap();
         assert!(crate::test_support::validate_native(&roundtrip).is_empty());
     }
 }

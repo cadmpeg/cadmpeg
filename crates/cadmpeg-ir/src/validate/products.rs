@@ -343,11 +343,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
 }
 
 /// Part 10: every body of `CadIr.geometry` is listed by exactly one
-/// definition's `bodies`, or by `instance_bodies` entries and by no
-/// definition's `bodies` (§8.1). A body that a definition lists is also
-/// listed where an `instance_bodies` entry names it. The rule holds where the
-/// root rule holds, since a body the file holds outside every other
-/// definition is the root definition's.
+/// definition's `bodies` and by no `instance_bodies` entry, or by
+/// `instance_bodies` entries and by no definition's `bodies` (§8.1). The rule
+/// holds where the root rule holds, since a body the file holds outside every
+/// other definition is the root definition's.
 fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
     if ir.fragment
         || !ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
@@ -387,6 +386,19 @@ fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
                     "products.body-listed-several-definitions",
                     "body is listed by {} definitions' `bodies`; one lists it",
                     owners.len()
+                ),
+            );
+        } else if owners.len() == 1 && instanced.contains(id) {
+            let owner = owners[0];
+            record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                id,
+                &[owner],
+                crate::rule!(
+                    "products.body-listed-definition-and-instance-bodies",
+                    "body is listed by definition {owner}'s `bodies` and by an `instance_bodies` entry; a body an entry shows is listed by no definition's `bodies`"
                 ),
             );
         } else if owners.is_empty() && !instanced.contains(id) {
@@ -572,13 +584,14 @@ mod tests {
             "test:model:product#placed".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&ir.model.assembly_joints[0])
+            .expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
             serde_json::json!(occurrence.as_str());
         wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
             "path": "external.f3d"
         });
-        assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<AssemblyJoint>(wire).is_err());
     }
 
     #[test]

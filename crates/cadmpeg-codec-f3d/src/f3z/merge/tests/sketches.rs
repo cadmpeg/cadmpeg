@@ -7,7 +7,7 @@ use cadmpeg_ir::CadIr;
 use super::super::define_member;
 
 fn sketch(name: &str) -> Sketch {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("test:model:sketch#{name}"),
         "placement": {"kind": "unresolved"},
         "profiles": []
@@ -16,7 +16,7 @@ fn sketch(name: &str) -> Sketch {
 }
 
 fn component(sketch: &Sketch) -> ProductDefinition {
-    let mut definition: ProductDefinition = serde_json::from_value(serde_json::json!({
+    let mut definition: ProductDefinition = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "test:model:product#component",
         "kind": "part",
         "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [],

@@ -188,7 +188,7 @@ fn every_process_type_has_a_schema() {
 
 #[test]
 fn a_uuid_schema_states_the_lower_case_pattern() {
-    let schema = serde_json::to_value(schema_for!(Uuid)).unwrap();
+    let schema = cadmpeg_core::serde_erase::json::to_value(schema_for!(Uuid)).unwrap();
     assert_eq!(
         schema["pattern"],
         "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"

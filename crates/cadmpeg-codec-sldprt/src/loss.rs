@@ -521,7 +521,6 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal, and the writer cleared
     /// the flag in a lane outside the active configuration.
     WriterExtrudeReversalConfigurationCleared,
-    SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
     SourcePropertyKeyBlank,
@@ -618,6 +617,11 @@ pub(crate) enum SldprtLossCode {
     /// Typed revolves whose `Sketch` pick's closed regions the decoder did
     /// not compare with the stored profile loops.
     DesignRevolveProfileUnchecked,
+    /// Revolves whose solid depends on the turn sense, a partial turn on one
+    /// side or a two-sided turn, whose decoded axis turns about the axis
+    /// direction their record stores, reversed where their record's reverse
+    /// byte is `1`.
+    DesignRevolveSenseAssumed,
 }
 
 impl SldprtLossCode {
@@ -818,7 +822,6 @@ impl SldprtLossCode {
         Self::WriterReadBackUnread,
         Self::WriterExtrudeReversalUnwritten,
         Self::WriterExtrudeReversalConfigurationCleared,
-        Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
         Self::AssemblyMatesNotTransferred,
@@ -849,6 +852,7 @@ impl SldprtLossCode {
         Self::DesignRevolveBooleanUnstated,
         Self::DesignRevolveProfileDiffers,
         Self::DesignRevolveProfileUnchecked,
+        Self::DesignRevolveSenseAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -1061,7 +1065,6 @@ impl SldprtLossCode {
             Self::WriterExtrudeReversalConfigurationCleared => {
                 "writer.extrude-reversal-configuration-cleared"
             }
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
             Self::MetadataConfigurationManagerOpaque => "metadata.configuration-manager-opaque",
@@ -1111,6 +1114,7 @@ impl SldprtLossCode {
             Self::DesignRevolveBooleanUnstated => "design.revolve-boolean-unstated",
             Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
             Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
+            Self::DesignRevolveSenseAssumed => "design.revolve-sense-assumed",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
@@ -1301,7 +1305,6 @@ impl SldprtLossCode {
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
-            | Self::SourceDialectDisplaced
             | Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1330,7 +1333,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
             | Self::DesignRevolveAxisDerived
-            | Self::DesignRevolveProfileDiffers => Severity::Warning,
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveSenseAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1407,7 +1411,6 @@ impl SldprtLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank
             | Self::MetadataPartRootUnsupported
             | Self::MetadataConfigurationManagerOpaque
@@ -1452,7 +1455,8 @@ impl SldprtLossCode {
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveBooleanUnstated
             | Self::DesignRevolveProfileDiffers
-            | Self::DesignRevolveProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignRevolveProfileUnchecked
+            | Self::DesignRevolveSenseAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1714,8 +1718,10 @@ pub(crate) fn named<S: AsRef<str>>(names: &[S]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
     use cadmpeg_ir::report::Severity;
+
+    use crate::test_support::ir::strict_options;
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
@@ -1961,7 +1967,6 @@ mod tests {
                 "writer.read-back-unread",
                 "writer.extrude-reversal-unwritten",
                 "writer.extrude-reversal-configuration-cleared",
-                "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
                 "assembly.mates-not-transferred",
@@ -1992,6 +1997,7 @@ mod tests {
                 "design.revolve-boolean-unstated",
                 "design.revolve-profile-differs",
                 "design.revolve-profile-unchecked",
+                "design.revolve-sense-assumed",
             ]
         );
     }
@@ -2029,7 +2035,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -2037,7 +2043,7 @@ mod tests {
         let note = SldprtLossCode::PmiSwiftPositionTargetUnresolved.note("unresolved");
         assert_eq!(note.severity, Severity::Warning);
         assert_eq!(note.code.taxonomy(), LossTaxonomy::DecodeDiagnostic);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 
     #[test]
@@ -2046,6 +2052,6 @@ mod tests {
         assert_eq!(note.code.namespace(), "sldprt");
         assert_eq!(note.code.local_code(), "geometry.pcurve-ambiguous");
         assert_eq!(note.code.taxonomy(), LossTaxonomy::PcurveOmitted);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        assert!(!strict_options().strictness.refuses(&note, false));
     }
 }

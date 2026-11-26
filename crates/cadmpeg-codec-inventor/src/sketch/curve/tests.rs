@@ -32,7 +32,7 @@ fn ellipse(ends: &[u32], state: u8) -> PmDcSketchEntityKind {
 
 fn entity(kind: PmDcSketchEntityKind) -> PmDcSketchEntity {
     let mut payload: super::super::PmDcSketchEntityPayload =
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "save_version_major": 22,
             "header": {
                 "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
@@ -218,12 +218,14 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
         (0, Some(1), false),
         (0, None, false),
     ] {
-        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())
-            .expect("constraint wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(
+            crate::test_support::sketch_curves::spline_midpoint(),
+        )
+        .expect("constraint wire");
         wire["header"]["parameter"] = serde_json::json!(PmDcReference::from_packed(parameter));
         wire["kind"]["value"] = serde_json::json!(value);
         let constraint: super::super::PmDcSketchConstraint =
-            serde_json::from_value(wire).expect("synthetic constraint");
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("synthetic constraint");
         assert_eq!(midpoint_supported(&constraint, &curve.geometry), admitted);
         let definition = midpoint_definition(
             &constraint,

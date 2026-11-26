@@ -104,9 +104,10 @@ fn compact_plane_decode_and_validation_use_the_same_finite_frame() {
         <[f64; 3]>::from(*plane.frame().reference().as_raw()),
         [1.0, 0.0, 0.0]
     );
-    let encoded = serde_json::to_value(result.ir()).expect("serialize decoded frame");
+    let encoded =
+        cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize decoded frame");
     let roundtrip: cadmpeg_ir::document::CadIr =
-        serde_json::from_value(encoded).expect("validate serialized frame");
+        cadmpeg_core::serde_erase::json::from_value(encoded).expect("validate serialized frame");
     let report = cadmpeg_ir::validate_neutral(&roundtrip, result.report().losses.clone())
         .expect("validate decoded frame");
     assert!(report.is_ok(), "{report:?}");

@@ -32,7 +32,9 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
     let state =
         FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic").expect("id");
     let id = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
-    let point = |values| serde_json::from_value(serde_json::json!(values)).expect("point");
+    let point = |values| {
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!(values)).expect("point")
+    };
     let sample = HistoricalEdgeGeometry {
         edge: id.clone(),
         interior: point([1., 2., 3.]),
