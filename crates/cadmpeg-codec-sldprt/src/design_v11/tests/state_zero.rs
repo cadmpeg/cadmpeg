@@ -62,6 +62,7 @@ pub(super) fn project(
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
