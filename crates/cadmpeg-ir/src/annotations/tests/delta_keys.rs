@@ -35,7 +35,7 @@ fn a_key_with_a_space_names_a_record_of_a_delta() {
 }
 
 fn read(text: &str) -> AnnotationKey {
-    serde_json::from_value(serde_json::Value::from(text)).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(serde_json::Value::from(text)).unwrap()
 }
 
 #[test]
