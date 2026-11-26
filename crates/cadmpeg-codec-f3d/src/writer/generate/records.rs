@@ -251,9 +251,7 @@ pub(super) fn encode_design_bulkstream(
             ));
         };
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
-        unindexed.insert(u64::from(u32::from_le_bytes(
-            record_index.value.to_le_bytes(),
-        )));
+        unindexed.insert(u64::from(record_index.value.cast_unsigned()));
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {

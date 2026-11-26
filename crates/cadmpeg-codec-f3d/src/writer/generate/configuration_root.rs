@@ -240,16 +240,16 @@ fn root(
             .map(|document| document.tables().len())
             .sum::<usize>();
         let unique = (1..=tables + 1)
-            .map(|ordinal| {
+            .filter_map(|ordinal| {
                 let suffix = format!("-{ordinal}");
                 let base = TextCapacity {
-                    width: ID_WIDTH.saturating_sub(suffix.len()),
+                    width: ID_WIDTH.checked_sub(suffix.len())?,
                     ..TABLE_ID
                 }
                 .fit(&row.table.id);
-                format!("{}{suffix}", base.text)
+                Some(format!("{}{suffix}", base.text))
             })
-            .find(|candidate| TABLE_ID.fit(candidate).text == candidate && !held(candidate, false));
+            .find(|candidate| !held(candidate, false));
         let Some(unique) = unique else {
             losses.extend(value_unwritable(
                 "F3D",
