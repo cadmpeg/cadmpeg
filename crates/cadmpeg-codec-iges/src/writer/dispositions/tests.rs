@@ -518,14 +518,15 @@ fn numbered_color(level: u32) -> String {
 }
 
 /// The decode of `file` with the colour of its Type 314 changed after the
-/// decode on the appearance and on the body and the face it colours.
-fn recolored(file: &str) -> cadmpeg_ir::CadIr {
+/// decode to the red, green, and blue `edited` on the appearance and on the
+/// body and the face it colours.
+fn recolored(file: &str, [red, green, blue]: [f64; 3]) -> cadmpeg_ir::CadIr {
     let mut ir = IgesCodec
         .decode(&mut Cursor::new(file.as_bytes()), &DecodeOptions::default())
         .unwrap()
         .ir()
         .clone();
-    let edited = cadmpeg_ir::topology::Color::new(0.3, 0.4, 0.6, 1.0);
+    let edited = cadmpeg_ir::topology::Color::new(red, green, blue, 1.0);
     let appearance = &mut ir.model.appearances[0];
     let source = appearance.base_color;
     appearance.base_color = edited;
@@ -642,7 +643,7 @@ fn a_source_colour_number_is_written_on_the_restated_colour_definition() {
 /// attribute record and the colour definition record.
 #[test]
 fn an_edited_colour_definition_is_charged_for_its_colour_number() {
-    let ir = recolored(&numbered_color(0));
+    let ir = recolored(&numbered_color(0), [0.3, 0.4, 0.6]);
     let (bytes, native, messages, charges) =
         charges_naming(&ir, "iges:presentation:display-attributes#D13");
     assert_eq!(
@@ -706,20 +707,20 @@ fn source_colour_percentages_are_written_unchanged() {
     );
 }
 
-/// A colour changed after the decode to 0.3, 0.4, and 0.6 has no source
-/// percentages, and the written Type 314 states 30, 40, and 60, the
-/// percentages that read back as that colour, not `0.3 * 100`,
-/// 30.000000000000004.
+/// A colour changed after the decode to 0.29, 0.57, and 0.58 has no source
+/// percentages, and the written Type 314 states 29, 57, and 58, the
+/// percentages that read back as that colour, not `0.29 * 100`,
+/// 28.999999999999996.
 #[test]
 fn an_edited_colour_is_written_as_the_shortest_percentages_that_read_back() {
-    let ir = recolored(NAMED_BODY);
+    let ir = recolored(NAMED_BODY, [0.29, 0.57, 0.58]);
     let (bytes, _, _, _) = charges_naming(&ir, "iges:presentation:color#D13");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap()
         .ir()
         .clone();
-    assert_eq!(percents(&output), [[Some(30.0), Some(40.0), Some(60.0)]]);
+    assert_eq!(percents(&output), [[Some(29.0), Some(57.0), Some(58.0)]]);
 }
 
 /// A Type 314 states a level that the writer writes as 0. The one charge of
@@ -733,7 +734,7 @@ fn a_colour_definition_level_is_charged_whatever_its_colour_number() {
         .unwrap()
         .ir()
         .clone();
-    for (ir, colour_number) in [(decoded, false), (recolored(&file), true)] {
+    for (ir, colour_number) in [(decoded, false), (recolored(&file, [0.3, 0.4, 0.6]), true)] {
         let (_, _, messages, charges) =
             charges_naming(&ir, "iges:presentation:display-attributes#D13");
         assert_eq!(charges.len(), 1, "{messages:#?}");
