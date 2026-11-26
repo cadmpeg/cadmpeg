@@ -290,8 +290,7 @@ pub(super) fn map(
     }
     // The checks that need only the host rollback states and the final parts of the
     // referenced studio run before the referenced studio is read.
-    let before = inputs.solid_parts(ordinal)?;
-    let after = inputs.solid_parts(ordinal + 1)?;
+    let (before, after) = inputs.solid_parts_across(ordinal)?;
     if before.iter().any(|(id, name)| after.get(id) != Some(name)) {
         return Err("the derived feature changes an existing body; only an unchanged-placement Part Studio insert is supported yet".into());
     }

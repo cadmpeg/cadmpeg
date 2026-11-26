@@ -330,6 +330,34 @@ impl<'a> Inputs<'a> {
         Ok(parts)
     }
 
+    /// The solid parts before and after the feature at `ordinal`. A body that is not a
+    /// free solid is accounted for by its id, and the feature leaves each of them as it
+    /// was; a sheet or composite body that the feature does not touch does not withhold
+    /// the solids.
+    pub(crate) fn solid_parts_across(&self, ordinal: usize) -> Mapping<(Parts, Parts)> {
+        let others = |at: usize| -> Mapping<BTreeMap<String, String>> {
+            let response = self
+                .bundle
+                .json(&format!("{}/bodydetails/{at}.json", self.prefix))
+                .map_err(|_| "the whole-studio rollback snapshot is unreadable")?;
+            let mut others = BTreeMap::new();
+            for body in rows(response, "bodies")? {
+                let kind = text(body, "type")?;
+                let consumed = body
+                    .get("consumedByComposite")
+                    .is_some_and(|value| value.as_bool() != Some(false));
+                if kind != "SOLID" || consumed {
+                    others.insert(text(body, "id")?.to_owned(), format!("{kind}/{consumed}"));
+                }
+            }
+            Ok(others)
+        };
+        if others(ordinal)? != others(ordinal + 1)? {
+            return Err("the derived feature changes a body that is not a free solid".into());
+        }
+        Ok((self.parts(ordinal)?, self.parts(ordinal + 1)?))
+    }
+
     pub(crate) fn parts(&self, ordinal: usize) -> Mapping<BTreeMap<String, Option<String>>> {
         if !self.indices.contains(&ordinal) {
             return Err(format!(
@@ -413,6 +441,9 @@ impl PartialEq for Operand<'_> {
         self.boundary == other.boundary && stored_equal(self.record, other.record)
     }
 }
+
+/// The solid parts of one rollback state, by body id, with the part names.
+type Parts = BTreeMap<String, Option<String>>;
 
 type Operands<'a> = BTreeMap<OperandKind, BTreeMap<&'a str, Operand<'a>>>;
 

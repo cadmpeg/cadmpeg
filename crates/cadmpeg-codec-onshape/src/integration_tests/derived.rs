@@ -560,6 +560,28 @@ fn creator_of_the_only_final_body_records_it_beside_a_derived_feature() {
 }
 
 #[test]
+fn derived_insert_beside_an_untouched_sheet_body_is_read() {
+    for (states, stored) in [(&[2, 3][..], true), (&[3][..], false)] {
+        let bytes = changed(&fixture("derived"), |path, value| {
+            for state in states {
+                if path == format!("partstudios/studio/bodydetails/{state}.json") {
+                    value["bodies"].as_array_mut().unwrap().push(json!({
+                        "edges": [], "faces": [], "id": "sheet", "type": "SHEET", "vertices": []
+                    }));
+                }
+            }
+        });
+        let (model, report) = read(&bytes).unwrap();
+        assert_eq!(
+            kinds(&model)[2] == "stored_geometry",
+            stored,
+            "{states:?}: {:?}",
+            report.losses()
+        );
+    }
+}
+
+#[test]
 fn derived_bundle_owns_members_of_a_host_studio_whose_id_ends_in_partstudios() {
     let renamed = renamed_host("hostpartstudios");
     // Each studio has its own pin, so a member checked against the wrong pin is omitted.
